@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# least privilege: CI only needs to read the repo
+permissions:
+  contents: read
+
+# cancel superseded runs on the same ref
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint · tests · audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt ruff pip-audit
+      - name: Lint + format (ruff)
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Unit tests (pytest)
+        run: pytest -q
+      - name: Dependency audit (pip-audit)
+        run: pip-audit -r requirements.txt
+
+  frontend:
+    name: Frontend (lint · tests · build · audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: emulador
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: emulador/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint + format
+        run: |
+          npm run lint
+          npm run format:check
+      - name: Unit tests (vitest)
+        run: npx ng test --watch=false
+      - name: Production build
+        run: npm run build
+      - name: Dependency audit (npm, informational)
+        # Angular's build toolchain pulls transitive advisories that can't be
+        # fixed without breaking; report but don't block the build.
+        run: npm audit --audit-level=high || true
+        continue-on-error: true
+
+  docker-build:
+    name: Docker (compose config · image builds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Validate compose files
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.full.yml config -q
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./emulador
+          push: false
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
