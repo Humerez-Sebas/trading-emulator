@@ -19,6 +19,7 @@ CLI tienen prioridad. Sin --tfs ni --all-tfs se cosecha un conjunto sensato
 Re-ejecutarlo es seguro: el backend hace upsert por (symbol, tf, time) y no
 duplica velas.
 """
+
 import argparse
 import json
 import os
@@ -114,7 +115,9 @@ def desde_efectivo(desde: datetime, hasta_cov: int | None, tf_name: str) -> date
     antes de ``desde``. Sin cobertura previa, arranca en ``desde``."""
     if not hasta_cov:
         return desde
-    reinicio = datetime.fromtimestamp(hasta_cov, tz=timezone.utc) - timedelta(seconds=TF_SEGUNDOS[tf_name])
+    reinicio = datetime.fromtimestamp(hasta_cov, tz=timezone.utc) - timedelta(
+        seconds=TF_SEGUNDOS[tf_name]
+    )
     return max(desde, reinicio)
 
 
@@ -166,7 +169,15 @@ def cosechar_serie(backend, api_key, symbol, tf_name, tf, desde, hasta, n_poster
         estado["ultima"] = int(rates["time"][-1])
         estado["total"] += len(rates)
         for r in rates:
-            buf.append([int(r["time"]), float(r["open"]), float(r["high"]), float(r["low"]), float(r["close"])])
+            buf.append(
+                [
+                    int(r["time"]),
+                    float(r["open"]),
+                    float(r["high"]),
+                    float(r["low"]),
+                    float(r["close"]),
+                ]
+            )
             if len(buf) >= BATCH_SIZE:
                 cola.put(buf)
                 buf = []
@@ -190,7 +201,9 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Cosecha velas de MT5 hacia el backend")
     parser.add_argument("--symbols", default=os.environ.get("HARVEST_SYMBOLS", ""))
-    parser.add_argument("--categorias", default="", help="p.ej. Forex,Metales (alternativa a --symbols)")
+    parser.add_argument(
+        "--categorias", default="", help="p.ej. Forex,Metales (alternativa a --symbols)"
+    )
     parser.add_argument("--tfs", default=os.environ.get("HARVEST_TFS", "M1,M5,M15,H1,H4,D1"))
     parser.add_argument(
         "--all-tfs",
@@ -201,7 +214,10 @@ def main() -> None:
     parser.add_argument("--backend", default=os.environ.get("BACKEND_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--api-key", default=os.environ.get("INGEST_API_KEY", ""))
     parser.add_argument(
-        "--posters", type=int, default=2, help="hilos que postean lotes en paralelo por serie (def. 2)"
+        "--posters",
+        type=int,
+        default=2,
+        help="hilos que postean lotes en paralelo por serie (def. 2)",
     )
     parser.add_argument(
         "--no-resume",
@@ -276,8 +292,14 @@ def main() -> None:
 
             try:
                 est = cosechar_serie(
-                    args.backend, args.api_key, name, tf_name, TIMEFRAMES[tf_name],
-                    desde_ef, hasta, args.posters,
+                    args.backend,
+                    args.api_key,
+                    name,
+                    tf_name,
+                    TIMEFRAMES[tf_name],
+                    desde_ef,
+                    hasta,
+                    args.posters,
                 )
             except Exception as e:
                 print(f"  {name} {tf_name}: FALLO ({e})")
@@ -297,7 +319,9 @@ def main() -> None:
                     args.api_key,
                 )
             except Exception as e:
-                print(f"  {name} {tf_name}: velas OK pero refresh falló ({e}); la policy se pondrá al día")
+                print(
+                    f"  {name} {tf_name}: velas OK pero refresh falló ({e}); la policy se pondrá al día"
+                )
             primera = datetime.fromtimestamp(est["primera"], tz=timezone.utc)
             print(f"  {name} {tf_name}: OK ({est['total']} velas desde {primera:%Y-%m-%d %H:%M})")
 
