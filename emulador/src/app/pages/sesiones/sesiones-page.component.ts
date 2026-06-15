@@ -239,14 +239,12 @@ export class SesionesPageComponent {
     if (this.groupBy() === 'activo') {
       const map = new Map<string, SessionCard[]>();
       for (const c of cards) (map.get(c.symbol) ?? map.set(c.symbol, []).get(c.symbol)!).push(c);
-      return [...map.keys()]
-        .sort()
-        .map((symbol) => ({
-          key: symbol,
-          label: symbol,
-          folderId: null,
-          cards: this.sortCards(map.get(symbol)!),
-        }));
+      return [...map.keys()].sort().map((symbol) => ({
+        key: symbol,
+        label: symbol,
+        folderId: null,
+        cards: this.sortCards(map.get(symbol)!),
+      }));
     }
     // a specific sidebar folder is selected → one group, no cross-folder headers
     const sel = this.selectedKey();
@@ -273,7 +271,12 @@ export class SesionesPageComponent {
       cards: this.sortCards(byFolder.get(f.id) ?? []),
     }));
     // "Sin carpeta" always shown last (it is also a drop target = unassign)
-    groups.push({ key: '__none__', label: 'Sin carpeta', folderId: null, cards: this.sortCards(loose) });
+    groups.push({
+      key: '__none__',
+      label: 'Sin carpeta',
+      folderId: null,
+      cards: this.sortCards(loose),
+    });
     return groups;
   });
 
@@ -512,9 +515,7 @@ export class SesionesPageComponent {
       await this.db.putMeta(meta);
       await this.reload();
     }
-    this.flash(
-      folderId ? `Movida a "${this.folderName(folderId)}".` : 'Movida a "Sin carpeta".',
-    );
+    this.flash(folderId ? `Movida a "${this.folderName(folderId)}".` : 'Movida a "Sin carpeta".');
   }
 
   // ---- drag & drop ----

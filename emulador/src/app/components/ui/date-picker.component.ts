@@ -1,4 +1,13 @@
-import { Component, ElementRef, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 
 interface DayCell {
   key: string;
@@ -37,17 +46,44 @@ function isoOf(y: number, m: number, d: number): string {
       [attr.aria-label]="ariaLabel() || null"
       (click)="toggle()"
     >
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+      <svg
+        viewBox="0 0 24 24"
+        width="15"
+        height="15"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <path d="M16 2v4M8 2v4M3 10h18" />
       </svg>
       <span [class.dp-placeholder]="!display()">{{ display() || placeholder() }}</span>
     </button>
     @if (open()) {
       <div class="dp-pop" role="dialog" aria-label="Elegir fecha" (keydown)="onKey($event)">
         <div class="dp-head">
-          <button type="button" class="dp-nav" (click)="shiftMonth(-1)" [disabled]="!canPrev()" aria-label="Mes anterior">‹</button>
+          <button
+            type="button"
+            class="dp-nav"
+            (click)="shiftMonth(-1)"
+            [disabled]="!canPrev()"
+            aria-label="Mes anterior"
+          >
+            ‹
+          </button>
           <span class="dp-month">{{ monthLabel() }}</span>
-          <button type="button" class="dp-nav" (click)="shiftMonth(1)" [disabled]="!canNext()" aria-label="Mes siguiente">›</button>
+          <button
+            type="button"
+            class="dp-nav"
+            (click)="shiftMonth(1)"
+            [disabled]="!canNext()"
+            aria-label="Mes siguiente"
+          >
+            ›
+          </button>
         </div>
         <div class="dp-dow" aria-hidden="true">
           @for (d of dow; track d) {

@@ -47,7 +47,12 @@ def test_register_closed_returns_403(client, monkeypatch):
     client.post("/auth/register", json={"username": "existente", "password": "secreta1"})
     monkeypatch.setenv("REGISTRATION_ENABLED", "false")
     get_settings.cache_clear()
-    assert client.post("/auth/login", json={"username": "existente", "password": "secreta1"}).status_code == 200
+    assert (
+        client.post(
+            "/auth/login", json={"username": "existente", "password": "secreta1"}
+        ).status_code
+        == 200
+    )
 
 
 def test_refresh_rotates_and_logout_revokes(client):

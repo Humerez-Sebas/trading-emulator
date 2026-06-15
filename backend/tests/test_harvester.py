@@ -43,7 +43,9 @@ def test_iter_dedups_shared_border(monkeypatch):
     desde = datetime.fromtimestamp(0, tz=timezone.utc)
     hasta = datetime.fromtimestamp(172_800, tz=timezone.utc)  # 2 días
 
-    chunks = [r for r, err in mt5_common.iter_rango_troceado("X", 1, "M1", desde, hasta) if r is not None]
+    chunks = [
+        r for r, err in mt5_common.iter_rango_troceado("X", 1, "M1", desde, hasta) if r is not None
+    ]
     times = np.concatenate([c["time"] for c in chunks]).tolist()
     assert times == [0, 60, 120, 180]  # 120 no se repite
 

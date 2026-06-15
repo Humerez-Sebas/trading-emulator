@@ -70,7 +70,9 @@ def test_symbols_coverage(client):
     _register(client)
     client.post(
         "/ingest/symbols",
-        json={"symbols": [{"name": "US30", "descripcion": "Dow", "categoria": "Índices", "digits": 2}]},
+        json={
+            "symbols": [{"name": "US30", "descripcion": "Dow", "categoria": "Índices", "digits": 2}]
+        },
         headers=INGEST_HEADERS,
     )
     client.post("/ingest/candles", json=CANDLES, headers=INGEST_HEADERS)
@@ -87,7 +89,11 @@ def test_new_symbol_tf_reflected_after_ingest(client):
     _register(client)
     client.post(
         "/ingest/symbols",
-        json={"symbols": [{"name": "XAUUSD", "descripcion": "Oro", "categoria": "Metales", "digits": 2}]},
+        json={
+            "symbols": [
+                {"name": "XAUUSD", "descripcion": "Oro", "categoria": "Metales", "digits": 2}
+            ]
+        },
         headers=INGEST_HEADERS,
     )
 
@@ -111,15 +117,15 @@ def test_new_symbol_tf_reflected_after_ingest(client):
     assert r.json()["ok"] is True
 
     sym = next(s for s in client.get("/symbols").json()["symbols"] if s["name"] == "XAUUSD")
-    assert sym["cobertura"] == [
-        {"tf": "M5", "desde": 1717200000, "hasta": 1717200300, "velas": 2}
-    ]
+    assert sym["cobertura"] == [{"tf": "M5", "desde": 1717200000, "hasta": 1717200300, "velas": 2}]
 
 
 def test_refresh_requires_api_key(client):
     body = {"desde": 1717200000, "hasta": 1717207200}
     assert client.post("/ingest/refresh", json=body).status_code == 401
-    assert client.post("/ingest/refresh", json=body, headers={"X-API-Key": "wrong"}).status_code == 401
+    assert (
+        client.post("/ingest/refresh", json=body, headers={"X-API-Key": "wrong"}).status_code == 401
+    )
 
 
 def test_coverage_window_is_bucket_aligned():

@@ -107,7 +107,13 @@ def ingest_symbols(payload: IngestSymbols, db: Annotated[Session, Depends(get_db
         }
         for s in payload.symbols
     ]
-    _upsert(db, Symbol, rows, pk=["name"], update_cols=["descripcion", "categoria", "digits", "updated_at"])
+    _upsert(
+        db,
+        Symbol,
+        rows,
+        pk=["name"],
+        update_cols=["descripcion", "categoria", "digits", "updated_at"],
+    )
     db.commit()
     return IngestResult(recibidas=len(rows))
 

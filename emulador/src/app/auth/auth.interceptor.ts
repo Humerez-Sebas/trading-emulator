@@ -34,12 +34,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       if (!retryable) return throwError(() => error);
 
       // this POST re-enters the interceptor, but /auth/refresh never retries
-      refreshInFlight ??= http
-        .post(`${environment.backendUrl}/auth/refresh`, {})
-        .pipe(
-          finalize(() => (refreshInFlight = null)),
-          shareReplay(1),
-        );
+      refreshInFlight ??= http.post(`${environment.backendUrl}/auth/refresh`, {}).pipe(
+        finalize(() => (refreshInFlight = null)),
+        shareReplay(1),
+      );
 
       return refreshInFlight.pipe(
         switchMap(() => next(withCreds)),

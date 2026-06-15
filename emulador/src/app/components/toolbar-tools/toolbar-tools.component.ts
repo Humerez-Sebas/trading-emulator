@@ -74,7 +74,13 @@ export class ToolbarToolsComponent {
   }
 
   /** Closed trades, latest first (the one you just hid is on top). */
-  tradesNewestFirst(): { id: string; side: string; closeTime: number; profit: number; hidden: boolean }[] {
+  tradesNewestFirst(): {
+    id: string;
+    side: string;
+    closeTime: number;
+    profit: number;
+    hidden: boolean;
+  }[] {
     return this.closedTrades().slice().reverse();
   }
 

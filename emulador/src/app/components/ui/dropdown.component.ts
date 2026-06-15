@@ -1,4 +1,13 @@
-import { Component, ElementRef, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 
 export interface DropdownOption {
   value: string;
@@ -34,7 +43,18 @@ let ddSeq = 0;
       <span class="dd-value" [class.dd-placeholder]="!selectedLabel()">
         {{ selectedLabel() || placeholder() }}
       </span>
-      <svg class="dd-caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg
+        class="dd-caret"
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
         <polyline points="6 9 12 15 18 9" />
       </svg>
     </button>
@@ -61,7 +81,18 @@ let ddSeq = 0;
           >
             {{ opt.label }}
             @if (opt.value === value()) {
-              <svg class="dd-check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg
+                class="dd-check"
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             }

@@ -182,7 +182,10 @@ export class WorkspaceDbService {
       db.transaction(SERIES_STORE, 'readonly').objectStore(SERIES_STORE).get(`${symbol}|${tf}`),
     );
     if (!record?.candles.length) return null;
-    return { lastTime: record.candles[record.candles.length - 1].time, count: record.candles.length };
+    return {
+      lastTime: record.candles[record.candles.length - 1].time,
+      count: record.candles.length,
+    };
   }
 
   /** Meta record of one workspace (no candle series). */

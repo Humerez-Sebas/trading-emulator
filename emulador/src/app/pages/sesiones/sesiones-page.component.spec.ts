@@ -108,7 +108,12 @@ describe('SesionesPageComponent', () => {
 
   it('reload populates metas + folders and sets state ok', async () => {
     const meta = workspaceMeta({ symbol: 'XAUUSD' });
-    create({ db: { listMetas: vi.fn().mockResolvedValue([meta]), listFolders: vi.fn().mockResolvedValue([folder()]) } });
+    create({
+      db: {
+        listMetas: vi.fn().mockResolvedValue([meta]),
+        listFolders: vi.fn().mockResolvedValue([folder()]),
+      },
+    });
     await settle();
     expect(component.state()).toBe('ok');
     expect(component.folders()).toHaveLength(1);
@@ -137,7 +142,11 @@ describe('SesionesPageComponent', () => {
       createdAt: 100,
       trading: { ...defaultTradingData(), folderId: 'ghost' },
     });
-    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [inFolder, orphan], lastModified: 300 });
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      sessions: [inFolder, orphan],
+      lastModified: 300,
+    });
     create({
       db: {
         listMetas: vi.fn().mockResolvedValue([meta]),
@@ -172,7 +181,11 @@ describe('SesionesPageComponent', () => {
   });
 
   it('uses LIVE NgRx state for the current asset, DB meta for others', async () => {
-    const liveTrading: TradingData = { ...defaultTradingData(), sessionName: 'Vivo', balance: 12345 };
+    const liveTrading: TradingData = {
+      ...defaultTradingData(),
+      sessionName: 'Vivo',
+      balance: 12345,
+    };
     const mXau = workspaceMeta({ symbol: 'XAUUSD' });
     create({
       currentAsset: 'XAUUSD',
@@ -217,7 +230,10 @@ describe('SesionesPageComponent', () => {
   it('builds an equity curve from the closed-trade history', async () => {
     const t: TradingData = {
       ...defaultTradingData(),
-      history: [closed({ id: 'a', closeTime: 2, profit: 100 }), closed({ id: 'b', closeTime: 1, profit: -50 })],
+      history: [
+        closed({ id: 'a', closeTime: 2, profit: 100 }),
+        closed({ id: 'b', closeTime: 1, profit: -50 }),
+      ],
       balance: 10050,
     };
     const meta = workspaceMeta({ symbol: 'EURUSD', trading: t });
@@ -274,14 +290,19 @@ describe('SesionesPageComponent', () => {
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
     await component.rename(card({ symbol: 'XAUUSD', id: 's1' }));
-    expect(dispatch).toHaveBeenCalledWith(TradingActions.renameSession({ id: 's1', name: 'Nuevo' }));
+    expect(dispatch).toHaveBeenCalledWith(
+      TradingActions.renameSession({ id: 's1', name: 'Nuevo' }),
+    );
   });
 
   it('rename other-asset writes the meta directly', async () => {
     const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
     const getMeta = vi.fn().mockResolvedValue(meta);
     const putMeta = vi.fn().mockResolvedValue(undefined);
-    create({ currentAsset: 'US30', db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    create({
+      currentAsset: 'US30',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
     await component.rename(card({ symbol: 'EURUSD', id: 's1' }));
@@ -329,9 +350,7 @@ describe('SesionesPageComponent', () => {
     dialogsStub.prompt.mockResolvedValue('Scalping');
     await settle();
     await component.createFolder();
-    expect(putFolder).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'Scalping', order: 3 }),
-    );
+    expect(putFolder).toHaveBeenCalledWith(expect.objectContaining({ name: 'Scalping', order: 3 }));
   });
 
   it('createFolder cancelled is a no-op', async () => {
@@ -349,7 +368,9 @@ describe('SesionesPageComponent', () => {
     dialogsStub.prompt.mockResolvedValue('Renombrada');
     await settle();
     await component.renameFolder(folder({ id: 'f1', name: 'Vieja' }));
-    expect(putFolder).toHaveBeenCalledWith(expect.objectContaining({ id: 'f1', name: 'Renombrada' }));
+    expect(putFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'f1', name: 'Renombrada' }),
+    );
   });
 
   it('deleteFolder (confirmed) removes it', async () => {
@@ -383,7 +404,10 @@ describe('SesionesPageComponent', () => {
     const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
     const getMeta = vi.fn().mockResolvedValue(meta);
     const putMeta = vi.fn().mockResolvedValue(undefined);
-    create({ currentAsset: 'US30', db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    create({
+      currentAsset: 'US30',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
     await settle();
     await component.moveToFolder(card({ symbol: 'EURUSD', id: 's1', folderId: null }), 'f1');
     expect(putMeta).toHaveBeenCalled();

@@ -49,8 +49,8 @@
       <div class="empty">
         <p>No se pudo conectar con el servidor.</p>
         <p class="hint">
-          Levanta el backend con <code>docker compose up</code> y vuelve a intentar. Mientras
-          tanto puedes <a routerLink="/">cargar un CSV manualmente</a>.
+          Levanta el backend con <code>docker compose up</code> y vuelve a intentar. Mientras tanto
+          puedes <a routerLink="/">cargar un CSV manualmente</a>.
         </p>
         <button appButton variant="primary" class="retry" (click)="load()">Reintentar</button>
       </div>
@@ -85,7 +85,10 @@
             @for (s of g.items; track s.name) {
               <article class="card" [class.picked]="isSelected(s.name)">
                 <header class="card-head">
-                  <label class="pick" [title]="isSelected(s.name) ? 'Quitar de mis activos' : 'Añadir a mis activos'">
+                  <label
+                    class="pick"
+                    [title]="isSelected(s.name) ? 'Quitar de mis activos' : 'Añadir a mis activos'"
+                  >
                     <input
                       type="checkbox"
                       [checked]="isSelected(s.name)"
@@ -93,7 +96,14 @@
                       [attr.aria-label]="'Seguir ' + s.name"
                     />
                     <span class="box" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="3"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
                         <polyline points="20 6 9 17 4 12"></polyline>
                       </svg>
                     </span>
@@ -123,7 +133,9 @@
                   </p>
                   <div class="tf-chips" aria-label="Temporalidades disponibles">
                     @for (c of s.cobertura; track c.tf) {
-                      <span appBadge [chip]="true" [appTooltip]="tfTooltip(c)" tabindex="0">{{ c.tf }}</span>
+                      <span appBadge [chip]="true" [appTooltip]="tfTooltip(c)" tabindex="0">{{
+                        c.tf
+                      }}</span>
                     }
                   </div>
                   <details class="cov-detail">

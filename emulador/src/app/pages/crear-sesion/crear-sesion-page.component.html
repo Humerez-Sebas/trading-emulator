@@ -51,7 +51,9 @@
           @case (2) {
             <section aria-labelledby="step2-title">
               <h2 id="step2-title">{{ selected()?.name }} — temporalidades y fecha de inicio</h2>
-              <p class="help">El gráfico abrirá en la fecha elegida con el histórico previo detrás.</p>
+              <p class="help">
+                El gráfico abrirá en la fecha elegida con el histórico previo detrás.
+              </p>
 
               <fieldset class="tf-set">
                 <legend>Temporalidades</legend>
@@ -162,7 +164,12 @@
         }
 
         <footer class="actions">
-          <button appButton variant="ghost" (click)="back()" [disabled]="step() === 1 || downloading()">
+          <button
+            appButton
+            variant="ghost"
+            (click)="back()"
+            [disabled]="step() === 1 || downloading()"
+          >
             Atrás
           </button>
           @if (step() < 3) {

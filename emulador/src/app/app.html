@@ -20,11 +20,7 @@
       Emulador
     </a>
     <a routerLink="/mercados" routerLinkActive="active">Mercados</a>
-    <a
-      routerLink="/sesiones"
-      routerLinkActive="active"
-      [routerLinkActiveOptions]="{ exact: true }"
-    >
+    <a routerLink="/sesiones" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
       Sesiones
     </a>
     <a routerLink="/sesiones/crear" routerLinkActive="active">Nueva sesión</a>
@@ -64,7 +60,9 @@
     } @else if (status() === 'anonymous') {
       <a class="login-link" routerLink="/login">Iniciar sesión</a>
     } @else if (status() === 'offline') {
-      <span class="offline-pill" title="Backend no disponible — modo local con CSV">Sin conexión</span>
+      <span class="offline-pill" title="Backend no disponible — modo local con CSV"
+        >Sin conexión</span
+      >
     }
   </nav>
   <div class="content">

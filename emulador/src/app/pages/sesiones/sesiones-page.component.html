@@ -6,7 +6,17 @@
     </div>
     <div class="head-actions">
       <button appButton variant="ghost" (click)="createFolder()">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          width="15"
+          height="15"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
           <path d="M12 11v4M10 13h4" />
         </svg>
@@ -31,7 +41,18 @@
           title="Todavía no hay sesiones"
           hint="Crea tu primera sesión con el asistente: elige activo, temporalidades y fecha de inicio, y el gráfico se abre listo para operar."
         >
-          <svg icon viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg
+            icon
+            viewBox="0 0 24 24"
+            width="40"
+            height="40"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
           </svg>
           <a appButton variant="primary" routerLink="/sesiones/crear">Crear la primera sesión</a>
@@ -51,17 +72,59 @@
                 (dragleave)="onSidebarDragLeave(item)"
                 (drop)="onSidebarDrop(item, $event)"
               >
-                <button class="side-btn" (click)="selectFolder(item.key)" [attr.aria-current]="selectedKey() === item.key">
+                <button
+                  class="side-btn"
+                  (click)="selectFolder(item.key)"
+                  [attr.aria-current]="selectedKey() === item.key"
+                >
                   <span class="side-ic" aria-hidden="true">
                     @switch (item.key) {
                       @case ('all') {
-                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M3 12h18M3 19h18" /></svg>
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="15"
+                          height="15"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.75"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M3 5h18M3 12h18M3 19h18" />
+                        </svg>
                       }
                       @case ('__none__') {
-                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 6.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-5.5A2 2 0 0 0 16.8 5H7.2a2 2 0 0 0-1.7 1.5Z" /></svg>
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="15"
+                          height="15"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.75"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+                          <path
+                            d="M5.5 6.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-5.5A2 2 0 0 0 16.8 5H7.2a2 2 0 0 0-1.7 1.5Z"
+                          />
+                        </svg>
                       }
                       @default {
-                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg>
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="15"
+                          height="15"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.75"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path
+                            d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"
+                          />
+                        </svg>
                       }
                     }
                   </span>
@@ -71,7 +134,10 @@
                 @if (item.removable) {
                   <ui-menu ariaLabel="Acciones de la carpeta" size="sm">
                     <button class="ui-menu-item" (click)="renameFolderRow(item)">Renombrar</button>
-                    <button class="ui-menu-item ui-menu-item--danger" (click)="deleteFolderRow(item)">
+                    <button
+                      class="ui-menu-item ui-menu-item--danger"
+                      (click)="deleteFolderRow(item)"
+                    >
                       <app-trash-icon /> Eliminar
                     </button>
                   </ui-menu>
@@ -79,7 +145,18 @@
               </div>
             }
             <button class="side-add" (click)="createFolder()">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              <svg
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
               Nueva carpeta
             </button>
           </aside>
@@ -88,25 +165,45 @@
           <div class="content">
             <div class="toolbar">
               <label class="search">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
                   <circle cx="11" cy="11" r="7"></circle>
                   <line x1="21" y1="21" x2="16.5" y2="16.5"></line>
                 </svg>
                 <span class="sr-only">Buscar sesión</span>
-                <input type="search" placeholder="Buscar por nombre o activo…" [value]="search()" (input)="onSearch($event)" />
+                <input
+                  type="search"
+                  placeholder="Buscar por nombre o activo…"
+                  [value]="search()"
+                  (input)="onSearch($event)"
+                />
               </label>
 
               <ui-segmented
                 label="Agrupar"
                 ariaLabel="Agrupar por"
-                [options]="[{ value: 'carpeta', label: 'Carpeta' }, { value: 'activo', label: 'Activo' }]"
+                [options]="[
+                  { value: 'carpeta', label: 'Carpeta' },
+                  { value: 'activo', label: 'Activo' },
+                ]"
                 [value]="groupBy()"
                 (valueChange)="setGroupBy($any($event))"
               />
 
               <ui-segmented
                 ariaLabel="Densidad de la lista"
-                [options]="[{ value: 'card', label: 'Tarjetas' }, { value: 'row', label: 'Filas' }]"
+                [options]="[
+                  { value: 'card', label: 'Tarjetas' },
+                  { value: 'row', label: 'Filas' },
+                ]"
                 [value]="density()"
                 (valueChange)="setDensity($event)"
               />
@@ -149,7 +246,10 @@
                     </span>
                     <span class="num muted">{{ card.trades }}</span>
                     <span class="muted">{{ card.createdAt | date: 'dd MMM yyyy' }}</span>
-                    <ng-container [ngTemplateOutlet]="actionMenu" [ngTemplateOutletContext]="{ card }" />
+                    <ng-container
+                      [ngTemplateOutlet]="actionMenu"
+                      [ngTemplateOutletContext]="{ card }"
+                    />
                   </div>
                 }
               </div>
@@ -168,8 +268,19 @@
                     <div class="group-head">
                       <h2>
                         @if (g.folderId) {
-                          <svg class="folder-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+                          <svg
+                            class="folder-ic"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.75"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"
+                            />
                           </svg>
                         }
                         {{ g.label }}
@@ -190,7 +301,11 @@
 
                   @if (!g.cards.length) {
                     <p class="group-empty">
-                      {{ groupBy() === 'carpeta' && selectedKey() === 'all' ? 'Suelta sesiones aquí.' : 'Sin sesiones.' }}
+                      {{
+                        groupBy() === 'carpeta' && selectedKey() === 'all'
+                          ? 'Suelta sesiones aquí.'
+                          : 'Sin sesiones.'
+                      }}
                     </p>
                   }
 
@@ -206,7 +321,22 @@
                       >
                         <header class="card-head">
                           <span class="grip" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="18" r="1" /></svg>
+                            <svg
+                              viewBox="0 0 24 24"
+                              width="14"
+                              height="14"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2"
+                              stroke-linecap="round"
+                            >
+                              <circle cx="9" cy="6" r="1" />
+                              <circle cx="9" cy="12" r="1" />
+                              <circle cx="9" cy="18" r="1" />
+                              <circle cx="15" cy="6" r="1" />
+                              <circle cx="15" cy="12" r="1" />
+                              <circle cx="15" cy="18" r="1" />
+                            </svg>
                           </span>
                           <div class="card-title">
                             <h3>{{ card.name }}</h3>
@@ -217,24 +347,49 @@
                               <span appBadge tone="neutral" [chip]="true">{{ card.symbol }}</span>
                             </div>
                           </div>
-                          <button appButton variant="subtle" size="sm" (click)="open(card)">Abrir</button>
-                          <ng-container [ngTemplateOutlet]="actionMenu" [ngTemplateOutletContext]="{ card }" />
+                          <button appButton variant="subtle" size="sm" (click)="open(card)">
+                            Abrir
+                          </button>
+                          <ng-container
+                            [ngTemplateOutlet]="actionMenu"
+                            [ngTemplateOutletContext]="{ card }"
+                          />
                         </header>
 
                         <!-- P/L hero -->
                         <div class="pl-hero">
-                          <span class="pl-value" [class.up]="card.pnl >= 0" [class.down]="card.pnl < 0">
+                          <span
+                            class="pl-value"
+                            [class.up]="card.pnl >= 0"
+                            [class.down]="card.pnl < 0"
+                          >
                             {{ card.pnl >= 0 ? '+' : '' }}{{ card.pnl | number: '1.2-2' }} $
                           </span>
-                          <span class="pl-pct" [class.up]="card.pnl >= 0" [class.down]="card.pnl < 0">
+                          <span
+                            class="pl-pct"
+                            [class.up]="card.pnl >= 0"
+                            [class.down]="card.pnl < 0"
+                          >
                             {{ card.pnl >= 0 ? '+' : '' }}{{ returnPct(card) | percent: '1.1-1' }}
                           </span>
                         </div>
 
                         <!-- equity preview / zero-trade baseline -->
                         @if (card.equity.length > 1) {
-                          <svg class="spark" viewBox="0 0 300 40" preserveAspectRatio="none" [class.up]="card.pnl >= 0" [class.down]="card.pnl < 0" aria-hidden="true">
-                            <polyline [attr.points]="sparkPoints(card.equity, 300, 40)" fill="none" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+                          <svg
+                            class="spark"
+                            viewBox="0 0 300 40"
+                            preserveAspectRatio="none"
+                            [class.up]="card.pnl >= 0"
+                            [class.down]="card.pnl < 0"
+                            aria-hidden="true"
+                          >
+                            <polyline
+                              [attr.points]="sparkPoints(card.equity, 300, 40)"
+                              fill="none"
+                              stroke-width="1.5"
+                              vector-effect="non-scaling-stroke"
+                            />
                           </svg>
                         } @else {
                           <div class="spark-empty" aria-hidden="true">
@@ -286,7 +441,20 @@
     >
       Sin carpeta
       @if (!card.folderId) {
-        <svg class="check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+        <svg
+          class="check"
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
       }
     </button>
     @for (f of folders(); track f.id) {
@@ -297,7 +465,20 @@
       >
         {{ f.name }}
         @if (card.folderId === f.id) {
-          <svg class="check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+          <svg
+            class="check"
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
         }
       </button>
     }

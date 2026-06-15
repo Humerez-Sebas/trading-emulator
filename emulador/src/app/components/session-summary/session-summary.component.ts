@@ -15,7 +15,14 @@ import { ButtonDirective } from '../ui/button.directive';
 @Component({
   selector: 'app-session-summary',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, PercentPipe, TrashIconComponent, ModalComponent, ButtonDirective],
+  imports: [
+    DatePipe,
+    DecimalPipe,
+    PercentPipe,
+    TrashIconComponent,
+    ModalComponent,
+    ButtonDirective,
+  ],
   templateUrl: './session-summary.component.html',
   styleUrl: './session-summary.component.css',
 })

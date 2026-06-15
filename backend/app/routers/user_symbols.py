@@ -22,9 +22,7 @@ def get_user_symbols(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    rows = db.scalars(
-        select(UserSymbol.symbol).where(UserSymbol.user_id == user.id)
-    ).all()
+    rows = db.scalars(select(UserSymbol.symbol).where(UserSymbol.user_id == user.id)).all()
     return UserSymbolsOut(symbols=sorted(rows), total=len(rows))
 
 

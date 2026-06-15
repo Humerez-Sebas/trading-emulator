@@ -539,7 +539,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.store
       .select(selectActiveTfShortfall)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((last) => this.coverageBanner.set(last === null ? null : this.formatShortfall(last)));
+      .subscribe((last) =>
+        this.coverageBanner.set(last === null ? null : this.formatShortfall(last)),
+      );
 
     // drawings: repaint when they change
     this.store

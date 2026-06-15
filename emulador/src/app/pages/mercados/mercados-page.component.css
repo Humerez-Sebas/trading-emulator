@@ -193,7 +193,11 @@ h1 {
   border-radius: 5px;
   color: transparent;
   background: var(--surface-2);
-  transition: background 120ms, border-color 120ms, color 120ms, transform 120ms;
+  transition:
+    background 120ms,
+    border-color 120ms,
+    color 120ms,
+    transform 120ms;
 }
 .pick .box svg {
   width: 13px;

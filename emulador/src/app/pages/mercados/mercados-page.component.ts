@@ -28,7 +28,13 @@ type MarketMode = 'todos' | 'mis';
 @Component({
   selector: 'app-mercados-page',
   standalone: true,
-  imports: [RouterLink, ButtonDirective, BadgeDirective, TooltipDirective, SegmentedControlComponent],
+  imports: [
+    RouterLink,
+    ButtonDirective,
+    BadgeDirective,
+    TooltipDirective,
+    SegmentedControlComponent,
+  ],
   templateUrl: './mercados-page.component.html',
   styleUrl: './mercados-page.component.css',
 })
