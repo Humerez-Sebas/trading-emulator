@@ -1,0 +1,12 @@
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  height: 100%;
+  /* button sizing/coloring consumed by the shared app-toolbar-tools */
+  --tool-size: 34px;
+  --tool-color: var(--text-muted);
+}

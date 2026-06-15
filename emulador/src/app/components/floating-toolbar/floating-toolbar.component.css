@@ -1,0 +1,35 @@
+.bar {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  /* button sizing/coloring consumed by the shared app-toolbar-tools */
+  --tool-size: 30px;
+  --tool-color: var(--text);
+}
+
+.handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 30px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: grab;
+  padding: 0;
+}
+.handle:active {
+  cursor: grabbing;
+}
+.handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

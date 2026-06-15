@@ -1,0 +1,93 @@
+<div class="wrap">
+  <form class="card" (ngSubmit)="submit()" aria-labelledby="auth-title">
+    <div class="brand" aria-hidden="true">
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+        <polyline points="16 7 22 7 22 13"></polyline>
+      </svg>
+    </div>
+    <h1 id="auth-title">{{ isLogin() ? 'Iniciar sesión' : 'Crear cuenta' }}</h1>
+    <p class="sub">
+      {{
+        isLogin()
+          ? 'Entra para acceder a los mercados y tus sesiones.'
+          : 'Solo necesitas un usuario y una contraseña.'
+      }}
+    </p>
+
+    @if (offline()) {
+      <p class="offline" role="status">
+        El servidor no está disponible. Puedes seguir usando el emulador sin cuenta
+        <a routerLink="/">cargando un CSV</a>.
+      </p>
+    }
+
+    <label class="field">
+      <span>Usuario</span>
+      <input
+        type="text"
+        name="username"
+        autocomplete="username"
+        [ngModel]="username()"
+        (ngModelChange)="username.set($event)"
+        required
+        minlength="3"
+      />
+    </label>
+
+    <label class="field">
+      <span>Contraseña</span>
+      <input
+        type="password"
+        name="password"
+        [attr.autocomplete]="isLogin() ? 'current-password' : 'new-password'"
+        [ngModel]="password()"
+        (ngModelChange)="password.set($event)"
+        required
+        minlength="6"
+      />
+      @if (!isLogin()) {
+        <small>Mínimo 6 caracteres.</small>
+      }
+    </label>
+
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+
+    <button
+      appButton
+      variant="primary"
+      [block]="true"
+      class="submit"
+      type="submit"
+      [disabled]="!valid() || pending()"
+    >
+      @if (pending()) {
+        <span class="spinner" aria-hidden="true"></span>
+        {{ isLogin() ? 'Entrando…' : 'Creando cuenta…' }}
+      } @else {
+        {{ isLogin() ? 'Entrar' : 'Crear cuenta' }}
+      }
+    </button>
+
+    <p class="alt">
+      @if (isLogin()) {
+        @if (registrationEnabled) {
+          ¿No tienes cuenta? <a routerLink="/registro">Regístrate</a>
+        }
+      } @else {
+        ¿Ya tienes cuenta? <a routerLink="/login">Inicia sesión</a>
+      }
+    </p>
+  </form>
+</div>

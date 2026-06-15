@@ -1,0 +1,323 @@
+/* ============================================================
+   UI primitives — global classes applied by the shared directives
+   in src/app/components/ui/. Tokens come from styles.css.
+   These replace the .primary/.ghost/.seg-btn/.icon-btn/input blocks
+   that were copy-pasted across 5–6 component stylesheets.
+   ============================================================ */
+
+/* ---- Button (appButton) ---- */
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+.ui-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ui-btn:disabled,
+.ui-btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* sizes */
+.ui-btn--sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+}
+.ui-btn--md {
+  padding: var(--space-2) var(--space-4);
+}
+
+/* variants */
+.ui-btn--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.ui-btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.ui-btn--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+.ui-btn--ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.ui-btn--subtle {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.ui-btn--subtle:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.ui-btn--danger {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--danger);
+}
+.ui-btn--danger:hover:not(:disabled) {
+  background: var(--danger-subtle);
+  border-color: var(--danger);
+}
+
+.ui-btn--danger-solid {
+  background: var(--danger);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+.ui-btn--danger-solid:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+/* full-width modifier */
+.ui-btn--block {
+  width: 100%;
+}
+
+/* ---- Icon button (appIconButton) ---- */
+.ui-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 0;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.ui-icon-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ui-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ui-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ui-icon-btn--sm {
+  width: 24px;
+  height: 24px;
+}
+.ui-icon-btn--lg {
+  width: 36px;
+  height: 36px;
+}
+/* borderless variant (toolbars/menus) */
+.ui-icon-btn--ghost {
+  border-color: transparent;
+}
+.ui-icon-btn--danger:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.ui-icon-btn--muted {
+  opacity: 0.45;
+}
+
+/* ---- Badge / Chip (appBadge) ---- */
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-normal);
+  white-space: nowrap;
+}
+.ui-badge--accent {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.ui-badge--neutral {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.ui-badge--up {
+  background: var(--up-subtle);
+  color: var(--up);
+}
+.ui-badge--down {
+  background: var(--down-subtle);
+  color: var(--down);
+}
+.ui-badge--outline {
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+/* squared chip (e.g. symbol tag) */
+.ui-badge--chip {
+  border-radius: var(--radius-xs);
+  padding: 1px 7px;
+}
+
+/* ---- Input / Field (appInput) ---- */
+.ui-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.ui-input::placeholder {
+  color: var(--text-muted);
+}
+.ui-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+.ui-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ui-input--invalid {
+  border-color: var(--danger);
+}
+.ui-input--invalid:focus {
+  box-shadow: 0 0 0 2px var(--danger);
+}
+
+/* ---- Modal helpers (shared by app-modal hosts) ---- */
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+}
+.modal-foot--split {
+  justify-content: space-between;
+}
+.modal-pad {
+  padding: var(--space-4) var(--space-5);
+}
+
+/* ---- Tooltip (appTooltip, appended to body) ---- */
+.ui-tooltip {
+  position: fixed;
+  z-index: 1100;
+  max-width: 240px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--elevation-2);
+  color: var(--text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.ui-tooltip.is-visible {
+  opacity: 1;
+}
+
+/* ---- Menu items (projected into ui-menu) ---- */
+.ui-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.ui-menu-item:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.ui-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ui-menu-item--active {
+  color: var(--accent);
+}
+.ui-menu-item--danger {
+  color: var(--danger);
+}
+.ui-menu-item--danger:hover:not(:disabled) {
+  background: var(--danger-subtle);
+}
+.ui-menu-item .check {
+  margin-left: auto;
+  color: var(--accent);
+}
+.ui-menu-label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.ui-menu-sep {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border);
+}
+
+/* ---- Field group (label + control) ---- */
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ui-field > .ui-field-label,
+.ui-field > label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+}

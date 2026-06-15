@@ -1,0 +1,52 @@
+@if (open()) {
+  <app-modal title="¿Dónde empieza tu sesión?" size="sm" (closed)="skip()">
+    <div class="modal-pad body">
+      <p class="help">
+        El gráfico abrirá en la fecha elegida con el histórico previo detrás, listo para avanzar
+        vela a vela.
+      </p>
+
+      <div class="field">
+        <span>Fecha de inicio del replay</span>
+        <ui-date-picker
+          ariaLabel="Fecha de inicio del replay"
+          [value]="startDate()"
+          [min]="range() ? isoDate(range()!.from) : ''"
+          [max]="range() ? isoDate(range()!.to) : ''"
+          (valueChange)="startDate.set($event)"
+        />
+        @if (range(); as r) {
+          <small>Datos disponibles: {{ isoDate(r.from) }} → {{ isoDate(r.to) }}</small>
+        }
+        @if (!startValid() && startDate()) {
+          <small class="invalid" role="alert">La fecha debe estar dentro del rango del CSV.</small>
+        }
+      </div>
+
+      <div class="field">
+        <span>Fecha de fin (opcional)</span>
+        <ui-date-picker
+          ariaLabel="Fecha de fin"
+          placeholder="Sin fin programado"
+          [value]="endDate()"
+          [min]="startDate() || ''"
+          [max]="range() ? isoDate(range()!.to) : ''"
+          (valueChange)="endDate.set($event)"
+        />
+        <small>Al llegar el replay a esta fecha, la sesión termina sola.</small>
+        @if (!endValid() && endDate()) {
+          <small class="invalid" role="alert">
+            El fin debe ser posterior al inicio y estar dentro del rango.
+          </small>
+        }
+      </div>
+    </div>
+
+    <div footer class="modal-foot">
+      <button appButton variant="ghost" (click)="skip()">Omitir</button>
+      <button appButton variant="primary" [disabled]="!valid()" (click)="confirm()">
+        Empezar aquí
+      </button>
+    </div>
+  </app-modal>
+}

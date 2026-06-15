@@ -1,0 +1,36 @@
+# --- Secrets / local env ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# --- Node / Angular ---
+node_modules/
+dist/
+.angular/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# --- Logs / data dumps (re-harvestable; keep the small sample below) ---
+*.log
+datos/
+*.csv
+!emulador/public/xauusd_h4.csv
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+
+# --- Claude / tooling local state ---
+.claude/

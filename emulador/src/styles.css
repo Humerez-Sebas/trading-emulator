@@ -1,0 +1,171 @@
+/* ============================================================
+   Design tokens — TradingView style (see state/settings)
+   Dark theme (default) and light theme via [data-theme] on <html>.
+   Typography: Inter (design system "Modern Dark Cinema").
+
+   Layers:
+   1. Color + elevation  — per theme (dark default / light)
+   2. Scales             — theme-independent: type, radius, spacing, motion
+   Back-compat aliases (--radius, --shadow) are kept so existing CSS
+   keeps working while call sites migrate to the scales.
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ---- 1a. Color + elevation: dark (default) ---- */
+:root,
+:root[data-theme='dark'] {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #181818;
+  --surface-3: #1f1f1f; /* popovers, menus above surface-2 */
+  --border: #222222;
+  --border-strong: #333333; /* hover/active emphasis */
+  --text: #d1d4dc;
+  --text-muted: #787b86;
+  --accent: #2962ff;
+  --accent-hover: #1e53e5;
+  --on-accent: #ffffff;
+  --up: #26a69a;
+  --down: #ef5350;
+  --warning: #f0b90b;
+
+  /* semantic intents */
+  --danger: var(--down);
+  --danger-hover: #d23c3a;
+  --success: var(--up);
+
+  /* translucent fills (was inlined color-mix everywhere) */
+  --accent-subtle: color-mix(in srgb, var(--accent) 14%, transparent);
+  --danger-subtle: color-mix(in srgb, var(--down) 14%, transparent);
+  --up-subtle: color-mix(in srgb, var(--up) 14%, transparent);
+  --down-subtle: color-mix(in srgb, var(--down) 14%, transparent);
+  --warning-subtle: color-mix(in srgb, var(--warning) 14%, transparent);
+
+  /* elevation ladder (dark-aware) */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.4); /* resting cards */
+  --elevation-2: 0 2px 8px rgba(0, 0, 0, 0.45); /* dropdowns/popovers (== old --shadow) */
+  --elevation-3: 0 8px 28px rgba(0, 0, 0, 0.55); /* modals */
+  --shadow: var(--elevation-2); /* back-compat alias */
+
+  color-scheme: dark;
+}
+
+/* ---- 1b. Color + elevation: light ---- */
+:root[data-theme='light'] {
+  --bg: #ffffff;
+  --surface: #f0f3fa;
+  --surface-2: #e0e3eb;
+  --surface-3: #d6dae3;
+  --border: #e0e3eb;
+  --border-strong: #c4c9d4;
+  --text: #131722;
+  --text-muted: #787b86;
+  --accent: #2962ff;
+  --accent-hover: #1e53e5;
+  --on-accent: #ffffff;
+  --up: #089981;
+  --down: #f23645;
+  --warning: #bb8800;
+
+  --danger: var(--down);
+  --danger-hover: #d92c3b;
+  --success: var(--up);
+
+  --accent-subtle: color-mix(in srgb, var(--accent) 14%, transparent);
+  --danger-subtle: color-mix(in srgb, var(--down) 14%, transparent);
+  --up-subtle: color-mix(in srgb, var(--up) 14%, transparent);
+  --down-subtle: color-mix(in srgb, var(--down) 14%, transparent);
+  --warning-subtle: color-mix(in srgb, var(--warning) 14%, transparent);
+
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px rgba(100, 110, 130, 0.12);
+  --elevation-2: 0 2px 8px rgba(100, 110, 130, 0.18);
+  --elevation-3: 0 8px 28px rgba(100, 110, 130, 0.24);
+  --shadow: var(--elevation-2);
+
+  color-scheme: light;
+}
+
+/* ---- 2. Theme-independent scales ---- */
+:root {
+  /* typography (desktop-dense base = 13px per TradingView norms) */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 22px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+
+  /* border radius */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --radius-full: 50%;
+  --radius: var(--radius-sm); /* back-compat alias */
+
+  /* spacing (8px base + half-step) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* focus ring */
+  --ring: 0 0 0 2px var(--accent);
+
+  /* motion */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums; /* aligned digits in data */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* native form controls: consistent disabled affordance (was unstyled) */
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

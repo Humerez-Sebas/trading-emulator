@@ -1,0 +1,64 @@
+@if (panel().open) {
+  <section class="dock" [attr.aria-label]="'Panel ' + panel().tab">
+    @switch (panel().tab) {
+      @case ('trade') {
+        <app-trade-panel></app-trade-panel>
+      }
+      @case ('settings') {
+        <app-settings-panel></app-settings-panel>
+      }
+    }
+  </section>
+}
+
+<nav class="rail" aria-label="Paneles laterales">
+  @for (t of tabs; track t.id) {
+    <button
+      class="rail-btn"
+      [class.active]="isActive(t.id)"
+      (click)="setTab(t.id)"
+      [appTooltip]="t.label + (isActive(t.id) ? ' (cerrar)' : '')"
+      tooltipPosition="left"
+      [attr.aria-label]="t.label"
+      [attr.aria-pressed]="isActive(t.id)"
+    >
+      @switch (t.id) {
+        @case ('trade') {
+          <!-- candlesticks -->
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M8 4v3" />
+            <rect x="6" y="7" width="4" height="8" rx="1" />
+            <path d="M8 15v4" />
+            <path d="M16 3v4" />
+            <rect x="14" y="7" width="4" height="6" rx="1" />
+            <path d="M16 13v6" />
+          </svg>
+        }
+        @case ('settings') {
+          <!-- gear -->
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"
+            />
+          </svg>
+        }
+      }
+    </button>
+  }
+</nav>

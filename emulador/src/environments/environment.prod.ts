@@ -1,0 +1,19 @@
+/**
+ * Production environment (swapped in by angular.json fileReplacements for the
+ * `production` build configuration).
+ *
+ * `backendUrl: ''` makes every API call same-origin (relative path), which is
+ * how the full-stack Docker deploy works: nginx serves this SPA and reverse-
+ * proxies the backend routes (/auth, /symbols, /candles, /ingest, /user,
+ * /health) to the API container. Same-origin means no CORS and SameSite=Lax
+ * cookies just work.
+ *
+ * For a split deploy (frontend and API on different domains, e.g. Cloudflare
+ * Pages + Render), set this to the absolute API URL such as
+ * 'https://your-api.onrender.com' and configure the backend with
+ * COOKIE_SAMESITE=none, COOKIE_SECURE=true and CORS_ORIGINS=<frontend origin>.
+ */
+export const environment = {
+  backendUrl: '',
+  registrationEnabled: false,
+};

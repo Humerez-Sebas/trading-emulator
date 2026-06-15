@@ -1,0 +1,19 @@
+# Override that adds the frontend (Angular built + served by nginx), giving a
+# full same-origin stack. Use together with the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.full.yml up --build
+#
+# Then open http://localhost:8080. nginx serves the SPA and reverse-proxies the
+# backend routes to the `backend` container, so it's same-origin: no CORS and
+# SameSite=Lax cookies work as-is.
+
+services:
+  frontend:
+    build:
+      context: ./emulador
+    depends_on:
+      - backend
+    ports:
+      - '127.0.0.1:8080:80'
+    networks:
+      - app-net

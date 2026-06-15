@@ -1,0 +1,73 @@
+<div class="shell">
+  <nav class="nav">
+    <span class="brand">
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+        <polyline points="16 7 22 7 22 13"></polyline>
+      </svg>
+      Emulador
+    </span>
+    <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+      Emulador
+    </a>
+    <a routerLink="/mercados" routerLinkActive="active">Mercados</a>
+    <a
+      routerLink="/sesiones"
+      routerLinkActive="active"
+      [routerLinkActiveOptions]="{ exact: true }"
+    >
+      Sesiones
+    </a>
+    <a routerLink="/sesiones/crear" routerLinkActive="active">Nueva sesión</a>
+
+    <span class="spacer"></span>
+
+    @if (user(); as u) {
+      <div class="user-menu">
+        <button
+          class="user-btn"
+          (click)="menuOpen.set(!menuOpen())"
+          aria-haspopup="menu"
+          [attr.aria-expanded]="menuOpen()"
+        >
+          <span class="avatar" aria-hidden="true">{{ u.username.charAt(0).toUpperCase() }}</span>
+          {{ u.username }}
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+        @if (menuOpen()) {
+          <div class="menu" role="menu">
+            <button role="menuitem" (click)="logout()">Cerrar sesión</button>
+          </div>
+        }
+      </div>
+    } @else if (status() === 'anonymous') {
+      <a class="login-link" routerLink="/login">Iniciar sesión</a>
+    } @else if (status() === 'offline') {
+      <span class="offline-pill" title="Backend no disponible — modo local con CSV">Sin conexión</span>
+    }
+  </nav>
+  <div class="content">
+    <router-outlet></router-outlet>
+  </div>
+</div>

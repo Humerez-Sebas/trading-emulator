@@ -1,0 +1,95 @@
+<div class="toolbar">
+  <label class="file-btn">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="17 8 12 3 7 8"></polyline>
+      <line x1="12" y1="3" x2="12" y2="15"></line>
+    </svg>
+    Cargar CSV
+    <input type="file" accept=".csv" multiple (change)="onFiles($event)" />
+  </label>
+
+  @if (assets().length) {
+    <ui-dropdown
+      ariaLabel="Activo"
+      [options]="assetOptions()"
+      [value]="currentAsset() ?? ''"
+      (valueChange)="onAsset($event)"
+    />
+  }
+
+  <div class="tf-group" role="group" aria-label="Temporalidad">
+    @for (tf of tfs(); track tf) {
+      <button
+        class="tf-btn"
+        [class.active]="tf === activeTf()"
+        [class.short]="isShortTf(tf)"
+        [appTooltip]="isShortTf(tf) ? shortTfTip(tf) : ''"
+        (click)="setTf(tf)"
+      >
+        {{ tf }}
+      </button>
+    }
+  </div>
+
+  <div class="replay-group" role="group" aria-label="Replay">
+    <button class="ctl-btn" (click)="stepBack()" appTooltip="Retroceder una vela">−1</button>
+    <button class="ctl-btn" (click)="step()" appTooltip="Avanzar una vela">+1</button>
+    @if (playing()) {
+      <button class="ctl-btn" (click)="pause()" appTooltip="Pausar" aria-label="Pausar">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="5" y="4" width="5" height="16" rx="1"></rect>
+          <rect x="14" y="4" width="5" height="16" rx="1"></rect>
+        </svg>
+      </button>
+    } @else {
+      <button class="ctl-btn" (click)="play()" appTooltip="Reproducir" aria-label="Reproducir">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="6,4 20,12 6,20"></polygon>
+        </svg>
+      </button>
+    }
+    <ui-dropdown
+      ariaLabel="Velocidad"
+      [options]="speedOptions"
+      [value]="msPerCandle() + ''"
+      (valueChange)="setSpeed($event)"
+    />
+  </div>
+
+  @if (progress(); as p) {
+    <span class="progress">{{ p.shown }} / {{ p.total }} velas</span>
+  }
+
+  @if (clockMs(); as ms) {
+    <span class="clock">{{ ms | date: 'dd MMM yyyy HH:mm' : 'UTC' }}</span>
+  }
+
+  @if (floatingPnl() !== null) {
+    <span
+      class="floating-pnl"
+      [class.up]="floatingPnl()! >= 0"
+      [class.down]="floatingPnl()! < 0"
+      title="P/L flotante de las posiciones abiertas"
+    >
+      P/L {{ floatingPnl() | number: '1.2-2' }} $
+    </span>
+  }
+
+  @if (error) {
+    <span class="error">{{ error }}</span>
+  }
+
+  @if (info) {
+    <span class="info">{{ info }}</span>
+  }
+</div>

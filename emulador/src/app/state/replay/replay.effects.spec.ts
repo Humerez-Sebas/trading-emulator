@@ -1,0 +1,144 @@
+import { TestBed } from '@angular/core/testing';
+import { provideMockActions } from '@ngrx/effects/testing';
+import { provideMockStore, MockStore } from '@ngrx/store/testing';
+import { Subject } from 'rxjs';
+import { firstValueFrom, take, toArray } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { ReplayEffects } from './replay.effects';
+import { ReplayActions } from './replay.actions';
+import {
+  selectActiveCandles,
+  selectMsPerCandle,
+  selectPlaying,
+  selectVisibleIndex,
+} from '../selectors';
+import { series } from '../../testing/fixtures';
+
+describe('ReplayEffects', () => {
+  let actions$: Subject<any>;
+  let store: MockStore;
+  let effects: ReplayEffects;
+
+  const candles = series(5, 0, 3600); // times: 0, 3600, 7200, 10800, 14400
+
+  beforeEach(() => {
+    actions$ = new Subject();
+    TestBed.configureTestingModule({
+      providers: [ReplayEffects, provideMockActions(() => actions$), provideMockStore()],
+    });
+    store = TestBed.inject(MockStore);
+    effects = TestBed.inject(ReplayEffects);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe('advance$', () => {
+    it('emits goToTime with the next candle time when idx+1 < length', async () => {
+      store.overrideSelector(selectActiveCandles, candles);
+      store.overrideSelector(selectVisibleIndex, 1); // next = candles[2].time = 7200
+      store.refreshState();
+
+      const p = firstValueFrom(effects.advance$);
+      actions$.next(ReplayActions.advanceCandle());
+
+      expect(await p).toEqual(ReplayActions.goToTime({ time: 7200 }));
+    });
+
+    it('emits endOfData when idx+1 >= candles.length', async () => {
+      store.overrideSelector(selectActiveCandles, candles);
+      store.overrideSelector(selectVisibleIndex, 4); // idx 4 is the last
+      store.refreshState();
+
+      const p = firstValueFrom(effects.advance$);
+      actions$.next(ReplayActions.advanceCandle());
+
+      expect(await p).toEqual(ReplayActions.endOfData());
+    });
+
+    it('emits endOfData when candles are empty', async () => {
+      store.overrideSelector(selectActiveCandles, []);
+      store.overrideSelector(selectVisibleIndex, -1);
+      store.refreshState();
+
+      const p = firstValueFrom(effects.advance$);
+      actions$.next(ReplayActions.advanceCandle());
+
+      expect(await p).toEqual(ReplayActions.endOfData());
+    });
+  });
+
+  describe('stepBack$', () => {
+    it('emits goToTime with the previous candle time when idx >= 1', async () => {
+      store.overrideSelector(selectActiveCandles, candles);
+      store.overrideSelector(selectVisibleIndex, 2); // prev = candles[1].time = 3600
+      store.refreshState();
+
+      const p = firstValueFrom(effects.stepBack$);
+      actions$.next(ReplayActions.stepBack());
+
+      expect(await p).toEqual(ReplayActions.goToTime({ time: 3600 }));
+    });
+
+    it('does not emit when idx < 1 (filters the action)', async () => {
+      store.overrideSelector(selectActiveCandles, candles);
+      store.overrideSelector(selectVisibleIndex, 0);
+      store.refreshState();
+
+      // Collect up to 1 emission; the filtered stepBack should not produce one
+      // so we send a passing stepBack (idx=1) after to prove the stream still works
+      const results: any[] = [];
+      const sub = effects.stepBack$.pipe(take(1)).subscribe((a) => results.push(a));
+
+      actions$.next(ReplayActions.stepBack()); // idx=0 → filtered
+
+      // No emission yet
+      expect(results.length).toBe(0);
+
+      // Now send an action that WILL pass (override idx to 1 first)
+      store.overrideSelector(selectVisibleIndex, 1);
+      store.refreshState();
+      actions$.next(ReplayActions.stepBack()); // idx=1 → emits candles[0].time = 0
+
+      // Wait a microtask
+      await Promise.resolve();
+      expect(results.length).toBe(1);
+      expect(results[0]).toEqual(ReplayActions.goToTime({ time: 0 }));
+      sub.unsubscribe();
+    });
+  });
+
+  describe('autoplay$', () => {
+    it('emits advanceCandle on each interval tick when playing is true', async () => {
+      vi.useFakeTimers();
+      store.overrideSelector(selectPlaying, true);
+      store.overrideSelector(selectMsPerCandle, 1000);
+      store.refreshState();
+
+      const p = effects.autoplay$.pipe(take(2), toArray()).toPromise();
+
+      // Advance two intervals
+      vi.advanceTimersByTime(2000);
+
+      const result = await p;
+      expect(result).toEqual([ReplayActions.advanceCandle(), ReplayActions.advanceCandle()]);
+    });
+
+    it('emits nothing when playing is false', async () => {
+      vi.useFakeTimers();
+      store.overrideSelector(selectPlaying, false);
+      store.overrideSelector(selectMsPerCandle, 1000);
+      store.refreshState();
+
+      const results: any[] = [];
+      const sub = effects.autoplay$.subscribe((a) => results.push(a));
+
+      vi.advanceTimersByTime(5000);
+      expect(results.length).toBe(0);
+
+      sub.unsubscribe();
+    });
+  });
+});

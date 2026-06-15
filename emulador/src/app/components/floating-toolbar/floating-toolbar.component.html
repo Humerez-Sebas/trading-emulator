@@ -1,0 +1,25 @@
+<div
+  class="bar"
+  role="toolbar"
+  aria-label="Barra flotante de herramientas"
+  [style.left.px]="pos().x"
+  [style.top.px]="pos().y"
+>
+  <button
+    class="handle"
+    (mousedown)="startDrag($event)"
+    title="Arrastrar la barra"
+    aria-label="Mover barra de herramientas"
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="8" cy="5" r="1.6"></circle>
+      <circle cx="16" cy="5" r="1.6"></circle>
+      <circle cx="8" cy="12" r="1.6"></circle>
+      <circle cx="16" cy="12" r="1.6"></circle>
+      <circle cx="8" cy="19" r="1.6"></circle>
+      <circle cx="16" cy="19" r="1.6"></circle>
+    </svg>
+  </button>
+
+  <app-toolbar-tools />
+</div>

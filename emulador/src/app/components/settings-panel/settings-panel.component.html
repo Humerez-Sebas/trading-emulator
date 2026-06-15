@@ -1,0 +1,120 @@
+<aside class="panel" aria-label="Ajustes">
+  <header class="panel-header">
+    <h2>Ajustes</h2>
+  </header>
+
+  <section class="group">
+    <h3>Tema</h3>
+    <div class="theme-toggle">
+      <button class="opt" [class.active]="(theme$ | async) === 'dark'" (click)="setTheme('dark')">
+        Oscuro
+      </button>
+      <button class="opt" [class.active]="(theme$ | async) === 'light'" (click)="setTheme('light')">
+        Claro
+      </button>
+    </div>
+  </section>
+
+  <section class="group">
+    <h3>Presets de velas</h3>
+    <div class="presets">
+      @for (p of presets; track p.id) {
+        <button class="preset" (click)="applyPreset(p)">
+          <span class="swatch" [style.background]="p.colors.upColor"></span>
+          <span class="swatch" [style.background]="p.colors.downColor"></span>
+          {{ p.label }}
+        </button>
+      }
+    </div>
+  </section>
+
+  <section class="group">
+    <h3>Colores del gráfico</h3>
+    @if (colors$ | async; as colors) {
+      <div class="color-grid">
+        @for (f of colorFields; track f.key) {
+          <div class="color-row">
+            <span>{{ f.label }}</span>
+            <ui-color-field
+              [value]="colors[f.key]"
+              [ariaLabel]="f.label"
+              (valueChange)="onColor(f.key, $event)"
+            />
+          </div>
+        }
+      </div>
+    }
+    <button class="restore" (click)="restore()">Restaurar colores del tema</button>
+  </section>
+
+  <section class="group">
+    <h3>Cajas de trade</h3>
+    <label class="grid-opacity">
+      Opacidad del relleno: {{ (boxOpacity().fill * 100).toFixed(0) }}%
+      <input
+        type="range"
+        min="5"
+        max="50"
+        step="1"
+        [value]="boxOpacity().fill * 100"
+        (input)="onBoxFill($event)"
+      />
+    </label>
+    <label class="grid-opacity">
+      Opacidad del borde: {{ (boxOpacity().border * 100).toFixed(0) }}%
+      <input
+        type="range"
+        min="10"
+        max="100"
+        step="5"
+        [value]="boxOpacity().border * 100"
+        (input)="onBoxBorder($event)"
+      />
+    </label>
+    <p class="hint">Las cajas pendientes y cerradas escalan su relleno proporcionalmente.</p>
+  </section>
+
+  <section class="group">
+    <h3>Cuadrícula</h3>
+    <label class="grid-toggle">
+      <input type="checkbox" [checked]="gridVisible()" (change)="toggleGrid($event)" />
+      Mostrar cuadrícula
+    </label>
+    <label class="grid-opacity" [class.disabled]="!gridVisible()">
+      Opacidad: {{ (gridOpacity() * 100).toFixed(0) }}%
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="5"
+        [value]="gridOpacity() * 100"
+        [disabled]="!gridVisible()"
+        (input)="onGridOpacity($event)"
+      />
+    </label>
+  </section>
+
+  <section class="group">
+    <h3>Herramientas</h3>
+    <label class="grid-toggle">
+      <input
+        type="checkbox"
+        [checked]="floatingToolbar()"
+        (change)="toggleFloatingToolbar($event)"
+      />
+      Barra flotante (arrastrable sobre el gráfico)
+    </label>
+  </section>
+
+  <section class="group">
+    <h3>Zona horaria</h3>
+    <ui-dropdown
+      [block]="true"
+      ariaLabel="Zona horaria"
+      [options]="utcOptions"
+      [value]="(utcOffset$ | async) + ''"
+      (valueChange)="onOffset($event)"
+    />
+    <p class="hint">Solo afecta a la visualización; los datos se mantienen en UTC.</p>
+  </section>
+</aside>

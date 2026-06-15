@@ -1,0 +1,251 @@
+<aside class="panel">
+  <header class="head">
+    <h3>Operativa</h3>
+    <div class="account">
+      <label class="balance-edit">
+        Balance inicial
+        <input
+          type="number"
+          min="1"
+          step="100"
+          [value]="view().initialBalance"
+          (change)="onBalance($event)"
+        />
+      </label>
+      <div class="row">
+        <span>Balance</span>
+        <strong>{{ view().balance | number: '1.2-2' }} $</strong>
+      </div>
+      <div class="row">
+        <span>Equidad</span>
+        <strong [class.up]="view().floating > 0" [class.down]="view().floating < 0"
+          >{{ view().equity | number: '1.2-2' }} $</strong
+        >
+      </div>
+    </div>
+  </header>
+
+  <section class="order-form">
+    <div class="side-toggle" role="group" aria-label="Dirección">
+      <button class="side buy" [class.active]="side() === 'buy'" (click)="setSide('buy')">
+        Comprar
+      </button>
+      <button class="side sell" [class.active]="side() === 'sell'" (click)="setSide('sell')">
+        Vender
+      </button>
+    </div>
+
+    <div class="ofield">
+      Tipo
+      <ui-dropdown
+        [block]="true"
+        ariaLabel="Tipo de orden"
+        [options]="typeOptions"
+        [value]="orderType()"
+        (valueChange)="setType($event)"
+      />
+    </div>
+
+    @if (orderType() !== 'market') {
+      <label>
+        Entrada
+        <input
+          type="number"
+          step="any"
+          placeholder="Precio"
+          [value]="entryText()"
+          (input)="onInput('entry', $event)"
+        />
+      </label>
+    } @else if (view().price !== null) {
+      <div class="market-price">Precio actual: {{ view().price | number: '1.2-5' }}</div>
+    }
+
+    <div class="sl-tp">
+      <label>
+        SL
+        <input
+          type="number"
+          step="any"
+          placeholder="Obligatorio"
+          [value]="slText()"
+          (input)="onInput('sl', $event)"
+        />
+      </label>
+      <label>
+        TP
+        <input
+          type="number"
+          step="any"
+          placeholder="Opcional"
+          [value]="tpText()"
+          (input)="onInput('tp', $event)"
+        />
+      </label>
+    </div>
+
+    <label>
+      Riesgo (% del balance)
+      <input
+        type="number"
+        min="0.01"
+        step="0.25"
+        [value]="riskText()"
+        (input)="onInput('risk', $event)"
+      />
+    </label>
+
+    <div class="sizing">
+      <div class="row">
+        <span>Lotaje</span>
+        <strong>{{ lots() | number: '1.2-2' }}</strong>
+      </div>
+      <div class="row">
+        <span>Riesgo</span>
+        <span>{{ riskUsd() | number: '1.2-2' }} $ · {{ slPoints() }} pts</span>
+      </div>
+    </div>
+
+    @if (invalidReason(); as reason) {
+      <div class="hint">{{ reason }}</div>
+    }
+
+    <button
+      class="submit"
+      [class.buy]="side() === 'buy'"
+      [class.sell]="side() === 'sell'"
+      [disabled]="invalidReason() !== null"
+      (click)="submit()"
+    >
+      {{ orderType() === 'market' ? 'Abrir a mercado' : 'Colocar orden' }}
+    </button>
+  </section>
+
+  @if (view().positions.length) {
+    <section class="list">
+      <h4>Posiciones ({{ view().positions.length }})</h4>
+      @for (p of view().positions; track p.id) {
+        <div class="item">
+          <div class="item-head">
+            <span class="badge" [class.buy]="p.side === 'buy'" [class.sell]="p.side === 'sell'">
+              {{ sideLabel(p.side) }} {{ p.lots | number: '1.2-2' }}
+            </span>
+            <span class="pnl" [class.up]="p.pnl >= 0" [class.down]="p.pnl < 0">
+              {{ p.pnl | number: '1.2-2' }} $
+            </span>
+            <button
+              appIconButton
+              [borderless]="true"
+              [danger]="true"
+              size="sm"
+              (click)="closePosition(p.id)"
+              appTooltip="Cerrar posición"
+              aria-label="Cerrar posición"
+            >
+              <app-trash-icon />
+            </button>
+          </div>
+          <div class="item-detail edit-row">
+            <span class="entry">E {{ p.entryPrice | number: '1.2-5' }}</span>
+            <label>
+              SL
+              <input
+                type="number"
+                step="any"
+                [value]="p.sl"
+                (change)="onPositionField(p.id, 'sl', $event)"
+                aria-label="Stop loss de la posición"
+              />
+            </label>
+            <label>
+              TP
+              <input
+                type="number"
+                step="any"
+                [value]="p.tp ?? ''"
+                placeholder="—"
+                (change)="onPositionField(p.id, 'tp', $event)"
+                aria-label="Take profit de la posición"
+              />
+            </label>
+            <button
+              class="be"
+              (click)="breakeven(p.id, p.entryPrice)"
+              appTooltip="Mover el SL a la entrada (breakeven)"
+            >
+              BE
+            </button>
+          </div>
+        </div>
+      }
+    </section>
+  }
+
+  @if (view().orders.length) {
+    <section class="list">
+      <h4>Órdenes pendientes ({{ view().orders.length }})</h4>
+      @for (o of view().orders; track o.id) {
+        <div class="item">
+          <div class="item-head">
+            <span class="badge" [class.buy]="o.side === 'buy'" [class.sell]="o.side === 'sell'">
+              {{ sideLabel(o.side) }} {{ typeLabel(o.type) }} {{ o.lots | number: '1.2-2' }}
+            </span>
+            <button
+              appIconButton
+              [borderless]="true"
+              [danger]="true"
+              size="sm"
+              (click)="cancelOrder(o.id)"
+              appTooltip="Cancelar orden"
+              aria-label="Cancelar orden"
+            >
+              <app-trash-icon />
+            </button>
+          </div>
+          <div class="item-detail edit-row">
+            <label>
+              E
+              <input
+                type="number"
+                step="any"
+                [value]="o.entryPrice"
+                (change)="onOrderField(o.id, 'entryPrice', $event)"
+                aria-label="Precio de entrada de la orden"
+              />
+            </label>
+            <label>
+              SL
+              <input
+                type="number"
+                step="any"
+                [value]="o.sl"
+                (change)="onOrderField(o.id, 'sl', $event)"
+                aria-label="Stop loss de la orden"
+              />
+            </label>
+            <label>
+              TP
+              <input
+                type="number"
+                step="any"
+                [value]="o.tp ?? ''"
+                placeholder="—"
+                (change)="onOrderField(o.id, 'tp', $event)"
+                aria-label="Take profit de la orden"
+              />
+            </label>
+          </div>
+        </div>
+      }
+    </section>
+  }
+
+  <footer class="foot">
+    @if (view().history.length || view().sessionEnded) {
+      <button appButton variant="subtle" (click)="openSummary()">Resumen</button>
+    }
+    <button appButton variant="danger" (click)="endSession()" [disabled]="view().price === null">
+      Terminar sesión
+    </button>
+  </footer>
+</aside>

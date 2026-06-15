@@ -1,0 +1,176 @@
+<app-modal title="Resumen de sesión" size="lg" (closed)="close()">
+  @if (asset(); as a) {
+    <span titleSuffix class="symbol">{{ a }}</span>
+  }
+
+  <section class="metrics">
+    <div class="metric">
+      <span class="label">Trades</span>
+      <strong>{{ stats().totalTrades }}</strong>
+    </div>
+    <div class="metric">
+      <span class="label">Ganados</span>
+      <strong class="up">{{ stats().won }}</strong>
+    </div>
+    <div class="metric">
+      <span class="label">Perdidos</span>
+      <strong class="down">{{ stats().lost }}</strong>
+    </div>
+    <div class="metric">
+      <span class="label">Expirados</span>
+      <strong>{{ stats().expired }}</strong>
+    </div>
+    <div class="metric">
+      <span class="label">Win rate</span>
+      <strong>{{ stats().winRate | percent: '1.0-1' }}</strong>
+    </div>
+    <div class="metric">
+      <span class="label">R acumulado</span>
+      <strong [class.up]="stats().totalR >= 0" [class.down]="stats().totalR < 0">
+        {{ stats().totalR | number: '1.2-2' }}
+      </strong>
+    </div>
+    <div class="metric">
+      <span class="label">Profit factor</span>
+      <strong>{{ profitFactorLabel() }}</strong>
+    </div>
+    <div class="metric">
+      <span class="label">Drawdown máx.</span>
+      <strong class="down">
+        {{ stats().maxDrawdown | number: '1.2-2' }} $ ({{
+          stats().maxDrawdownPct | percent: '1.0-1'
+        }})
+      </strong>
+    </div>
+    <div class="metric">
+      <span class="label">Beneficio neto</span>
+      <strong [class.up]="stats().netProfit >= 0" [class.down]="stats().netProfit < 0">
+        {{ stats().netProfit | number: '1.2-2' }} $
+      </strong>
+    </div>
+    <div class="metric">
+      <span class="label">Balance final</span>
+      <strong>{{ balance() | number: '1.2-2' }} $</strong>
+    </div>
+  </section>
+
+  @if (sparkline()) {
+    <section class="equity">
+      <span class="label">Curva de equidad</span>
+      <svg viewBox="0 0 220 56" preserveAspectRatio="none" aria-label="Curva de equidad">
+        <polyline
+          [attr.points]="sparkline()"
+          fill="none"
+          stroke="var(--accent)"
+          stroke-width="1.5"
+        />
+      </svg>
+    </section>
+  }
+
+  @if (trades().length) {
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Lado</th>
+            <th>Tipo</th>
+            <th>Apertura</th>
+            <th>Cierre</th>
+            <th>Entrada</th>
+            <th>Salida</th>
+            <th>Lotes</th>
+            <th>Resultado</th>
+            <th>P/L ($)</th>
+            <th>R</th>
+            <th>Caja</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of trades(); track t.id; let i = $index) {
+            <tr>
+              <td>{{ i + 1 }}</td>
+              <td [class.up]="t.side === 'buy'" [class.down]="t.side === 'sell'">
+                {{ t.side === 'buy' ? 'Compra' : 'Venta' }}
+              </td>
+              <td>{{ t.origin }}</td>
+              <td>{{ t.openTime * 1000 | date: 'dd/MM HH:mm' : 'UTC' }}</td>
+              <td>{{ t.closeTime * 1000 | date: 'dd/MM HH:mm' : 'UTC' }}</td>
+              <td>{{ t.entryPrice | number: '1.2-5' }}</td>
+              <td>{{ t.exitPrice | number: '1.2-5' }}</td>
+              <td>{{ t.lots | number: '1.2-2' }}</td>
+              <td>
+                {{ outcomeLabel(t) }}
+                @if (t.ambiguous) {
+                  <span
+                    class="ambiguous"
+                    title="SL y TP en la misma vela sin serie menor: resuelto pesimista"
+                  >
+                    ⚠
+                  </span>
+                }
+              </td>
+              <td [class.up]="t.profit >= 0" [class.down]="t.profit < 0">
+                {{ t.profit | number: '1.2-2' }}
+              </td>
+              <td [class.up]="t.rMultiple >= 0" [class.down]="t.rMultiple < 0">
+                {{ t.rMultiple | number: '1.2-2' }}
+              </td>
+              <td class="box-actions">
+                @if (!t.boxDeleted) {
+                  <button
+                    class="icon-btn"
+                    [class.muted]="t.boxHidden"
+                    (click)="toggleBox(t)"
+                    [title]="
+                      t.boxHidden ? 'Mostrar la caja en el gráfico' : 'Ocultar la caja del gráfico'
+                    "
+                    [attr.aria-label]="t.boxHidden ? 'Mostrar caja' : 'Ocultar caja'"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="1em"
+                      height="1em"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                      <circle cx="12" cy="12" r="3" />
+                      @if (t.boxHidden) {
+                        <path d="M3 3l18 18" />
+                      }
+                    </svg>
+                  </button>
+                  <button
+                    class="icon-btn danger"
+                    (click)="deleteBox(t)"
+                    title="Eliminar la caja del gráfico"
+                    aria-label="Eliminar caja"
+                  >
+                    <app-trash-icon />
+                  </button>
+                } @else {
+                  <span class="box-deleted">—</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </section>
+  } @else {
+    <p class="empty">No hubo trades cerrados en esta sesión.</p>
+  }
+
+  <div footer class="modal-foot">
+    <button appButton variant="ghost" (click)="exportCsv()" [disabled]="!trades().length">
+      Exportar CSV
+    </button>
+    <button appButton variant="primary" (click)="close()">Cerrar</button>
+  </div>
+</app-modal>
