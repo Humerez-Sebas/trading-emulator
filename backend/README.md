@@ -35,6 +35,11 @@ Flagsmith no responde, cada flag cae al valor de entorno equivalente
 `uvicorn` pelado no necesitan Flagsmith. Mantén el flag `timescale_enabled`
 coherente con el esquema migrado.
 
+El stack crea los flags automáticamente: el servicio `flagsmith-seed`
+(docker-compose) ejecuta [`flagsmith/seed.py`](../flagsmith/seed.py) y genera
+org/proyecto/entorno + los dos flags + una server-side key determinista que el
+backend ya trae en `FLAGSMITH_KEY`. Cero pasos manuales.
+
 ## Arquitectura: ¿por qué el harvester corre en el host?
 
 La librería `MetaTrader5` de Python **solo existe para Windows** y habla

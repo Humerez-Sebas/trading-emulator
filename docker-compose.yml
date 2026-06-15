@@ -44,8 +44,9 @@ services:
       TIMESCALE_ENABLED: ${TIMESCALE_ENABLED:-true}
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       ENABLE_DOCS: ${ENABLE_DOCS:-true}
-      # empty key -> backend uses the env defaults above (no Flagsmith needed)
-      FLAGSMITH_KEY: ${FLAGSMITH_KEY:-}
+      # auto-seeded deterministic key (see flagsmith-seed). Set FLAGSMITH_KEY=""
+      # in .env to disable Flagsmith and use the env toggles above as the source.
+      FLAGSMITH_KEY: ${FLAGSMITH_KEY-ser.trading-emulator-local-seed-key}
       FLAGSMITH_API_URL: ${FLAGSMITH_API_URL:-http://flagsmith:8000/api/v1/}
     ports:
       - '127.0.0.1:8000:8000'
@@ -83,6 +84,34 @@ services:
       - '127.0.0.1:8001:8000'
     networks:
       - app-net
+      - flagsmith-net
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 90s
+
+  # one-shot: seeds organisation/project/environment + the two feature flags +
+  # a DETERMINISTIC server-side key (so the backend's FLAGSMITH_KEY works out of
+  # the box) + an admin user. Idempotent; runs on every `up` and then exits.
+  flagsmith-seed:
+    image: flagsmith/flagsmith:latest
+    depends_on:
+      flagsmith:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${FLAGSMITH_POSTGRES_USER:-flagsmith}:${FLAGSMITH_POSTGRES_PASSWORD:-flagsmith}@flagsmith-db:5432/${FLAGSMITH_POSTGRES_DB:-flagsmith}
+      TIMESCALE_ENABLED: ${TIMESCALE_ENABLED:-true}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      FLAGSMITH_SEED_SERVER_KEY: ${FLAGSMITH_KEY-ser.trading-emulator-local-seed-key}
+      FLAGSMITH_ADMIN_EMAIL: ${FLAGSMITH_ADMIN_EMAIL:-admin@example.com}
+      FLAGSMITH_ADMIN_PASSWORD: ${FLAGSMITH_ADMIN_PASSWORD:-changeme-admin}
+    volumes:
+      - ./flagsmith/seed.py:/seed/seed.py:ro
+    entrypoint: ['python', 'manage.py', 'shell', '-c', "exec(open('/seed/seed.py', encoding='utf-8-sig').read())"]
+    restart: 'no'
+    networks:
       - flagsmith-net
 
 volumes:

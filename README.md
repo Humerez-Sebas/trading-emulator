@@ -60,17 +60,22 @@ docker compose -f docker-compose.yml -f docker-compose.full.yml up --build
 # abre http://localhost:8080  (nginx sirve la SPA y proxya la API: mismo origen)
 ```
 
-## Feature flags (Flagsmith)
+## Feature flags (Flagsmith) — creación automática
 
-1. Abre el dashboard http://localhost:8001, crea cuenta → organización → proyecto →
-   entorno.
-2. Crea dos flags: `timescale_enabled` y `registration_enabled`.
-3. Copia la **server-side environment key** del entorno y ponla en `.env`:
-   `FLAGSMITH_KEY=...`. Reinicia el backend.
+Al levantar el stack, el servicio **`flagsmith-seed`** crea automáticamente (de
+forma idempotente) la organización, el proyecto, el entorno, los dos flags
+(`timescale_enabled`, `registration_enabled`), una **server-side key
+determinista** y un usuario admin. No hay pasos manuales: el backend ya trae esa
+misma key en `FLAGSMITH_KEY` (`.env`), así que lee los flags desde el arranque.
 
-Si `FLAGSMITH_KEY` está vacío, el backend usa los valores de entorno
-(`TIMESCALE_ENABLED`, `REGISTRATION_ENABLED`) como fallback — útil para tests y
-arranques mínimos.
+- Gestiona los flags en el dashboard http://localhost:8001 (login con
+  `FLAGSMITH_ADMIN_EMAIL`/`FLAGSMITH_ADMIN_PASSWORD` del `.env`).
+- La lógica del seed está en [`flagsmith/seed.py`](flagsmith/seed.py); ajusta el
+  nombre del entorno, la key o los flags con las variables `FLAGSMITH_SEED_*`.
+- Para **deshabilitar** Flagsmith y usar solo las variables de entorno
+  (`TIMESCALE_ENABLED`, `REGISTRATION_ENABLED`) como fallback, deja
+  `FLAGSMITH_KEY=` vacío en `.env` (útil para tests y arranques mínimos).
+- En producción usa una key real generada en el dashboard, no la del seed.
 
 > **Importante (Timescale):** el *esquema* (hypertable + continuous aggregate
 > `candles_daily`) lo deciden las migraciones según `TIMESCALE_ENABLED`. El flag
