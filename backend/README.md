@@ -7,13 +7,13 @@ la app Angular. Se puebla con el **harvester** (ver abajo).
 ## Arranque
 
 ```bash
-# en la raíz del proyecto
+# en la raíz del proyecto (los compose viven en infra/)
 cp .env.example .env   # y cambia JWT_SECRET / INGEST_API_KEY
-docker compose up --build
+docker compose -f infra/docker-compose.yml up --build
 # -> API en http://127.0.0.1:8000  (docs en /docs)
 ```
 
-`docker compose up` deja `db` (TimescaleDB) y `backend` healthy **sin
+`docker compose -f infra/docker-compose.yml up` deja `db` (TimescaleDB) y `backend` healthy **sin
 necesidad de MT5**: con la DB vacía, `GET /symbols` responde una lista
 vacía válida. Las migraciones (Alembic) corren solas al arrancar el
 contenedor.
@@ -36,7 +36,7 @@ Flagsmith no responde, cada flag cae al valor de entorno equivalente
 coherente con el esquema migrado.
 
 El stack crea los flags automáticamente: el servicio `flagsmith-seed`
-(docker-compose) ejecuta [`flagsmith/seed.py`](../flagsmith/seed.py) y genera
+(docker-compose) ejecuta [`infra/flagsmith/seed.py`](../infra/flagsmith/seed.py) y genera
 org/proyecto/entorno + los dos flags + una server-side key determinista que el
 backend ya trae en `FLAGSMITH_KEY`. Cero pasos manuales.
 

@@ -1,11 +1,12 @@
 # Base stack: database + backend API + self-hosted Flagsmith.
 # The frontend is NOT here on purpose: in this mode you run it with
 # `ng serve` (talking to http://localhost:8000). To run everything including
-# the frontend in nginx, layer the override:
+# the frontend in nginx, layer the override (run from the repo root):
 #
-#   docker compose -f docker-compose.yml -f docker-compose.full.yml up
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.full.yml up
 #
-# Copy .env.example -> .env first. Everything reads from there.
+# Copy .env.example -> .env at the repo root first. Run compose from the repo
+# root so the root .env and the ../backend & ../emulador build contexts resolve.
 
 services:
   # --- Emulador time-series database (TimescaleDB in dev) ---
@@ -29,7 +30,7 @@ services:
 
   # --- FastAPI backend ---
   backend:
-    build: ./backend
+    build: ../backend
     depends_on:
       db:
         condition: service_healthy

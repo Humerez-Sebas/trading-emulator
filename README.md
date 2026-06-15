@@ -42,10 +42,13 @@ Requisitos: Docker Desktop. Copia el ejemplo de entorno y ajusta valores:
 cp .env.example .env   # PowerShell: Copy-Item .env.example .env
 ```
 
+Los compose viven en [`infra/`](infra/); **ejecútalos desde la raíz del repo** (así
+se resuelven el `.env` de la raíz y los contextos de build `../backend`/`../emulador`).
+
 **Modo desarrollo** (infra + backend + Flagsmith; el frontend con `ng serve`):
 
 ```bash
-docker compose up --build
+docker compose -f infra/docker-compose.yml up --build
 # en otra terminal:
 cd emulador && npm install && npm start   # http://localhost:4200  -> API en :8000
 ```
@@ -56,7 +59,7 @@ cd emulador && npm install && npm start   # http://localhost:4200  -> API en :80
 **Modo full-stack** (todo en contenedores, incluido el frontend en nginx):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.full.yml up --build
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.full.yml up --build
 # abre http://localhost:8080  (nginx sirve la SPA y proxya la API: mismo origen)
 ```
 
@@ -70,7 +73,7 @@ misma key en `FLAGSMITH_KEY` (`.env`), así que lee los flags desde el arranque.
 
 - Gestiona los flags en el dashboard http://localhost:8001 (login con
   `FLAGSMITH_ADMIN_EMAIL`/`FLAGSMITH_ADMIN_PASSWORD` del `.env`).
-- La lógica del seed está en [`flagsmith/seed.py`](flagsmith/seed.py); ajusta el
+- La lógica del seed está en [`infra/flagsmith/seed.py`](infra/flagsmith/seed.py); ajusta el
   nombre del entorno, la key o los flags con las variables `FLAGSMITH_SEED_*`.
 - Para **deshabilitar** Flagsmith y usar solo las variables de entorno
   (`TIMESCALE_ENABLED`, `REGISTRATION_ENABLED`) como fallback, deja
