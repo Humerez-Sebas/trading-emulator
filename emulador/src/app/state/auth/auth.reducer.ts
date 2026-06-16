@@ -7,8 +7,9 @@ import { AuthActions } from './auth.actions';
  * - `authenticated`: cookie session valid.
  * - `anonymous`: backend reachable, no session -> guarded routes redirect.
  * - `offline`: backend unreachable -> the app stays usable with local CSVs.
+ * - `guest`: deliberate no-account mode (static build or explicit choice).
  */
-export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous' | 'offline';
+export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous' | 'offline' | 'guest';
 
 export interface AuthState {
   status: AuthStatus;
@@ -59,6 +60,16 @@ export const authFeature = createFeature({
     on(
       AuthActions.loggedOut,
       (state): AuthState => ({ ...state, user: null, status: 'anonymous', pending: false }),
+    ),
+    on(
+      AuthActions.continueAsGuest,
+      (state): AuthState => ({
+        ...state,
+        user: null,
+        status: 'guest',
+        pending: false,
+        error: null,
+      }),
     ),
   ),
 });

@@ -46,6 +46,14 @@ describe('authGuard', () => {
     expect(result).toBe(true);
   });
 
+  it('allows navigation when status is guest', async () => {
+    store.overrideSelector(authFeature.selectStatus, 'guest' as any);
+    store.refreshState();
+
+    const result = await firstValueFrom(runGuard('/protected') as any);
+    expect(result).toBe(true);
+  });
+
   it('returns a UrlTree for /login with volver param when status is "anonymous"', async () => {
     store.overrideSelector(authFeature.selectStatus, 'anonymous');
     store.refreshState();
