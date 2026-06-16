@@ -89,6 +89,29 @@ describe('AuthEffects', () => {
 
       expect(await p).toEqual(AuthActions.sessionResolved({ user: null, offline: false }));
     });
+
+    it('honors a persisted guest flag on a 401 (anonymous) response', async () => {
+      localStorage.setItem('emulador.guest', '1');
+      api.me.mockReturnValue(throwError(() => httpError(401)));
+
+      const p = firstValueFrom(effects.check$);
+      actions$.next(AuthActions.checkSession());
+
+      expect(await p).toEqual(AuthActions.continueAsGuest());
+      localStorage.removeItem('emulador.guest');
+    });
+  });
+
+  describe('persistGuest$', () => {
+    it('writes the guest flag to localStorage', async () => {
+      localStorage.removeItem('emulador.guest');
+      const sub = effects.persistGuest$.subscribe();
+      actions$.next(AuthActions.continueAsGuest());
+      await Promise.resolve();
+      expect(localStorage.getItem('emulador.guest')).toBe('1');
+      sub.unsubscribe();
+      localStorage.removeItem('emulador.guest');
+    });
   });
 
   describe('login$', () => {

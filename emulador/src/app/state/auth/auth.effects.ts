@@ -6,6 +6,7 @@ import { of } from 'rxjs';
 import { catchError, exhaustMap, map, tap } from 'rxjs/operators';
 import { BackendApiService } from '../../services/backend-api.service';
 import { AuthActions } from './auth.actions';
+import { ENVIRONMENT } from '../../../environments/environment.token';
 
 /** User-facing message (Spanish) from a backend error. */
 function describeError(e: unknown): string {
@@ -15,11 +16,23 @@ function describeError(e: unknown): string {
   return typeof detail === 'string' ? detail : 'Algo salió mal, inténtalo de nuevo';
 }
 
+const GUEST_KEY = 'emulador.guest';
+
+/** Whether the user previously chose guest mode (full-stack reload). */
+function guestPersisted(): boolean {
+  try {
+    return localStorage.getItem(GUEST_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class AuthEffects {
   private actions$ = inject(Actions);
   private api = inject(BackendApiService);
   private router = inject(Router);
+  private env = inject(ENVIRONMENT);
 
   init$ = createEffect(() =>
     this.actions$.pipe(
@@ -28,19 +41,47 @@ export class AuthEffects {
     ),
   );
 
-  /** Who am I? 401 = anonymous; network failure = offline (CSV-only mode). */
+  /**
+   * Who am I? In an offlineOnly (static) build we never reach for a backend and
+   * resolve straight to guest. Otherwise: 401 = anonymous (unless a guest choice
+   * was persisted), network failure = offline (CSV-only mode).
+   */
   check$ = createEffect(() =>
     this.actions$.pipe(
       ofType(AuthActions.checkSession),
-      exhaustMap(() =>
-        this.api.me().pipe(
+      exhaustMap(() => {
+        if (this.env.offlineOnly) return of(AuthActions.continueAsGuest());
+        return this.api.me().pipe(
           map((user) => AuthActions.sessionResolved({ user, offline: false })),
-          catchError((e: HttpErrorResponse) =>
-            of(AuthActions.sessionResolved({ user: null, offline: e.status === 0 })),
-          ),
-        ),
-      ),
+          catchError((e: HttpErrorResponse) => {
+            if (e.status === 0) {
+              return of(AuthActions.sessionResolved({ user: null, offline: true }));
+            }
+            return of(
+              guestPersisted()
+                ? AuthActions.continueAsGuest()
+                : AuthActions.sessionResolved({ user: null, offline: false }),
+            );
+          }),
+        );
+      }),
     ),
+  );
+
+  /** Remembers the guest choice so a reload stays in guest mode. */
+  persistGuest$ = createEffect(
+    () =>
+      this.actions$.pipe(
+        ofType(AuthActions.continueAsGuest),
+        tap(() => {
+          try {
+            localStorage.setItem(GUEST_KEY, '1');
+          } catch {
+            /* storage unavailable: ignore */
+          }
+        }),
+      ),
+    { dispatch: false },
   );
 
   login$ = createEffect(() =>
@@ -93,7 +134,14 @@ export class AuthEffects {
     () =>
       this.actions$.pipe(
         ofType(AuthActions.loggedOut),
-        tap(() => this.router.navigateByUrl('/login')),
+        tap(() => {
+          try {
+            localStorage.removeItem(GUEST_KEY);
+          } catch {
+            /* ignore */
+          }
+          this.router.navigateByUrl('/login');
+        }),
       ),
     { dispatch: false },
   );
