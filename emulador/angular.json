@@ -49,6 +49,19 @@
               ],
               "outputHashing": "all"
             },
+            "offline": {
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.offline.ts"
+                }
+              ],
+              "budgets": [
+                { "type": "initial", "maximumWarning": "500kB", "maximumError": "1MB" },
+                { "type": "anyComponentStyle", "maximumWarning": "10kB", "maximumError": "14kB" }
+              ],
+              "outputHashing": "all"
+            },
             "development": {
               "optimization": false,
               "extractLicenses": false,
@@ -62,6 +75,9 @@
           "configurations": {
             "production": {
               "buildTarget": "emulador:build:production"
+            },
+            "offline": {
+              "buildTarget": "emulador:build:offline"
             },
             "development": {
               "buildTarget": "emulador:build:development"

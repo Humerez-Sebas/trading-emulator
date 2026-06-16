@@ -16,4 +16,6 @@
 export const environment = {
   backendUrl: '',
   registrationEnabled: false,
+  offlineOnly: false,
+  guestModeEnabled: true,
 };
