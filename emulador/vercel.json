@@ -4,5 +4,6 @@
   "outputDirectory": "dist/emulador/browser",
   "installCommand": "npm ci",
   "framework": null,
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "git": { "deploymentEnabled": { "main": false } }
 }

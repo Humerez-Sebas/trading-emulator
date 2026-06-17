@@ -93,3 +93,34 @@ jobs:
           push: false
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+  # Production deploy of the static offline frontend to Vercel.
+  # Runs ONLY on push to main (i.e. a merged PR) and ONLY after the three
+  # checks above pass, so production never deploys un-validated code. Vercel's
+  # own auto-deploy for main is disabled in emulador/vercel.json to avoid a
+  # double deploy; PR preview deployments stay handled by Vercel natively.
+  deploy:
+    name: Deploy (Vercel · prod)
+    needs: [backend, frontend, docker-build]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: team_dVBTaqwZmidnC7KJf7h6BpLI
+      VERCEL_PROJECT_ID: prj_KpNe7NDXP95iXljbwcZCh4Wcv0Wo
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+      # rootDirectory=emulador is set on the Vercel project, so the CLI runs
+      # from the repo root and builds emulador/ via emulador/vercel.json
+      # (--configuration offline, output dist/emulador/browser, SPA rewrite).
+      - name: Pull Vercel project settings
+        run: vercel pull --yes --environment=production
+      - name: Build with Vercel (offline)
+        run: vercel build --prod
+      - name: Deploy prebuilt to production
+        run: vercel deploy --prebuilt --prod
