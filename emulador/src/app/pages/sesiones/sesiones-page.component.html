@@ -22,9 +22,20 @@
         </svg>
         Nueva carpeta
       </button>
+      <label appButton variant="subtle">
+        Importar sesión (.csv)
+        <input type="file" accept=".csv" (change)="onImportSession($event)" hidden />
+      </label>
       <a appButton variant="primary" routerLink="/sesiones/crear">Nueva sesión</a>
     </div>
   </header>
+
+  @if (importInfo()) {
+    <p class="import-info" role="status" aria-live="polite">{{ importInfo() }}</p>
+  }
+  @if (importError()) {
+    <p class="import-error" role="alert">{{ importError() }}</p>
+  }
 
   @if (info()) {
     <p class="info" role="status">{{ info() }}</p>
