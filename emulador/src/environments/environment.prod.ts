@@ -13,9 +13,17 @@
  * 'https://your-api.onrender.com' and configure the backend with
  * COOKIE_SAMESITE=none, COOKIE_SECURE=true and CORS_ORIGINS=<frontend origin>.
  */
-export const environment = {
+export const environment: {
+  backendUrl: string;
+  registrationEnabled: boolean;
+  offlineOnly: boolean;
+  guestModeEnabled: boolean;
+  dataSource: 'csv' | 'r2';
+} = {
   backendUrl: '',
   registrationEnabled: false,
   offlineOnly: false,
   guestModeEnabled: true,
+  // 'csv' keeps the legacy CSV/series-store path; 'r2' switches to the R2/Parquet candles store
+  dataSource: 'csv',
 };
