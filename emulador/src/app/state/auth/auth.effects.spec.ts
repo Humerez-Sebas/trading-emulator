@@ -4,7 +4,7 @@ import { provideMockActions } from '@ngrx/effects/testing';
 import { provideMockStore } from '@ngrx/store/testing';
 import { of, throwError, Subject } from 'rxjs';
 import { firstValueFrom } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpErrorResponse } from '@angular/common/http';
 
 import { AuthEffects } from './auth.effects';
@@ -54,6 +54,10 @@ describe('AuthEffects', () => {
     effects = TestBed.inject(AuthEffects);
   });
 
+  afterEach(() => {
+    localStorage.removeItem('emulador.guest');
+  });
+
   describe('init$', () => {
     it('dispatches checkSession on ROOT_EFFECTS_INIT', async () => {
       const p = firstValueFrom(effects.init$);
@@ -98,7 +102,6 @@ describe('AuthEffects', () => {
       actions$.next(AuthActions.checkSession());
 
       expect(await p).toEqual(AuthActions.continueAsGuest());
-      localStorage.removeItem('emulador.guest');
     });
   });
 
@@ -110,7 +113,6 @@ describe('AuthEffects', () => {
       await Promise.resolve();
       expect(localStorage.getItem('emulador.guest')).toBe('1');
       sub.unsubscribe();
-      localStorage.removeItem('emulador.guest');
     });
   });
 
