@@ -6,7 +6,7 @@ import { of } from 'rxjs';
 import { catchError, exhaustMap, map, tap } from 'rxjs/operators';
 import { BackendApiService } from '../../services/backend-api.service';
 import { AuthActions } from './auth.actions';
-import { ENVIRONMENT } from '../../../environments/environment.token';
+import { environment } from '../../../environments/environment';
 
 /** User-facing message (Spanish) from a backend error. */
 function describeError(e: unknown): string {
@@ -32,7 +32,6 @@ export class AuthEffects {
   private actions$ = inject(Actions);
   private api = inject(BackendApiService);
   private router = inject(Router);
-  private env = inject(ENVIRONMENT);
 
   init$ = createEffect(() =>
     this.actions$.pipe(
@@ -50,7 +49,7 @@ export class AuthEffects {
     this.actions$.pipe(
       ofType(AuthActions.checkSession),
       exhaustMap(() => {
-        if (this.env.offlineOnly) return of(AuthActions.continueAsGuest());
+        if (environment.offlineOnly) return of(AuthActions.continueAsGuest());
         return this.api.me().pipe(
           map((user) => AuthActions.sessionResolved({ user, offline: false })),
           catchError((e: HttpErrorResponse) => {
