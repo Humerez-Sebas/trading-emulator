@@ -8,6 +8,8 @@ import { PendingCsv, WorkspacesActions } from '../../state/workspaces/workspaces
 import { emptyWorkspace } from '../../state/workspaces/workspaces.models';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { DatePickerComponent } from '../../components/ui/date-picker.component';
+import { SegmentedControlComponent } from '../../components/ui/segmented-control.component';
+import { BadgeDirective } from '../../components/ui/badge.directive';
 import { CsvLoaderService } from '../../services/csv-loader.service';
 import {
   OfflineSymbol,
@@ -38,7 +40,7 @@ const STREAM_HYDRATE_THRESHOLD = 200_000;
 @Component({
   selector: 'app-crear-sesion-page',
   standalone: true,
-  imports: [ButtonDirective, DatePickerComponent],
+  imports: [ButtonDirective, DatePickerComponent, SegmentedControlComponent, BadgeDirective],
   templateUrl: './crear-sesion-page.component.html',
   styleUrl: './crear-sesion-page.component.css',
 })
@@ -53,6 +55,7 @@ export class CrearSesionPageComponent {
 
   /** csv = create from uploaded files / catalog; backend = stored harvester. */
   source = signal<'backend' | 'csv'>(environment.offlineOnly ? 'csv' : 'backend');
+  dragOver = signal(false);
   /** Forced CSV mode: static build or guest/offline session. */
   csvOnly = computed(
     () => environment.offlineOnly || this.status() === 'guest' || this.status() === 'offline',
@@ -170,6 +173,20 @@ export class CrearSesionPageComponent {
     } catch {
       this.catalog.set([]);
       this.state.set('ok');
+    }
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    this.dragOver.set(true);
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.dragOver.set(false);
+    const files = event.dataTransfer?.files;
+    if (files?.length) {
+      void this.onCsvFiles({ target: { files, value: '' } } as unknown as Event);
     }
   }
 
