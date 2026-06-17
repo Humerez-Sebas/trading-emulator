@@ -263,3 +263,149 @@ describe('WorkspaceDbService — v1 → v3 migration', () => {
     expect(info!.count).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v5: datasets + candles stores
+// ---------------------------------------------------------------------------
+
+const DB_NAME_V5 = 'emulador-workspaces';
+
+/** Opens the raw IndexedDB after the service has warmed it up at v5. */
+async function rawDb(svcInstance: WorkspaceDbService): Promise<IDBDatabase> {
+  // Trigger a no-op operation so the service opens (and upgrades) the DB first
+  await svcInstance.listMetas();
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    // Open at the same version the service uses (5) so fake-indexeddb does
+    // not try to upgrade or block on an in-progress transaction.
+    const req = indexedDB.open(DB_NAME_V5, 5);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    // Should never fire since service already upgraded, but guard for safety
+    req.onupgradeneeded = () => req.result.close();
+  });
+}
+
+describe('WorkspaceDbService — v5 schema: datasets store', () => {
+  it('objectStoreNames contains datasets after opening at v5', async () => {
+    const db = await rawDb(svc);
+    const names = Array.from(db.objectStoreNames);
+    db.close();
+    expect(names).toContain('datasets');
+  });
+
+  it('datasets store has keyPath "id"', async () => {
+    const db = await rawDb(svc);
+    const tx = db.transaction('datasets', 'readonly');
+    const store = tx.objectStore('datasets');
+    expect(store.keyPath).toBe('id');
+    db.close();
+  });
+
+  it('datasets store has compound index by_symbol_tf_year on [symbol, timeframe, year]', async () => {
+    const db = await rawDb(svc);
+    const tx = db.transaction('datasets', 'readonly');
+    const idx = tx.objectStore('datasets').index('by_symbol_tf_year');
+    expect(Array.from(idx.keyPath as string[])).toEqual(['symbol', 'timeframe', 'year']);
+    db.close();
+  });
+});
+
+describe('WorkspaceDbService — v5 schema: candles store', () => {
+  it('objectStoreNames contains candles after opening at v5', async () => {
+    const db = await rawDb(svc);
+    const names = Array.from(db.objectStoreNames);
+    db.close();
+    expect(names).toContain('candles');
+  });
+
+  it('candles store has keyPath "id" and autoIncrement true', async () => {
+    const db = await rawDb(svc);
+    const tx = db.transaction('candles', 'readonly');
+    const store = tx.objectStore('candles');
+    expect(store.keyPath).toBe('id');
+    expect(store.autoIncrement).toBe(true);
+    db.close();
+  });
+
+  it('candles store has compound index by_symbol_tf_time on [symbol, timeframe, time]', async () => {
+    const db = await rawDb(svc);
+    const tx = db.transaction('candles', 'readonly');
+    const idx = tx.objectStore('candles').index('by_symbol_tf_time');
+    expect(Array.from(idx.keyPath as string[])).toEqual(['symbol', 'timeframe', 'time']);
+    db.close();
+  });
+});
+
+describe('WorkspaceDbService — v5 schema: all existing stores still present', () => {
+  it('still contains meta, series, folders, symbols alongside new stores', async () => {
+    const db = await rawDb(svc);
+    const names = Array.from(db.objectStoreNames);
+    db.close();
+    expect(names).toContain('meta');
+    expect(names).toContain('series');
+    expect(names).toContain('folders');
+    expect(names).toContain('symbols');
+    expect(names).toContain('datasets');
+    expect(names).toContain('candles');
+  });
+});
+
+describe('WorkspaceDbService — v5 migration survival: v4 data readable after upgrade', () => {
+  it('meta and series seeded under the existing service survive the v5 schema', async () => {
+    // Seed data using the current service (which now opens at v5; this tests
+    // that existing API still works and data persists across the same version)
+    const meta = workspaceMeta({ symbol: 'BTCUSD' });
+    await svc.putMeta(meta);
+    await svc.putSeries('BTCUSD', 'M1', series(5));
+
+    // Re-read after v5 schema is in place
+    const got = await svc.getMeta('BTCUSD');
+    expect(got).toEqual(meta);
+    const ws = await svc.getWorkspace('BTCUSD');
+    expect(ws).toBeDefined();
+    expect(ws!.series['M1']).toHaveLength(5);
+  });
+
+  it('v4→v5 upgrade path: data written at v4 is readable after v5 open', async () => {
+    // 1. Seed a v4 database directly (only 4 stores: meta, series, folders, symbols)
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME_V5, 4);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('meta'))
+          db.createObjectStore('meta', { keyPath: 'symbol' });
+        if (!db.objectStoreNames.contains('series'))
+          db.createObjectStore('series', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('folders'))
+          db.createObjectStore('folders', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('symbols'))
+          db.createObjectStore('symbols', { keyPath: 'symbol' });
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(['meta', 'series'], 'readwrite');
+        const metaRecord = workspaceMeta({ symbol: 'ETHUSD' });
+        tx.objectStore('meta').put(metaRecord);
+        tx.objectStore('series').put({
+          key: 'ETHUSD|H1',
+          symbol: 'ETHUSD',
+          tf: 'H1',
+          candles: series(3),
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+
+    // 2. Open at v5 via the service — should trigger upgrade and add datasets+candles
+    const svc5 = new WorkspaceDbService();
+    const ws = await svc5.getWorkspace('ETHUSD');
+    expect(ws).toBeDefined();
+    expect(ws!.symbol).toBe('ETHUSD');
+    expect(ws!.series['H1']).toHaveLength(3);
+  });
+});

@@ -5,11 +5,13 @@ import { AssetMeta, Workspace, WorkspaceMeta } from '../state/workspaces/workspa
 import { OfflineSymbol } from './offline-catalog';
 
 const DB_NAME = 'emulador-workspaces';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const META_STORE = 'meta';
 const SERIES_STORE = 'series';
 const FOLDERS_STORE = 'folders';
 const SYMBOLS_STORE = 'symbols';
+const DATASETS_STORE = 'datasets';
+const CANDLES_STORE = 'candles';
 const LEGACY_STORE = 'workspaces';
 
 interface SeriesRecord {
@@ -18,6 +20,45 @@ interface SeriesRecord {
   symbol: string;
   tf: Timeframe;
   candles: Candle[];
+}
+
+/**
+ * R2/Parquet dataset manifest entry.
+ * `id` is the composite key `` `${symbol}|${timeframe}|${year}` ``
+ * (e.g. `'XAUUSD|M1|2024'`). For timeframes with no calendar partition
+ * (H1, D1) use the sentinel `year: 'all'` matching the `all.parquet`
+ * manifest file.
+ */
+export interface DatasetRecord {
+  /** `${symbol}|${timeframe}|${year}` — composite primary key. */
+  id: string;
+  symbol: string;
+  timeframe: string;
+  /** Calendar year string (e.g. `'2024'`) or `'all'` for H1/D1 partitions. */
+  year: string;
+  /** File size in bytes from the R2 manifest (used for cache invalidation). */
+  size: number;
+  /** ETag from the R2 manifest (used for cache invalidation). */
+  etag: string;
+  /** ISO-8601 timestamp of last manifest update. */
+  updatedAt: string;
+}
+
+/**
+ * Individual candle row from a R2/Parquet file.
+ * `id` is the auto-increment primary key — omit it on insert.
+ */
+export interface CandleRecord {
+  /** Auto-increment primary key (absent on insert). */
+  id?: number;
+  symbol: string;
+  timeframe: string;
+  /** Unix timestamp in seconds. */
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
 }
 
 /**
@@ -82,6 +123,23 @@ export class WorkspaceDbService {
           // v4: offline symbol catalog (keyed by symbol)
           if (!db.objectStoreNames.contains(SYMBOLS_STORE)) {
             db.createObjectStore(SYMBOLS_STORE, { keyPath: 'symbol' });
+          }
+          // v5: R2/Parquet dataset manifest cache
+          if (!db.objectStoreNames.contains(DATASETS_STORE)) {
+            const datasets = db.createObjectStore(DATASETS_STORE, { keyPath: 'id' });
+            datasets.createIndex('by_symbol_tf_year', ['symbol', 'timeframe', 'year'], {
+              unique: false,
+            });
+          }
+          // v5: individual candle rows from R2/Parquet files (auto-increment id)
+          if (!db.objectStoreNames.contains(CANDLES_STORE)) {
+            const candles = db.createObjectStore(CANDLES_STORE, {
+              keyPath: 'id',
+              autoIncrement: true,
+            });
+            candles.createIndex('by_symbol_tf_time', ['symbol', 'timeframe', 'time'], {
+              unique: false,
+            });
           }
         };
         req.onsuccess = () => {
