@@ -3,16 +3,25 @@ import { Candle, Timeframe } from '../models';
 import { SessionFolder } from '../state/trading/trading.models';
 import { AssetMeta, Workspace, WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import { OfflineSymbol } from './offline-catalog';
+import {
+  CANDLES_BY_SYMBOL_TF_TIME,
+  CANDLES_STORE,
+  DATASETS_BY_SYMBOL_TF_YEAR,
+  DATASETS_STORE,
+  DB_NAME,
+  DB_VERSION,
+  FOLDERS_STORE,
+  LEGACY_STORE,
+  META_STORE,
+  SERIES_STORE,
+  SYMBOLS_STORE,
+} from './market-data-db';
 
-const DB_NAME = 'emulador-workspaces';
-const DB_VERSION = 5;
-const META_STORE = 'meta';
-const SERIES_STORE = 'series';
-const FOLDERS_STORE = 'folders';
-const SYMBOLS_STORE = 'symbols';
-const DATASETS_STORE = 'datasets';
-const CANDLES_STORE = 'candles';
-const LEGACY_STORE = 'workspaces';
+// Schema constants and the CandleRecord/DatasetRecord row types are shared,
+// Angular-free, in ./market-data-db so the ingestion worker can reuse them
+// without importing @angular/core. Re-export the record types so existing
+// importers of this service keep working unchanged.
+export type { CandleRecord, DatasetRecord } from './market-data-db';
 
 interface SeriesRecord {
   /** `${symbol}|${tf}` */
@@ -20,45 +29,6 @@ interface SeriesRecord {
   symbol: string;
   tf: Timeframe;
   candles: Candle[];
-}
-
-/**
- * R2/Parquet dataset manifest entry.
- * `id` is the composite key `` `${symbol}|${timeframe}|${year}` ``
- * (e.g. `'XAUUSD|M1|2024'`). For timeframes with no calendar partition
- * (H1, D1) use the sentinel `year: 'all'` matching the `all.parquet`
- * manifest file.
- */
-export interface DatasetRecord {
-  /** `${symbol}|${timeframe}|${year}` — composite primary key. */
-  id: string;
-  symbol: string;
-  timeframe: string;
-  /** Calendar year string (e.g. `'2024'`) or `'all'` for H1/D1 partitions. */
-  year: string;
-  /** File size in bytes from the R2 manifest (used for cache invalidation). */
-  size: number;
-  /** ETag from the R2 manifest (used for cache invalidation). */
-  etag: string;
-  /** ISO-8601 timestamp of last manifest update. */
-  updatedAt: string;
-}
-
-/**
- * Individual candle row from a R2/Parquet file.
- * `id` is the auto-increment primary key — omit it on insert.
- */
-export interface CandleRecord {
-  /** Auto-increment primary key (absent on insert). */
-  id?: number;
-  symbol: string;
-  timeframe: string;
-  /** Unix timestamp in seconds. */
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
 }
 
 /**
@@ -127,7 +97,7 @@ export class WorkspaceDbService {
           // v5: R2/Parquet dataset manifest cache
           if (!db.objectStoreNames.contains(DATASETS_STORE)) {
             const datasets = db.createObjectStore(DATASETS_STORE, { keyPath: 'id' });
-            datasets.createIndex('by_symbol_tf_year', ['symbol', 'timeframe', 'year'], {
+            datasets.createIndex(DATASETS_BY_SYMBOL_TF_YEAR, ['symbol', 'timeframe', 'year'], {
               unique: false,
             });
           }
@@ -137,7 +107,7 @@ export class WorkspaceDbService {
               keyPath: 'id',
               autoIncrement: true,
             });
-            candles.createIndex('by_symbol_tf_time', ['symbol', 'timeframe', 'time'], {
+            candles.createIndex(CANDLES_BY_SYMBOL_TF_TIME, ['symbol', 'timeframe', 'time'], {
               unique: false,
             });
           }
