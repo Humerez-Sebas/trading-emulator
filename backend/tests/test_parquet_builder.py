@@ -165,7 +165,7 @@ class TestWriteAnchors:
         anchors = self._anchors_dos_anios()
         rutas = parquet_builder.write_anchors(anchors, "XAUUSD", str(tmp_path))
         assert isinstance(rutas, list)
-        assert len(rutas) > 0
+        assert len(rutas) == 4
 
     def test_m1_particion_por_anio(self, tmp_path):
         anchors = self._anchors_dos_anios()

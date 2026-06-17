@@ -18,16 +18,15 @@ La separacion pura/orquestador facilita los tests sin MT5.
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-if TYPE_CHECKING:
-    pass
+logger = logging.getLogger(__name__)
 
 # Esquema Parquet: coincide con el modelo Candle de la app (sin volumen).
 _SCHEMA = pa.schema(
@@ -87,6 +86,7 @@ def resample_anchors(df_m1: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
     # M1 no necesita remuestreo; solo reconvertimos el tiempo.
     m1 = df_m1[["time", "open", "high", "low", "close"]].copy().reset_index(drop=True)
+    m1["time"] = m1["time"].astype("int64")
 
     return {
         "M1": m1,
@@ -114,7 +114,9 @@ def write_anchors(
 
     # -- M1: particion por anio UTC ------------------------------------------
     df_m1 = anchors["M1"]
-    if not df_m1.empty:
+    if df_m1.empty:
+        logger.warning("write_anchors: %s M1 vacio, no se escribe", symbol)
+    else:
         anios = pd.to_datetime(df_m1["time"], unit="s", utc=True).dt.year
         for anio, grupo in df_m1.groupby(anios):
             dir_m1 = os.path.join(out_dir, symbol, "m1")
@@ -130,6 +132,7 @@ def write_anchors(
     for tf_key, tf_dir in [("H1", "h1"), ("D1", "d1")]:
         df_tf = anchors[tf_key]
         if df_tf.empty:
+            logger.warning("write_anchors: %s %s vacio, se omite", symbol, tf_key)
             continue
         dir_tf = os.path.join(out_dir, symbol, tf_dir)
         os.makedirs(dir_tf, exist_ok=True)
