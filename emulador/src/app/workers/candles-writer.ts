@@ -79,10 +79,23 @@ function openExistingDb(): Promise<IDBDatabase> {
       }
       resolve(db);
     };
-    req.onerror = () => reject(req.error);
+    let upgradeAttempted = false;
+    req.onerror = () => {
+      if (upgradeAttempted) {
+        reject(
+          new Error(
+            `IndexedDB no inicializado: falta el store "${CANDLES_STORE}". ` +
+              'Abre la app (hilo principal) para crear el esquema antes de ingerir Parquet.',
+          ),
+        );
+      } else {
+        reject(req.error);
+      }
+    };
     // A fresh DB with no version would be created empty; treat that as
-    // uninitialized too. (Reached only if the store check above is bypassed.)
+    // uninitialized too. Abort the upgrade so IDB rolls back the empty creation.
     req.onupgradeneeded = () => {
+      upgradeAttempted = true;
       req.transaction?.abort();
     };
   });
@@ -93,7 +106,7 @@ function insertChunk(db: IDBDatabase, chunk: CandleRecord[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(CANDLES_STORE, 'readwrite');
     const store = tx.objectStore(CANDLES_STORE);
-    for (const record of chunk) store.put(record);
+    for (const record of chunk) store.add(record);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error ?? new Error('bulkInsertCandles: transacción abortada.'));

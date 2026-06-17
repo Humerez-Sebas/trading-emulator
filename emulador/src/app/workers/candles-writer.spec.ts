@@ -154,4 +154,38 @@ describe('bulkInsertCandles', () => {
       /IndexedDB no inicializado/i,
     );
   });
+
+  it('rejects with the clear "no inicializado" error when the database does NOT exist at all', async () => {
+    // Ensure the DB is completely absent before calling the insert.
+    await new Promise<void>((resolve) => {
+      const del = indexedDB.deleteDatabase(DB_NAME);
+      del.onsuccess = () => resolve();
+      del.onerror = () => resolve();
+      del.onblocked = () => resolve();
+    });
+
+    await expect(bulkInsertCandles(synthCandles(5), 10_000)).rejects.toThrow(
+      /IndexedDB no inicializado/i,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// arrowTableToCandles — missing-column error
+// ---------------------------------------------------------------------------
+
+describe('arrowTableToCandles missing-column guard', () => {
+  it('throws its descriptive error when a required column is absent (no close column)', () => {
+    const table = tableFromArrays({
+      time: BigInt64Array.from([1000n, 2000n]),
+      open: Float64Array.from([1.1, 2.1]),
+      high: Float64Array.from([1.5, 2.5]),
+      low: Float64Array.from([1.0, 2.0]),
+      // close is intentionally omitted
+    });
+
+    expect(() => arrowTableToCandles(table, 'XAUUSD', 'H1')).toThrow(
+      /tabla Parquet sin las columnas esperadas/i,
+    );
+  });
 });
