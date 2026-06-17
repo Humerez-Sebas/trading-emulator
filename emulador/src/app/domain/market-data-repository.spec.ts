@@ -115,11 +115,14 @@ describe('IndexedDbMarketDataRepository.getCandles', () => {
   const EURUSD_M1: Omit<CandleRecord, 'id'>[] = [
     { symbol: 'EURUSD', timeframe: 'M1', time: 5000, open: 1.1, high: 1.2, low: 1.0, close: 1.15 },
   ];
+  const XAUUSD_M15: Omit<CandleRecord, 'id'>[] = [
+    { symbol: 'XAUUSD', timeframe: 'M15', time: 7000, open: 5, high: 6, low: 4, close: 5.5 },
+  ];
 
   // Seed once for the whole describe block — each test gets a fresh repo
   // instance (fresh dbPromise), but reads the same seeded data.
   beforeAll(async () => {
-    db = await seedCandlesDb([...XAUUSD_M1, ...XAUUSD_H1, ...EURUSD_M1]);
+    db = await seedCandlesDb([...XAUUSD_M1, ...XAUUSD_H1, ...EURUSD_M1, ...XAUUSD_M15]);
   });
 
   afterAll(() => {
@@ -175,6 +178,18 @@ describe('IndexedDbMarketDataRepository.getCandles', () => {
     const repo = new IndexedDbMarketDataRepository();
     const candles = await repo.getCandles('UNKNOWN', 'M1');
     expect(candles).toEqual([]);
+  });
+
+  it('cross-prefix isolation: M1 query does not bleed into M15 records', async () => {
+    // 'M1' is a string prefix of 'M15'; this test proves the compound-index
+    // key range [symbol, 'M1', -Inf]..[symbol, 'M1', +Inf] does NOT match
+    // the XAUUSD M15 candle (time=7000) seeded alongside the M1 data.
+    const repo = new IndexedDbMarketDataRepository();
+    const candles = await repo.getCandles('XAUUSD', 'M1');
+
+    const times = candles.map((c) => c.time);
+    expect(times).not.toContain(7000); // M15 candle must be excluded
+    expect(candles).toHaveLength(3);   // only the three M1 candles
   });
 });
 

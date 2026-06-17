@@ -4,7 +4,6 @@ import {
   CANDLES_STORE,
   CandleRecord,
   DB_NAME,
-  DB_VERSION,
 } from '../services/market-data-db';
 import { MarketDataRepository } from './market-data.repository';
 
@@ -15,21 +14,56 @@ import { MarketDataRepository } from './market-data.repository';
  * Opens the database without triggering an upgrade (schema is owned by
  * `WorkspaceDbService`); uses the compound index `by_symbol_tf_time` to
  * efficiently retrieve only the rows matching the requested symbol+timeframe.
+ *
+ * NOT @Injectable — the factory provider constructs it via `new`; a future
+ * direct inject() call would bypass the factory and must be avoided.
  */
 export class IndexedDbMarketDataRepository extends MarketDataRepository {
   private dbPromise: Promise<IDBDatabase> | null = null;
 
-  /** Opens the shared IndexedDB at the current version (no schema changes). */
+  /**
+   * Opens the shared IndexedDB WITHOUT a version argument so it never triggers
+   * a schema upgrade. Mirrors the safe pattern in `candles-writer.ts`
+   * (`openExistingDb`): if the `candles` store is absent the DB has not been
+   * initialized yet and we reject rather than create a partial schema.
+   */
   private open(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-        // onupgradeneeded is not expected here (WorkspaceDbService owns the
-        // schema), but we intentionally do NOT reject on it — if the service
-        // initialised the DB in the same tick, the open may still deliver
-        // this event in some environments; we let onsuccess follow normally.
+        const req = indexedDB.open(DB_NAME); // no version => never upgrades
+        let upgradeAttempted = false;
+        req.onupgradeneeded = () => {
+          // A brand-new / absent DB would be created empty here; abort so IDB
+          // rolls back the empty creation without leaving a partial schema.
+          upgradeAttempted = true;
+          req.transaction?.abort();
+        };
+        req.onsuccess = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(CANDLES_STORE)) {
+            db.close();
+            reject(
+              new Error(
+                `IndexedDB no inicializado: falta el store "${CANDLES_STORE}". ` +
+                  'Abre la app (hilo principal) para crear el esquema antes de ingerir Parquet.',
+              ),
+            );
+            return;
+          }
+          resolve(db);
+        };
+        req.onerror = () => {
+          if (upgradeAttempted) {
+            reject(
+              new Error(
+                `IndexedDB no inicializado: falta el store "${CANDLES_STORE}". ` +
+                  'Abre la app (hilo principal) para crear el esquema antes de ingerir Parquet.',
+              ),
+            );
+          } else {
+            reject(req.error);
+          }
+        };
       });
     }
     return this.dbPromise;
