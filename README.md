@@ -141,6 +141,49 @@ En `scripts/` (se ejecutan desde la raíz del repo): `simulador.py` (réplica Py
 del EA para verificación) y `descargar_datos.py` (descarga velas de MT5 a `datos/`).
 `AlgoritmoEA.mq5` es el Expert Advisor de MetaTrader 5.
 
+## Despliegue estático ($0, solo frontend)
+
+Despliega el emulador **100% offline** sin backend: frontend estático en **Cloudflare
+Pages**, **Netlify**, **Vercel** o cualquier CDN; datos (catálogo de símbolos + sesiones)
+guardan en **IndexedDB** del navegador (v4 del schema). Ideal para practicar sin cuenta.
+
+```bash
+npm run build -- --configuration offline   # en emulador/
+# resulta en emulador/dist/ servible estáticamente
+```
+
+**Flujo de uso (invitado):**
+
+1. Abre el sitio estático → app sin login, muestra pill "Invitado" (datos solo en
+   este navegador).
+2. **Crear sesión** con CSV propio:
+   - `Sesiones` / `Crear sesión` → **Paso 1: Subir CSV** (dropzone o click).
+   - Parsea automáticamente, detecta símbolo y TFs, verifica que todos los archivos
+     son del mismo activo (si no, bloquea con error claro).
+   - **Paso 2–3:** valida fechas, elige TFs y rango → **genera sesión** sin servidor.
+   - Gráfico del emulador abre con el CSV cargado; ordena compran/venta, SL/TP, métricas
+     en tiempo real.
+3. **Reutiliza CSVs** en `Mercados` (sección de símbolos offline):
+   - Cada CSV se guarda en catálogo local (nombre + TFs disponibles).
+   - Siguiente sesión: elige del catálogo → sin re-subir.
+   - Puedes "Eliminar" símbolos para limpiar espacio.
+4. **Importa/exporta sesiones** (`Sesiones` / `Importar`):
+   - Sube un `.csv` de sesión anterior (trades + chart state) → se reconstruye
+     la sesión.
+
+**Tech:** Angular 21 standalone + NgRx (state) · **sin API**, sin cookies. Todo
+en-navegador. El catálogo vive en IndexedDB (keyPath `symbol`), con índices de
+`categoria` y timestamps. Al cerrar: los datos quedan guardados; recarga mantiene
+el estado sin servidor.
+
+**Limitaciones:**
+- No sincroniza entre devices (solo este navegador).
+- Sin historial de cuentas (cada recarga es invitado nuevo si limpias IndexedDB).
+- CSV como única fuente de datos (sin acceso a tickers en vivo).
+
+**Versioning:** si abres una versión más nueva del build estático, el schema de
+IndexedDB migra automáticamente (v3 → v4).
+
 ## Deploy a producción (free tier) — pendiente
 
 Topología pensada (no desplegada aún): frontend en **Cloudflare Pages**, backend en
