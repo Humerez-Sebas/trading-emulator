@@ -27,15 +27,22 @@ import r2_uploader  # noqa: E402
 
 
 class FakeS3Client:
-    """Stub ligero que registra llamadas a put_object y devuelve ETags falsos."""
+    """Stub ligero que registra llamadas a put_object y devuelve ETags falsos.
+
+    Body puede ser bytes o un file-like object. Se almacena tal cual para que
+    los tests de manifest puedan leer el JSON (que llega como bytes), mientras
+    que los tests de Parquet pasan un file handle que no necesita inspeccion.
+    """
 
     def __init__(self):
         self.calls: list[dict] = []
         self._etag_counter = 0
 
-    def put_object(self, Bucket: str, Key: str, Body: bytes, **kwargs) -> dict:
+    def put_object(self, Bucket: str, Key: str, Body, **kwargs) -> dict:
         self._etag_counter += 1
         etag = f'"fake-etag-{self._etag_counter:04d}"'
+        # Body se guarda sin leer: si es bytes se puede usar directamente;
+        # si es file handle los tests de Parquet no lo inspeccionan (solo Key/Bucket).
         self.calls.append({"Bucket": Bucket, "Key": Key, "Body": Body, "ETag": etag})
         return {"ETag": etag, "ResponseMetadata": {"HTTPStatusCode": 200}}
 
@@ -167,6 +174,17 @@ class TestUploadParquetTree:
             assert isinstance(rec["updated_at"], datetime)
             assert rec["updated_at"].tzinfo == timezone.utc
 
+    def test_lanza_error_si_out_dir_no_existe(self, tmp_path, fake_client):
+        """Debe lanzar FileNotFoundError si out_dir no existe."""
+        inexistente = str(tmp_path / "no_existe")
+        with pytest.raises(FileNotFoundError):
+            r2_uploader.upload_parquet_tree(inexistente, "mi-bucket", fake_client)
+
+    def test_lanza_error_si_out_dir_vacio(self, tmp_path, fake_client):
+        """Debe lanzar ValueError si out_dir existe pero no hay archivos .parquet."""
+        with pytest.raises(ValueError):
+            r2_uploader.upload_parquet_tree(str(tmp_path), "mi-bucket", fake_client)
+
 
 # ---------------------------------------------------------------------------
 # Tests de upload_manifest
@@ -192,7 +210,7 @@ class TestUploadManifest:
         r2_uploader.upload_manifest(records, "mi-bucket", fake_client)
         call = fake_client.get_call("manifest.json")
         assert call is not None
-        # Body debe ser JSON decodificable
+        # upload_manifest sube bytes (no file handle), por lo que Body es decodificable
         data = json.loads(call["Body"])
         assert data["version"] == 1
         assert "symbols" in data
@@ -337,4 +355,71 @@ class TestLoadConfig:
         monkeypatch.delenv("R2_ENDPOINT", raising=False)
 
         config = r2_uploader.load_config()  # no debe lanzar excepcion
-        assert config.get("R2_ENDPOINT") is None or config.get("R2_ENDPOINT") == ""
+        # Fix #5: la implementacion devuelve None cuando no esta definida
+        assert config.get("R2_ENDPOINT") is None
+
+
+# ---------------------------------------------------------------------------
+# Tests de _dry_run (sin credenciales R2)
+# ---------------------------------------------------------------------------
+
+
+class TestDryRun:
+    """_dry_run no debe requerir credenciales R2."""
+
+    def test_dry_run_sin_credenciales(self, parquet_tree, monkeypatch, capsys):
+        """_dry_run debe funcionar con variables R2 ausentes del entorno."""
+        monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+        monkeypatch.delenv("R2_BUCKET_NAME", raising=False)
+        monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+
+        # No debe lanzar excepcion
+        r2_uploader._dry_run(str(parquet_tree))
+
+        capturado = capsys.readouterr()
+        # Debe imprimir un manifest JSON valido
+        data = json.loads(capturado.out)
+        assert data["version"] == 1
+        assert "XAUUSD" in data["symbols"]
+
+    def test_dry_run_imprime_claves_r2(self, parquet_tree, monkeypatch, capsys):
+        """_dry_run debe incluir las claves market-data/v1/... en la salida."""
+        monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+        monkeypatch.delenv("R2_BUCKET_NAME", raising=False)
+        monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+
+        r2_uploader._dry_run(str(parquet_tree))
+
+        capturado = capsys.readouterr()
+        data = json.loads(capturado.out)
+        # Verificar que el manifest tiene los timeframes esperados
+        xauusd = data["symbols"]["XAUUSD"]
+        assert "m1" in xauusd
+        assert "h1" in xauusd
+        assert "d1" in xauusd
+
+    def test_dry_run_directorio_inexistente(self, tmp_path, monkeypatch, capsys):
+        """_dry_run con directorio inexistente debe imprimir 'Nada que subir' sin crash."""
+        monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+        monkeypatch.delenv("R2_BUCKET_NAME", raising=False)
+        monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+
+        r2_uploader._dry_run(str(tmp_path / "no_existe"))
+
+        capturado = capsys.readouterr()
+        assert "Nada que subir" in capturado.out or "nada" in capturado.out.lower()
+
+    def test_dry_run_directorio_vacio(self, tmp_path, monkeypatch, capsys):
+        """_dry_run con directorio sin .parquet debe imprimir mensaje apropiado."""
+        monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+        monkeypatch.delenv("R2_BUCKET_NAME", raising=False)
+        monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+
+        r2_uploader._dry_run(str(tmp_path))
+
+        capturado = capsys.readouterr()
+        assert "Nada que subir" in capturado.out or "nada" in capturado.out.lower()

@@ -104,6 +104,56 @@ def _r2_key(symbol: str, tf: str, filename: str) -> str:
     return f"{_MARKET_DATA_PREFIX}/{symbol}/{tf}/{filename}"
 
 
+# ---------------------------------------------------------------------------
+# Helper compartido: escaneo del arbol local
+# ---------------------------------------------------------------------------
+
+
+def _scan_tree(out_dir: str) -> list[dict[str, Any]]:
+    """Recorre el arbol local de Parquets y devuelve un registro por archivo.
+
+    Cada registro contiene:
+      - path:      Path absoluto al archivo
+      - symbol:    Nombre del simbolo (directorio padre del tf)
+      - tf:        Timeframe en minusculas ("m1", "h1", "d1")
+      - partition: Stem del archivo sin extension (p.ej. "2024" o "all")
+      - key:       Clave R2 calculada con _r2_key
+      - size:      Tamano del archivo en bytes
+
+    Lanza FileNotFoundError si out_dir no existe.
+    Lanza ValueError si no se encuentran archivos .parquet.
+    """
+    root = Path(out_dir)
+
+    # Guardia: directorio inexistente
+    if not root.exists():
+        raise FileNotFoundError(f"Directorio de salida no encontrado: {out_dir}")
+
+    entradas: list[dict[str, Any]] = []
+
+    for symbol_dir in sorted(root.iterdir()):
+        if not symbol_dir.is_dir():
+            continue
+        symbol = symbol_dir.name  # p.ej. "XAUUSD"
+
+        for tf_dir in sorted(symbol_dir.iterdir()):
+            if not tf_dir.is_dir():
+                continue
+            tf = tf_dir.name.lower()  # "m1", "h1" o "d1"
+
+            for parquet_file in sorted(tf_dir.glob("*.parquet")):
+                entradas.append({
+                    "path": parquet_file,
+                    "symbol": symbol,
+                    "tf": tf,
+                    "partition": parquet_file.stem,
+                    "key": _r2_key(symbol, tf, parquet_file.name),
+                    "size": os.path.getsize(parquet_file),
+                })
+
+    return entradas
+
+
 def upload_parquet_tree(
     out_dir: str,
     bucket: str,
@@ -127,45 +177,41 @@ def upload_parquet_tree(
     --------
     Lista de registros de subida (dicts) listos para pasarle a
     manifest.build_manifest.
+
+    Lanza
+    -----
+    FileNotFoundError si out_dir no existe.
+    ValueError si no hay archivos .parquet en out_dir.
     """
+    entradas = _scan_tree(out_dir)
+
+    if not entradas:
+        raise ValueError(f"No se encontraron archivos .parquet en: {out_dir}")
+
     records: list[dict[str, Any]] = []
-    root = Path(out_dir)
 
-    for symbol_dir in sorted(root.iterdir()):
-        if not symbol_dir.is_dir():
-            continue
-        symbol = symbol_dir.name  # p.ej. "XAUUSD" (tal como esta en disco)
+    for entrada in entradas:
+        path = entrada["path"]
+        key = entrada["key"]
+        file_size = entrada["size"]
 
-        for tf_dir in sorted(symbol_dir.iterdir()):
-            if not tf_dir.is_dir():
-                continue
-            tf = tf_dir.name.lower()  # "m1", "h1" o "d1"
+        # Streaming: se pasa el file handle abierto directamente a put_object,
+        # evitando cargar el archivo entero en memoria (importante para m1).
+        with open(path, "rb") as fh:
+            logger.info("Subiendo %s -> s3://%s/%s (%d bytes)", path, bucket, key, file_size)
+            response = client.put_object(Bucket=bucket, Key=key, Body=fh)
 
-            for parquet_file in sorted(tf_dir.glob("*.parquet")):
-                key = _r2_key(symbol, tf, parquet_file.name)
-                file_size = os.path.getsize(parquet_file)
+        etag: str = response.get("ETag", "").strip('"')
+        uploaded_at = datetime.now(tz=timezone.utc)
 
-                with open(parquet_file, "rb") as fh:
-                    body = fh.read()
-
-                logger.info("Subiendo %s -> s3://%s/%s (%d bytes)", parquet_file, bucket, key, file_size)
-                response = client.put_object(Bucket=bucket, Key=key, Body=body)
-
-                etag: str = response.get("ETag", "").strip('"')
-                uploaded_at = datetime.now(tz=timezone.utc)
-
-                # Derivar la clave de particion del nombre de archivo:
-                # "2024.parquet" -> "2024" | "all.parquet" -> "all"
-                partition = parquet_file.stem  # quita la extension .parquet
-
-                records.append({
-                    "symbol": symbol,
-                    "tf": tf,
-                    "partition": partition,
-                    "size": file_size,
-                    "etag": etag,
-                    "updated_at": uploaded_at,
-                })
+        records.append({
+            "symbol": entrada["symbol"],
+            "tf": entrada["tf"],
+            "partition": entrada["partition"],
+            "size": file_size,
+            "etag": etag,
+            "updated_at": uploaded_at,
+        })
 
     logger.info("Subida completada: %d archivos Parquet", len(records))
     return records
@@ -218,44 +264,55 @@ def _main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    config = load_config()
-    bucket = config["R2_BUCKET_NAME"]
-
     if args.dry_run:
-        _dry_run(args.out_dir, bucket)
+        # El dry-run NO requiere credenciales: solo escanea el arbol local.
+        _dry_run(args.out_dir)
     else:
+        # Solo se leen las credenciales cuando se va a subir de verdad.
+        config = load_config()
+        bucket = config["R2_BUCKET_NAME"]
         client = build_r2_client(config)
         records = upload_parquet_tree(args.out_dir, bucket, client)
         upload_manifest(records, bucket, client)
 
 
-def _dry_run(out_dir: str, bucket: str) -> None:
-    """Muestra las subidas planeadas y el manifest resultante sin tocar la red."""
+def _dry_run(out_dir: str) -> None:
+    """Muestra las subidas planeadas y el manifest resultante sin tocar la red.
+
+    No requiere credenciales R2: las claves de objeto no dependen del bucket.
+    """
     import manifest as manifest_mod
 
-    root = Path(out_dir)
+    # Escanear el arbol usando el helper compartido
+    try:
+        entradas = _scan_tree(out_dir)
+    except FileNotFoundError as exc:
+        print(f"[DRY-RUN] Nada que subir: {exc}")
+        return
+
+    if not entradas:
+        print(f"[DRY-RUN] Nada que subir: no se encontraron archivos .parquet en {out_dir}")
+        return
+
     records: list[dict[str, Any]] = []
 
-    for symbol_dir in sorted(root.iterdir()):
-        if not symbol_dir.is_dir():
-            continue
-        symbol = symbol_dir.name
-        for tf_dir in sorted(symbol_dir.iterdir()):
-            if not tf_dir.is_dir():
-                continue
-            tf = tf_dir.name.lower()
-            for parquet_file in sorted(tf_dir.glob("*.parquet")):
-                key = _r2_key(symbol, tf, parquet_file.name)
-                file_size = os.path.getsize(parquet_file)
-                logger.info("[DRY-RUN] %s -> s3://%s/%s (%d bytes)", parquet_file, bucket, key, file_size)
-                records.append({
-                    "symbol": symbol,
-                    "tf": tf,
-                    "partition": parquet_file.stem,
-                    "size": file_size,
-                    "etag": "dry-run-etag",
-                    "updated_at": datetime.now(tz=timezone.utc),
-                })
+    for entrada in entradas:
+        # Las claves R2 se conocen sin credenciales
+        logger.info(
+            "[DRY-RUN] %s -> %s (%d bytes)",
+            entrada["path"],
+            entrada["key"],
+            entrada["size"],
+        )
+        records.append({
+            "symbol": entrada["symbol"],
+            "tf": entrada["tf"],
+            "partition": entrada["partition"],
+            "size": entrada["size"],
+            # Placeholder: no hay subida real, el ETag no esta disponible.
+            "etag": "dry-run-etag",
+            "updated_at": datetime.now(tz=timezone.utc),
+        })
 
     manifest_dict = manifest_mod.build_manifest(records)
     print(json.dumps(manifest_dict, indent=2, ensure_ascii=False))
