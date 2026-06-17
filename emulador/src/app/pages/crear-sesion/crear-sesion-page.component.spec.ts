@@ -29,6 +29,12 @@ const H1_CSV_B = [
   '2024-02-01 01:00,10,11,9,10',
   '2024-02-01 02:00,10,11,9,10',
 ].join('\n');
+const H4_CSV = [
+  'time,open,high,low,close',
+  '2024-01-01 00:00,10,11,9,10',
+  '2024-01-01 04:00,10,11,9,10',
+  '2024-01-01 08:00,10,11,9,10',
+].join('\n');
 
 const DESDE = 1_700_000_000;
 const HASTA = 1_710_000_000;
@@ -524,6 +530,26 @@ describe('CrearSesionPageComponent', () => {
       expect(component.selected()?.name).toBe('XAUUSD');
       expect(component.coverage()[0].tf).toBe('H1');
       expect(component.step()).toBe(2);
+    });
+
+    it('confirmCsv writes catalog coverage for only the persisted (selected) tfs', async () => {
+      create();
+      await component.onCsvFiles(
+        csvFileEvent([
+          { name: 'xauusd_h1.csv', text: H1_CSV },
+          { name: 'xauusd_h4.csv', text: H4_CSV },
+        ]),
+      );
+      component.toggleTf('H4'); // deselect H4 — only H1 will be persisted
+      component.startDate.set('2024-01-01');
+      await component.confirmCsv();
+
+      const sym = (dbStub.putSymbol as any).mock.calls[0][0];
+      expect(sym.coverage.map((c: { tf: string }) => c.tf)).toEqual(['H1']);
+      const action = dispatch.mock.calls.find(
+        (c: unknown[]) => (c[0] as any).type === '[Workspaces] Switch Asset',
+      )![0] as any;
+      expect(action.thenLoad.map((f: { tf: string }) => f.tf)).toEqual(['H1']);
     });
   });
 });

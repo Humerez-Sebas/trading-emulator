@@ -76,14 +76,12 @@ export class CrearSesionPageComponent {
   progress = signal<{ loaded: number; total: number; tf: string } | null>(null);
   downloadError = signal('');
 
-  /** TFs offered: from the parsed CSV / catalog in CSV mode, else the backend symbol. */
-  coverage = computed<TfCoverage[]>(() => {
-    if (this.source() === 'csv') {
-      if (this.parsedFiles().length) return coverageFromParsed(this.parsedFiles());
-      return this.selected()?.cobertura ?? [];
-    }
-    return this.selected()?.cobertura ?? [];
-  });
+  /** TFs offered: parsed CSV / catalog coverage in CSV mode, else the backend symbol. */
+  coverage = computed<TfCoverage[]>(() =>
+    this.source() === 'csv' && this.parsedFiles().length
+      ? coverageFromParsed(this.parsedFiles())
+      : (this.selected()?.cobertura ?? []),
+  );
 
   /** Intersection of the selected TFs' ranges, for the date validation. */
   dateRange = computed(() => {
@@ -309,12 +307,22 @@ export class CrearSesionPageComponent {
     // build/merge the catalog entry from the chosen coverage
     const now = Date.now();
     const existing = await this.db.getSymbol(symbol).catch(() => undefined);
+    // Catalog coverage must reflect only TFs actually stored: the selected upload
+    // TFs (fresh upload) plus any TFs a previous upload of this symbol persisted.
+    const uploadedCoverage =
+      parsed.length > 0
+        ? coverageFromParsed(parsed.filter((p) => tfs.includes(p.tf)))
+        : (existing?.coverage ?? this.coverage());
+    const byTf = new Map<string, TfCoverage>();
+    for (const c of existing?.coverage ?? []) byTf.set(c.tf, c);
+    for (const c of uploadedCoverage) byTf.set(c.tf, c);
+    const coverage = [...byTf.values()];
     const entry: OfflineSymbol = {
       symbol,
       descripcion: existing?.descripcion ?? '',
       categoria: existing?.categoria ?? DEFAULT_OFFLINE_CATEGORY,
       digits: this.selected()?.digits || existing?.digits,
-      coverage: this.coverage(),
+      coverage,
       createdAt: existing?.createdAt ?? now,
       lastModified: now,
     };
