@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Store } from '@ngrx/store';
 import { AuthActions } from '../../state/auth/auth.actions';
 import { authFeature } from '../../state/auth/auth.reducer';
@@ -22,6 +22,7 @@ import { environment } from '../../../environments/environment';
 export class AuthPageComponent {
   private store = inject(Store);
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
 
   /** 'login' | 'register', provided by the route data. */
   mode = input<'login' | 'register'>('login');
@@ -37,8 +38,14 @@ export class AuthPageComponent {
   offline = computed(() => this.status() === 'offline');
   // hidden in prod (closed registration); the backend also enforces it (403)
   registrationEnabled = environment.registrationEnabled;
+  guestModeEnabled = environment.guestModeEnabled;
 
   valid = computed(() => this.username().trim().length >= 3 && this.password().length >= 6);
+
+  continueAsGuest(): void {
+    this.store.dispatch(AuthActions.continueAsGuest());
+    this.router.navigateByUrl('/');
+  }
 
   submit(): void {
     if (!this.valid() || this.pending()) return;
