@@ -129,12 +129,6 @@ select {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.error {
-  color: var(--down);
-}
-.info {
-  color: var(--up);
-}
 
 .floating-pnl {
   font-weight: var(--weight-semibold);

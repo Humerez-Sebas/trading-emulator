@@ -50,6 +50,7 @@
               "outputHashing": "all"
             },
             "offline": {
+              "optimization": true,
               "fileReplacements": [
                 {
                   "replace": "src/environments/environment.ts",

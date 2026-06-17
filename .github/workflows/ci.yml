@@ -63,6 +63,8 @@ jobs:
         run: npx ng test --watch=false
       - name: Production build
         run: npm run build
+      - name: Offline static build
+        run: npm run build -- --configuration offline
       - name: Dependency audit (npm, informational)
         # Angular's build toolchain pulls transitive advisories that can't be
         # fixed without breaking; report but don't block the build.

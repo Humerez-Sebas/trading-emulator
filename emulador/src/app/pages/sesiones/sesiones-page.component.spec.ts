@@ -468,7 +468,9 @@ describe('SesionesPageComponent', () => {
     create({ currentAsset: 'XAUUSD' });
     await settle();
     await component.onImportSession(sessionFileEvent('xauusd_sesion.csv', SESSION_CSV));
-    expect(dispatch).toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.sessionImported.type }),
+    );
   });
 
   // ---- helpers ----
