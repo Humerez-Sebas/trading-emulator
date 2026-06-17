@@ -281,7 +281,7 @@ async function rawDb(svcInstance: WorkspaceDbService): Promise<IDBDatabase> {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
     // Should never fire since service already upgraded, but guard for safety
-    req.onupgradeneeded = () => req.result.close();
+    req.onupgradeneeded = () => reject(new Error('rawDb: unexpected upgrade — service should already be at v5'));
   });
 }
 
@@ -347,26 +347,20 @@ describe('WorkspaceDbService — v5 schema: all existing stores still present', 
     expect(names).toContain('symbols');
     expect(names).toContain('datasets');
     expect(names).toContain('candles');
+    expect(names).toHaveLength(6);
   });
 });
 
-describe('WorkspaceDbService — v5 migration survival: v4 data readable after upgrade', () => {
-  it('meta and series seeded under the existing service survive the v5 schema', async () => {
-    // Seed data using the current service (which now opens at v5; this tests
-    // that existing API still works and data persists across the same version)
-    const meta = workspaceMeta({ symbol: 'BTCUSD' });
-    await svc.putMeta(meta);
-    await svc.putSeries('BTCUSD', 'M1', series(5));
-
-    // Re-read after v5 schema is in place
-    const got = await svc.getMeta('BTCUSD');
-    expect(got).toEqual(meta);
-    const ws = await svc.getWorkspace('BTCUSD');
-    expect(ws).toBeDefined();
-    expect(ws!.series['M1']).toHaveLength(5);
-  });
-
+describe('WorkspaceDbService — v4→v5 upgrade: data written at v4 is readable after v5 open', () => {
   it('v4→v5 upgrade path: data written at v4 is readable after v5 open', async () => {
+    // Delete the database first to avoid VersionError from a lingering v5 connection
+    await new Promise<void>((resolve) => {
+      const del = indexedDB.deleteDatabase(DB_NAME_V5);
+      del.onsuccess = () => resolve();
+      del.onerror = () => resolve();
+      del.onblocked = () => resolve();
+    });
+
     // 1. Seed a v4 database directly (only 4 stores: meta, series, folders, symbols)
     await new Promise<void>((resolve, reject) => {
       const req = indexedDB.open(DB_NAME_V5, 4);
