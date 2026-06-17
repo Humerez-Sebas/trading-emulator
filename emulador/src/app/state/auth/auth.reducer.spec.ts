@@ -82,3 +82,13 @@ describe('auth reducer: loggedOut', () => {
     expect(next.pending).toBe(false);
   });
 });
+
+describe('auth reducer: continueAsGuest', () => {
+  it('sets status guest and clears user', () => {
+    const s = { ...initial(), user, status: 'anonymous' as const };
+    const next = reducer(s, AuthActions.continueAsGuest());
+    expect(next.status).toBe('guest');
+    expect(next.user).toBeNull();
+    expect(next.pending).toBe(false);
+  });
+});

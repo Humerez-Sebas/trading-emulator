@@ -4,7 +4,7 @@ import { provideMockActions } from '@ngrx/effects/testing';
 import { provideMockStore } from '@ngrx/store/testing';
 import { of, throwError, Subject } from 'rxjs';
 import { firstValueFrom } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpErrorResponse } from '@angular/common/http';
 
 import { AuthEffects } from './auth.effects';
@@ -54,6 +54,10 @@ describe('AuthEffects', () => {
     effects = TestBed.inject(AuthEffects);
   });
 
+  afterEach(() => {
+    localStorage.removeItem('emulador.guest');
+  });
+
   describe('init$', () => {
     it('dispatches checkSession on ROOT_EFFECTS_INIT', async () => {
       const p = firstValueFrom(effects.init$);
@@ -88,6 +92,27 @@ describe('AuthEffects', () => {
       actions$.next(AuthActions.checkSession());
 
       expect(await p).toEqual(AuthActions.sessionResolved({ user: null, offline: false }));
+    });
+
+    it('honors a persisted guest flag on a 401 (anonymous) response', async () => {
+      localStorage.setItem('emulador.guest', '1');
+      api.me.mockReturnValue(throwError(() => httpError(401)));
+
+      const p = firstValueFrom(effects.check$);
+      actions$.next(AuthActions.checkSession());
+
+      expect(await p).toEqual(AuthActions.continueAsGuest());
+    });
+  });
+
+  describe('persistGuest$', () => {
+    it('writes the guest flag to localStorage', async () => {
+      localStorage.removeItem('emulador.guest');
+      const sub = effects.persistGuest$.subscribe();
+      actions$.next(AuthActions.continueAsGuest());
+      await Promise.resolve();
+      expect(localStorage.getItem('emulador.guest')).toBe('1');
+      sub.unsubscribe();
     });
   });
 

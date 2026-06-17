@@ -30,15 +30,17 @@
       />
     </label>
 
-    <ui-segmented
-      ariaLabel="Filtro de activos"
-      [options]="[
-        { value: 'todos', label: 'Todos' },
-        { value: 'mis', label: 'Mis activos', count: selected().length },
-      ]"
-      [value]="mode()"
-      (valueChange)="setMode($any($event))"
-    />
+    @if (!offline()) {
+      <ui-segmented
+        ariaLabel="Filtro de activos"
+        [options]="[
+          { value: 'todos', label: 'Todos' },
+          { value: 'mis', label: 'Mis activos', count: selected().length },
+        ]"
+        [value]="mode()"
+        (valueChange)="setMode($any($event))"
+      />
+    }
   </div>
 
   @switch (state()) {
@@ -56,7 +58,31 @@
       </div>
     }
     @case ('ok') {
-      @if (!symbols().length) {
+      @if (offline() && symbols().length === 0) {
+        <ui-empty-state
+          title="Aún no subiste ningún CSV"
+          hint="Crea tu primera sesión subiendo archivos CSV de velas; los activos aparecerán aquí."
+          [boxed]="true"
+        >
+          <svg
+            icon
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <a appButton variant="primary" [routerLink]="['/sesiones/crear']">Subir tu primer CSV</a>
+        </ui-empty-state>
+      } @else if (!offline() && !symbols().length) {
         <div class="empty">
           <p>La base de datos aún no tiene símbolos.</p>
           <p class="hint">
@@ -64,7 +90,7 @@
             <code>py backend/harvester.py --symbols US30,XAUUSD --tfs M5,H1</code>.
           </p>
         </div>
-      } @else if (mode() === 'mis' && !selected().length) {
+      } @else if (!offline() && mode() === 'mis' && !selected().length) {
         <div class="empty">
           <p>Aún no has marcado ningún activo como tuyo.</p>
           <p class="hint">
@@ -85,29 +111,33 @@
             @for (s of g.items; track s.name) {
               <article class="card" [class.picked]="isSelected(s.name)">
                 <header class="card-head">
-                  <label
-                    class="pick"
-                    [title]="isSelected(s.name) ? 'Quitar de mis activos' : 'Añadir a mis activos'"
-                  >
-                    <input
-                      type="checkbox"
-                      [checked]="isSelected(s.name)"
-                      (change)="toggleSelected(s.name)"
-                      [attr.aria-label]="'Seguir ' + s.name"
-                    />
-                    <span class="box" aria-hidden="true">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    </span>
-                  </label>
+                  @if (!offline()) {
+                    <label
+                      class="pick"
+                      [title]="
+                        isSelected(s.name) ? 'Quitar de mis activos' : 'Añadir a mis activos'
+                      "
+                    >
+                      <input
+                        type="checkbox"
+                        [checked]="isSelected(s.name)"
+                        (change)="toggleSelected(s.name)"
+                        [attr.aria-label]="'Seguir ' + s.name"
+                      />
+                      <span class="box" aria-hidden="true">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="3"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      </span>
+                    </label>
+                  }
                   <div class="card-title">
                     <h3>{{ s.name }}</h3>
                     <p class="desc">{{ s.descripcion || '—' }}</p>
@@ -121,6 +151,30 @@
                   >
                     Crear sesión
                   </a>
+                  @if (offline()) {
+                    <ui-menu ariaLabel="Más acciones para {{ s.name }}">
+                      <button class="ui-menu-item" type="button" (click)="remove(s.name)">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                          <path d="M10 11v6"></path>
+                          <path d="M14 11v6"></path>
+                          <path d="M9 6V4h6v2"></path>
+                        </svg>
+                        Eliminar
+                      </button>
+                    </ui-menu>
+                  }
                 </header>
                 @if (s.cobertura.length; as n) {
                   @let sum = coverageSummary(s.cobertura);

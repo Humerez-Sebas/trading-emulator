@@ -3,11 +3,22 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { Store } from '@ngrx/store';
 import { BackendApiService, BackendSymbol, TfCoverage } from '../../services/backend-api.service';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
-import { Candle, Timeframe } from '../../models';
+import { Candle, Timeframe, derivePointSize, symbolFromFileName } from '../../models';
 import { PendingCsv, WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import { emptyWorkspace } from '../../state/workspaces/workspaces.models';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { DatePickerComponent } from '../../components/ui/date-picker.component';
+import { SegmentedControlComponent } from '../../components/ui/segmented-control.component';
+import { BadgeDirective } from '../../components/ui/badge.directive';
+import { CsvLoaderService } from '../../services/csv-loader.service';
+import {
+  OfflineSymbol,
+  ParsedTf,
+  coverageFromParsed,
+  DEFAULT_OFFLINE_CATEGORY,
+} from '../../services/offline-catalog';
+import { authFeature } from '../../state/auth/auth.reducer';
+import { environment } from '../../../environments/environment';
 
 type Step = 1 | 2 | 3;
 
@@ -29,7 +40,7 @@ const STREAM_HYDRATE_THRESHOLD = 200_000;
 @Component({
   selector: 'app-crear-sesion-page',
   standalone: true,
-  imports: [ButtonDirective, DatePickerComponent],
+  imports: [ButtonDirective, DatePickerComponent, SegmentedControlComponent, BadgeDirective],
   templateUrl: './crear-sesion-page.component.html',
   styleUrl: './crear-sesion-page.component.css',
 })
@@ -39,6 +50,20 @@ export class CrearSesionPageComponent {
   private store = inject(Store);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private csvLoader = inject(CsvLoaderService);
+  private status = this.store.selectSignal(authFeature.selectStatus);
+
+  /** csv = create from uploaded files / catalog; backend = stored harvester. */
+  source = signal<'backend' | 'csv'>(environment.offlineOnly ? 'csv' : 'backend');
+  dragOver = signal(false);
+  /** Forced CSV mode: static build or guest/offline session. */
+  csvOnly = computed(
+    () => environment.offlineOnly || this.status() === 'guest' || this.status() === 'offline',
+  );
+  catalog = signal<OfflineSymbol[]>([]);
+  csvError = signal('');
+  parsedFiles = signal<ParsedTf[]>([]);
+  parsedSymbol = signal('');
 
   state = signal<'loading' | 'ok' | 'error'>('loading');
   symbols = signal<BackendSymbol[]>([]);
@@ -54,8 +79,12 @@ export class CrearSesionPageComponent {
   progress = signal<{ loaded: number; total: number; tf: string } | null>(null);
   downloadError = signal('');
 
-  /** Only TFs with stored candles are offered. */
-  coverage = computed(() => this.selected()?.cobertura ?? []);
+  /** TFs offered: parsed CSV / catalog coverage in CSV mode, else the backend symbol. */
+  coverage = computed<TfCoverage[]>(() =>
+    this.source() === 'csv' && this.parsedFiles().length
+      ? coverageFromParsed(this.parsedFiles())
+      : (this.selected()?.cobertura ?? []),
+  );
 
   /** Intersection of the selected TFs' ranges, for the date validation. */
   dateRange = computed(() => {
@@ -110,6 +139,11 @@ export class CrearSesionPageComponent {
 
   constructor() {
     const preselect = this.route.snapshot.queryParamMap.get('symbol');
+    if (this.csvOnly()) {
+      this.source.set('csv');
+      this.loadCatalog(preselect);
+      return;
+    }
     this.api.symbols().subscribe({
       next: (r) => {
         // only symbols with data can start a session
@@ -125,6 +159,35 @@ export class CrearSesionPageComponent {
       },
       error: () => this.state.set('error'),
     });
+  }
+
+  private async loadCatalog(preselect: string | null): Promise<void> {
+    try {
+      const list = await this.db.listSymbols();
+      this.catalog.set(list);
+      this.state.set('ok');
+      if (preselect) {
+        const match = list.find((s) => s.symbol === preselect);
+        if (match) this.pickCatalogSymbol(match);
+      }
+    } catch {
+      this.catalog.set([]);
+      this.state.set('ok');
+    }
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    this.dragOver.set(true);
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.dragOver.set(false);
+    const files = event.dataTransfer?.files;
+    if (files?.length) {
+      void this.onCsvFiles({ target: { files, value: '' } } as unknown as Event);
+    }
   }
 
   pickSymbol(s: BackendSymbol): void {
@@ -187,6 +250,124 @@ export class CrearSesionPageComponent {
     return this.coverage()
       .map((c) => c.tf)
       .filter((tf) => this.selectedTfs().has(tf));
+  }
+
+  /** Parses dropped/selected CSVs, enforces a single asset, prefills step 2. */
+  async onCsvFiles(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    if (!input.files?.length) return;
+    this.csvError.set('');
+    const parsed: ParsedTf[] = [];
+    let symbol = '';
+    try {
+      for (const file of Array.from(input.files)) {
+        const text = await file.text();
+        const { tf, candles, fileName } = this.csvLoader.parseText(text, file.name);
+        const sym = symbolFromFileName(fileName);
+        if (!symbol) symbol = sym;
+        else if (sym !== symbol) {
+          throw new Error(`Todos los archivos deben ser del mismo activo (${symbol} ≠ ${sym}).`);
+        }
+        parsed.push({ tf, candles });
+      }
+    } catch (e) {
+      this.csvError.set((e as Error).message);
+      this.parsedFiles.set([]);
+      this.parsedSymbol.set('');
+      input.value = '';
+      return;
+    }
+    input.value = '';
+    this.parsedFiles.set(parsed);
+    this.parsedSymbol.set(symbol);
+    // synthesize a BackendSymbol so the rest of the wizard works unchanged
+    this.selected.set({
+      name: symbol,
+      descripcion: '',
+      categoria: DEFAULT_OFFLINE_CATEGORY,
+      digits: derivePointSize(parsed[0].candles),
+      cobertura: coverageFromParsed(parsed),
+    });
+    this.selectedTfs.set(new Set(this.coverage().map((c) => c.tf)));
+    this.defaultDate();
+    this.step.set(2);
+  }
+
+  /** Step 1 (catalog path): reuse a previously uploaded symbol. */
+  pickCatalogSymbol(s: OfflineSymbol): void {
+    this.parsedFiles.set([]); // hydrate series from IndexedDB, not from memory
+    this.parsedSymbol.set(s.symbol);
+    this.selected.set({
+      name: s.symbol,
+      descripcion: s.descripcion,
+      categoria: s.categoria,
+      digits: s.digits ?? 0,
+      cobertura: s.coverage,
+    });
+    this.selectedTfs.set(new Set(s.coverage.map((c) => c.tf)));
+    this.defaultDate();
+    this.step.set(2);
+  }
+
+  /**
+   * CSV confirm: persist the catalog entry, then either hand the parsed candles
+   * to the workspace flow (fresh upload) or let switchAsset hydrate them from
+   * IndexedDB (existing catalog symbol).
+   */
+  async confirmCsv(): Promise<void> {
+    const symbol = this.parsedSymbol();
+    const start = this.startEpoch();
+    if (!symbol || start === null) return;
+    const tfs = this.chosenTfs() as Timeframe[];
+    const parsed = this.parsedFiles();
+
+    // build/merge the catalog entry from the chosen coverage
+    const now = Date.now();
+    const existing = await this.db.getSymbol(symbol).catch(() => undefined);
+    // Catalog coverage must reflect only TFs actually stored: the selected upload
+    // TFs (fresh upload) plus any TFs a previous upload of this symbol persisted.
+    const uploadedCoverage =
+      parsed.length > 0
+        ? coverageFromParsed(parsed.filter((p) => tfs.includes(p.tf)))
+        : (existing?.coverage ?? this.coverage());
+    const byTf = new Map<string, TfCoverage>();
+    for (const c of existing?.coverage ?? []) byTf.set(c.tf, c);
+    for (const c of uploadedCoverage) byTf.set(c.tf, c);
+    const coverage = [...byTf.values()];
+    const entry: OfflineSymbol = {
+      symbol,
+      descripcion: existing?.descripcion ?? '',
+      categoria: existing?.categoria ?? DEFAULT_OFFLINE_CATEGORY,
+      digits: this.selected()?.digits || existing?.digits,
+      coverage,
+      createdAt: existing?.createdAt ?? now,
+      lastModified: now,
+    };
+    await this.db.putSymbol(entry).catch(() => undefined);
+
+    // fresh upload → hand candles directly; catalog pick → hydrate from DB
+    const thenLoad =
+      parsed.length > 0
+        ? parsed
+            .filter((p) => tfs.includes(p.tf))
+            .map((p) => ({
+              tf: p.tf,
+              candles: p.candles,
+              fileName: `${symbol.toLowerCase()}_${p.tf.toLowerCase()}.csv`,
+            }))
+        : undefined;
+
+    this.store.dispatch(
+      WorkspacesActions.switchAsset({
+        symbol,
+        selectedTfs: tfs,
+        thenLoad,
+        thenNewSession: { name: this.sessionName().trim() || null },
+        thenGoTo: start,
+        thenSessionEnd: this.endEpoch() ?? undefined,
+      }),
+    );
+    await this.router.navigateByUrl('/');
   }
 
   /**

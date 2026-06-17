@@ -7,6 +7,11 @@ import { BackendApiService } from '../../services/backend-api.service';
 import { UserSymbolsActions } from '../../state/user-symbols/user-symbols.actions';
 import { userSymbolsFeature } from '../../state/user-symbols/user-symbols.reducer';
 import { backendSymbol, tfCoverage } from '../../testing/fixtures';
+import { workspaceDbStub } from '../../testing/workspace-db.stub';
+import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { DialogService } from '../../components/ui/dialog.service';
+import { authFeature } from '../../state/auth/auth.reducer';
+import { OfflineSymbol } from '../../services/offline-catalog';
 
 function makeApiStub(result: 'ok' | 'error' = 'ok') {
   const symbols = [
@@ -200,5 +205,87 @@ describe('MercadosPageComponent', () => {
       expect(tip).toContain('·');
       expect(tip).toContain('1.2M velas');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Offline / guest mode
+// ---------------------------------------------------------------------------
+
+const catalogEntry: OfflineSymbol = {
+  symbol: 'XAUUSD',
+  descripcion: 'Oro (CSV)',
+  categoria: 'Mis CSV',
+  coverage: [{ tf: 'H1', desde: 1_700_000_000, hasta: 1_710_000_000, velas: 1000 }],
+  createdAt: 1,
+  lastModified: 1,
+};
+
+describe('MercadosPageComponent (offline)', () => {
+  let component: MercadosPageComponent;
+  let store: MockStore;
+  let dbStub: ReturnType<typeof workspaceDbStub>;
+  let dialogStub: { confirm: ReturnType<typeof vi.fn> };
+
+  function createOffline(listResult: OfflineSymbol[] = [catalogEntry]) {
+    dbStub = workspaceDbStub();
+    (dbStub.listSymbols as ReturnType<typeof vi.fn>).mockResolvedValue(listResult);
+    dialogStub = { confirm: vi.fn().mockResolvedValue(true) };
+
+    const apiStub = { symbols: vi.fn().mockReturnValue(of({ total: 0, symbols: [] })) };
+
+    TestBed.configureTestingModule({
+      providers: [
+        MercadosPageComponent,
+        provideMockStore(),
+        { provide: BackendApiService, useValue: apiStub },
+        { provide: WorkspaceDbService, useValue: dbStub },
+        { provide: DialogService, useValue: dialogStub },
+      ],
+    });
+
+    store = TestBed.inject(MockStore);
+    // Override auth status to 'guest' BEFORE constructing the component so that
+    // the constructor's offline() computed reads true from the start.
+    store.overrideSelector(authFeature.selectStatus, 'guest');
+    store.overrideSelector(userSymbolsFeature.selectSymbols, []);
+    store.refreshState();
+
+    component = TestBed.inject(MercadosPageComponent);
+  }
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+    vi.restoreAllMocks();
+  });
+
+  it('loads symbols from the catalog and maps them to cards', async () => {
+    createOffline([catalogEntry]);
+    // Wait for the async listSymbols promise to resolve
+    await Promise.resolve();
+
+    expect(component.offline()).toBe(true);
+    expect(component.symbols()).toHaveLength(1);
+    expect(component.symbols()[0].name).toBe('XAUUSD');
+    expect(component.symbols()[0].categoria).toBe('Mis CSV');
+  });
+
+  it('removeSymbol cascades and reloads the catalog after confirm', async () => {
+    createOffline([catalogEntry]);
+    // Wait for initial load to settle
+    await Promise.resolve();
+
+    // Prepare fresh catalog after deletion (empty list after remove)
+    (dbStub.listSymbols as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    await component.remove('XAUUSD');
+
+    expect(dialogStub.confirm).toHaveBeenCalledOnce();
+    expect(dbStub.removeSymbol).toHaveBeenCalledWith('XAUUSD');
+    // listSymbols should have been called at least twice: initial load + reload after delete
+    expect(dbStub.listSymbols).toHaveBeenCalledTimes(2);
+    // After reload, symbols list is empty
+    await Promise.resolve();
+    expect(component.symbols()).toHaveLength(0);
   });
 });

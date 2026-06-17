@@ -2,9 +2,11 @@
   <header class="head">
     <h1>Nueva sesión de backtesting</h1>
     <p class="steps" aria-live="polite">Paso {{ step() }} de 3</p>
-    <div class="bar" aria-hidden="true">
-      <span class="fill" [style.width.%]="(step() / 3) * 100"></span>
-    </div>
+    @if (source() !== 'csv') {
+      <div class="bar" aria-hidden="true">
+        <span class="fill" [style.width.%]="(step() / 3) * 100"></span>
+      </div>
+    }
   </header>
 
   @switch (state()) {
@@ -18,136 +20,230 @@
       </div>
     }
     @case ('ok') {
-      @if (!symbols().length) {
-        <div class="empty">
-          <p>Ningún activo tiene velas en la base de datos.</p>
-          <p class="hint">
-            Ejecuta el harvester con MT5 abierto:
-            <code>py backend/harvester.py --symbols US30,XAUUSD --tfs M5,H1</code>.
-          </p>
-        </div>
-      } @else {
-        @switch (step()) {
-          @case (1) {
-            <section aria-labelledby="step1-title">
-              <h2 id="step1-title">Elige el activo</h2>
-              <div class="assets" role="radiogroup" aria-label="Activo de la sesión">
-                @for (s of symbols(); track s.name) {
-                  <button
-                    class="asset"
-                    role="radio"
-                    [attr.aria-checked]="selected()?.name === s.name"
-                    [class.picked]="selected()?.name === s.name"
-                    (click)="pickSymbol(s)"
-                  >
-                    <span class="name">{{ s.name }}</span>
-                    <span class="desc">{{ s.descripcion || s.categoria }}</span>
-                    <span class="tfs">{{ s.cobertura.length }} TFs disponibles</span>
-                  </button>
-                }
-              </div>
-            </section>
-          }
-          @case (2) {
-            <section aria-labelledby="step2-title">
-              <h2 id="step2-title">{{ selected()?.name }} — temporalidades y fecha de inicio</h2>
-              <p class="help">
-                El gráfico abrirá en la fecha elegida con el histórico previo detrás.
-              </p>
+      @switch (step()) {
+        @case (1) {
+          <section aria-labelledby="step1-title">
+            <h2 id="step1-title">Elige el activo</h2>
 
-              <fieldset class="tf-set">
-                <legend>Temporalidades</legend>
-                @for (c of coverage(); track c.tf) {
-                  <label class="tf-row">
-                    <input
-                      type="checkbox"
-                      [checked]="selectedTfs().has(c.tf)"
-                      (change)="toggleTf(c.tf)"
-                    />
-                    <span class="tf">{{ c.tf }}</span>
-                    <span class="range">{{ rangeLabel(c) }}</span>
-                  </label>
-                }
-              </fieldset>
+            @if (!csvOnly()) {
+              <ui-segmented
+                ariaLabel="Origen de los datos"
+                [options]="[
+                  { value: 'backend', label: 'Catálogo' },
+                  { value: 'csv', label: 'Subir CSV' },
+                ]"
+                [value]="source()"
+                (valueChange)="source.set($any($event))"
+              />
+            }
 
-              <div class="date-field">
-                <span>Fecha de inicio del replay</span>
-                <ui-date-picker
-                  ariaLabel="Fecha de inicio del replay"
-                  [value]="startDate()"
-                  [min]="dateRange() ? isoDate(dateRange()!.from) : ''"
-                  [max]="dateRange() ? isoDate(dateRange()!.to) : ''"
-                  (valueChange)="startDate.set($event)"
-                />
-                @if (dateRange(); as r) {
-                  <small>
-                    Rango común disponible: {{ isoDate(r.from) }} → {{ isoDate(r.to) }}
-                  </small>
-                }
-                @if (!dateValid() && startDate()) {
-                  <small class="invalid" role="alert">
-                    La fecha debe estar dentro del rango disponible.
-                  </small>
-                }
-              </div>
+            @if (source() === 'csv') {
+              <!-- símbolos ya subidos (catálogo offline) -->
+              @if (catalog().length) {
+                <h2>Tus activos</h2>
+                <div class="assets">
+                  @for (s of catalog(); track s.symbol) {
+                    <button class="asset" type="button" (click)="pickCatalogSymbol(s)">
+                      <span class="name">{{ s.symbol }}</span>
+                      <span class="desc">{{ s.descripcion || s.categoria }}</span>
+                      <span class="tfs">{{ s.coverage.length }} temporalidad(es)</span>
+                    </button>
+                  }
+                </div>
+                <h2>O sube nuevos CSV</h2>
+              }
 
-              <div class="date-field">
-                <span>Fecha de fin (opcional)</span>
-                <ui-date-picker
-                  ariaLabel="Fecha de fin"
-                  placeholder="Sin fin programado"
-                  [value]="endDate()"
-                  [min]="startDate() || ''"
-                  [max]="dateRange() ? isoDate(dateRange()!.to) : ''"
-                  (valueChange)="endDate.set($event)"
-                />
-                <small>Al llegar el replay a esta fecha, la sesión termina sola.</small>
-                @if (!endValid() && endDate()) {
-                  <small class="invalid" role="alert">
-                    El fin debe ser posterior al inicio y estar dentro del rango disponible.
-                  </small>
-                }
-              </div>
-            </section>
-          }
-          @case (3) {
-            <section aria-labelledby="step3-title">
-              <h2 id="step3-title">Confirmar sesión</h2>
-
-              <label class="name-field">
-                <span>Nombre de la sesión (opcional)</span>
-                <input
-                  type="text"
-                  maxlength="40"
-                  placeholder="p. ej. US30 junio swing"
-                  [value]="sessionName()"
-                  (input)="onName($event)"
-                />
+              <!-- dropzone -->
+              <label
+                class="dropzone"
+                [class.dragover]="dragOver()"
+                (dragover)="onDragOver($event)"
+                (dragleave)="dragOver.set(false)"
+                (drop)="onDrop($event)"
+              >
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span class="dz-title">Arrastra tus CSV o haz clic para elegir</span>
+                <span class="dz-help"
+                  >Mismo activo, una temporalidad por archivo (p. ej.
+                  <code>xauusd_h4.csv</code>).</span
+                >
+                <input type="file" accept=".csv" multiple (change)="onCsvFiles($event)" hidden />
               </label>
 
-              <dl class="summary">
-                <div>
-                  <dt>Activo</dt>
-                  <dd>{{ selected()?.name }}</dd>
-                </div>
-                <div>
-                  <dt>Temporalidades</dt>
-                  <dd>{{ chosenTfs().join(', ') }}</dd>
-                </div>
-                <div>
-                  <dt>Inicio del replay</dt>
-                  <dd>{{ startDate() }}</dd>
-                </div>
-                <div>
-                  <dt>Fin programado</dt>
-                  <dd>{{ endDate() || 'Sin fin programado (manual)' }}</dd>
-                </div>
-                <div>
-                  <dt>Histórico</dt>
-                  <dd>Se descarga TODO el disponible (pasado scrolleable + futuro para avanzar)</dd>
-                </div>
-              </dl>
+              @if (csvError()) {
+                <p class="csv-error" role="alert">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                  {{ csvError() }}
+                </p>
+              }
 
+              @if (parsedSymbol() && !csvError()) {
+                <div class="review">
+                  <span class="name">{{ parsedSymbol() }}</span>
+                  <span class="tf-chips">
+                    @for (c of coverage(); track c.tf) {
+                      <span appBadge>{{ c.tf }}</span>
+                    }
+                  </span>
+                </div>
+              }
+            } @else {
+              <!-- rama backend existente -->
+              @if (!symbols().length) {
+                <div class="empty">
+                  <p>Ningún activo tiene velas en la base de datos.</p>
+                  <p class="hint">
+                    Ejecuta el harvester con MT5 abierto:
+                    <code>py backend/harvester.py --symbols US30,XAUUSD --tfs M5,H1</code>.
+                  </p>
+                </div>
+              } @else {
+                <div class="assets" role="radiogroup" aria-label="Activo de la sesión">
+                  @for (s of symbols(); track s.name) {
+                    <button
+                      class="asset"
+                      role="radio"
+                      [attr.aria-checked]="selected()?.name === s.name"
+                      [class.picked]="selected()?.name === s.name"
+                      (click)="pickSymbol(s)"
+                    >
+                      <span class="name">{{ s.name }}</span>
+                      <span class="desc">{{ s.descripcion || s.categoria }}</span>
+                      <span class="tfs">{{ s.cobertura.length }} TFs disponibles</span>
+                    </button>
+                  }
+                </div>
+              }
+            }
+          </section>
+        }
+        @case (2) {
+          <section aria-labelledby="step2-title">
+            <h2 id="step2-title">{{ selected()?.name }} — temporalidades y fecha de inicio</h2>
+            <p class="help">
+              El gráfico abrirá en la fecha elegida con el histórico previo detrás.
+            </p>
+
+            <fieldset class="tf-set">
+              <legend>Temporalidades</legend>
+              @for (c of coverage(); track c.tf) {
+                <label class="tf-row">
+                  <input
+                    type="checkbox"
+                    [checked]="selectedTfs().has(c.tf)"
+                    (change)="toggleTf(c.tf)"
+                  />
+                  <span class="tf">{{ c.tf }}</span>
+                  <span class="range">{{ rangeLabel(c) }}</span>
+                </label>
+              }
+            </fieldset>
+
+            <div class="date-field">
+              <span>Fecha de inicio del replay</span>
+              <ui-date-picker
+                ariaLabel="Fecha de inicio del replay"
+                [value]="startDate()"
+                [min]="dateRange() ? isoDate(dateRange()!.from) : ''"
+                [max]="dateRange() ? isoDate(dateRange()!.to) : ''"
+                (valueChange)="startDate.set($event)"
+              />
+              @if (dateRange(); as r) {
+                <small> Rango común disponible: {{ isoDate(r.from) }} → {{ isoDate(r.to) }} </small>
+              }
+              @if (!dateValid() && startDate()) {
+                <small class="invalid" role="alert">
+                  La fecha debe estar dentro del rango disponible.
+                </small>
+              }
+            </div>
+
+            <div class="date-field">
+              <span>Fecha de fin (opcional)</span>
+              <ui-date-picker
+                ariaLabel="Fecha de fin"
+                placeholder="Sin fin programado"
+                [value]="endDate()"
+                [min]="startDate() || ''"
+                [max]="dateRange() ? isoDate(dateRange()!.to) : ''"
+                (valueChange)="endDate.set($event)"
+              />
+              <small>Al llegar el replay a esta fecha, la sesión termina sola.</small>
+              @if (!endValid() && endDate()) {
+                <small class="invalid" role="alert">
+                  El fin debe ser posterior al inicio y estar dentro del rango disponible.
+                </small>
+              }
+            </div>
+          </section>
+        }
+        @case (3) {
+          <section aria-labelledby="step3-title">
+            <h2 id="step3-title">Confirmar sesión</h2>
+
+            <label class="name-field">
+              <span>Nombre de la sesión (opcional)</span>
+              <input
+                type="text"
+                maxlength="40"
+                placeholder="p. ej. US30 junio swing"
+                [value]="sessionName()"
+                (input)="onName($event)"
+              />
+            </label>
+
+            <dl class="summary">
+              <div>
+                <dt>Activo</dt>
+                <dd>{{ selected()?.name }}</dd>
+              </div>
+              <div>
+                <dt>Temporalidades</dt>
+                <dd>{{ chosenTfs().join(', ') }}</dd>
+              </div>
+              <div>
+                <dt>Inicio del replay</dt>
+                <dd>{{ startDate() }}</dd>
+              </div>
+              <div>
+                <dt>Fin programado</dt>
+                <dd>{{ endDate() || 'Sin fin programado (manual)' }}</dd>
+              </div>
+              <div>
+                <dt>Histórico</dt>
+                <dd>Se descarga TODO el disponible (pasado scrolleable + futuro para avanzar)</dd>
+              </div>
+            </dl>
+
+            @if (source() !== 'csv') {
               @if (downloading()) {
                 <div class="progress" role="status">
                   <p>Descargando {{ progress()?.tf }}… {{ progressPct() }}%</p>
@@ -159,35 +255,40 @@
               @if (downloadError()) {
                 <p class="invalid" role="alert">{{ downloadError() }}</p>
               }
-            </section>
-          }
+            }
+          </section>
         }
+      }
 
-        <footer class="actions">
+      <footer class="actions">
+        <button
+          appButton
+          variant="ghost"
+          (click)="back()"
+          [disabled]="step() === 1 || downloading()"
+        >
+          Atrás
+        </button>
+        @if (step() < 3) {
           <button
             appButton
-            variant="ghost"
-            (click)="back()"
-            [disabled]="step() === 1 || downloading()"
+            variant="primary"
+            (click)="next()"
+            [disabled]="(step() === 1 && !selected()) || (step() === 2 && !step2Valid())"
           >
-            Atrás
+            Siguiente
           </button>
-          @if (step() < 3) {
-            <button
-              appButton
-              variant="primary"
-              (click)="next()"
-              [disabled]="(step() === 1 && !selected()) || (step() === 2 && !step2Valid())"
-            >
-              Siguiente
-            </button>
-          } @else {
-            <button appButton variant="primary" (click)="confirm()" [disabled]="downloading()">
-              {{ downloading() ? 'Descargando…' : 'Crear sesión' }}
-            </button>
-          }
-        </footer>
-      }
+        } @else {
+          <button
+            appButton
+            variant="primary"
+            (click)="source() === 'csv' ? confirmCsv() : confirm()"
+            [disabled]="downloading()"
+          >
+            {{ downloading() ? 'Descargando…' : 'Crear sesión' }}
+          </button>
+        }
+      </footer>
     }
   }
 </div>

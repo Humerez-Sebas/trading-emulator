@@ -162,6 +162,54 @@ describe('WorkspaceDbService — session folders (v3)', () => {
   });
 });
 
+import type { OfflineSymbol } from './offline-catalog';
+
+function offlineSymbol(p: Partial<OfflineSymbol> = {}): OfflineSymbol {
+  return {
+    symbol: 'XAUUSD',
+    descripcion: '',
+    categoria: 'Mis CSV',
+    coverage: [{ tf: 'H1', desde: 1000, hasta: 8200, velas: 3 }],
+    createdAt: 1,
+    lastModified: 1,
+    ...p,
+  };
+}
+
+describe('WorkspaceDbService — symbols catalog (v4)', () => {
+  it('putSymbol + getSymbol round-trip', async () => {
+    const sym = offlineSymbol({ symbol: 'EURUSD' });
+    await svc.putSymbol(sym);
+    expect(await svc.getSymbol('EURUSD')).toEqual(sym);
+  });
+
+  it('getSymbol returns undefined for unknown symbol', async () => {
+    expect(await svc.getSymbol('NOPE')).toBeUndefined();
+  });
+
+  it('listSymbols returns all catalog entries sorted by symbol', async () => {
+    await svc.putSymbol(offlineSymbol({ symbol: 'XAUUSD' }));
+    await svc.putSymbol(offlineSymbol({ symbol: 'EURUSD' }));
+    await svc.putSymbol(offlineSymbol({ symbol: 'GBPUSD' }));
+    const list = await svc.listSymbols();
+    expect(list.map((s) => s.symbol)).toEqual(['EURUSD', 'GBPUSD', 'XAUUSD']);
+  });
+
+  it('listSymbols is empty by default', async () => {
+    expect(await svc.listSymbols()).toEqual([]);
+  });
+
+  it('removeSymbol cascades catalog + meta + series', async () => {
+    await svc.putSymbol(offlineSymbol({ symbol: 'XAUUSD' }));
+    await svc.putMeta(workspaceMeta({ symbol: 'XAUUSD' }));
+    await svc.putSeries('XAUUSD', 'H1', series(3));
+    await svc.removeSymbol('XAUUSD');
+    expect(await svc.getSymbol('XAUUSD')).toBeUndefined();
+    expect(await svc.getMeta('XAUUSD')).toBeUndefined();
+    expect(await svc.getSeriesInfo('XAUUSD', 'H1')).toBeNull();
+  });
+});
+
 describe('WorkspaceDbService — v1 → v3 migration', () => {
   it('migrates a legacy v1 workspaces store into meta + series on v2 open', async () => {
     // 1. Pre-seed a v1 database with a whole-workspace record in a 'workspaces' store

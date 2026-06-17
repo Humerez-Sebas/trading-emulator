@@ -9,6 +9,32 @@ import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import { backendSymbol, tfCoverage, series, workspaceMeta } from '../../testing/fixtures';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
+import { OfflineSymbol } from '../../services/offline-catalog';
+
+/** Builds a fake <input type=file> change event from CSV texts. */
+function csvFileEvent(files: { name: string; text: string }[]): Event {
+  const list = files.map((f) => ({ name: f.name, text: async () => f.text }));
+  return { target: { files: list, value: '' } } as unknown as Event;
+}
+
+const H1_CSV = [
+  'time,open,high,low,close',
+  '2024-01-01 00:00,10,11,9,10',
+  '2024-01-01 01:00,10,11,9,10',
+  '2024-01-01 02:00,10,11,9,10',
+].join('\n');
+const H1_CSV_B = [
+  'time,open,high,low,close',
+  '2024-02-01 00:00,10,11,9,10',
+  '2024-02-01 01:00,10,11,9,10',
+  '2024-02-01 02:00,10,11,9,10',
+].join('\n');
+const H4_CSV = [
+  'time,open,high,low,close',
+  '2024-01-01 00:00,10,11,9,10',
+  '2024-01-01 04:00,10,11,9,10',
+  '2024-01-01 08:00,10,11,9,10',
+].join('\n');
 
 const DESDE = 1_700_000_000;
 const HASTA = 1_710_000_000;
@@ -445,5 +471,85 @@ describe('CrearSesionPageComponent', () => {
     expect(component.progress()).toBeNull();
     expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  describe('CSV branch (offline)', () => {
+    it('onCsvFiles parses a single asset and exposes coverage', async () => {
+      create();
+      await component.onCsvFiles(csvFileEvent([{ name: 'xauusd_h1.csv', text: H1_CSV }]));
+      expect(component.csvError()).toBe('');
+      expect(component.parsedSymbol()).toBe('XAUUSD');
+      expect(component.coverage().length).toBe(1);
+      expect(component.coverage()[0].tf).toBe('H1');
+      expect(component.step()).toBe(2);
+    });
+
+    it('onCsvFiles rejects files of different assets', async () => {
+      create();
+      await component.onCsvFiles(
+        csvFileEvent([
+          { name: 'xauusd_h1.csv', text: H1_CSV },
+          { name: 'eurusd_h1.csv', text: H1_CSV_B },
+        ]),
+      );
+      expect(component.csvError()).toContain('mismo activo');
+      expect(component.parsedSymbol()).toBe('');
+    });
+
+    it('confirmCsv writes the catalog and dispatches switchAsset with thenLoad', async () => {
+      create();
+      await component.onCsvFiles(csvFileEvent([{ name: 'xauusd_h1.csv', text: H1_CSV }]));
+      // pick a valid start inside the parsed range
+      component.startDate.set('2024-01-01');
+      await component.confirmCsv();
+
+      expect(dbStub.putSymbol).toHaveBeenCalled();
+      const sym = (dbStub.putSymbol as any).mock.calls[0][0] as OfflineSymbol;
+      expect(sym.symbol).toBe('XAUUSD');
+      expect(sym.coverage[0].tf).toBe('H1');
+
+      const action = dispatch.mock.calls.find(
+        (c: unknown[]) => (c[0] as any).type === '[Workspaces] Switch Asset',
+      )![0] as any;
+      expect(action.symbol).toBe('XAUUSD');
+      expect(Array.isArray(action.thenLoad)).toBe(true);
+      expect(routerStub.navigateByUrl).toHaveBeenCalledWith('/');
+    });
+
+    it('pickCatalogSymbol selects an existing symbol from the catalog', () => {
+      create();
+      const entry: OfflineSymbol = {
+        symbol: 'XAUUSD',
+        descripcion: '',
+        categoria: 'Mis CSV',
+        coverage: [{ tf: 'H1', desde: 1_700_000_000, hasta: 1_710_000_000, velas: 100 }],
+        createdAt: 1,
+        lastModified: 1,
+      };
+      component.pickCatalogSymbol(entry);
+      expect(component.selected()?.name).toBe('XAUUSD');
+      expect(component.coverage()[0].tf).toBe('H1');
+      expect(component.step()).toBe(2);
+    });
+
+    it('confirmCsv writes catalog coverage for only the persisted (selected) tfs', async () => {
+      create();
+      await component.onCsvFiles(
+        csvFileEvent([
+          { name: 'xauusd_h1.csv', text: H1_CSV },
+          { name: 'xauusd_h4.csv', text: H4_CSV },
+        ]),
+      );
+      component.toggleTf('H4'); // deselect H4 — only H1 will be persisted
+      component.startDate.set('2024-01-01');
+      await component.confirmCsv();
+
+      const sym = (dbStub.putSymbol as any).mock.calls[0][0];
+      expect(sym.coverage.map((c: { tf: string }) => c.tf)).toEqual(['H1']);
+      const action = dispatch.mock.calls.find(
+        (c: unknown[]) => (c[0] as any).type === '[Workspaces] Switch Asset',
+      )![0] as any;
+      expect(action.thenLoad.map((f: { tf: string }) => f.tf)).toEqual(['H1']);
+    });
   });
 });

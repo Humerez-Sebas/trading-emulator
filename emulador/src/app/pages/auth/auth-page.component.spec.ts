@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthPageComponent } from './auth-page.component';
@@ -20,13 +20,16 @@ describe('AuthPageComponent', () => {
   let store: MockStore;
   let dispatch: ReturnType<typeof vi.spyOn>;
   let component: AuthPageComponent;
+  let routerStub: { navigateByUrl: ReturnType<typeof vi.fn> };
 
   function create(volver: string | null = '/dashboard') {
+    routerStub = { navigateByUrl: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         AuthPageComponent,
         provideMockStore(),
         { provide: ActivatedRoute, useValue: makeRoute(volver) },
+        { provide: Router, useValue: routerStub },
       ],
     });
     store = TestBed.inject(MockStore);
@@ -124,5 +127,13 @@ describe('AuthPageComponent', () => {
     expect(dispatch).toHaveBeenCalled();
     const call = dispatch.mock.calls[0][0] as ReturnType<typeof AuthActions.login>;
     expect(call['type']).toContain('Login');
+  });
+
+  it('continueAsGuest dispatches the action and navigates home', () => {
+    create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    component.continueAsGuest();
+    expect(dispatch).toHaveBeenCalledWith(AuthActions.continueAsGuest());
+    expect(routerStub.navigateByUrl).toHaveBeenCalledWith('/');
   });
 });

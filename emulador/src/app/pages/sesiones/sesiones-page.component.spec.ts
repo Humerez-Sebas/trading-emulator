@@ -452,6 +452,27 @@ describe('SesionesPageComponent', () => {
     expect(component.dragOverKey()).toBeNull(); // no folder drops in activo mode
   });
 
+  // ---- onImportSession ----
+
+  const SESSION_CSV = [
+    'bar_time,evento,p1,p2,detalle',
+    '2024-01-01 00:00,ORDEN_COLOCADA,4000,3990,BUY_MARKET lotes=0.10 tp=4020 id=t1',
+    '2024-01-01 01:00,CIERRE_TP,4020,200,r=2.00 id=t1',
+  ].join('\n');
+
+  function sessionFileEvent(name: string, text: string): Event {
+    return { target: { files: [{ name, text: async () => text }], value: '' } } as unknown as Event;
+  }
+
+  it('onImportSession parses a session CSV and dispatches into the matching asset', async () => {
+    create({ currentAsset: 'XAUUSD' });
+    await settle();
+    await component.onImportSession(sessionFileEvent('xauusd_sesion.csv', SESSION_CSV));
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.sessionImported.type }),
+    );
+  });
+
   // ---- helpers ----
 
   it('folderName resolves names and falls back to "Sin carpeta"', async () => {

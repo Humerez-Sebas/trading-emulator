@@ -17,5 +17,7 @@ export const AuthActions = createActionGroup({
     'Auth Failure': props<{ error: string }>(),
     Logout: emptyProps(),
     'Logged Out': emptyProps(),
+    /** Enter guest mode (no account; data stays local in IndexedDB). */
+    'Continue As Guest': emptyProps(),
   },
 });

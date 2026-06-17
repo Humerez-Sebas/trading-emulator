@@ -23,5 +23,9 @@ export function workspaceDbStub(): Partial<
     listFolders: vi.fn().mockResolvedValue([]),
     putFolder: vi.fn().mockResolvedValue(undefined),
     deleteFolder: vi.fn().mockResolvedValue(undefined),
+    getSymbol: vi.fn().mockResolvedValue(undefined),
+    listSymbols: vi.fn().mockResolvedValue([]),
+    putSymbol: vi.fn().mockResolvedValue(undefined),
+    removeSymbol: vi.fn().mockResolvedValue(undefined),
   };
 }

@@ -57,12 +57,16 @@
           </div>
         }
       </div>
-    } @else if (status() === 'anonymous') {
-      <a class="login-link" routerLink="/login">Iniciar sesión</a>
+    } @else if (status() === 'guest') {
+      <span class="offline-pill" title="Modo invitado — datos guardados solo en este navegador"
+        >Invitado</span
+      >
     } @else if (status() === 'offline') {
       <span class="offline-pill" title="Backend no disponible — modo local con CSV"
         >Sin conexión</span
       >
+    } @else if (status() === 'anonymous') {
+      <a class="login-link" routerLink="/login">Iniciar sesión</a>
     }
   </nav>
   <div class="content">

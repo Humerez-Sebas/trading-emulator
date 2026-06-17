@@ -1,13 +1,10 @@
 import { Component, computed, inject } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Store } from '@ngrx/store';
-import { Timeframe, symbolFromFileName } from '../../models';
-import { CsvLoaderService } from '../../services/csv-loader.service';
+import { Timeframe } from '../../models';
 import { MarketActions } from '../../state/market/market.actions';
 import { ReplayActions } from '../../state/replay/replay.actions';
-import { TradingActions } from '../../state/trading/trading.actions';
-import { isSessionCsv, parseSessionCsv } from '../../state/trading/session-csv';
-import { PendingCsv, WorkspacesActions } from '../../state/workspaces/workspaces.actions';
+import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import {
   selectActiveTf,
   selectAssets,
@@ -33,7 +30,6 @@ import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 })
 export class ControlsComponent {
   private store = inject(Store);
-  private csvLoader = inject(CsvLoaderService);
 
   tfs = this.store.selectSignal(selectSessionTfs);
   private tfLastTimes = this.store.selectSignal(selectTfLastTimes);
@@ -54,9 +50,6 @@ export class ControlsComponent {
     return t > 0 ? (t + this.utcOffset() * 3600) * 1000 : null;
   });
 
-  error = '';
-  info = '';
-
   readonly speeds = [
     { ms: 1000, label: '1 vela/s' },
     { ms: 500, label: '2 velas/s' },
@@ -71,69 +64,6 @@ export class ControlsComponent {
   assetOptions = computed<DropdownOption[]>(() =>
     this.assets().map((a) => ({ value: a.symbol, label: a.symbol })),
   );
-
-  async onFiles(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    if (!input.files?.length) return;
-    this.error = '';
-    this.info = '';
-    // group parsed files per asset symbol (derived from the file name)
-    const bySymbol = new Map<string, PendingCsv[]>();
-    for (const file of Array.from(input.files)) {
-      try {
-        const text = await file.text();
-        // exported backtesting sessions share the button with candle CSVs
-        if (isSessionCsv(text)) {
-          this.importSession(text, file.name);
-          continue;
-        }
-        const { tf, candles, fileName } = this.csvLoader.parseText(text, file.name);
-        const symbol = symbolFromFileName(fileName);
-        const list = bySymbol.get(symbol) ?? [];
-        list.push({ tf, candles, fileName });
-        bySymbol.set(symbol, list);
-      } catch (e) {
-        this.error = (e as Error).message;
-      }
-    }
-    const current = this.currentAsset();
-    for (const [symbol, files] of bySymbol) {
-      if (symbol === current) {
-        // same asset: merge directly into the active workspace
-        for (const f of files) this.store.dispatch(MarketActions.csvLoaded(f));
-      } else {
-        // other asset: snapshot the current one and switch (or create)
-        this.store.dispatch(WorkspacesActions.switchAsset({ symbol, thenLoad: files }));
-      }
-    }
-    input.value = '';
-  }
-
-  /**
-   * Imports a session CSV (the file exported from the summary). The active
-   * session of the target workspace is archived automatically, never lost.
-   */
-  private importSession(text: string, fileName: string): void {
-    const trades = parseSessionCsv(text);
-    if (!trades.length) {
-      this.error = `${fileName}: sin trades reconocibles (¿es un CSV de sesión del emulador?)`;
-      return;
-    }
-    const symbol = symbolFromFileName(fileName);
-    if (symbol === this.currentAsset()) {
-      this.store.dispatch(
-        TradingActions.sessionImported({ trades, currentCursor: this.currentTime() }),
-      );
-      const lastClose = trades.reduce((max, t) => Math.max(max, t.closeTime), 0);
-      if (lastClose > 0) this.store.dispatch(ReplayActions.goToTime({ time: lastClose }));
-    } else {
-      // e.g. "us30_sesion.csv" -> US30: switch (or create) that workspace
-      this.store.dispatch(WorkspacesActions.switchAsset({ symbol, thenImport: { trades } }));
-    }
-    this.info =
-      `Sesión importada en ${symbol} (${trades.length} trades). ` +
-      `El avance previo, si lo había, quedó guardado en "Sesiones".`;
-  }
 
   onAsset(symbol: string): void {
     if (symbol && symbol !== this.currentAsset()) {
