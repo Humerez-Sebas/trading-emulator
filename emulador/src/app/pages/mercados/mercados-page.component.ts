@@ -4,10 +4,17 @@ import { Store } from '@ngrx/store';
 import { BackendApiService, BackendSymbol, TfCoverage } from '../../services/backend-api.service';
 import { UserSymbolsActions } from '../../state/user-symbols/user-symbols.actions';
 import { userSymbolsFeature } from '../../state/user-symbols/user-symbols.reducer';
+import { authFeature } from '../../state/auth/auth.reducer';
+import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { OfflineSymbol, DEFAULT_OFFLINE_CATEGORY } from '../../services/offline-catalog';
+import { DialogService } from '../../components/ui/dialog.service';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { BadgeDirective } from '../../components/ui/badge.directive';
 import { TooltipDirective } from '../../components/ui/tooltip.directive';
 import { SegmentedControlComponent } from '../../components/ui/segmented-control.component';
+import { EmptyStateComponent } from '../../components/ui/empty-state.component';
+import { MenuComponent } from '../../components/ui/menu.component';
+import { environment } from '../../../environments/environment';
 
 /** Per-symbol coverage rollup shown in the card summary line. */
 export interface CoverageSummary {
@@ -24,6 +31,10 @@ type MarketMode = 'todos' | 'mis';
  * their stored data coverage per timeframe. The user can curate their own
  * subset ("Mis activos") with a per-card checkbox; the selection is stored
  * server-side and auto-saved on each toggle.
+ *
+ * In offline/guest mode, symbols are loaded from IndexedDB (the uploaded CSV
+ * catalog) instead of the backend. Curation controls are hidden and a delete
+ * action is available per symbol.
  */
 @Component({
   selector: 'app-mercados-page',
@@ -34,6 +45,8 @@ type MarketMode = 'todos' | 'mis';
     BadgeDirective,
     TooltipDirective,
     SegmentedControlComponent,
+    EmptyStateComponent,
+    MenuComponent,
   ],
   templateUrl: './mercados-page.component.html',
   styleUrl: './mercados-page.component.css',
@@ -41,6 +54,15 @@ type MarketMode = 'todos' | 'mis';
 export class MercadosPageComponent {
   private api = inject(BackendApiService);
   private store = inject(Store);
+  private db = inject(WorkspaceDbService);
+  private dialog = inject(DialogService);
+
+  private statusSig = this.store.selectSignal(authFeature.selectStatus);
+
+  /** True when running in static/offline build or authenticated as guest. */
+  offline = computed(
+    () => environment.offlineOnly || this.statusSig() === 'guest' || this.statusSig() === 'offline',
+  );
 
   state = signal<'loading' | 'ok' | 'error'>('loading');
   symbols = signal<BackendSymbol[]>([]);
@@ -76,11 +98,24 @@ export class MercadosPageComponent {
 
   constructor() {
     this.load();
-    this.store.dispatch(UserSymbolsActions.load());
+    if (!this.offline()) this.store.dispatch(UserSymbolsActions.load());
   }
 
   load(): void {
     this.state.set('loading');
+    if (this.offline()) {
+      this.db
+        .listSymbols()
+        .then((list) => {
+          this.symbols.set(list.map((s) => this.toBackendSymbol(s)));
+          this.state.set('ok');
+        })
+        .catch(() => {
+          this.symbols.set([]);
+          this.state.set('ok');
+        });
+      return;
+    }
     this.api.symbols().subscribe({
       next: (r) => {
         this.symbols.set(r.symbols);
@@ -88,6 +123,30 @@ export class MercadosPageComponent {
       },
       error: () => this.state.set('error'),
     });
+  }
+
+  /** Maps a catalog entry to the BackendSymbol shape the template renders. */
+  private toBackendSymbol(s: OfflineSymbol): BackendSymbol {
+    return {
+      name: s.symbol,
+      descripcion: s.descripcion,
+      categoria: s.categoria || DEFAULT_OFFLINE_CATEGORY,
+      digits: s.digits ?? 0,
+      cobertura: s.coverage,
+    };
+  }
+
+  /** Offline: delete a symbol everywhere (catalog + meta + series). */
+  async remove(name: string): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: 'Eliminar activo',
+      message: `Se borrarán los datos y sesiones de ${name} de este navegador. ¿Continuar?`,
+      confirmLabel: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    await this.db.removeSymbol(name).catch(() => undefined);
+    this.load();
   }
 
   setMode(mode: MarketMode): void {
