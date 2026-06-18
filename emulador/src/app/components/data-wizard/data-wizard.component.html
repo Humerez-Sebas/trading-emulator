@@ -1,0 +1,170 @@
+<div class="page">
+  <header class="head">
+    <h1>Configura tus datos de mercado</h1>
+    <p class="steps" aria-live="polite">Paso {{ step() }} de 3</p>
+    <div class="bar" aria-hidden="true">
+      <span class="fill" [style.width.%]="(step() / 3) * 100"></span>
+    </div>
+  </header>
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando catálogo de datos…</p>
+    }
+    @case ('error') {
+      <ui-empty-state
+        title="No se pudo cargar el catálogo"
+        [hint]="errorMsg()"
+        [boxed]="true"
+      >
+        <svg
+          icon
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <button appButton variant="primary" (click)="loadManifest()">Reintentar</button>
+      </ui-empty-state>
+    }
+    @case ('ok') {
+      @switch (step()) {
+        @case (1) {
+          <section aria-labelledby="step1-title">
+            <h2 id="step1-title">Elige el activo</h2>
+            @if (!symbols().length) {
+              <ui-empty-state
+                title="El catálogo no tiene activos todavía"
+                hint="El manifiesto de R2 no contiene ningún símbolo. Sube datos al bucket y recarga."
+                [boxed]="true"
+              />
+            } @else {
+              <div class="assets" role="radiogroup" aria-label="Activo de la sesión">
+                @for (s of symbols(); track s) {
+                  <button
+                    class="asset"
+                    role="radio"
+                    [attr.aria-checked]="selectedSymbol() === s"
+                    [class.picked]="selectedSymbol() === s"
+                    (click)="pickSymbol(s)"
+                  >
+                    <span class="name">{{ s }}</span>
+                  </button>
+                }
+              </div>
+            }
+          </section>
+        }
+        @case (2) {
+          <section aria-labelledby="step2-title">
+            <h2 id="step2-title">{{ selectedSymbol() }} — elige los años de M1</h2>
+            <p class="help">
+              Selecciona los años de datos de 1 minuto a descargar. H1 y D1 se incluyen
+              automáticamente cuando están disponibles.
+            </p>
+
+            @if (years().length) {
+              <fieldset class="tf-set">
+                <legend>Años disponibles (M1)</legend>
+                <div class="years">
+                  @for (y of years(); track y) {
+                    <label class="year-row">
+                      <input
+                        type="checkbox"
+                        [checked]="selectedYears().has(y)"
+                        (change)="toggleYear(y)"
+                      />
+                      <span class="year">{{ y }}</span>
+                    </label>
+                  }
+                </div>
+              </fieldset>
+            } @else {
+              <p class="help">Este activo no tiene datos de M1 por año.</p>
+            }
+
+            <div class="implied">
+              <span>Temporalidades incluidas:</span>
+              @if (selectedYears().size) {
+                <span appBadge>M1</span>
+              }
+              @if (hasH1()) {
+                <span appBadge>H1</span>
+              }
+              @if (hasD1()) {
+                <span appBadge>D1</span>
+              }
+            </div>
+          </section>
+        }
+        @case (3) {
+          <section aria-labelledby="step3-title">
+            <h2 id="step3-title">Confirmar descarga</h2>
+
+            <dl class="summary">
+              <div>
+                <dt>Activo</dt>
+                <dd>{{ selectedSymbol() }}</dd>
+              </div>
+              <div>
+                <dt>Años M1</dt>
+                <dd>{{ selectedYearsLabel() }}</dd>
+              </div>
+              <div>
+                <dt>Otras temporalidades</dt>
+                <dd>
+                  {{ hasH1() ? 'H1' : '' }}{{ hasH1() && hasD1() ? ', ' : '' }}{{ hasD1() ? 'D1' : '' }}
+                  {{ !hasH1() && !hasD1() ? '—' : '' }}
+                </dd>
+              </div>
+            </dl>
+
+            @if (downloading()) {
+              <div class="progress" role="status">
+                <p>
+                  Descargando e ingiriendo… {{ progress()?.index ?? 0 }} / {{ progress()?.total ?? 0 }}
+                  ({{ progressPct() }}%)
+                </p>
+                <div class="bar big">
+                  <span class="fill" [style.width.%]="progressPct()"></span>
+                </div>
+              </div>
+            }
+            @if (downloadError()) {
+              <p class="invalid" role="alert">{{ downloadError() }}</p>
+            }
+          </section>
+        }
+      }
+
+      <footer class="actions">
+        <button
+          appButton
+          variant="ghost"
+          (click)="back()"
+          [disabled]="step() === 1 || downloading()"
+        >
+          Atrás
+        </button>
+        @if (step() === 2) {
+          <button appButton variant="primary" (click)="next()" [disabled]="!step2Valid()">
+            Siguiente
+          </button>
+        } @else if (step() === 3) {
+          <button appButton variant="primary" (click)="confirm()" [disabled]="downloading()">
+            {{ downloading() ? 'Descargando…' : 'Descargar y empezar' }}
+          </button>
+        }
+      </footer>
+    }
+  }
+</div>

@@ -10,6 +10,7 @@ export const environment: {
   offlineOnly: boolean;
   guestModeEnabled: boolean;
   dataSource: 'csv' | 'r2';
+  marketDataBaseUrl: string;
 } = {
   backendUrl: '',
   registrationEnabled: false,
@@ -17,4 +18,7 @@ export const environment: {
   guestModeEnabled: true,
   // 'csv' keeps the legacy CSV/series-store path; 'r2' switches to the R2/Parquet candles store
   dataSource: 'csv',
+  // public base URL of the R2 bucket (manifest.json + parquet served from here).
+  // Empty by default; set it for the r2 deployment. Only used when dataSource === 'r2'.
+  marketDataBaseUrl: '',
 };

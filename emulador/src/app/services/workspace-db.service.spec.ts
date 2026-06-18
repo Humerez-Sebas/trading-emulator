@@ -403,3 +403,127 @@ describe('WorkspaceDbService — v4→v5 upgrade: data written at v4 is readable
     expect(ws!.series['H1']).toHaveLength(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v5: datasets-store accessors (Task 6)
+// ---------------------------------------------------------------------------
+
+import type { CandleRecord, DatasetRecord } from './market-data-db';
+import { CANDLES_STORE } from './market-data-db';
+
+function datasetRecord(p: Partial<DatasetRecord> = {}): DatasetRecord {
+  return {
+    id: 'XAUUSD|M1|2024',
+    symbol: 'XAUUSD',
+    timeframe: 'M1',
+    year: '2024',
+    size: 1234,
+    etag: 'etag-2024',
+    updatedAt: '2026-06-18T12:00:00Z',
+    ...p,
+  };
+}
+
+/** Adds candle rows directly to the candles store (autoIncrement id). */
+async function seedCandles(records: Omit<CandleRecord, 'id'>[]): Promise<void> {
+  await svc.listMetas(); // ensure schema is open at v5
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 5);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onupgradeneeded = () => reject(new Error('unexpected upgrade'));
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CANDLES_STORE, 'readwrite');
+      const store = tx.objectStore(CANDLES_STORE);
+      for (const r of records) store.add(r);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function countCandlesFor(symbol: string, timeframe: string): Promise<number> {
+  return (await svc.listCandles(symbol, timeframe)).length;
+}
+
+describe('WorkspaceDbService — datasets store accessors (v5)', () => {
+  it('putDataset + getDataset round-trip', async () => {
+    const rec = datasetRecord();
+    await svc.putDataset(rec);
+    expect(await svc.getDataset(rec.id)).toEqual(rec);
+  });
+
+  it('getDataset returns undefined for an unknown id', async () => {
+    expect(await svc.getDataset('NOPE|M1|2000')).toBeUndefined();
+  });
+
+  it('putDataset upserts on the same id', async () => {
+    await svc.putDataset(datasetRecord({ etag: 'old' }));
+    await svc.putDataset(datasetRecord({ etag: 'new' }));
+    const got = await svc.getDataset('XAUUSD|M1|2024');
+    expect(got!.etag).toBe('new');
+    expect(await svc.listDatasets()).toHaveLength(1);
+  });
+
+  it('listDatasets returns all records sorted by id', async () => {
+    await svc.putDataset(datasetRecord({ id: 'XAUUSD|M1|2024', year: '2024' }));
+    await svc.putDataset(datasetRecord({ id: 'XAUUSD|M1|2023', year: '2023' }));
+    await svc.putDataset(datasetRecord({ id: 'XAUUSD|H1|all', timeframe: 'H1', year: 'all' }));
+    const list = await svc.listDatasets();
+    expect(list.map((d) => d.id)).toEqual([
+      'XAUUSD|H1|all',
+      'XAUUSD|M1|2023',
+      'XAUUSD|M1|2024',
+    ]);
+  });
+
+  it('listDatasets is empty by default', async () => {
+    expect(await svc.listDatasets()).toEqual([]);
+  });
+
+  it('deleteDataset removes a record', async () => {
+    await svc.putDataset(datasetRecord());
+    await svc.deleteDataset('XAUUSD|M1|2024');
+    expect(await svc.getDataset('XAUUSD|M1|2024')).toBeUndefined();
+  });
+});
+
+describe('WorkspaceDbService — clearDatasetCandles (re-ingestion dedup)', () => {
+  it('removes only the matching symbol+timeframe candles', async () => {
+    await seedCandles([
+      { symbol: 'XAUUSD', timeframe: 'M1', time: 1, open: 1, high: 1, low: 1, close: 1 },
+      { symbol: 'XAUUSD', timeframe: 'M1', time: 2, open: 1, high: 1, low: 1, close: 1 },
+      { symbol: 'XAUUSD', timeframe: 'H1', time: 3, open: 1, high: 1, low: 1, close: 1 },
+      { symbol: 'EURUSD', timeframe: 'M1', time: 4, open: 1, high: 1, low: 1, close: 1 },
+    ]);
+
+    await svc.clearDatasetCandles('XAUUSD', 'M1');
+
+    expect(await countCandlesFor('XAUUSD', 'M1')).toBe(0);
+    // siblings untouched
+    expect(await countCandlesFor('XAUUSD', 'H1')).toBe(1);
+    expect(await countCandlesFor('EURUSD', 'M1')).toBe(1);
+  });
+
+  it('is a no-op when there are no matching candles', async () => {
+    await seedCandles([
+      { symbol: 'EURUSD', timeframe: 'M1', time: 1, open: 1, high: 1, low: 1, close: 1 },
+    ]);
+    await svc.clearDatasetCandles('XAUUSD', 'M1');
+    expect(await countCandlesFor('EURUSD', 'M1')).toBe(1);
+  });
+
+  it('does not let an M1 query clear M15 candles (compound-index prefix safety)', async () => {
+    await seedCandles([
+      { symbol: 'XAUUSD', timeframe: 'M1', time: 1, open: 1, high: 1, low: 1, close: 1 },
+      { symbol: 'XAUUSD', timeframe: 'M15', time: 2, open: 1, high: 1, low: 1, close: 1 },
+    ]);
+    await svc.clearDatasetCandles('XAUUSD', 'M1');
+    expect(await countCandlesFor('XAUUSD', 'M1')).toBe(0);
+    expect(await countCandlesFor('XAUUSD', 'M15')).toBe(1);
+  });
+});
