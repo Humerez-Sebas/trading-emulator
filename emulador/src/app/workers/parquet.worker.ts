@@ -43,9 +43,14 @@ async function getParquet(): Promise<typeof import('parquet-wasm')> {
   if (!parquetModulePromise) {
     parquetModulePromise = (async () => {
       const mod = await import('parquet-wasm');
-      // Default export instantiates the WebAssembly context (idempotent enough
-      // for our single-init use; guarded by the cached promise above).
-      await mod.default();
+      // Init the WebAssembly context. We pass an EXPLICIT url instead of the
+      // wasm-bindgen default (`new URL('parquet_wasm_bg.wasm', import.meta.url)`),
+      // because in the bundled worker that resolves to a path the app server
+      // doesn't serve → 404 → "Failed to compile … HTTP status code is not ok".
+      // The .wasm is copied to the app root by angular.json assets, so we load
+      // it from the origin root (works in `ng serve` and the prod/offline build).
+      const wasmUrl = new URL('parquet_wasm_bg.wasm', self.location.origin + '/');
+      await mod.default({ module_or_path: wasmUrl });
       return mod;
     })();
   }
