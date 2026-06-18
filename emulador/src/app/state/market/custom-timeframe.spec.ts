@@ -4,6 +4,9 @@ import {
   generateCustomSeries,
   parseCustomTimeframe,
   pickBaseSeriesTf,
+  parseInterval,
+  formatIntervalVerbose,
+  formatIntervalShort,
 } from './custom-timeframe';
 
 /** `n` consecutive candles of `stepSec` spacing from `start`. */
@@ -69,5 +72,39 @@ describe('generateCustomSeries', () => {
 
   it('returns [] when no base can produce the request', () => {
     expect(generateCustomSeries({ H1: candles(3, 0, 3600) }, 90)).toEqual([]);
+  });
+});
+
+describe('parseInterval', () => {
+  it('parses bare minutes', () => {
+    expect(parseInterval('45')).toBe(45);
+    expect(parseInterval(90)).toBe(90);
+  });
+  it('parses H as hours and D as days (case-insensitive, trims)', () => {
+    expect(parseInterval('2H')).toBe(120);
+    expect(parseInterval(' 2h ')).toBe(120);
+    expect(parseInterval('1D')).toBe(1440);
+    expect(parseInterval('3d')).toBe(4320);
+  });
+  it('rejects junk, zero, fractional, out-of-range', () => {
+    for (const bad of ['', 'abc', '0', '-5', '4.5', '2W', '99999999']) expect(parseInterval(bad)).toBeNull();
+  });
+});
+
+describe('formatIntervalVerbose', () => {
+  it('uses minutos / horas / días, singular for 1', () => {
+    expect(formatIntervalVerbose(21)).toBe('21 minutos');
+    expect(formatIntervalVerbose(120)).toBe('2 horas');
+    expect(formatIntervalVerbose(60)).toBe('1 hora');
+    expect(formatIntervalVerbose(1440)).toBe('1 día');
+    expect(formatIntervalVerbose(90)).toBe('90 minutos'); // not a whole hour
+  });
+});
+
+describe('formatIntervalShort', () => {
+  it('compact canonical', () => {
+    expect(formatIntervalShort(45)).toBe('45m');
+    expect(formatIntervalShort(120)).toBe('2h');
+    expect(formatIntervalShort(1440)).toBe('1D');
   });
 });

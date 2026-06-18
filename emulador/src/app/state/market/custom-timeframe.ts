@@ -8,17 +8,62 @@ import { aggregateCandles } from '../../services/timeframe-generator';
  * M1/H1/D1 (and whatever else is loaded) are ever stored.
  */
 
-/** Largest custom timeframe we allow (30 days, in minutes). */
-export const MAX_CUSTOM_TF_MINUTES = 43_200;
+/** Largest interval we allow (30 days, in minutes). */
+export const MAX_INTERVAL_MINUTES = 43_200;
+
+/** Largest custom timeframe we allow (30 days, in minutes). @deprecated Use {@link MAX_INTERVAL_MINUTES} instead. */
+export const MAX_CUSTOM_TF_MINUTES = MAX_INTERVAL_MINUTES;
+
+/**
+ * Parses an interval string or number into whole minutes, supporting suffixes:
+ * - bare number or bare string: interpreted as minutes
+ * - 'H'/'h': hours (multiplied by 60)
+ * - 'D'/'d': days (multiplied by 1440)
+ *
+ * Returns `null` when invalid (non-integer, <= 0, or above max).
+ */
+export function parseInterval(raw: string | number, max = MAX_INTERVAL_MINUTES): number | null {
+  const s = String(raw).trim();
+  const m = /^(\d+)\s*([hHdD]?)$/.exec(s);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const mult = m[2] === '' ? 1 : m[2].toLowerCase() === 'h' ? 60 : 1440;
+  const minutes = n * mult;
+  if (!Number.isInteger(minutes) || minutes <= 0 || minutes > max) return null;
+  return minutes;
+}
 
 /**
  * Parses a custom-timeframe input into whole minutes, or `null` when invalid
  * (non-integer, <= 0, or above {@link MAX_CUSTOM_TF_MINUTES}).
+ * @deprecated Use {@link parseInterval} instead.
  */
-export function parseCustomTimeframe(raw: string | number, max = MAX_CUSTOM_TF_MINUTES): number | null {
-  const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
-  if (!Number.isInteger(n) || n <= 0 || n > max) return null;
-  return n;
+export const parseCustomTimeframe = parseInterval;
+
+/**
+ * Formats an interval (in minutes) into verbose Spanish: "21 minutos", "2 horas", "1 día", etc.
+ * Prefers the coarsest unit: 1440+ minutes → días, 60+ minutes → horas, else → minutos.
+ */
+export function formatIntervalVerbose(min: number): string {
+  if (min % 1440 === 0) {
+    const d = min / 1440;
+    return `${d} ${d === 1 ? 'día' : 'días'}`;
+  }
+  if (min % 60 === 0) {
+    const h = min / 60;
+    return `${h} ${h === 1 ? 'hora' : 'horas'}`;
+  }
+  return `${min} ${min === 1 ? 'minuto' : 'minutos'}`;
+}
+
+/**
+ * Formats an interval (in minutes) into compact canonical form: "45m", "2h", "1D".
+ * Prefers the coarsest unit.
+ */
+export function formatIntervalShort(min: number): string {
+  if (min % 1440 === 0) return `${min / 1440}D`;
+  if (min % 60 === 0) return `${min / 60}h`;
+  return `${min}m`;
 }
 
 /**
