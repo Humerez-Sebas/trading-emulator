@@ -103,3 +103,16 @@ export function generateCustomSeries(
   const baseMin = TIMEFRAME_SECONDS[base] / 60;
   return baseMin === minutes ? baseCandles : aggregateCandles(baseCandles, minutes);
 }
+
+/**
+ * Maps a minute count to the loaded timeframe whose seconds equal `minutes*60`,
+ * iterating the canonical order. Returns `null` when none match.
+ */
+export function loadedTfForMinutes(minutes: number, loadedTfs: Timeframe[]): Timeframe | null {
+  const target = minutes * 60;
+  const set = new Set(loadedTfs);
+  for (const tf of TIMEFRAME_ORDER) {
+    if (set.has(tf) && TIMEFRAME_SECONDS[tf] === target) return tf;
+  }
+  return null;
+}

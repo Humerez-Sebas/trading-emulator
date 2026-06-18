@@ -7,6 +7,7 @@ import {
   parseInterval,
   formatIntervalVerbose,
   formatIntervalShort,
+  loadedTfForMinutes,
 } from './custom-timeframe';
 
 /** `n` consecutive candles of `stepSec` spacing from `start`. */
@@ -106,5 +107,16 @@ describe('formatIntervalShort', () => {
     expect(formatIntervalShort(45)).toBe('45m');
     expect(formatIntervalShort(120)).toBe('2h');
     expect(formatIntervalShort(1440)).toBe('1D');
+  });
+});
+
+describe('loadedTfForMinutes', () => {
+  it('returns the loaded TF matching the exact minutes', () => {
+    expect(loadedTfForMinutes(60, ['M1','H1','D1'])).toBe('H1');
+    expect(loadedTfForMinutes(1440, ['H1','D1'])).toBe('D1');
+  });
+  it('null when no loaded TF matches', () => {
+    expect(loadedTfForMinutes(45, ['H1','D1'])).toBeNull();
+    expect(loadedTfForMinutes(60, ['D1'])).toBeNull();
   });
 });
