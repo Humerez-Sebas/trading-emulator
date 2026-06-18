@@ -20,6 +20,21 @@
         {{ tf }}
       </button>
     }
+    <input
+      #customInput
+      class="tf-custom"
+      type="number"
+      min="1"
+      step="1"
+      inputmode="numeric"
+      placeholder="min"
+      aria-label="Temporalidad personalizada en minutos"
+      appTooltip="Temporalidad personalizada (minutos), p. ej. 45 o 90"
+      [class.active]="customTf() !== null"
+      [value]="customTf() ?? ''"
+      (change)="setCustomTf(customInput.value)"
+      (keyup.enter)="setCustomTf(customInput.value)"
+    />
   </div>
 
   <div class="replay-group" role="group" aria-label="Replay">

@@ -10,6 +10,7 @@ import {
   selectAssets,
   selectCurrentAsset,
   selectCurrentTime,
+  selectCustomTf,
   selectFloatingPnl,
   selectMsPerCandle,
   selectPlaying,
@@ -18,6 +19,7 @@ import {
   selectTfLastTimes,
   selectUtcOffset,
 } from '../../state/selectors';
+import { parseCustomTimeframe } from '../../state/market/custom-timeframe';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 
@@ -34,6 +36,8 @@ export class ControlsComponent {
   tfs = this.store.selectSignal(selectSessionTfs);
   private tfLastTimes = this.store.selectSignal(selectTfLastTimes);
   activeTf = this.store.selectSignal(selectActiveTf);
+  /** Active custom timeframe in minutes (null when a standard TF is shown). */
+  customTf = this.store.selectSignal(selectCustomTf);
   assets = this.store.selectSignal(selectAssets);
   currentAsset = this.store.selectSignal(selectCurrentAsset);
   playing = this.store.selectSignal(selectPlaying);
@@ -73,6 +77,18 @@ export class ControlsComponent {
 
   setTf(tf: Timeframe): void {
     this.store.dispatch(MarketActions.changeTimeframe({ tf }));
+  }
+
+  /**
+   * Applies a typed custom timeframe (minutes). Invalid input (non-integer,
+   * <= 0, out of range) is ignored. The Timeframe Generator effect aggregates
+   * the loaded anchors and the chart re-renders at the new resolution.
+   */
+  setCustomTf(raw: string): void {
+    const minutes = parseCustomTimeframe(raw);
+    if (minutes !== null) {
+      this.store.dispatch(MarketActions.changeCustomTimeframe({ minutes }));
+    }
   }
 
   /** True when this TF was harvested with less coverage than the replay cursor

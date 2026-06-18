@@ -58,6 +58,25 @@
   color: var(--on-accent);
   border-color: var(--accent);
 }
+/* Custom-minutes timeframe input (M45, M90, …). */
+.tf-custom {
+  width: 52px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  text-align: center;
+}
+.tf-custom.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.tf-custom::placeholder {
+  color: var(--text-muted);
+}
 /* TF whose harvested coverage ends before the replay cursor (would jump back). */
 .tf-btn.short:not(.active) {
   color: var(--text-muted);

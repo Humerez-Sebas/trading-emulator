@@ -15,6 +15,7 @@ import { workspacesFeature } from './state/workspaces/workspaces.reducer';
 import { tradingFeature } from './state/trading/trading.reducer';
 import { authFeature } from './state/auth/auth.reducer';
 import { userSymbolsFeature } from './state/user-symbols/user-symbols.reducer';
+import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
 import { WorkspacesEffects } from './state/workspaces/workspaces.effects';
@@ -39,6 +40,7 @@ export const appConfig: ApplicationConfig = {
       [userSymbolsFeature.name]: userSymbolsFeature.reducer,
     }),
     provideEffects(
+      MarketEffects,
       ReplayEffects,
       SettingsEffects,
       WorkspacesEffects,

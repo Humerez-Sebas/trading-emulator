@@ -19,6 +19,8 @@ import { computeSessionStats } from './trading/fill-engine';
 
 export const selectActiveTf = marketFeature.selectActiveTf;
 export const selectSeries = marketFeature.selectSeries;
+export const selectCustomTf = marketFeature.selectCustomTf;
+export const selectCustomSeries = marketFeature.selectCustomSeries;
 export const selectCurrentTime = replayFeature.selectCurrentTime;
 export const selectPlaying = replayFeature.selectPlaying;
 export const selectMsPerCandle = replayFeature.selectMsPerCandle;
@@ -137,11 +139,19 @@ export const selectTfLastTimes = createSelector(selectSeries, (series) => {
   return out;
 });
 
-/** Candles of the active timeframe (all of them, including the future). */
+/**
+ * Candles of the active timeframe (all of them, including the future). When a
+ * custom timeframe is active, the in-memory generated series is shown instead.
+ * Every downstream view (visible index, progress, markers, fill context …)
+ * derives from THIS selector, so custom timeframes flow everywhere for free.
+ */
 export const selectActiveCandles = createSelector(
   selectSeries,
   selectActiveTf,
-  (series, tf): Candle[] => (tf ? (series[tf] ?? []) : []),
+  selectCustomTf,
+  selectCustomSeries,
+  (series, tf, customTf, customSeries): Candle[] =>
+    customTf != null ? customSeries : tf ? (series[tf] ?? []) : [],
 );
 
 /**
@@ -201,8 +211,15 @@ export const selectActiveTfShortfall = createSelector(
  * not combine loose selectors with combineLatest, which produces interim
  * emissions with a new TF + old candles/index.
  */
-export const selectChartView = createSelector(
+/** Display label of the active timeframe: the standard name or `M<minutes>`. */
+export const selectActiveTfLabel = createSelector(
   selectActiveTf,
+  selectCustomTf,
+  (tf, customTf): string | null => (customTf != null ? `M${customTf}` : tf),
+);
+
+export const selectChartView = createSelector(
+  selectActiveTfLabel,
   selectActiveCandles,
   selectVisibleIndex,
   selectUtcOffset,
@@ -442,33 +459,50 @@ export const selectSessionStats = createSelector(
   (history, initialBalance) => computeSessionStats(history, initialBalance),
 );
 
-/** Context the fill effect needs to evaluate a freshly revealed candle. */
+/** Candle duration (seconds) of the active timeframe — standard or custom. */
+export const selectActiveTfSeconds = createSelector(
+  selectActiveTf,
+  selectCustomTf,
+  (tf, customTf): number => (customTf != null ? customTf * 60 : tf ? TIMEFRAME_SECONDS[tf] : 0),
+);
+
+/** Finest loaded series strictly below the active candle duration (SL/TP order). */
+export const selectLowerSeries = createSelector(
+  selectSeries,
+  selectActiveTfSeconds,
+  (series, activeSeconds): Candle[] | null => lowerSeriesForSeconds(series, activeSeconds),
+);
+
+/**
+ * Context the fill effect needs to evaluate a freshly revealed candle. Exposes
+ * the active candle DURATION and the finer "lower" series directly (instead of
+ * a Timeframe string), so fills work for custom timeframes too.
+ */
 export const selectFillContext = createSelector(
   selectActiveCandles,
   selectVisibleIndex,
-  selectSeries,
-  selectActiveTf,
+  selectActiveTfSeconds,
+  selectLowerSeries,
   selectContractSize,
   tradingFeature.selectTradingState,
-  (candles, idx, series, tf, contractSize, trading) => ({
+  (candles, idx, tfSeconds, lower, contractSize, trading) => ({
     candles,
     idx,
-    series,
-    tf,
+    tfSeconds,
+    lower,
     contractSize,
     trading,
   }),
 );
 
-/** Lowest loaded TF strictly below `tf`, to disambiguate SL-vs-TP. */
-export function lowerSeriesFor(
+/** Finest loaded series whose candle duration is strictly below `activeSeconds`. */
+export function lowerSeriesForSeconds(
   series: Partial<Record<Timeframe, Candle[]>>,
-  tf: Timeframe | null,
+  activeSeconds: number,
 ): Candle[] | null {
-  if (!tf) return null;
-  const tfSecs = TIMEFRAME_SECONDS[tf];
+  if (activeSeconds <= 0) return null;
   for (const lower of TIMEFRAME_ORDER) {
-    if (TIMEFRAME_SECONDS[lower] >= tfSecs) break;
+    if (TIMEFRAME_SECONDS[lower] >= activeSeconds) break;
     const candles = series[lower];
     if (candles?.length) return candles;
   }

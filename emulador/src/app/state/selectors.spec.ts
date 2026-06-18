@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  lowerSeriesFor,
+  lowerSeriesForSeconds,
   selectActiveCandles,
   selectChartStyle,
   selectChartView,
@@ -175,16 +175,22 @@ describe('selectActiveTfShortfall', () => {
 // ---- selectActiveCandles ----
 describe('selectActiveCandles', () => {
   it('returns [] when tf is null', () => {
-    expect(selectActiveCandles.projector({}, null)).toEqual([]);
+    expect(selectActiveCandles.projector({}, null, null, [])).toEqual([]);
   });
 
   it('returns [] when tf is set but missing from series', () => {
-    expect(selectActiveCandles.projector({ H4: series(2) }, 'H1')).toEqual([]);
+    expect(selectActiveCandles.projector({ H4: series(2) }, 'H1', null, [])).toEqual([]);
   });
 
   it('returns the candle array when present', () => {
     const candles = series(3);
-    expect(selectActiveCandles.projector({ H1: candles }, 'H1')).toBe(candles);
+    expect(selectActiveCandles.projector({ H1: candles }, 'H1', null, [])).toBe(candles);
+  });
+
+  it('returns the custom series (ignoring the standard tf) when a custom tf is active', () => {
+    const standard = series(3);
+    const custom = series(2);
+    expect(selectActiveCandles.projector({ H1: standard }, 'H1', 45, custom)).toBe(custom);
   });
 });
 
@@ -465,15 +471,15 @@ describe('selectSessionStats', () => {
 
 // ---- selectFillContext ----
 describe('selectFillContext', () => {
-  it('bundles candles/idx/series/tf/contractSize/trading', () => {
+  it('bundles candles/idx/tfSeconds/lower/contractSize/trading', () => {
     const candles = series(3);
     const trading = { ...defaultTradingData(), summaryOpen: false, savedSessions: [] };
-    const s = { H1: candles };
-    const result = selectFillContext.projector(candles, 2, s, 'H1', 100, trading);
+    const lower = series(3, 0, 300);
+    const result = selectFillContext.projector(candles, 2, 3600, lower, 100, trading);
     expect(result.candles).toBe(candles);
     expect(result.idx).toBe(2);
-    expect(result.series).toBe(s);
-    expect(result.tf).toBe('H1');
+    expect(result.tfSeconds).toBe(3600);
+    expect(result.lower).toBe(lower);
     expect(result.contractSize).toBe(100);
     expect(result.trading).toBe(trading);
   });
@@ -493,23 +499,23 @@ describe('selectTradeChartView: trade markers', () => {
   });
 });
 
-// ---- lowerSeriesFor ----
-describe('lowerSeriesFor', () => {
-  it('returns null when tf is null', () => {
-    expect(lowerSeriesFor({ H1: series(3) }, null)).toBeNull();
+// ---- lowerSeriesForSeconds ----
+describe('lowerSeriesForSeconds', () => {
+  it('returns null when the active duration is 0 (no active tf)', () => {
+    expect(lowerSeriesForSeconds({ H1: series(3) }, 0)).toBeNull();
   });
 
-  it('returns the lowest loaded TF strictly below tf', () => {
+  it('returns the lowest loaded TF strictly below the active duration', () => {
     const m5 = series(3, 0, 300);
-    const result = lowerSeriesFor({ M5: m5, H1: series(3, 0, 3600) }, 'H1');
+    const result = lowerSeriesForSeconds({ M5: m5, H1: series(3, 0, 3600) }, 3600); // H1 = 3600s
     expect(result).toBe(m5);
   });
 
   it('returns null when no lower TF is loaded', () => {
-    expect(lowerSeriesFor({ H1: series(3) }, 'H1')).toBeNull();
+    expect(lowerSeriesForSeconds({ H1: series(3) }, 3600)).toBeNull();
   });
 
   it('returns null when series is empty', () => {
-    expect(lowerSeriesFor({}, 'H4')).toBeNull();
+    expect(lowerSeriesForSeconds({}, 14400)).toBeNull(); // H4 = 14400s
   });
 });
