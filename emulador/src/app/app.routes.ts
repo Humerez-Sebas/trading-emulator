@@ -51,5 +51,14 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./components/data-wizard/data-wizard.component').then((m) => m.DataWizardComponent),
   },
+  {
+    // Ongoing dataset management for the R2/Parquet source (Task 7).
+    path: 'almacenamiento',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/storage-manager/storage-manager-page.component').then(
+        (m) => m.StorageManagerPageComponent,
+      ),
+  },
   { path: '**', redirectTo: '' },
 ];
