@@ -1,5 +1,14 @@
 import { Candle, Timeframe, TIMEFRAME_ORDER, TIMEFRAME_SECONDS } from '../../models';
 import { aggregateCandles } from '../../services/timeframe-generator';
+import type { AnchorTf } from '../../services/session.service';
+import type { ManifestTf } from '../../services/market-data/manifest.service';
+
+/** One unit of onboarding work, as consumed by `DataOnboardingService.runJobs`. */
+export interface AnchorDownloadJob {
+  symbol: string;
+  tf: ManifestTf;
+  year: string;
+}
 
 /**
  * Pure helpers for custom (arbitrary-minute) timeframes — e.g. M45, M90 (Task
@@ -115,4 +124,22 @@ export function loadedTfForMinutes(minutes: number, loadedTfs: Timeframe[]): Tim
     if (set.has(tf) && TIMEFRAME_SECONDS[tf] === target) return tf;
   }
   return null;
+}
+
+/**
+ * Builds the onboarding jobs needed to fetch a missing anchor for `symbol`:
+ * M1 needs one job per calendar-year partition (`m1Years`, from
+ * `ManifestService.listM1Years`); H1/D1 are a single `'all'` partition. Used
+ * by the Interval Dialog's "Descargar {anchor}" action.
+ */
+export function buildAnchorDownloadJobs(
+  anchor: AnchorTf,
+  symbol: string,
+  m1Years: string[],
+): AnchorDownloadJob[] {
+  const tf = anchor.toLowerCase() as ManifestTf;
+  if (anchor === 'M1') {
+    return m1Years.map((year) => ({ symbol, tf, year }));
+  }
+  return [{ symbol, tf, year: 'all' }];
 }

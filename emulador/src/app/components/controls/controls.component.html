@@ -12,7 +12,7 @@
     @for (tf of tfs(); track tf) {
       <button
         class="tf-btn"
-        [class.active]="tf === activeTf()"
+        [class.active]="tf === activeTf() && customTf() === null"
         [class.short]="isShortTf(tf)"
         [appTooltip]="isShortTf(tf) ? shortTfTip(tf) : ''"
         (click)="setTf(tf)"
@@ -20,21 +20,14 @@
         {{ tf }}
       </button>
     }
-    <input
-      #customInput
-      class="tf-custom"
-      type="number"
-      min="1"
-      step="1"
-      inputmode="numeric"
-      placeholder="min"
-      aria-label="Temporalidad personalizada en minutos"
-      appTooltip="Temporalidad personalizada (minutos), p. ej. 45 o 90"
-      [class.active]="customTf() !== null"
-      [value]="customTf() ?? ''"
-      (change)="setCustomTf(customInput.value)"
-      (keyup.enter)="setCustomTf(customInput.value)"
-    />
+    @if (customTf() !== null) {
+      <span
+        class="tf-chip"
+        appTooltip="Temporalidad personalizada. Escribe un número para cambiarla."
+      >
+        {{ customChipLabel() }}
+      </span>
+    }
   </div>
 
   <div class="replay-group" role="group" aria-label="Replay">

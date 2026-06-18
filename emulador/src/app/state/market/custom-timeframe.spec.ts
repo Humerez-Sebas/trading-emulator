@@ -8,6 +8,7 @@ import {
   formatIntervalVerbose,
   formatIntervalShort,
   loadedTfForMinutes,
+  buildAnchorDownloadJobs,
 } from './custom-timeframe';
 
 /** `n` consecutive candles of `stepSec` spacing from `start`. */
@@ -118,5 +119,27 @@ describe('loadedTfForMinutes', () => {
   it('null when no loaded TF matches', () => {
     expect(loadedTfForMinutes(45, ['H1','D1'])).toBeNull();
     expect(loadedTfForMinutes(60, ['D1'])).toBeNull();
+  });
+});
+
+describe('buildAnchorDownloadJobs', () => {
+  it('builds one m1 job per calendar year for the M1 anchor', () => {
+    expect(buildAnchorDownloadJobs('M1', 'XAUUSD', ['2023', '2024'])).toEqual([
+      { symbol: 'XAUUSD', tf: 'm1', year: '2023' },
+      { symbol: 'XAUUSD', tf: 'm1', year: '2024' },
+    ]);
+  });
+
+  it('builds a single "all" job for H1/D1, ignoring m1Years', () => {
+    expect(buildAnchorDownloadJobs('H1', 'XAUUSD', ['2023'])).toEqual([
+      { symbol: 'XAUUSD', tf: 'h1', year: 'all' },
+    ]);
+    expect(buildAnchorDownloadJobs('D1', 'EURUSD', [])).toEqual([
+      { symbol: 'EURUSD', tf: 'd1', year: 'all' },
+    ]);
+  });
+
+  it('returns an empty array for M1 when no years are available', () => {
+    expect(buildAnchorDownloadJobs('M1', 'XAUUSD', [])).toEqual([]);
   });
 });

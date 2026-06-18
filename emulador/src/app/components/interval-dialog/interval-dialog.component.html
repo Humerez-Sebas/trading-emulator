@@ -1,0 +1,53 @@
+@if (open()) {
+  <app-modal title="Cambiar temporalidad" size="sm" (closed)="close()">
+    <div class="modal-pad body">
+      <input
+        #input
+        class="interval-input"
+        type="text"
+        inputmode="numeric"
+        aria-label="Temporalidad (minutos, o con sufijo H/D)"
+        placeholder="p. ej. 90, 2H, 1D"
+        [value]="raw()"
+        (input)="onInput($event)"
+        (keyup.enter)="apply()"
+      />
+
+      @if (minutes() !== null) {
+        <p class="verbose">{{ verbose() }}</p>
+      } @else if (raw()) {
+        <p class="verbose invalid">Formato no válido. Usa minutos, p. ej. 45, 2H o 1D.</p>
+      }
+
+      @if (neededAnchor(); as anchor) {
+        <div class="notice">
+          <p>
+            Necesitas {{ anchor }} para {{ formatIntervalShort(minutes()!) }}.
+          </p>
+          @if (downloadError()) {
+            <p class="error" role="alert">{{ downloadError() }}</p>
+          }
+          @if (downloading()) {
+            <div class="progress-bar">
+              <div class="progress-fill" [style.width.%]="progressPct()"></div>
+            </div>
+            @if (progress(); as p) {
+              <small>{{ p.index }} / {{ p.total }}</small>
+            }
+          } @else {
+            <button appButton variant="ghost" size="sm" (click)="downloadAnchor()">
+              Descargar {{ anchor }}
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    <div footer class="modal-foot">
+      <button appButton variant="ghost" (click)="close()">Cancelar</button>
+      <button appButton variant="primary" [disabled]="!canApply()" (click)="apply()">
+        Aplicar
+      </button>
+    </div>
+  </app-modal>
+}

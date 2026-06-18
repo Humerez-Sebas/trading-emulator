@@ -19,7 +19,7 @@ import {
   selectTfLastTimes,
   selectUtcOffset,
 } from '../../state/selectors';
-import { parseCustomTimeframe } from '../../state/market/custom-timeframe';
+import { formatIntervalShort } from '../../state/market/custom-timeframe';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 
@@ -79,16 +79,10 @@ export class ControlsComponent {
     this.store.dispatch(MarketActions.changeTimeframe({ tf }));
   }
 
-  /**
-   * Applies a typed custom timeframe (minutes). Invalid input (non-integer,
-   * <= 0, out of range) is ignored. The Timeframe Generator effect aggregates
-   * the loaded anchors and the chart re-renders at the new resolution.
-   */
-  setCustomTf(raw: string): void {
-    const minutes = parseCustomTimeframe(raw);
-    if (minutes !== null) {
-      this.store.dispatch(MarketActions.changeCustomTimeframe({ minutes }));
-    }
+  /** Compact label for the active custom interval chip, e.g. "90m", "2h". */
+  customChipLabel(): string {
+    const m = this.customTf();
+    return m !== null ? formatIntervalShort(m) : '';
   }
 
   /** True when this TF was harvested with less coverage than the replay cursor

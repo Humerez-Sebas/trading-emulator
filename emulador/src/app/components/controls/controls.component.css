@@ -58,24 +58,17 @@
   color: var(--on-accent);
   border-color: var(--accent);
 }
-/* Custom-minutes timeframe input (M45, M90, …). */
-.tf-custom {
-  width: 52px;
-  background: var(--surface-2);
-  color: var(--text);
-  border: 1px solid var(--border);
-  padding: 5px 8px;
-  border-radius: var(--radius-sm);
-  font: inherit;
-  text-align: center;
-}
-.tf-custom.active {
+/* Read-only chip showing the active custom interval (e.g. "90m", "2h"); the
+   actual input lives in the Interval Dialog (type a digit to open it). */
+.tf-chip {
+  display: inline-flex;
+  align-items: center;
   background: var(--accent);
   color: var(--on-accent);
-  border-color: var(--accent);
-}
-.tf-custom::placeholder {
-  color: var(--text-muted);
+  border: 1px solid var(--accent);
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: var(--weight-semibold);
 }
 /* TF whose harvested coverage ends before the replay cursor (would jump back). */
 .tf-btn.short:not(.active) {
