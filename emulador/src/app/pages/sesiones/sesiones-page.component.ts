@@ -6,6 +6,9 @@ import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import {
   AnchorTf,
+  RequiredDataset,
+  restorePlan,
+  SessionFileV1,
   SessionService,
   snapshotFromState,
   yearsInRange,
@@ -14,7 +17,17 @@ import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import { isSessionCsv, parseSessionCsv } from '../../state/trading/session-csv';
-import { symbolFromFileName } from '../../models';
+import { Candle, Timeframe, symbolFromFileName } from '../../models';
+import { environment } from '../../../environments/environment';
+import { MarketDataRepository } from '../../domain/market-data.repository';
+import {
+  DataOnboardingService,
+  OnboardingJob,
+} from '../../services/market-data/data-onboarding.service';
+import { ManifestService } from '../../services/market-data/manifest.service';
+import { PendingCsv } from '../../state/workspaces/workspaces.actions';
+import { ClosedTrade, defaultTradingData, PendingOrder } from '../../state/trading/trading.models';
+import { Drawing } from '../../state/drawings/drawings.models';
 import {
   selectCurrentAsset,
   selectCurrentTime,
@@ -35,6 +48,7 @@ import { BadgeDirective } from '../../components/ui/badge.directive';
 import { MenuComponent } from '../../components/ui/menu.component';
 import { EmptyStateComponent } from '../../components/ui/empty-state.component';
 import { SegmentedControlComponent } from '../../components/ui/segmented-control.component';
+import { MissingDatasetDialogComponent } from '../../components/missing-dataset-dialog/missing-dataset-dialog.component';
 
 /** The only timeframes a session may reference (anchors). */
 const ANCHOR_TFS: readonly AnchorTf[] = ['M1', 'H1', 'D1'];
@@ -123,6 +137,7 @@ function equityCurve(t: TradingData): number[] {
     MenuComponent,
     EmptyStateComponent,
     SegmentedControlComponent,
+    MissingDatasetDialogComponent,
   ],
   templateUrl: './sesiones-page.component.html',
   styleUrl: './sesiones-page.component.css',
@@ -134,6 +149,12 @@ export class SesionesPageComponent {
   private dialogs = inject(DialogService);
   private sessionService = inject(SessionService);
   private storageManager = inject(StorageManagerService);
+  private repo = inject(MarketDataRepository);
+  private onboarding = inject(DataOnboardingService);
+  private manifests = inject(ManifestService);
+
+  /** R2 deployment uses `.session.json` import; CSV keeps the legacy path. */
+  isR2 = environment.dataSource === 'r2';
 
   state = signal<'loading' | 'ok'>('loading');
   private metas = signal<WorkspaceMeta[]>([]);
@@ -445,6 +466,171 @@ export class SesionesPageComponent {
     input.value = '';
   }
 
+  // ---- .session.json import (R2: version gate + missing-dataset download + restore) ----
+
+  /** The parsed session pending restore (set while the missing-dataset modal is open). */
+  private pendingSession = signal<SessionFileV1 | null>(null);
+  /** Missing datasets to list in the modal (empty = modal closed). */
+  missing = signal<RequiredDataset[]>([]);
+  /** A dataset download is running. */
+  downloading = signal(false);
+  /** 0..100 download progress, or null before it starts. */
+  downloadProgress = signal<number | null>(null);
+  /** Error surfaced inside the missing-dataset modal. */
+  downloadError = signal('');
+
+  /**
+   * Imports a `.session.json`: version-gates it, prompts to download any missing
+   * datasets, then restores the full live session and opens the chart. Only the
+   * R2 deployment uses this; `dataSource==='csv'` keeps {@link onImportSession}.
+   */
+  async onImportSessionJson(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    this.importError.set('');
+    this.importInfo.set('');
+    try {
+      const text = await file.text();
+      const result = this.sessionService.parse(text);
+      if (result.status === 'future') {
+        this.importError.set(
+          `Actualiza el emulador para abrir esta sesión (versión ${result.version}).`,
+        );
+        return;
+      }
+      if (result.status === 'invalid') {
+        this.importError.set(result.reason);
+        return;
+      }
+      const session = result.session;
+      const missing = await this.sessionService.findMissingDatasets(session);
+      if (missing.length) {
+        // open the missing-dataset modal; restore continues from confirmDownload()
+        this.pendingSession.set(session);
+        this.downloadError.set('');
+        this.downloadProgress.set(null);
+        this.missing.set(missing);
+        return;
+      }
+      await this.restoreSession(session);
+    } catch (e) {
+      this.importError.set((e as Error).message);
+    }
+  }
+
+  /** Modal action: download the missing datasets from R2, then restore. */
+  async confirmDownload(): Promise<void> {
+    const session = this.pendingSession();
+    const missing = this.missing();
+    if (!session || !missing.length || this.downloading()) return;
+    this.downloading.set(true);
+    this.downloadError.set('');
+    this.downloadProgress.set(0);
+    try {
+      const manifest = await this.manifests.fetchManifest();
+      const jobs = missing.map((d) => this.jobForDataset(d));
+      await this.onboarding.runJobs(manifest, jobs, (p) =>
+        this.downloadProgress.set(Math.round((p.index / p.total) * 100)),
+      );
+      this.closeMissingModal();
+      await this.restoreSession(session);
+    } catch (e) {
+      this.downloadError.set(
+        (e as Error).message || 'No se pudieron descargar los datasets de R2.',
+      );
+      this.downloading.set(false);
+    }
+  }
+
+  /** Modal action: dismiss the missing-dataset prompt and abort the import. */
+  cancelDownload(): void {
+    if (this.downloading()) return;
+    this.closeMissingModal();
+  }
+
+  private closeMissingModal(): void {
+    this.missing.set([]);
+    this.pendingSession.set(null);
+    this.downloading.set(false);
+    this.downloadProgress.set(null);
+    this.downloadError.set('');
+  }
+
+  /** One onboarding job per missing partition (m1 carries the year; h1/d1 use 'all'). */
+  private jobForDataset(d: RequiredDataset): OnboardingJob {
+    const tf = d.timeframe.toLowerCase() as OnboardingJob['tf'];
+    return d.timeframe === 'M1'
+      ? { symbol: d.symbol, tf, year: String(d.year) }
+      : { symbol: d.symbol, tf, year: 'all' };
+  }
+
+  /**
+   * Restores a fully-validated session: reads the required anchor candles from
+   * the local cache, reconstructs the trading slice, and dispatches `switchAsset`
+   * with the race-safe `thenRestore` payload, then opens the chart.
+   */
+  private async restoreSession(session: SessionFileV1): Promise<void> {
+    const plan = restorePlan(session);
+    // selectedTfs are anchors (M1/H1/D1) — a subset of Timeframe — so read each
+    // anchor's stored candles and hand them to the workspace as PendingCsv.
+    const pending: PendingCsv[] = [];
+    for (const tf of plan.selectedTfs) {
+      const timeframe = tf as Timeframe;
+      const candles: Candle[] = await this.repo.getCandles(plan.symbol, timeframe);
+      pending.push({
+        tf: timeframe,
+        candles,
+        fileName: `${plan.symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
+      });
+    }
+
+    // Reconstruct the persistable trading slice from the session. Balance follows
+    // the realized convention used across the reducer: initialBalance + Σ profits.
+    const history = plan.trades as ClosedTrade[];
+    const initialBalance = session.context.initialBalance;
+    const realized = history.reduce((sum, t) => sum + t.profit, 0);
+    const lastClose = history.reduce((max, t) => Math.max(max, t.closeTime), 0);
+    const trading = {
+      ...defaultTradingData(initialBalance),
+      initialBalance,
+      balance: initialBalance + realized,
+      orders: plan.pendingOrders as PendingOrder[],
+      positions: [],
+      history,
+      lastProcessedTime: lastClose,
+      // an imported session is a finished backtest snapshot
+      sessionEnded: true,
+      sessionName: `Importada · ${this.shortDate(plan.thenGoTo)}`,
+    };
+
+    this.store.dispatch(
+      WorkspacesActions.switchAsset({
+        symbol: plan.symbol,
+        selectedTfs: plan.selectedTfs as Timeframe[],
+        thenLoad: pending,
+        thenGoTo: plan.thenGoTo,
+        thenRestore: {
+          trading,
+          drawings: plan.drawings as Drawing[],
+          intervalMinutes: plan.currentTimeframeMinutes,
+          playbackSpeed: plan.playbackSpeed,
+        },
+      }),
+    );
+    this.importInfo.set(`Sesión importada en ${plan.symbol} (${history.length} trades).`);
+    await this.router.navigateByUrl('/');
+  }
+
+  /** "dd/MM" of a unix-seconds timestamp (UTC), for the imported session name. */
+  private shortDate(unixSeconds: number): string {
+    if (unixSeconds <= 0) return '—';
+    const d = new Date(unixSeconds * 1000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}`;
+  }
+
   // ---- open / rename / delete (unchanged behavior) ----
 
   open(card: SessionCard): void {
@@ -580,9 +766,7 @@ export class SesionesPageComponent {
       symbolDatasets.some((d) => d.timeframe === tf),
     );
     const years = [
-      ...new Set(
-        symbolDatasets.filter((d) => d.timeframe === 'M1').map((d) => Number(d.year)),
-      ),
+      ...new Set(symbolDatasets.filter((d) => d.timeframe === 'M1').map((d) => Number(d.year))),
     ].sort((a, b) => a - b);
 
     const snapshot = snapshotFromState({

@@ -1,6 +1,6 @@
 import { createActionGroup, emptyProps, props } from '@ngrx/store';
 import { Candle } from '../../models';
-import { ClosedTrade, OrderSide, PendingType } from './trading.models';
+import { ClosedTrade, OrderSide, PendingType, TradingData } from './trading.models';
 
 export const TradingActions = createActionGroup({
   source: 'Trading',
@@ -82,5 +82,12 @@ export const TradingActions = createActionGroup({
      * has activity) and shows the imported trades as an ended session.
      */
     'Session Imported': props<{ trades: ClosedTrade[]; currentCursor: number }>(),
+    /**
+     * Replaces the ENTIRE trading slice with a fully-reconstructed
+     * {@link TradingData} (the `.session.json` import flow, Task 9). Unlike
+     * `sessionImported` (which only carries trades and ends the session), this
+     * restores history, pending orders, balances and the session name verbatim.
+     */
+    'Restore Session': props<{ trading: TradingData }>(),
   },
 });

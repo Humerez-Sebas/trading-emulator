@@ -52,6 +52,15 @@ export const drawingsFeature = createFeature({
       DrawingsActions.clearDrawings,
       (state): DrawingsState => ({ ...state, items: [], selectedId: null }),
     ),
+    on(
+      DrawingsActions.restoreDrawings,
+      (state, { drawings }): DrawingsState => ({
+        ...state,
+        items: drawings,
+        activeTool: 'none',
+        selectedId: null,
+      }),
+    ),
     // asset switch: each asset has its own independent drawings
     on(
       WorkspacesActions.workspaceRestored,

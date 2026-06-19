@@ -22,10 +22,22 @@
         </svg>
         Nueva carpeta
       </button>
-      <label appButton variant="subtle">
-        Importar sesión (.csv)
-        <input type="file" accept=".csv" (change)="onImportSession($event)" hidden />
-      </label>
+      @if (isR2) {
+        <label appButton variant="subtle">
+          Importar sesión (.session.json)
+          <input
+            type="file"
+            accept=".json,.session.json,application/json"
+            (change)="onImportSessionJson($event)"
+            hidden
+          />
+        </label>
+      } @else {
+        <label appButton variant="subtle">
+          Importar sesión (.csv)
+          <input type="file" accept=".csv" (change)="onImportSession($event)" hidden />
+        </label>
+      }
       <a appButton variant="primary" routerLink="/sesiones/crear">Nueva sesión</a>
     </div>
   </header>
@@ -440,11 +452,23 @@
   }
 </div>
 
+<!-- missing-dataset prompt for the .session.json import (R2) -->
+<app-missing-dataset-dialog
+  [datasets]="missing()"
+  [downloading]="downloading()"
+  [progress]="downloadProgress()"
+  [error]="downloadError()"
+  (download)="confirmDownload()"
+  (cancel)="cancelDownload()"
+/>
+
 <!-- shared overflow menu for a session card / row -->
 <ng-template #actionMenu let-card="card">
   <ui-menu ariaLabel="Acciones de la sesión">
     <button class="ui-menu-item" (click)="rename(card)">Renombrar</button>
-    <button class="ui-menu-item" (click)="exportSession(card)">Exportar sesión (.session.json)</button>
+    <button class="ui-menu-item" (click)="exportSession(card)">
+      Exportar sesión (.session.json)
+    </button>
     <p class="ui-menu-label">Mover a</p>
     <button
       class="ui-menu-item"

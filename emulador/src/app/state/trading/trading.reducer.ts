@@ -277,6 +277,18 @@ export const tradingFeature = createFeature({
         ),
       };
     }),
+    on(
+      TradingActions.restoreSession,
+      (state, { trading }): TradingState => ({
+        // full replacement of the persistable slice (defaults-first so a session
+        // saved by an older schema still hydrates every field), keeping the
+        // transient UI flag and the workspace's archived sessions intact.
+        ...defaultTradingData(),
+        ...trading,
+        summaryOpen: state.summaryOpen,
+        savedSessions: state.savedSessions,
+      }),
+    ),
     on(TradingActions.sessionImported, (state, { trades, currentCursor }): TradingState => {
       const profit = trades.reduce((sum, t) => sum + t.profit, 0);
       const lastClose = trades.reduce((max, t) => Math.max(max, t.closeTime), 0);

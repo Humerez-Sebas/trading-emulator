@@ -13,10 +13,17 @@ import {
 import { Timeframe } from '../../models';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { MarketActions } from '../market/market.actions';
+import { loadedTfForMinutes } from '../market/custom-timeframe';
 import { ReplayActions } from '../replay/replay.actions';
 import { TradingActions } from '../trading/trading.actions';
+import { DrawingsActions } from '../drawings/drawings.actions';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
-import { PendingCsv, PendingSessionImport, WorkspacesActions } from './workspaces.actions';
+import {
+  PendingCsv,
+  PendingSessionImport,
+  PendingSessionRestore,
+  WorkspacesActions,
+} from './workspaces.actions';
 import { emptyWorkspace, Workspace, WorkspaceMeta } from './workspaces.models';
 
 // Key for remembering the last active asset across restarts.
@@ -121,6 +128,7 @@ export class WorkspacesEffects {
       selectedTfs?: Timeframe[];
       thenLoad?: PendingCsv[];
       thenImport?: PendingSessionImport;
+      thenRestore?: PendingSessionRestore;
       thenNewSession?: { name: string | null };
       thenOpenSession?: string;
       thenGoTo?: number;
@@ -129,8 +137,15 @@ export class WorkspacesEffects {
     current: string | null,
     meta: MetaSnapshot,
   ): Promise<Action[]> {
-    const { symbol, thenImport, thenNewSession, thenOpenSession, thenGoTo, thenSessionEnd } =
-      action;
+    const {
+      symbol,
+      thenImport,
+      thenRestore,
+      thenNewSession,
+      thenOpenSession,
+      thenGoTo,
+      thenSessionEnd,
+    } = action;
     const thenLoad = action.thenLoad ?? [];
     const applySelectedTfs = (w: Workspace): Workspace =>
       action.selectedTfs ? { ...w, selectedTfs: action.selectedTfs } : w;
@@ -162,6 +177,24 @@ export class WorkspacesEffects {
     // 3) then load freshly parsed CSVs (persistSeries$ stores each of them)
     for (const csv of thenLoad) {
       actions.push(MarketActions.csvLoaded(csv));
+    }
+    // 3r) `.session.json` restore: inject the full live state right AFTER the
+    // candles land (so the chart has data) and BEFORE the legacy import/wizard
+    // branches. Order matters: trading → drawings → interval → speed; the
+    // cursor is handled by `thenGoTo` below, exactly as in the wizard flow.
+    if (thenRestore) {
+      actions.push(TradingActions.restoreSession({ trading: thenRestore.trading }));
+      actions.push(DrawingsActions.restoreDrawings({ drawings: thenRestore.drawings }));
+      const matchTf = loadedTfForMinutes(
+        thenRestore.intervalMinutes,
+        thenLoad.map((c) => c.tf),
+      );
+      actions.push(
+        matchTf
+          ? MarketActions.changeTimeframe({ tf: matchTf })
+          : MarketActions.changeCustomTimeframe({ minutes: thenRestore.intervalMinutes }),
+      );
+      actions.push(ReplayActions.changeSpeed({ msPerCandle: thenRestore.playbackSpeed }));
     }
     // 4) then import a session CSV into the freshly restored workspace
     if (thenImport?.trades.length) {
