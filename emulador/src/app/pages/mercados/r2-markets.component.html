@@ -38,6 +38,9 @@
         />
       </label>
     </div>
+    @if (errorMsg()) {
+      <p class="action-error" role="alert">{{ errorMsg() }}</p>
+    }
   }
 
   @switch (state()) {
