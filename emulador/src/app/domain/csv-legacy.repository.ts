@@ -22,4 +22,14 @@ export class CsvMarketDataRepository extends MarketDataRepository {
     const workspace = await this.workspaceDb.getWorkspace(symbol);
     return workspace?.series[timeframe] ?? [];
   }
+
+  /** @inheritdoc */
+  async getCoverage(
+    symbol: string,
+    timeframe: Timeframe,
+  ): Promise<{ from: number; to: number } | null> {
+    const candles = await this.getCandles(symbol, timeframe);
+    if (!candles.length) return null;
+    return { from: candles[0].time, to: candles[candles.length - 1].time };
+  }
 }
