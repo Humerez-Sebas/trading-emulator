@@ -444,6 +444,7 @@
 <ng-template #actionMenu let-card="card">
   <ui-menu ariaLabel="Acciones de la sesión">
     <button class="ui-menu-item" (click)="rename(card)">Renombrar</button>
+    <button class="ui-menu-item" (click)="exportSession(card)">Exportar sesión (.session.json)</button>
     <p class="ui-menu-label">Mover a</p>
     <button
       class="ui-menu-item"

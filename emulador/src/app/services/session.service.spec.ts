@@ -12,6 +12,7 @@ import {
   SESSION_VERSION,
   SessionService,
   snapshotFromState,
+  yearsInRange,
   type SessionSnapshot,
 } from './session.service';
 
@@ -49,6 +50,27 @@ function ds(p: Partial<DatasetRecord> = {}): DatasetRecord {
     ...p,
   };
 }
+
+describe('yearsInRange', () => {
+  it('returns every UTC calendar year spanned by the range, inclusive', () => {
+    // 2024-06-01 .. 2026-01-15 (UTC) -> 2024, 2025, 2026
+    expect(yearsInRange(1717200000, 1768435200)).toEqual([2024, 2025, 2026]);
+  });
+
+  it('returns a single year when the range stays within one calendar year', () => {
+    expect(yearsInRange(1704067200, 1735689600 - 1)).toEqual([2024]);
+  });
+
+  it('returns [] for an empty/zero range', () => {
+    expect(yearsInRange(0, 0)).toEqual([]);
+    expect(yearsInRange(0, 1704067200)).toEqual([]);
+    expect(yearsInRange(1704067200, 0)).toEqual([]);
+  });
+
+  it('returns [] when `to` is before `from`', () => {
+    expect(yearsInRange(1735689600, 1704067200)).toEqual([]);
+  });
+});
 
 describe('buildRequiredDatasets', () => {
   it('expands M1 to one ref per (deduped, sorted) year; H1/D1 have no year', () => {
@@ -116,21 +138,23 @@ describe('missingDatasets', () => {
 });
 
 describe('snapshotFromState', () => {
-  function stateInput(p: Partial<Parameters<typeof snapshotFromState>[0]> = {}) {
+  function stateInput(
+    p: Partial<Parameters<typeof snapshotFromState>[0]> = {},
+  ): Parameters<typeof snapshotFromState>[0] {
     return {
       symbol: 'XAUUSD',
       initialBalance: 10000,
       startRangeSec: 1704067200,
       endRangeSec: 1735689600,
       replayTimeSec: 1_700_000_000,
-      activeTf: 'H1' as const,
+      activeTf: 'H1',
       customTfMinutes: null,
       playbackSpeed: 1.5,
       trades: [{ id: 't1' }],
       pendingOrders: [{ id: 'o1' }],
       drawings: [{ id: 'd1' }],
       notes: [],
-      anchorTimeframes: ['M1', 'H1', 'D1'] as const,
+      anchorTimeframes: ['M1', 'H1', 'D1'],
       years: [2024, 2025],
       id: 'fixed-uuid',
       ...p,

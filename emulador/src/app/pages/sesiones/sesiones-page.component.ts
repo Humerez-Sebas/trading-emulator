@@ -3,17 +3,28 @@ import { DatePipe, DecimalPipe, PercentPipe, NgTemplateOutlet } from '@angular/c
 import { Router, RouterLink } from '@angular/router';
 import { Store } from '@ngrx/store';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
+import {
+  AnchorTf,
+  SessionService,
+  snapshotFromState,
+  yearsInRange,
+} from '../../services/session.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import { isSessionCsv, parseSessionCsv } from '../../state/trading/session-csv';
-import { symbolFromFileName } from '../../models';
+import { symbolFromFileName, Timeframe } from '../../models';
 import {
   selectCurrentAsset,
   selectCurrentTime,
+  selectDataRange,
+  selectLoadedTfs,
+  selectMsPerCandle,
   selectSavedSessions,
   selectTradingData,
 } from '../../state/selectors';
+import { marketFeature } from '../../state/market/market.reducer';
+import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { TrashIconComponent } from '../../components/icons/trash-icon.component';
@@ -23,6 +34,9 @@ import { BadgeDirective } from '../../components/ui/badge.directive';
 import { MenuComponent } from '../../components/ui/menu.component';
 import { EmptyStateComponent } from '../../components/ui/empty-state.component';
 import { SegmentedControlComponent } from '../../components/ui/segmented-control.component';
+
+/** The only timeframes a session may reference (anchors). */
+const ANCHOR_TFS: readonly AnchorTf[] = ['M1', 'H1', 'D1'];
 
 type Density = 'card' | 'row';
 
@@ -117,6 +131,7 @@ export class SesionesPageComponent {
   private db = inject(WorkspaceDbService);
   private router = inject(Router);
   private dialogs = inject(DialogService);
+  private sessionService = inject(SessionService);
 
   state = signal<'loading' | 'ok'>('loading');
   private metas = signal<WorkspaceMeta[]>([]);
@@ -140,6 +155,14 @@ export class SesionesPageComponent {
   private currentTime = this.store.selectSignal(selectCurrentTime);
   private liveTrading = this.store.selectSignal(selectTradingData);
   private liveSessions = this.store.selectSignal(selectSavedSessions);
+
+  // ---- .session.json export (active session's live state) ----
+  private liveDataRange = this.store.selectSignal(selectDataRange);
+  private liveActiveTf = this.store.selectSignal(marketFeature.selectActiveTf);
+  private liveCustomTf = this.store.selectSignal(marketFeature.selectCustomTf);
+  private livePlaybackSpeed = this.store.selectSignal(selectMsPerCandle);
+  private liveDrawings = this.store.selectSignal(drawingsFeature.selectItems);
+  private liveLoadedTfs = this.store.selectSignal(selectLoadedTfs);
 
   /** Flat list of every session as a card (live state wins for the open asset). */
   private allCards = computed<SessionCard[]>(() => {
@@ -493,6 +516,73 @@ export class SesionesPageComponent {
       await this.reload();
     }
     this.flash(`Sesión "${card.name}" eliminada.`);
+  }
+
+  /**
+   * Exports a card's session as a `.session.json`. The workspace's ACTIVE
+   * session (the one open on the chart, `card.id === null` for the current
+   * asset) is built from live state (same fields as the session-summary
+   * export, with a real data range/years). Any other card — an archived
+   * session, or the active session of an asset that is not on screen — is
+   * built from its STORED `trading` + cursor: no candle data is kept for it,
+   * so the data range/years default to empty; anchor TFs fall back to the
+   * workspace's recorded `selectedTfs` (or none if that wasn't recorded).
+   */
+  async exportSession(card: SessionCard): Promise<void> {
+    const isLiveActive = card.id === null && card.symbol === this.currentAsset();
+    const filename = `${card.symbol.toLowerCase()}-${card.name}.session.json`;
+
+    if (isLiveActive) {
+      const range = this.liveDataRange();
+      const snapshot = snapshotFromState({
+        symbol: card.symbol,
+        initialBalance: card.initialBalance,
+        startRangeSec: range?.from ?? 0,
+        endRangeSec: range?.to ?? 0,
+        replayTimeSec: this.currentTime(),
+        activeTf: this.liveActiveTf(),
+        customTfMinutes: this.liveCustomTf(),
+        playbackSpeed: this.livePlaybackSpeed(),
+        trades: this.liveTrading().history,
+        pendingOrders: this.liveTrading().orders,
+        drawings: this.liveDrawings(),
+        notes: [],
+        anchorTimeframes: this.liveLoadedTfs().filter((tf): tf is AnchorTf =>
+          ANCHOR_TFS.includes(tf as AnchorTf),
+        ),
+        years: yearsInRange(range?.from ?? 0, range?.to ?? 0),
+      });
+      this.sessionService.exportSession(snapshot, filename);
+      return;
+    }
+
+    // Archived session (or another asset's active one): stored data only.
+    const meta = await this.db.getMeta(card.symbol);
+    const session = card.id !== null ? meta?.sessions?.find((s) => s.id === card.id) : undefined;
+    const trading: TradingData | undefined = card.id !== null ? session?.trading : meta?.trading;
+    if (!trading) return;
+    const cursor = card.id !== null ? (session?.currentTime ?? 0) : (meta?.currentTime ?? 0);
+    const anchorTimeframes = (meta?.selectedTfs ?? []).filter((tf): tf is Timeframe & AnchorTf =>
+      ANCHOR_TFS.includes(tf as AnchorTf),
+    );
+
+    const snapshot = snapshotFromState({
+      symbol: card.symbol,
+      initialBalance: trading.initialBalance,
+      startRangeSec: 0,
+      endRangeSec: 0,
+      replayTimeSec: cursor,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      trades: trading.history,
+      pendingOrders: trading.orders,
+      drawings: [],
+      notes: [],
+      anchorTimeframes,
+      years: [],
+    });
+    this.sessionService.exportSession(snapshot, filename);
   }
 
   // ---- folders CRUD ----

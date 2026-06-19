@@ -94,6 +94,20 @@ export type ParseResult =
   | { status: 'invalid'; reason: string };
 
 /**
+ * UTC calendar years spanned by `[fromSec, toSec]`, inclusive. Used to expand
+ * the M1 anchor into one dataset ref per year. Returns `[]` when the range is
+ * empty or zero (no data loaded yet).
+ */
+export function yearsInRange(fromSec: number, toSec: number): number[] {
+  if (!fromSec || !toSec || toSec < fromSec) return [];
+  const fromYear = new Date(fromSec * 1000).getUTCFullYear();
+  const toYear = new Date(toSec * 1000).getUTCFullYear();
+  const out: number[] = [];
+  for (let y = fromYear; y <= toYear; y++) out.push(y);
+  return out;
+}
+
+/**
  * Expands a symbol + anchor selection into concrete dataset references: one M1
  * ref per (deduped, sorted) year; a single ref for H1/D1 (no year).
  */
