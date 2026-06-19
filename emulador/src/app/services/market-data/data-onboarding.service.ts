@@ -129,10 +129,18 @@ export class DataOnboardingService {
     }
 
     // 3) download the parquet bytes for this partition (`<year>.parquet`).
+    // [r2-perf] Task 5 measurement-only instrumentation: fetch vs ingest timing.
+    // Removed in Task 6 once the optimization it informs is validated.
+    const tFetch0 = performance.now();
     const buffer = await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`);
+    const tFetch1 = performance.now();
 
     // 4) hand off to the worker and await its terminal message.
     await this.ingest(buffer, symbol, timeframe);
+    const tIngest1 = performance.now();
+    console.debug(
+      `[r2-perf] ${id}: fetch=${Math.round(tFetch1 - tFetch0)}ms ingest=${Math.round(tIngest1 - tFetch1)}ms bytes=${buffer.byteLength}`,
+    );
 
     // 5) record the dataset (size/etag/updatedAt straight from the manifest).
     const record: DatasetRecord = {

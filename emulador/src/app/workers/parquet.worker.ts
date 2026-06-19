@@ -60,19 +60,32 @@ async function getParquet(): Promise<typeof import('parquet-wasm')> {
 async function ingest(req: ParquetWorkerRequest): Promise<void> {
   const { buffer, symbol, timeframe } = req;
 
+  // [r2-perf] Task 5 measurement-only instrumentation: init vs decode vs
+  // insert timing. Removed in Task 6 once the optimization it informs (worker
+  // reuse to skip per-partition WASM init) is validated.
+  const tInit0 = performance.now();
+
   // Decode Parquet -> Arrow. parquet-wasm 0.7: readParquet returns a wasm
   // Table; bridge to apache-arrow via an Arrow IPC stream.
   const { readParquet } = await getParquet();
+  const tInit1 = performance.now();
+
   const { tableFromIPC } = await import('apache-arrow');
   const wasmTable = readParquet(new Uint8Array(buffer));
   const table = tableFromIPC(wasmTable.intoIPCStream());
 
   const records = arrowTableToCandles(table, symbol, timeframe);
   const total = records.length;
+  const tDecode1 = performance.now();
 
   const inserted = await bulkInsertCandles(records, 10_000, (insertedSoFar) => {
     post({ type: 'progress', inserted: insertedSoFar, total });
   });
+  const tInsert1 = performance.now();
+
+  console.debug(
+    `[r2-perf] worker ${symbol}/${timeframe}: init=${Math.round(tInit1 - tInit0)}ms decode=${Math.round(tDecode1 - tInit1)}ms insert=${Math.round(tInsert1 - tDecode1)}ms rows=${total}`,
+  );
 
   post({ type: 'done', inserted });
 }
