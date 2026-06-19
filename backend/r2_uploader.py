@@ -45,9 +45,7 @@ def load_config() -> dict[str, str | None]:
     """
     faltantes = [v for v in _REQUIRED_VARS if not os.environ.get(v)]
     if faltantes:
-        raise ValueError(
-            f"Variables de entorno R2 requeridas no definidas: {', '.join(faltantes)}"
-        )
+        raise ValueError(f"Variables de entorno R2 requeridas no definidas: {', '.join(faltantes)}")
 
     return {
         "R2_ACCOUNT_ID": os.environ["R2_ACCOUNT_ID"],
@@ -78,8 +76,7 @@ def build_r2_client(config: dict[str, str | None] | None = None):
         config = load_config()
 
     endpoint_url: str = (
-        config.get("R2_ENDPOINT")
-        or f"https://{config['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com"
+        config.get("R2_ENDPOINT") or f"https://{config['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com"
     )
 
     return boto3.client(
@@ -142,14 +139,16 @@ def _scan_tree(out_dir: str) -> list[dict[str, Any]]:
             tf = tf_dir.name.lower()  # "m1", "h1" o "d1"
 
             for parquet_file in sorted(tf_dir.glob("*.parquet")):
-                entradas.append({
-                    "path": parquet_file,
-                    "symbol": symbol,
-                    "tf": tf,
-                    "partition": parquet_file.stem,
-                    "key": _r2_key(symbol, tf, parquet_file.name),
-                    "size": os.path.getsize(parquet_file),
-                })
+                entradas.append(
+                    {
+                        "path": parquet_file,
+                        "symbol": symbol,
+                        "tf": tf,
+                        "partition": parquet_file.stem,
+                        "key": _r2_key(symbol, tf, parquet_file.name),
+                        "size": os.path.getsize(parquet_file),
+                    }
+                )
 
     return entradas
 
@@ -204,14 +203,16 @@ def upload_parquet_tree(
         etag: str = response.get("ETag", "").strip('"')
         uploaded_at = datetime.now(tz=timezone.utc)
 
-        records.append({
-            "symbol": entrada["symbol"],
-            "tf": entrada["tf"],
-            "partition": entrada["partition"],
-            "size": file_size,
-            "etag": etag,
-            "updated_at": uploaded_at,
-        })
+        records.append(
+            {
+                "symbol": entrada["symbol"],
+                "tf": entrada["tf"],
+                "partition": entrada["partition"],
+                "size": file_size,
+                "etag": etag,
+                "updated_at": uploaded_at,
+            }
+        )
 
     logger.info("Subida completada: %d archivos Parquet", len(records))
     return records
@@ -304,15 +305,17 @@ def _dry_run(out_dir: str) -> None:
             entrada["key"],
             entrada["size"],
         )
-        records.append({
-            "symbol": entrada["symbol"],
-            "tf": entrada["tf"],
-            "partition": entrada["partition"],
-            "size": entrada["size"],
-            # Placeholder: no hay subida real, el ETag no esta disponible.
-            "etag": "dry-run-etag",
-            "updated_at": datetime.now(tz=timezone.utc),
-        })
+        records.append(
+            {
+                "symbol": entrada["symbol"],
+                "tf": entrada["tf"],
+                "partition": entrada["partition"],
+                "size": entrada["size"],
+                # Placeholder: no hay subida real, el ETag no esta disponible.
+                "etag": "dry-run-etag",
+                "updated_at": datetime.now(tz=timezone.utc),
+            }
+        )
 
     manifest_dict = manifest_mod.build_manifest(records)
     print(json.dumps(manifest_dict, indent=2, ensure_ascii=False))

@@ -18,9 +18,13 @@ import manifest  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_record(symbol: str, tf: str, partition: str, size: int = 12345, etag: str = "abc123") -> dict:
+
+def _make_record(
+    symbol: str, tf: str, partition: str, size: int = 12345, etag: str = "abc123"
+) -> dict:
     """Crea un registro de subida sintetico."""
     from datetime import datetime
+
     return {
         "symbol": symbol,
         "tf": tf,
@@ -91,6 +95,7 @@ class TestBuildManifest:
         assert "." not in updated_at
         # Debe ser parseable como ISO-8601
         from datetime import datetime
+
         dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
         assert dt.tzinfo is not None
 
@@ -126,15 +131,18 @@ class TestBuildManifest:
     def test_updated_at_usa_el_valor_del_registro(self):
         """updatedAt debe reflejar el valor del campo updated_at del registro."""
         from datetime import datetime
+
         dt_especifico = datetime(2025, 3, 15, 8, 30, 45, tzinfo=timezone.utc)
-        records = [{
-            "symbol": "XAUUSD",
-            "tf": "m1",
-            "partition": "2024",
-            "size": 100,
-            "etag": "xyz",
-            "updated_at": dt_especifico,
-        }]
+        records = [
+            {
+                "symbol": "XAUUSD",
+                "tf": "m1",
+                "partition": "2024",
+                "size": 100,
+                "etag": "xyz",
+                "updated_at": dt_especifico,
+            }
+        ]
         resultado = manifest.build_manifest(records)
         updated_at = resultado["symbols"]["XAUUSD"]["m1"]["2024"]["updatedAt"]
         assert updated_at == "2025-03-15T08:30:45Z"

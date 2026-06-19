@@ -72,7 +72,10 @@ def main() -> None:
     # 1) cosecha + parquet por simbolo
     fallidos: list[tuple[str, str]] = []
     for sym in symbols:
-        print(f"=== {sym}: cosechando M1 de MT5 y escribiendo Parquet (desde {desde:%Y-%m-%d}) ===", flush=True)
+        print(
+            f"=== {sym}: cosechando M1 de MT5 y escribiendo Parquet (desde {desde:%Y-%m-%d}) ===",
+            flush=True,
+        )
         try:
             rutas = parquet_builder.harvest_to_parquet(sym, desde, hasta, args.out_dir)
         except Exception as e:  # noqa: BLE001 — un simbolo no debe abortar los demas

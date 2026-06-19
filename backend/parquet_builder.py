@@ -70,11 +70,7 @@ def resample_anchors(df_m1: pd.DataFrame) -> dict[str, pd.DataFrame]:
     df.index = idx
 
     def _resample_tf(rule: str) -> pd.DataFrame:
-        resampled = (
-            df.resample(rule, label="left", closed="left")
-            .agg(_OHLC_AGG)
-            .dropna()
-        )
+        resampled = df.resample(rule, label="left", closed="left").agg(_OHLC_AGG).dropna()
         # Convertir el DatetimeIndex de vuelta a epoch segundos int64.
         resampled.insert(
             0,

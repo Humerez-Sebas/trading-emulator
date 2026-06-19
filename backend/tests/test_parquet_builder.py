@@ -26,9 +26,9 @@ import parquet_builder  # noqa: E402
 # Helpers de construccion de datos sinteticos
 # ---------------------------------------------------------------------------
 
+
 def _make_m1_rates(times_utc: list[int]) -> "pd.DataFrame":
     """Devuelve un DataFrame M1 sintetico con columnas time/open/high/low/close."""
-    import numpy as np
 
     arr = {
         "time": times_utc,

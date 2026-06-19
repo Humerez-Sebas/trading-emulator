@@ -169,6 +169,7 @@ class TestUploadParquetTree:
 
     def test_updated_at_es_datetime_utc(self, parquet_tree, fake_client):
         from datetime import datetime
+
         records = r2_uploader.upload_parquet_tree(str(parquet_tree), "mi-bucket", fake_client)
         for rec in records:
             assert isinstance(rec["updated_at"], datetime)
