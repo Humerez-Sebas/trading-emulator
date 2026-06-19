@@ -6,7 +6,7 @@ export const routes: Routes = [
   {
     path: '',
     // r2OnboardingGuard is a no-op for the default csv data source; for r2 it
-    // sends a first-time user (no datasets yet) to /data-wizard.
+    // sends a first-time user (no datasets yet) to /mercados (the R2 data hub).
     canActivate: [authGuard, r2OnboardingGuard],
     loadComponent: () =>
       import('./pages/emulador/emulador-page.component').then((m) => m.EmuladorPageComponent),
@@ -41,23 +41,6 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/crear-sesion/crear-sesion-page.component').then(
         (m) => m.CrearSesionPageComponent,
-      ),
-  },
-  {
-    // R2/Parquet first-launch onboarding (Task 6). Only reached when
-    // environment.dataSource === 'r2'; the CSV flow uses /sesiones/crear.
-    path: 'data-wizard',
-    canActivate: [authGuard],
-    loadComponent: () =>
-      import('./components/data-wizard/data-wizard.component').then((m) => m.DataWizardComponent),
-  },
-  {
-    // Ongoing dataset management for the R2/Parquet source (Task 7).
-    path: 'almacenamiento',
-    canActivate: [authGuard],
-    loadComponent: () =>
-      import('./pages/storage-manager/storage-manager-page.component').then(
-        (m) => m.StorageManagerPageComponent,
       ),
   },
   { path: '**', redirectTo: '' },
