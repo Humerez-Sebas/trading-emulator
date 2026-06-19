@@ -153,6 +153,10 @@ export class ModalComponent implements AfterViewInit, OnDestroy {
   /** Show the × button and allow ESC/backdrop dismissal. */
   dismissable = input(true);
   closeOnBackdrop = input(true);
+  /** CSS selector (within the panel) to focus on open; falls back to the first
+   * focusable element when empty or unmatched. Lets a dialog put focus on its
+   * primary control instead of the header × button. */
+  autoFocus = input('');
 
   closed = output<void>();
 
@@ -163,9 +167,11 @@ export class ModalComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     this.previouslyFocused = document.activeElement as HTMLElement | null;
     document.body.style.overflow = 'hidden';
-    // focus the first focusable control, else the panel itself
-    const first = this.focusable()[0] ?? this.panel().nativeElement;
-    queueMicrotask(() => first.focus());
+    const panel = this.panel().nativeElement;
+    const sel = this.autoFocus();
+    const target =
+      (sel ? panel.querySelector<HTMLElement>(sel) : null) ?? this.focusable()[0] ?? panel;
+    queueMicrotask(() => target.focus());
   }
 
   ngOnDestroy(): void {
