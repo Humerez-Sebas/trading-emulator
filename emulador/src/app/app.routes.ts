@@ -1,10 +1,13 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './auth/auth.guard';
+import { r2OnboardingGuard } from './components/data-wizard/data-wizard.guard';
 
 export const routes: Routes = [
   {
     path: '',
-    canActivate: [authGuard],
+    // r2OnboardingGuard is a no-op for the default csv data source; for r2 it
+    // sends a first-time user (no datasets yet) to /mercados (the R2 data hub).
+    canActivate: [authGuard, r2OnboardingGuard],
     loadComponent: () =>
       import('./pages/emulador/emulador-page.component').then((m) => m.EmuladorPageComponent),
   },

@@ -13,6 +13,7 @@ import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { MarketActions } from '../market/market.actions';
 import { ReplayActions } from '../replay/replay.actions';
 import { TradingActions } from '../trading/trading.actions';
+import { DrawingsActions } from '../drawings/drawings.actions';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { series, closed, workspace } from '../../testing/fixtures';
 import { emptyWorkspace } from './workspaces.models';
@@ -198,6 +199,70 @@ describe('WorkspacesEffects', () => {
         WorkspacesActions.workspaceRestored({ workspace: emptyWorkspace(SYMBOL) }),
         MarketActions.csvLoaded(csvA),
         MarketActions.csvLoaded(csvB),
+      ]);
+    });
+
+    it('2r. thenRestore with a matching loaded TF → restoreSession, restoreDrawings, changeTimeframe, changeSpeed (in order, after csvLoaded)', async () => {
+      setupTestBed();
+      db.getWorkspace!.mockResolvedValue(undefined);
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = { ...defaultTradingData(), balance: 12345, sessionName: 'Restaurada' };
+      const drawings = [
+        { id: 'd1', kind: 'line' as const, p1: { time: 0, price: 1 }, p2: { time: 1, price: 2 } },
+      ];
+
+      const p = effects.switch$.pipe(take(6), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          selectedTfs: ['H1'],
+          thenLoad: [csvH1],
+          thenRestore: { trading, drawings, intervalMinutes: 60, playbackSpeed: 250 },
+          thenGoTo: 1234,
+        }),
+      );
+
+      const result = await p;
+      expect(result).toEqual([
+        WorkspacesActions.workspaceRestored({
+          workspace: { ...emptyWorkspace(SYMBOL), selectedTfs: ['H1'] },
+        }),
+        MarketActions.csvLoaded(csvH1),
+        TradingActions.restoreSession({ trading }),
+        DrawingsActions.restoreDrawings({ drawings }),
+        MarketActions.changeTimeframe({ tf: 'H1' }),
+        ReplayActions.changeSpeed({ msPerCandle: 250 }),
+        // thenGoTo(1234) follows as a 7th action (not taken here)
+      ]);
+    });
+
+    it('2r2. thenRestore with a non-matching interval → changeCustomTimeframe(minutes)', async () => {
+      setupTestBed();
+      db.getWorkspace!.mockResolvedValue(undefined);
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+
+      const p = effects.switch$.pipe(take(5), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          selectedTfs: ['H1'],
+          thenLoad: [csvH1],
+          thenRestore: { trading, drawings: [], intervalMinutes: 45, playbackSpeed: 100 },
+        }),
+      );
+
+      const result = await p;
+      expect(result).toEqual([
+        WorkspacesActions.workspaceRestored({
+          workspace: { ...emptyWorkspace(SYMBOL), selectedTfs: ['H1'] },
+        }),
+        MarketActions.csvLoaded(csvH1),
+        TradingActions.restoreSession({ trading }),
+        DrawingsActions.restoreDrawings({ drawings: [] }),
+        MarketActions.changeCustomTimeframe({ minutes: 45 }),
       ]);
     });
 

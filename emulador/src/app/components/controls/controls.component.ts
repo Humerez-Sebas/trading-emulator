@@ -10,6 +10,7 @@ import {
   selectAssets,
   selectCurrentAsset,
   selectCurrentTime,
+  selectCustomTf,
   selectFloatingPnl,
   selectMsPerCandle,
   selectPlaying,
@@ -18,6 +19,7 @@ import {
   selectTfLastTimes,
   selectUtcOffset,
 } from '../../state/selectors';
+import { formatIntervalShort } from '../../state/market/custom-timeframe';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 
@@ -34,6 +36,8 @@ export class ControlsComponent {
   tfs = this.store.selectSignal(selectSessionTfs);
   private tfLastTimes = this.store.selectSignal(selectTfLastTimes);
   activeTf = this.store.selectSignal(selectActiveTf);
+  /** Active custom timeframe in minutes (null when a standard TF is shown). */
+  customTf = this.store.selectSignal(selectCustomTf);
   assets = this.store.selectSignal(selectAssets);
   currentAsset = this.store.selectSignal(selectCurrentAsset);
   playing = this.store.selectSignal(selectPlaying);
@@ -73,6 +77,12 @@ export class ControlsComponent {
 
   setTf(tf: Timeframe): void {
     this.store.dispatch(MarketActions.changeTimeframe({ tf }));
+  }
+
+  /** Compact label for the active custom interval chip, e.g. "90m", "2h". */
+  customChipLabel(): string {
+    const m = this.customTf();
+    return m !== null ? formatIntervalShort(m) : '';
   }
 
   /** True when this TF was harvested with less coverage than the replay cursor

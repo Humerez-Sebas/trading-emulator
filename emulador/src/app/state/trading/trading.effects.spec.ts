@@ -33,8 +33,8 @@ describe('TradingEffects', () => {
     return {
       candles,
       idx,
-      series: {} as any,
-      tf: 'H1' as const,
+      tfSeconds: 3600, // H1
+      lower: null as any,
       contractSize: 100,
       trading: makeTradingState(),
       ...overrides,
@@ -74,7 +74,7 @@ describe('TradingEffects', () => {
       const m1Candles = series(60, candles[idx].time, 60); // 60 M1 candles within the H1 bar
       const ctx = makeCtx({
         trading: makeTradingState({ positions: [position()] }),
-        series: { M1: m1Candles },
+        lower: m1Candles,
       });
       store.overrideSelector(selectFillContext, ctx);
       store.refreshState();
@@ -102,8 +102,8 @@ describe('TradingEffects', () => {
       sub.unsubscribe();
     });
 
-    it('is filtered when tf is null', async () => {
-      const ctx = makeCtx({ tf: null, trading: makeTradingState({ orders: [order()] }) });
+    it('is filtered when there is no active timeframe (tfSeconds 0)', async () => {
+      const ctx = makeCtx({ tfSeconds: 0, trading: makeTradingState({ orders: [order()] }) });
       store.overrideSelector(selectFillContext, ctx);
       store.refreshState();
 

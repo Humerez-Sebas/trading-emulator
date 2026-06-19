@@ -58,6 +58,18 @@
   color: var(--on-accent);
   border-color: var(--accent);
 }
+/* Read-only chip showing the active custom interval (e.g. "90m", "2h"); the
+   actual input lives in the Interval Dialog (type a digit to open it). */
+.tf-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: var(--weight-semibold);
+}
 /* TF whose harvested coverage ends before the replay cursor (would jump back). */
 .tf-btn.short:not(.active) {
   color: var(--text-muted);

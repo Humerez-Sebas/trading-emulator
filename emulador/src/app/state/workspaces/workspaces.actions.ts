@@ -1,7 +1,23 @@
 import { createActionGroup, props } from '@ngrx/store';
 import { Candle, Timeframe } from '../../models';
-import { ClosedTrade } from '../trading/trading.models';
+import { ClosedTrade, TradingData } from '../trading/trading.models';
+import { Drawing } from '../drawings/drawings.models';
 import { AssetMeta, Workspace } from './workspaces.models';
+
+/**
+ * Full live-state restore payload carried by `switchAsset` for the
+ * `.session.json` import (Task 9). Injected into the ordered action stream
+ * right after the CSVs land in the new workspace, so the chart already has
+ * candles when the trading/drawings/interval/speed state is restored.
+ */
+export interface PendingSessionRestore {
+  trading: TradingData;
+  drawings: Drawing[];
+  /** Active interval in MINUTES (routed to a standard TF or a custom one). */
+  intervalMinutes: number;
+  /** Playback speed (ms per candle). */
+  playbackSpeed: number;
+}
 
 export interface PendingCsv {
   tf: Timeframe;
@@ -27,6 +43,12 @@ export const WorkspacesActions = createActionGroup({
       selectedTfs?: Timeframe[];
       thenLoad?: PendingCsv[];
       thenImport?: PendingSessionImport;
+      /**
+       * Restore a full live session after the CSVs land (`.session.json`
+       * import flow). Mutually exclusive with thenImport/thenNewSession/
+       * thenOpenSession; the cursor is still carried by `thenGoTo`.
+       */
+      thenRestore?: PendingSessionRestore;
       /** Start a fresh trading session after the switch (wizard flow). */
       thenNewSession?: { name: string | null };
       /** Open this archived session after the switch (sessions page flow). */

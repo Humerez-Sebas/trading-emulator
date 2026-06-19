@@ -1,0 +1,48 @@
+@if (datasets().length) {
+  <app-modal
+    title="Falta el dataset"
+    size="sm"
+    [dismissable]="!downloading()"
+    [closeOnBackdrop]="!downloading()"
+    (closed)="cancel.emit()"
+  >
+    <div class="modal-pad body">
+      <p class="help">
+        Esta sesión necesita datos de mercado que no están descargados. Descárgalos de R2 para
+        abrirla.
+      </p>
+
+      <ul class="list" aria-label="Datasets que faltan">
+        @for (d of datasets(); track label(d)) {
+          <li>
+            <span class="sym">{{ d.symbol }}</span>
+            <span appBadge tone="neutral" [chip]="true">{{ d.timeframe }}</span>
+            @if (d.year !== undefined) {
+              <span class="year">{{ d.year }}</span>
+            }
+          </li>
+        }
+      </ul>
+
+      @if (downloading()) {
+        <div class="progress" role="progressbar" aria-label="Descargando datasets">
+          <span class="bar" [style.width.%]="pct()"></span>
+        </div>
+        <small class="muted">Descargando… {{ pct() }}%</small>
+      }
+
+      @if (error()) {
+        <small class="invalid" role="alert">{{ error() }}</small>
+      }
+    </div>
+
+    <div footer class="modal-foot">
+      <button appButton variant="ghost" [disabled]="downloading()" (click)="cancel.emit()">
+        Cancelar
+      </button>
+      <button appButton variant="primary" [disabled]="downloading()" (click)="download.emit()">
+        Descargar de R2
+      </button>
+    </div>
+  </app-modal>
+}

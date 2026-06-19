@@ -17,6 +17,24 @@ import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { workspaceMeta, savedSession, closed } from '../../testing/fixtures';
 import { defaultTradingData, SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { DialogService } from '../../components/ui/dialog.service';
+import { SessionService } from '../../services/session.service';
+import { MarketDataRepository } from '../../domain/market-data.repository';
+import { DataOnboardingService } from '../../services/market-data/data-onboarding.service';
+import { ManifestService } from '../../services/market-data/manifest.service';
+import type { DatasetRecord } from '../../services/market-data-db';
+
+function dataset(p: Partial<DatasetRecord> = {}): DatasetRecord {
+  return {
+    id: 'XAUUSD|M1|2024',
+    symbol: 'XAUUSD',
+    timeframe: 'M1',
+    year: '2024',
+    size: 0,
+    etag: '',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+    ...p,
+  };
+}
 
 function card(p: Partial<SessionCard> = {}): SessionCard {
   return {
@@ -50,6 +68,9 @@ describe('SesionesPageComponent', () => {
     confirm: ReturnType<typeof vi.fn>;
     deleteSession: ReturnType<typeof vi.fn>;
   };
+  let repoStub: { getCandles: ReturnType<typeof vi.fn> };
+  let onboardingStub: { runJobs: ReturnType<typeof vi.fn> };
+  let manifestStub: { fetchManifest: ReturnType<typeof vi.fn> };
   let component: SesionesPageComponent;
 
   function create(
@@ -59,6 +80,9 @@ describe('SesionesPageComponent', () => {
       currentTime?: number;
       liveTrading?: TradingData;
       liveSessions?: ReturnType<typeof savedSession>[];
+      repo?: Partial<{ getCandles: ReturnType<typeof vi.fn> }>;
+      onboarding?: Partial<{ runJobs: ReturnType<typeof vi.fn> }>;
+      manifest?: Partial<{ fetchManifest: ReturnType<typeof vi.fn> }>;
     } = {},
   ) {
     dbStub = workspaceDbStub();
@@ -70,6 +94,12 @@ describe('SesionesPageComponent', () => {
       confirm: vi.fn().mockResolvedValue(false),
       deleteSession: vi.fn().mockResolvedValue(false),
     };
+    repoStub = { getCandles: vi.fn().mockResolvedValue([]), ...opts.repo };
+    onboardingStub = { runJobs: vi.fn().mockResolvedValue(undefined), ...opts.onboarding };
+    manifestStub = {
+      fetchManifest: vi.fn().mockResolvedValue({ version: 1, symbols: {} }),
+      ...opts.manifest,
+    };
 
     TestBed.configureTestingModule({
       providers: [
@@ -78,6 +108,9 @@ describe('SesionesPageComponent', () => {
         { provide: WorkspaceDbService, useValue: dbStub },
         { provide: Router, useValue: routerStub },
         { provide: DialogService, useValue: dialogsStub },
+        { provide: MarketDataRepository, useValue: repoStub },
+        { provide: DataOnboardingService, useValue: onboardingStub },
+        { provide: ManifestService, useValue: manifestStub },
       ],
     });
 
@@ -342,6 +375,69 @@ describe('SesionesPageComponent', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  // ---- exportSession (archived card) ----
+
+  it("exportSession (archived) derives anchorTimeframes + years from the symbol's local datasets, keeping M1 refs consistent", async () => {
+    const session = savedSession({ id: 's1', name: 'Vieja' });
+    const meta = workspaceMeta({ symbol: 'XAUUSD', sessions: [session] });
+    create({
+      currentAsset: 'US30', // not the live asset → archived/stored path
+      db: {
+        listMetas: vi.fn().mockResolvedValue([meta]),
+        getMeta: vi.fn().mockResolvedValue(meta),
+        listDatasets: vi.fn().mockResolvedValue([
+          dataset({ id: 'XAUUSD|M1|2023', symbol: 'XAUUSD', timeframe: 'M1', year: '2023' }),
+          dataset({ id: 'XAUUSD|M1|2024', symbol: 'XAUUSD', timeframe: 'M1', year: '2024' }),
+          dataset({ id: 'XAUUSD|H1|all', symbol: 'XAUUSD', timeframe: 'H1', year: 'all' }),
+          // a different symbol's M1 must not leak into XAUUSD's years
+          dataset({ id: 'US30|M1|2099', symbol: 'US30', timeframe: 'M1', year: '2099' }),
+        ]),
+      },
+    });
+    await settle();
+
+    const exportSpy = vi
+      .spyOn(SessionService.prototype, 'exportSession')
+      .mockReturnValue({} as ReturnType<SessionService['exportSession']>);
+
+    await component.exportSession(card({ symbol: 'XAUUSD', id: 's1', name: 'Vieja' }));
+
+    expect(exportSpy).toHaveBeenCalledTimes(1);
+    const snapshot = exportSpy.mock.calls[0][0];
+    expect(snapshot.anchorTimeframes).toEqual(['M1', 'H1']);
+    expect(snapshot.years).toEqual([2023, 2024]);
+    exportSpy.mockRestore();
+  });
+
+  it('exportSession (archived) claims no M1 anchor when the symbol has no local M1 datasets', async () => {
+    const session = savedSession({ id: 's1', name: 'Vieja' });
+    const meta = workspaceMeta({ symbol: 'XAUUSD', sessions: [session] });
+    create({
+      currentAsset: 'US30',
+      db: {
+        listMetas: vi.fn().mockResolvedValue([meta]),
+        getMeta: vi.fn().mockResolvedValue(meta),
+        listDatasets: vi
+          .fn()
+          .mockResolvedValue([
+            dataset({ id: 'XAUUSD|H1|all', symbol: 'XAUUSD', timeframe: 'H1', year: 'all' }),
+          ]),
+      },
+    });
+    await settle();
+
+    const exportSpy = vi
+      .spyOn(SessionService.prototype, 'exportSession')
+      .mockReturnValue({} as ReturnType<SessionService['exportSession']>);
+
+    await component.exportSession(card({ symbol: 'XAUUSD', id: 's1', name: 'Vieja' }));
+
+    const snapshot = exportSpy.mock.calls[0][0];
+    expect(snapshot.anchorTimeframes).toEqual(['H1']);
+    expect(snapshot.years).toEqual([]);
+    exportSpy.mockRestore();
+  });
+
   // ---- folders CRUD ----
 
   it('createFolder persists a new folder with the next order', async () => {
@@ -470,6 +566,160 @@ describe('SesionesPageComponent', () => {
     await component.onImportSession(sessionFileEvent('xauusd_sesion.csv', SESSION_CSV));
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: TradingActions.sessionImported.type }),
+    );
+  });
+
+  // ---- onImportSessionJson (.session.json import — R2) ----
+
+  function sessionFileV1(over: Record<string, unknown> = {}) {
+    return {
+      version: 1,
+      exportedWith: 'Trading Emulator v2.0.0',
+      id: 'sess-json-1',
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
+      context: { symbol: 'XAUUSD', initialBalance: 10000, startRange: 0, endRange: 0 },
+      state: { replayTime: 1700000000000, currentTimeframe: 60, playbackSpeed: 250 },
+      trading: {
+        trades: [closed({ id: 't1', profit: 500, closeTime: 1700000000 })],
+        pendingOrders: [],
+      },
+      annotations: { drawings: [], notes: [] },
+      ...over,
+    };
+  }
+
+  it('onImportSessionJson on a future version shows the update message (no dispatch)', async () => {
+    create();
+    await settle();
+    vi.spyOn(SessionService.prototype, 'parse').mockReturnValue({ status: 'future', version: 99 });
+    await component.onImportSessionJson(sessionFileEvent('x.session.json', '{}'));
+    expect(component.importError()).toMatch(/Actualiza el emulador/);
+    expect(component.importError()).toContain('99');
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+  });
+
+  it('onImportSessionJson on an invalid file shows the reason', async () => {
+    create();
+    await settle();
+    vi.spyOn(SessionService.prototype, 'parse').mockReturnValue({
+      status: 'invalid',
+      reason: 'roto',
+    });
+    await component.onImportSessionJson(sessionFileEvent('x.session.json', 'nope'));
+    expect(component.importError()).toBe('roto');
+  });
+
+  it('onImportSessionJson with no missing datasets restores via switchAsset(thenRestore) and navigates', async () => {
+    const session = sessionFileV1();
+    create({
+      repo: {
+        getCandles: vi.fn().mockResolvedValue([{ time: 1, open: 1, high: 1, low: 1, close: 1 }]),
+      },
+    });
+    await settle();
+    vi.spyOn(SessionService.prototype, 'parse').mockReturnValue({ status: 'ok', session } as any);
+    vi.spyOn(SessionService.prototype, 'findMissingDatasets').mockResolvedValue([]);
+
+    await component.onImportSessionJson(sessionFileEvent('x.session.json', '{}'));
+
+    expect(component.missing()).toHaveLength(0); // modal not opened
+    expect(repoStub.getCandles).toHaveBeenCalledWith('XAUUSD', 'H1');
+    const call = dispatch.mock.calls
+      .map((c: unknown[]) => c[0])
+      .find((a: any) => a.type === WorkspacesActions.switchAsset.type) as any;
+    expect(call).toBeTruthy();
+    expect(call.symbol).toBe('XAUUSD');
+    expect(call.thenGoTo).toBe(1700000000); // ms → sec
+    expect(call.thenRestore.intervalMinutes).toBe(60);
+    expect(call.thenRestore.playbackSpeed).toBe(250);
+    // realized-balance convention: initial + Σ profits
+    expect(call.thenRestore.trading.balance).toBe(10500);
+    expect(call.thenRestore.trading.initialBalance).toBe(10000);
+    expect(call.thenRestore.trading.history).toHaveLength(1);
+    expect(routerStub.navigateByUrl).toHaveBeenCalledWith('/');
+  });
+
+  it('onImportSessionJson with missing datasets opens the modal (no restore yet)', async () => {
+    const session = sessionFileV1();
+    create();
+    await settle();
+    vi.spyOn(SessionService.prototype, 'parse').mockReturnValue({ status: 'ok', session } as any);
+    vi.spyOn(SessionService.prototype, 'findMissingDatasets').mockResolvedValue([
+      { symbol: 'XAUUSD', timeframe: 'M1', year: 2024 },
+    ]);
+
+    await component.onImportSessionJson(sessionFileEvent('x.session.json', '{}'));
+
+    expect(component.missing()).toHaveLength(1);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+  });
+
+  it('confirmDownload runs onboarding jobs for the missing partitions then restores', async () => {
+    const session = sessionFileV1();
+    create({
+      repo: {
+        getCandles: vi.fn().mockResolvedValue([{ time: 1, open: 1, high: 1, low: 1, close: 1 }]),
+      },
+    });
+    await settle();
+    vi.spyOn(SessionService.prototype, 'parse').mockReturnValue({ status: 'ok', session } as any);
+    vi.spyOn(SessionService.prototype, 'findMissingDatasets').mockResolvedValue([
+      { symbol: 'XAUUSD', timeframe: 'M1', year: 2024 },
+      { symbol: 'XAUUSD', timeframe: 'H1' },
+    ]);
+
+    await component.onImportSessionJson(sessionFileEvent('x.session.json', '{}'));
+    await component.confirmDownload();
+
+    expect(manifestStub.fetchManifest).toHaveBeenCalled();
+    const [, jobs] = onboardingStub.runJobs.mock.calls[0];
+    expect(jobs).toEqual([
+      { symbol: 'XAUUSD', tf: 'm1', year: '2024' },
+      { symbol: 'XAUUSD', tf: 'h1', year: 'all' },
+    ]);
+    expect(component.missing()).toHaveLength(0); // modal closed
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+    expect(routerStub.navigateByUrl).toHaveBeenCalledWith('/');
+  });
+
+  it('confirmDownload surfaces a download error and keeps the modal open', async () => {
+    const session = sessionFileV1();
+    create({ onboarding: { runJobs: vi.fn().mockRejectedValue(new Error('R2 caído')) } });
+    await settle();
+    vi.spyOn(SessionService.prototype, 'parse').mockReturnValue({ status: 'ok', session } as any);
+    vi.spyOn(SessionService.prototype, 'findMissingDatasets').mockResolvedValue([
+      { symbol: 'XAUUSD', timeframe: 'H1' },
+    ]);
+
+    await component.onImportSessionJson(sessionFileEvent('x.session.json', '{}'));
+    await component.confirmDownload();
+
+    expect(component.downloadError()).toBe('R2 caído');
+    expect(component.missing()).toHaveLength(1); // still open
+    expect(component.downloading()).toBe(false);
+  });
+
+  it('cancelDownload closes the modal without restoring', async () => {
+    const session = sessionFileV1();
+    create();
+    await settle();
+    vi.spyOn(SessionService.prototype, 'parse').mockReturnValue({ status: 'ok', session } as any);
+    vi.spyOn(SessionService.prototype, 'findMissingDatasets').mockResolvedValue([
+      { symbol: 'XAUUSD', timeframe: 'H1' },
+    ]);
+
+    await component.onImportSessionJson(sessionFileEvent('x.session.json', '{}'));
+    component.cancelDownload();
+
+    expect(component.missing()).toHaveLength(0);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
     );
   });
 

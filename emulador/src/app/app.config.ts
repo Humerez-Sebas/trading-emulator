@@ -3,6 +3,7 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideStore } from '@ngrx/store';
 import { provideEffects } from '@ngrx/effects';
+import { provideMarketDataRepository } from './domain/market-data-repository.provider';
 
 import { routes } from './app.routes';
 import { authInterceptor } from './auth/auth.interceptor';
@@ -14,6 +15,7 @@ import { workspacesFeature } from './state/workspaces/workspaces.reducer';
 import { tradingFeature } from './state/trading/trading.reducer';
 import { authFeature } from './state/auth/auth.reducer';
 import { userSymbolsFeature } from './state/user-symbols/user-symbols.reducer';
+import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
 import { WorkspacesEffects } from './state/workspaces/workspaces.effects';
@@ -24,6 +26,7 @@ import { UserSymbolsEffects } from './state/user-symbols/user-symbols.effects';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
+    provideMarketDataRepository(),
     provideHttpClient(withInterceptors([authInterceptor])),
     provideRouter(routes, withComponentInputBinding()),
     provideStore({
@@ -37,6 +40,7 @@ export const appConfig: ApplicationConfig = {
       [userSymbolsFeature.name]: userSymbolsFeature.reducer,
     }),
     provideEffects(
+      MarketEffects,
       ReplayEffects,
       SettingsEffects,
       WorkspacesEffects,

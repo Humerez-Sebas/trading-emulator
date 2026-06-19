@@ -1,217 +1,225 @@
-<div class="page">
-  <header class="head">
-    <div>
-      <h1>Mercados</h1>
-      <p class="sub">Activos con histórico disponible en la base de datos.</p>
+@if (isR2) {
+  <app-r2-markets />
+} @else {
+  <div class="page">
+    <header class="head">
+      <div>
+        <h1>Mercados</h1>
+        <p class="sub">Activos con histórico disponible en la base de datos.</p>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <label class="search">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7"></circle>
+          <line x1="21" y1="21" x2="16.5" y2="16.5"></line>
+        </svg>
+        <span class="sr-only">Buscar activo</span>
+        <input
+          type="search"
+          placeholder="Buscar por símbolo o descripción…"
+          [value]="query()"
+          (input)="onQuery($event)"
+        />
+      </label>
+
+      @if (!offline()) {
+        <ui-segmented
+          ariaLabel="Filtro de activos"
+          [options]="[
+            { value: 'todos', label: 'Todos' },
+            { value: 'mis', label: 'Mis activos', count: selected().length },
+          ]"
+          [value]="mode()"
+          (valueChange)="setMode($any($event))"
+        />
+      }
     </div>
-  </header>
 
-  <div class="toolbar">
-    <label class="search">
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        aria-hidden="true"
-      >
-        <circle cx="11" cy="11" r="7"></circle>
-        <line x1="21" y1="21" x2="16.5" y2="16.5"></line>
-      </svg>
-      <span class="sr-only">Buscar activo</span>
-      <input
-        type="search"
-        placeholder="Buscar por símbolo o descripción…"
-        [value]="query()"
-        (input)="onQuery($event)"
-      />
-    </label>
-
-    @if (!offline()) {
-      <ui-segmented
-        ariaLabel="Filtro de activos"
-        [options]="[
-          { value: 'todos', label: 'Todos' },
-          { value: 'mis', label: 'Mis activos', count: selected().length },
-        ]"
-        [value]="mode()"
-        (valueChange)="setMode($any($event))"
-      />
+    @switch (state()) {
+      @case ('loading') {
+        <p class="status" role="status">Cargando catálogo…</p>
+      }
+      @case ('error') {
+        <div class="empty">
+          <p>No se pudo conectar con el servidor.</p>
+          <p class="hint">
+            Levanta el backend con <code>docker compose up</code> y vuelve a intentar. Mientras
+            tanto puedes <a routerLink="/">cargar un CSV manualmente</a>.
+          </p>
+          <button appButton variant="primary" class="retry" (click)="load()">Reintentar</button>
+        </div>
+      }
+      @case ('ok') {
+        @if (offline() && symbols().length === 0) {
+          <ui-empty-state
+            title="Aún no subiste ningún CSV"
+            hint="Crea tu primera sesión subiendo archivos CSV de velas; los activos aparecerán aquí."
+            [boxed]="true"
+          >
+            <svg
+              icon
+              width="28"
+              height="28"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <a appButton variant="primary" [routerLink]="['/sesiones/crear']"
+              >Subir tu primer CSV</a
+            >
+          </ui-empty-state>
+        } @else if (!offline() && !symbols().length) {
+          <div class="empty">
+            <p>La base de datos aún no tiene símbolos.</p>
+            <p class="hint">
+              Pobla los datos ejecutando el harvester en esta máquina (con MT5 abierto):
+              <code>py backend/harvester.py --symbols US30,XAUUSD --tfs M5,H1</code>.
+            </p>
+          </div>
+        } @else if (!offline() && mode() === 'mis' && !selected().length) {
+          <div class="empty">
+            <p>Aún no has marcado ningún activo como tuyo.</p>
+            <p class="hint">
+              Cambia a <button class="link-btn" (click)="setMode('todos')">Todos</button> y marca la
+              casilla ✓ de los activos que sigues; se guardan solos.
+            </p>
+          </div>
+        } @else if (!filtered().length) {
+          <div class="empty">
+            <p>Sin resultados para «{{ query() }}».</p>
+            <p class="hint">Prueba con el nombre del símbolo, p. ej. «US30» o «XAU».</p>
+          </div>
+        }
+        @for (g of groups(); track g.category) {
+          <section class="group">
+            <h2>{{ g.category }}</h2>
+            <div class="cards">
+              @for (s of g.items; track s.name) {
+                <article class="card" [class.picked]="isSelected(s.name)">
+                  <header class="card-head">
+                    @if (!offline()) {
+                      <label
+                        class="pick"
+                        [title]="
+                          isSelected(s.name) ? 'Quitar de mis activos' : 'Añadir a mis activos'
+                        "
+                      >
+                        <input
+                          type="checkbox"
+                          [checked]="isSelected(s.name)"
+                          (change)="toggleSelected(s.name)"
+                          [attr.aria-label]="'Seguir ' + s.name"
+                        />
+                        <span class="box" aria-hidden="true">
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="3"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        </span>
+                      </label>
+                    }
+                    <div class="card-title">
+                      <h3>{{ s.name }}</h3>
+                      <p class="desc">{{ s.descripcion || '—' }}</p>
+                    </div>
+                    <a
+                      appButton
+                      variant="primary"
+                      size="sm"
+                      [routerLink]="['/sesiones/crear']"
+                      [queryParams]="{ symbol: s.name }"
+                    >
+                      Crear sesión
+                    </a>
+                    @if (offline()) {
+                      <ui-menu ariaLabel="Más acciones para {{ s.name }}">
+                        <button class="ui-menu-item" type="button" (click)="remove(s.name)">
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                          >
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                            <path d="M10 11v6"></path>
+                            <path d="M14 11v6"></path>
+                            <path d="M9 6V4h6v2"></path>
+                          </svg>
+                          Eliminar
+                        </button>
+                      </ui-menu>
+                    }
+                  </header>
+                  @if (s.cobertura.length; as n) {
+                    @let sum = coverageSummary(s.cobertura);
+                    <p class="cov-summary">
+                      <span>{{ sum.tfCount }} TF</span>
+                      <span class="dot" aria-hidden="true">·</span>
+                      <span>{{ rangeLabel(sum.desde, sum.hasta) }}</span>
+                      <span class="dot" aria-hidden="true">·</span>
+                      <span>{{ compactCount(sum.totalVelas) }} velas</span>
+                    </p>
+                    <div class="tf-chips" aria-label="Temporalidades disponibles">
+                      @for (c of s.cobertura; track c.tf) {
+                        <span appBadge [chip]="true" [appTooltip]="tfTooltip(c)" tabindex="0">{{
+                          c.tf
+                        }}</span>
+                      }
+                    </div>
+                    <details class="cov-detail">
+                      <summary>Ver detalle por TF</summary>
+                      <ul class="coverage" aria-label="Cobertura de datos por temporalidad">
+                        @for (c of s.cobertura; track c.tf) {
+                          <li>
+                            <span class="tf">{{ c.tf }}</span>
+                            <span class="range">{{ rangeLabel(c.desde, c.hasta) }}</span>
+                            <span class="count">{{ compactCount(c.velas) }} velas</span>
+                          </li>
+                        }
+                      </ul>
+                    </details>
+                  } @else {
+                    <p class="no-data">
+                      Sin velas todavía — ejecuta el harvester para este símbolo.
+                    </p>
+                  }
+                </article>
+              }
+            </div>
+          </section>
+        }
+      }
     }
   </div>
-
-  @switch (state()) {
-    @case ('loading') {
-      <p class="status" role="status">Cargando catálogo…</p>
-    }
-    @case ('error') {
-      <div class="empty">
-        <p>No se pudo conectar con el servidor.</p>
-        <p class="hint">
-          Levanta el backend con <code>docker compose up</code> y vuelve a intentar. Mientras tanto
-          puedes <a routerLink="/">cargar un CSV manualmente</a>.
-        </p>
-        <button appButton variant="primary" class="retry" (click)="load()">Reintentar</button>
-      </div>
-    }
-    @case ('ok') {
-      @if (offline() && symbols().length === 0) {
-        <ui-empty-state
-          title="Aún no subiste ningún CSV"
-          hint="Crea tu primera sesión subiendo archivos CSV de velas; los activos aparecerán aquí."
-          [boxed]="true"
-        >
-          <svg
-            icon
-            width="28"
-            height="28"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
-          </svg>
-          <a appButton variant="primary" [routerLink]="['/sesiones/crear']">Subir tu primer CSV</a>
-        </ui-empty-state>
-      } @else if (!offline() && !symbols().length) {
-        <div class="empty">
-          <p>La base de datos aún no tiene símbolos.</p>
-          <p class="hint">
-            Pobla los datos ejecutando el harvester en esta máquina (con MT5 abierto):
-            <code>py backend/harvester.py --symbols US30,XAUUSD --tfs M5,H1</code>.
-          </p>
-        </div>
-      } @else if (!offline() && mode() === 'mis' && !selected().length) {
-        <div class="empty">
-          <p>Aún no has marcado ningún activo como tuyo.</p>
-          <p class="hint">
-            Cambia a <button class="link-btn" (click)="setMode('todos')">Todos</button> y marca la
-            casilla ✓ de los activos que sigues; se guardan solos.
-          </p>
-        </div>
-      } @else if (!filtered().length) {
-        <div class="empty">
-          <p>Sin resultados para «{{ query() }}».</p>
-          <p class="hint">Prueba con el nombre del símbolo, p. ej. «US30» o «XAU».</p>
-        </div>
-      }
-      @for (g of groups(); track g.category) {
-        <section class="group">
-          <h2>{{ g.category }}</h2>
-          <div class="cards">
-            @for (s of g.items; track s.name) {
-              <article class="card" [class.picked]="isSelected(s.name)">
-                <header class="card-head">
-                  @if (!offline()) {
-                    <label
-                      class="pick"
-                      [title]="
-                        isSelected(s.name) ? 'Quitar de mis activos' : 'Añadir a mis activos'
-                      "
-                    >
-                      <input
-                        type="checkbox"
-                        [checked]="isSelected(s.name)"
-                        (change)="toggleSelected(s.name)"
-                        [attr.aria-label]="'Seguir ' + s.name"
-                      />
-                      <span class="box" aria-hidden="true">
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="3"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                      </span>
-                    </label>
-                  }
-                  <div class="card-title">
-                    <h3>{{ s.name }}</h3>
-                    <p class="desc">{{ s.descripcion || '—' }}</p>
-                  </div>
-                  <a
-                    appButton
-                    variant="primary"
-                    size="sm"
-                    [routerLink]="['/sesiones/crear']"
-                    [queryParams]="{ symbol: s.name }"
-                  >
-                    Crear sesión
-                  </a>
-                  @if (offline()) {
-                    <ui-menu ariaLabel="Más acciones para {{ s.name }}">
-                      <button class="ui-menu-item" type="button" (click)="remove(s.name)">
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          aria-hidden="true"
-                        >
-                          <polyline points="3 6 5 6 21 6"></polyline>
-                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
-                          <path d="M10 11v6"></path>
-                          <path d="M14 11v6"></path>
-                          <path d="M9 6V4h6v2"></path>
-                        </svg>
-                        Eliminar
-                      </button>
-                    </ui-menu>
-                  }
-                </header>
-                @if (s.cobertura.length; as n) {
-                  @let sum = coverageSummary(s.cobertura);
-                  <p class="cov-summary">
-                    <span>{{ sum.tfCount }} TF</span>
-                    <span class="dot" aria-hidden="true">·</span>
-                    <span>{{ rangeLabel(sum.desde, sum.hasta) }}</span>
-                    <span class="dot" aria-hidden="true">·</span>
-                    <span>{{ compactCount(sum.totalVelas) }} velas</span>
-                  </p>
-                  <div class="tf-chips" aria-label="Temporalidades disponibles">
-                    @for (c of s.cobertura; track c.tf) {
-                      <span appBadge [chip]="true" [appTooltip]="tfTooltip(c)" tabindex="0">{{
-                        c.tf
-                      }}</span>
-                    }
-                  </div>
-                  <details class="cov-detail">
-                    <summary>Ver detalle por TF</summary>
-                    <ul class="coverage" aria-label="Cobertura de datos por temporalidad">
-                      @for (c of s.cobertura; track c.tf) {
-                        <li>
-                          <span class="tf">{{ c.tf }}</span>
-                          <span class="range">{{ rangeLabel(c.desde, c.hasta) }}</span>
-                          <span class="count">{{ compactCount(c.velas) }} velas</span>
-                        </li>
-                      }
-                    </ul>
-                  </details>
-                } @else {
-                  <p class="no-data">Sin velas todavía — ejecuta el harvester para este símbolo.</p>
-                }
-              </article>
-            }
-          </div>
-        </section>
-      }
-    }
-  }
-</div>
+}

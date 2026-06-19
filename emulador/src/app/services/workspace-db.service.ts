@@ -3,14 +3,27 @@ import { Candle, Timeframe } from '../models';
 import { SessionFolder } from '../state/trading/trading.models';
 import { AssetMeta, Workspace, WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import { OfflineSymbol } from './offline-catalog';
+import {
+  CANDLES_BY_SYMBOL_TF_TIME,
+  CANDLES_STORE,
+  type CandleRecord,
+  DATASETS_BY_SYMBOL_TF_YEAR,
+  DATASETS_STORE,
+  type DatasetRecord,
+  DB_NAME,
+  DB_VERSION,
+  FOLDERS_STORE,
+  LEGACY_STORE,
+  META_STORE,
+  SERIES_STORE,
+  SYMBOLS_STORE,
+} from './market-data-db';
 
-const DB_NAME = 'emulador-workspaces';
-const DB_VERSION = 4;
-const META_STORE = 'meta';
-const SERIES_STORE = 'series';
-const FOLDERS_STORE = 'folders';
-const SYMBOLS_STORE = 'symbols';
-const LEGACY_STORE = 'workspaces';
+// Schema constants and the CandleRecord/DatasetRecord row types are shared,
+// Angular-free, in ./market-data-db so the ingestion worker can reuse them
+// without importing @angular/core. Re-export the record types so existing
+// importers of this service keep working unchanged.
+export type { CandleRecord, DatasetRecord } from './market-data-db';
 
 interface SeriesRecord {
   /** `${symbol}|${tf}` */
@@ -82,6 +95,23 @@ export class WorkspaceDbService {
           // v4: offline symbol catalog (keyed by symbol)
           if (!db.objectStoreNames.contains(SYMBOLS_STORE)) {
             db.createObjectStore(SYMBOLS_STORE, { keyPath: 'symbol' });
+          }
+          // v5: R2/Parquet dataset manifest cache
+          if (!db.objectStoreNames.contains(DATASETS_STORE)) {
+            const datasets = db.createObjectStore(DATASETS_STORE, { keyPath: 'id' });
+            datasets.createIndex(DATASETS_BY_SYMBOL_TF_YEAR, ['symbol', 'timeframe', 'year'], {
+              unique: false,
+            });
+          }
+          // v5: individual candle rows from R2/Parquet files (auto-increment id)
+          if (!db.objectStoreNames.contains(CANDLES_STORE)) {
+            const candles = db.createObjectStore(CANDLES_STORE, {
+              keyPath: 'id',
+              autoIncrement: true,
+            });
+            candles.createIndex(CANDLES_BY_SYMBOL_TF_TIME, ['symbol', 'timeframe', 'time'], {
+              unique: false,
+            });
           }
         };
         req.onsuccess = () => {
@@ -299,6 +329,96 @@ export class WorkspaceDbService {
     tx.objectStore(SYMBOLS_STORE).delete(symbol);
     tx.objectStore(META_STORE).delete(symbol);
     tx.objectStore(SERIES_STORE).delete(IDBKeyRange.bound(`${symbol}|`, `${symbol}|￿`));
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // ---- R2/Parquet datasets cache (v5) ----
+  //
+  // The `datasets` store mirrors the R2 manifest: one row per ingested
+  // (symbol, timeframe, year) partition. The Data Wizard (Task 6) reads it to
+  // decide whether a partition's local copy is already current (etag match) and
+  // writes it after a successful ingestion so the next launch can skip it.
+
+  /** Upserts a dataset record (keyed by its `${symbol}|${tf}|${year}` id). */
+  async putDataset(dataset: DatasetRecord): Promise<void> {
+    const db = await this.open();
+    const tx = db.transaction(DATASETS_STORE, 'readwrite');
+    tx.objectStore(DATASETS_STORE).put(dataset);
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /** One dataset record by composite id, or undefined when absent. */
+  async getDataset(id: string): Promise<DatasetRecord | undefined> {
+    const db = await this.open();
+    return this.request<DatasetRecord | undefined>(
+      db.transaction(DATASETS_STORE, 'readonly').objectStore(DATASETS_STORE).get(id),
+    );
+  }
+
+  /** All cached dataset records, sorted by id. */
+  async listDatasets(): Promise<DatasetRecord[]> {
+    const db = await this.open();
+    const all = await this.request<DatasetRecord[]>(
+      db.transaction(DATASETS_STORE, 'readonly').objectStore(DATASETS_STORE).getAll(),
+    );
+    return all.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /** Removes one dataset record by composite id. */
+  async deleteDataset(id: string): Promise<void> {
+    const db = await this.open();
+    const tx = db.transaction(DATASETS_STORE, 'readwrite');
+    tx.objectStore(DATASETS_STORE).delete(id);
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /**
+   * All raw candle rows for one (symbol, timeframe), via the compound index.
+   * Primarily a test/inspection helper; candle reads for the chart go through
+   * the `MarketDataRepository`.
+   */
+  async listCandles(symbol: string, timeframe: string): Promise<CandleRecord[]> {
+    const db = await this.open();
+    const range = IDBKeyRange.bound([symbol, timeframe, -Infinity], [symbol, timeframe, +Infinity]);
+    return this.request<CandleRecord[]>(
+      db
+        .transaction(CANDLES_STORE, 'readonly')
+        .objectStore(CANDLES_STORE)
+        .index(CANDLES_BY_SYMBOL_TF_TIME)
+        .getAll(range),
+    );
+  }
+
+  /**
+   * Deletes every candle row for one (symbol, timeframe). The `candles` store
+   * has an auto-increment primary key and a NON-unique index, so re-ingesting a
+   * Parquet would otherwise DUPLICATE rows; the wizard clears the existing rows
+   * before a re-ingestion. Walks the compound index with a cursor and deletes
+   * each match by primary key (the bound exactly brackets this symbol+tf, so
+   * `'M1'` never matches `'M15'`).
+   */
+  async clearDatasetCandles(symbol: string, timeframe: string): Promise<void> {
+    const db = await this.open();
+    const tx = db.transaction(CANDLES_STORE, 'readwrite');
+    const index = tx.objectStore(CANDLES_STORE).index(CANDLES_BY_SYMBOL_TF_TIME);
+    const range = IDBKeyRange.bound([symbol, timeframe, -Infinity], [symbol, timeframe, +Infinity]);
+    const cursorReq = index.openCursor(range);
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
     return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);

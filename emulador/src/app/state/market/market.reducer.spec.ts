@@ -96,4 +96,60 @@ describe('market reducer: workspaceRestored', () => {
     const legacy = reducer(s, WorkspacesActions.workspaceRestored({ workspace: workspace() }));
     expect(legacy.selectedTfs).toBeNull();
   });
+
+  it('clears any active custom timeframe', () => {
+    const s = reducer(undefined, { type: '@@init' } as any);
+    const custom = reducer(s, MarketActions.changeCustomTimeframe({ minutes: 45 }));
+    const restored = reducer(
+      custom,
+      WorkspacesActions.workspaceRestored({ workspace: workspace() }),
+    );
+    expect(restored.customTf).toBeNull();
+    expect(restored.customSeries).toEqual([]);
+  });
+});
+
+describe('market reducer: custom timeframe', () => {
+  it('initialises with no custom timeframe', () => {
+    const s = reducer(undefined, { type: '@@init' } as any);
+    expect(s.customTf).toBeNull();
+    expect(s.customSeries).toEqual([]);
+  });
+
+  it('changeCustomTimeframe sets the minutes and clears any stale custom series', () => {
+    const s = reducer(undefined, { type: '@@init' } as any);
+    const next = reducer(s, MarketActions.changeCustomTimeframe({ minutes: 90 }));
+    expect(next.customTf).toBe(90);
+    expect(next.customSeries).toEqual([]);
+  });
+
+  it('customTimeframeGenerated stores the candles when the minutes still match', () => {
+    const s = reducer(undefined, { type: '@@init' } as any);
+    const pending = reducer(s, MarketActions.changeCustomTimeframe({ minutes: 45 }));
+    const candles = series(2);
+    const next = reducer(pending, MarketActions.customTimeframeGenerated({ minutes: 45, candles }));
+    expect(next.customSeries).toEqual(candles);
+  });
+
+  it('ignores a stale generated reply for a different timeframe', () => {
+    const s = reducer(undefined, { type: '@@init' } as any);
+    const pending = reducer(s, MarketActions.changeCustomTimeframe({ minutes: 45 }));
+    const next = reducer(
+      pending,
+      MarketActions.customTimeframeGenerated({ minutes: 90, candles: series(2) }),
+    );
+    expect(next.customSeries).toEqual([]); // 90 !== active 45 → ignored
+  });
+
+  it('switching to a standard timeframe clears the custom one', () => {
+    const s = reducer(undefined, { type: '@@init' } as any);
+    const loaded = reducer(
+      s,
+      MarketActions.csvLoaded({ tf: 'H1', candles: series(3), fileName: 'a.csv' }),
+    );
+    const custom = reducer(loaded, MarketActions.changeCustomTimeframe({ minutes: 45 }));
+    const back = reducer(custom, MarketActions.changeTimeframe({ tf: 'H1' }));
+    expect(back.customTf).toBeNull();
+    expect(back.activeTf).toBe('H1');
+  });
 });

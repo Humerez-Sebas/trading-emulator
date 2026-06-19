@@ -1,0 +1,61 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.help {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2, var(--surface));
+  font-size: var(--text-sm);
+}
+.list .sym {
+  font-weight: var(--weight-semibold);
+}
+.list .year {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+  margin-top: var(--space-1);
+}
+.progress .bar {
+  display: block;
+  height: 100%;
+  background: var(--accent, var(--text));
+  transition: width var(--duration-base) var(--ease-out);
+}
+
+.muted {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.invalid {
+  font-size: var(--text-2xs);
+  color: var(--danger);
+}

@@ -14,6 +14,7 @@ import { TooltipDirective } from '../../components/ui/tooltip.directive';
 import { SegmentedControlComponent } from '../../components/ui/segmented-control.component';
 import { EmptyStateComponent } from '../../components/ui/empty-state.component';
 import { MenuComponent } from '../../components/ui/menu.component';
+import { R2MarketsComponent } from './r2-markets.component';
 import { environment } from '../../../environments/environment';
 
 /** Per-symbol coverage rollup shown in the card summary line. */
@@ -47,6 +48,7 @@ type MarketMode = 'todos' | 'mis';
     SegmentedControlComponent,
     EmptyStateComponent,
     MenuComponent,
+    R2MarketsComponent,
   ],
   templateUrl: './mercados-page.component.html',
   styleUrl: './mercados-page.component.css',
@@ -58,6 +60,13 @@ export class MercadosPageComponent {
   private dialog = inject(DialogService);
 
   private statusSig = this.store.selectSignal(authFeature.selectStatus);
+
+  /**
+   * When the R2/Parquet data source is active, Markets becomes the R2 data hub
+   * (see {@link R2MarketsComponent}) and the csv/backend branch below is bypassed
+   * entirely. The csv branch is preserved verbatim under the template's `@else`.
+   */
+  readonly isR2 = environment.dataSource === 'r2';
 
   /** True when running in static/offline build or authenticated as guest. */
   offline = computed(
@@ -97,6 +106,8 @@ export class MercadosPageComponent {
   });
 
   constructor() {
+    // r2: the R2 hub child owns its own data flow; skip the csv/backend init.
+    if (this.isR2) return;
     this.load();
     if (!this.offline()) this.store.dispatch(UserSymbolsActions.load());
   }

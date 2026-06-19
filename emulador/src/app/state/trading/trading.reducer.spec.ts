@@ -590,6 +590,53 @@ describe('trading reducer: sessionImported', () => {
   });
 });
 
+describe('trading reducer: restoreSession', () => {
+  it('replaces the whole trading slice with the provided TradingData', () => {
+    const restored = {
+      ...defaultTradingData(),
+      balance: 12500,
+      initialBalance: 10000,
+      orders: [order({ id: 'o9' })],
+      history: [closed({ id: 'th', profit: 2500, closeTime: 1700000000 })],
+      sessionName: 'Restaurada',
+      lastProcessedTime: 1700000000,
+      sessionEnded: true,
+      riskPct: 2,
+    };
+    // start from a non-empty, different state to prove a full replacement
+    const s = state({
+      balance: 999,
+      initialBalance: 999,
+      orders: [order({ id: 'old' })],
+      history: [closed({ id: 'old-trade' })],
+      sessionName: 'Vieja',
+    });
+    const next = reducer(s, TradingActions.restoreSession({ trading: restored }));
+    expect(next.balance).toBe(12500);
+    expect(next.initialBalance).toBe(10000);
+    expect(next.orders).toEqual(restored.orders);
+    expect(next.history).toEqual(restored.history);
+    expect(next.sessionName).toBe('Restaurada');
+    expect(next.riskPct).toBe(2);
+    expect(next.lastProcessedTime).toBe(1700000000);
+    expect(next.sessionEnded).toBe(true);
+  });
+
+  it('preserves the transient summaryOpen flag and savedSessions list', () => {
+    const saved = {
+      id: 's1',
+      name: 'Prev',
+      createdAt: 1,
+      currentTime: 0,
+      trading: defaultTradingData(),
+    };
+    const s = state({ summaryOpen: true, savedSessions: [saved] });
+    const next = reducer(s, TradingActions.restoreSession({ trading: defaultTradingData() }));
+    expect(next.summaryOpen).toBe(true);
+    expect(next.savedSessions).toEqual([saved]);
+  });
+});
+
 describe('trading reducer: workspaceRestored', () => {
   it('applies defaults-first merge of workspace.trading', () => {
     const ws = workspace({

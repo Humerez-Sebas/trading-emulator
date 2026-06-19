@@ -23,6 +23,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "parquet_wasm_bg.wasm",
+                "input": "node_modules/parquet-wasm/esm",
+                "output": "/"
               }
             ],
             "styles": ["src/styles.css", "src/styles/ui-primitives.css"]
@@ -89,6 +94,7 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
+            "setupFiles": ["src/test-setup.ts"],
             "coverageInclude": [
               "src/app/state/**/*.ts",
               "src/app/services/**/*.ts",

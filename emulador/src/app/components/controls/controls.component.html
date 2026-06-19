@@ -12,13 +12,21 @@
     @for (tf of tfs(); track tf) {
       <button
         class="tf-btn"
-        [class.active]="tf === activeTf()"
+        [class.active]="tf === activeTf() && customTf() === null"
         [class.short]="isShortTf(tf)"
         [appTooltip]="isShortTf(tf) ? shortTfTip(tf) : ''"
         (click)="setTf(tf)"
       >
         {{ tf }}
       </button>
+    }
+    @if (customTf() !== null) {
+      <span
+        class="tf-chip"
+        appTooltip="Temporalidad personalizada. Escribe un número para cambiarla."
+      >
+        {{ customChipLabel() }}
+      </span>
     }
   </div>
 

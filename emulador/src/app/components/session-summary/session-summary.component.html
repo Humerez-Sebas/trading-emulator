@@ -171,6 +171,9 @@
     <button appButton variant="ghost" (click)="exportCsv()" [disabled]="!trades().length">
       Exportar CSV
     </button>
+    <button appButton variant="ghost" (click)="exportSession()">
+      Exportar sesión (.session.json)
+    </button>
     <button appButton variant="primary" (click)="close()">Cerrar</button>
   </div>
 </app-modal>

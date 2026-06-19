@@ -90,6 +90,29 @@ describe('drawings reducer: clearDrawings', () => {
   });
 });
 
+describe('drawings reducer: restoreDrawings', () => {
+  it('replaces items with the provided drawings and resets tool/selection', () => {
+    const restored = [drawing('r1'), drawing('r2')];
+    const s = {
+      ...initial(),
+      items: [drawing('old')],
+      activeTool: 'rect' as const,
+      selectedId: 'old',
+    };
+    const next = reducer(s, DrawingsActions.restoreDrawings({ drawings: restored }));
+    expect(next.items).toEqual(restored);
+    expect(next.activeTool).toBe('none');
+    expect(next.selectedId).toBeNull();
+  });
+
+  it('replaces with an empty list when no drawings are provided', () => {
+    const s = { ...initial(), items: [drawing('old')], selectedId: 'old' };
+    const next = reducer(s, DrawingsActions.restoreDrawings({ drawings: [] }));
+    expect(next.items).toEqual([]);
+    expect(next.selectedId).toBeNull();
+  });
+});
+
 describe('drawings reducer: workspaceRestored', () => {
   it('loads workspace.drawings and resets tool/selection', () => {
     const drawings = [drawing('d1'), drawing('d2')];

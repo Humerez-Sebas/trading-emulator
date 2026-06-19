@@ -10,5 +10,10 @@ export const DrawingsActions = createActionGroup({
     'Select Drawing': props<{ id: string | null }>(),
     'Delete Selected': emptyProps(),
     'Clear Drawings': emptyProps(),
+    /**
+     * Replaces ALL drawings with the provided set (the `.session.json` import
+     * flow, Task 9). Clears the active tool and the selection.
+     */
+    'Restore Drawings': props<{ drawings: Drawing[] }>(),
   },
 });

@@ -2,9 +2,8 @@ import { inject, Injectable } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { Store } from '@ngrx/store';
 import { filter, map, mergeMap, withLatestFrom } from 'rxjs/operators';
-import { TIMEFRAME_SECONDS } from '../../models';
 import { ReplayActions } from '../replay/replay.actions';
-import { lowerSeriesFor, selectFillContext } from '../selectors';
+import { selectFillContext } from '../selectors';
 import { sliceRange } from './fill-engine';
 import { TradingActions } from './trading.actions';
 
@@ -24,7 +23,7 @@ export class TradingEffects {
       ofType(ReplayActions.goToTime),
       withLatestFrom(this.store.select(selectFillContext)),
       filter(([action, ctx]) => {
-        if (ctx.idx < 0 || !ctx.tf) return false;
+        if (ctx.idx < 0 || ctx.tfSeconds <= 0) return false;
         const candle = ctx.candles[ctx.idx];
         if (candle.time !== action.time) return false; // jump, not an advance
         if (ctx.trading.sessionEnded) return false;
@@ -32,9 +31,8 @@ export class TradingEffects {
       }),
       map(([, ctx]) => {
         const candle = ctx.candles[ctx.idx];
-        const lower = lowerSeriesFor(ctx.series, ctx.tf);
-        const subCandles = lower
-          ? sliceRange(lower, candle.time, candle.time + TIMEFRAME_SECONDS[ctx.tf!])
+        const subCandles = ctx.lower
+          ? sliceRange(ctx.lower, candle.time, candle.time + ctx.tfSeconds)
           : null;
         return TradingActions.processCandle({
           candle,

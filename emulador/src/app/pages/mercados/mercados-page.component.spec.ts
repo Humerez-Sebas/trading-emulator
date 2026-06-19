@@ -12,6 +12,7 @@ import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { DialogService } from '../../components/ui/dialog.service';
 import { authFeature } from '../../state/auth/auth.reducer';
 import { OfflineSymbol } from '../../services/offline-catalog';
+import { environment } from '../../../environments/environment';
 
 function makeApiStub(result: 'ok' | 'error' = 'ok') {
   const symbols = [
@@ -41,6 +42,9 @@ describe('MercadosPageComponent', () => {
   let dispatch: ReturnType<typeof vi.spyOn>;
 
   function create(result: 'ok' | 'error' = 'ok', selected: string[] = []) {
+    // These tests cover the csv/backend Markets branch; force that data source
+    // (dev env defaults to 'r2', which renders the separate R2 hub component).
+    environment.dataSource = 'csv';
     const apiStub = makeApiStub(result);
     TestBed.configureTestingModule({
       providers: [
@@ -56,7 +60,9 @@ describe('MercadosPageComponent', () => {
     component = TestBed.inject(MercadosPageComponent);
   }
 
+  const originalDataSource = environment.dataSource;
   afterEach(() => {
+    environment.dataSource = originalDataSource;
     TestBed.resetTestingModule();
     vi.restoreAllMocks();
   });
@@ -228,6 +234,8 @@ describe('MercadosPageComponent (offline)', () => {
   let dialogStub: { confirm: ReturnType<typeof vi.fn> };
 
   function createOffline(listResult: OfflineSymbol[] = [catalogEntry]) {
+    // Offline/guest is a csv-branch concern; force it (dev env defaults to 'r2').
+    environment.dataSource = 'csv';
     dbStub = workspaceDbStub();
     (dbStub.listSymbols as ReturnType<typeof vi.fn>).mockResolvedValue(listResult);
     dialogStub = { confirm: vi.fn().mockResolvedValue(true) };
@@ -254,7 +262,9 @@ describe('MercadosPageComponent (offline)', () => {
     component = TestBed.inject(MercadosPageComponent);
   }
 
+  const originalDataSource = environment.dataSource;
   afterEach(() => {
+    environment.dataSource = originalDataSource;
     TestBed.resetTestingModule();
     vi.restoreAllMocks();
   });

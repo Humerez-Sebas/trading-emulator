@@ -3,17 +3,42 @@ import { DatePipe, DecimalPipe, PercentPipe, NgTemplateOutlet } from '@angular/c
 import { Router, RouterLink } from '@angular/router';
 import { Store } from '@ngrx/store';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { StorageManagerService } from '../storage-manager/storage-manager.service';
+import {
+  AnchorTf,
+  RequiredDataset,
+  restorePlan,
+  SessionFileV1,
+  SessionService,
+  snapshotFromState,
+  yearsInRange,
+} from '../../services/session.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import { isSessionCsv, parseSessionCsv } from '../../state/trading/session-csv';
-import { symbolFromFileName } from '../../models';
+import { Candle, Timeframe, symbolFromFileName } from '../../models';
+import { environment } from '../../../environments/environment';
+import { MarketDataRepository } from '../../domain/market-data.repository';
+import {
+  DataOnboardingService,
+  OnboardingJob,
+} from '../../services/market-data/data-onboarding.service';
+import { ManifestService } from '../../services/market-data/manifest.service';
+import { PendingCsv } from '../../state/workspaces/workspaces.actions';
+import { ClosedTrade, defaultTradingData, PendingOrder } from '../../state/trading/trading.models';
+import { Drawing } from '../../state/drawings/drawings.models';
 import {
   selectCurrentAsset,
   selectCurrentTime,
+  selectDataRange,
+  selectLoadedTfs,
+  selectMsPerCandle,
   selectSavedSessions,
   selectTradingData,
 } from '../../state/selectors';
+import { marketFeature } from '../../state/market/market.reducer';
+import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { TrashIconComponent } from '../../components/icons/trash-icon.component';
@@ -23,6 +48,10 @@ import { BadgeDirective } from '../../components/ui/badge.directive';
 import { MenuComponent } from '../../components/ui/menu.component';
 import { EmptyStateComponent } from '../../components/ui/empty-state.component';
 import { SegmentedControlComponent } from '../../components/ui/segmented-control.component';
+import { MissingDatasetDialogComponent } from '../../components/missing-dataset-dialog/missing-dataset-dialog.component';
+
+/** The only timeframes a session may reference (anchors). */
+const ANCHOR_TFS: readonly AnchorTf[] = ['M1', 'H1', 'D1'];
 
 type Density = 'card' | 'row';
 
@@ -108,6 +137,7 @@ function equityCurve(t: TradingData): number[] {
     MenuComponent,
     EmptyStateComponent,
     SegmentedControlComponent,
+    MissingDatasetDialogComponent,
   ],
   templateUrl: './sesiones-page.component.html',
   styleUrl: './sesiones-page.component.css',
@@ -117,6 +147,14 @@ export class SesionesPageComponent {
   private db = inject(WorkspaceDbService);
   private router = inject(Router);
   private dialogs = inject(DialogService);
+  private sessionService = inject(SessionService);
+  private storageManager = inject(StorageManagerService);
+  private repo = inject(MarketDataRepository);
+  private onboarding = inject(DataOnboardingService);
+  private manifests = inject(ManifestService);
+
+  /** R2 deployment uses `.session.json` import; CSV keeps the legacy path. */
+  isR2 = environment.dataSource === 'r2';
 
   state = signal<'loading' | 'ok'>('loading');
   private metas = signal<WorkspaceMeta[]>([]);
@@ -140,6 +178,14 @@ export class SesionesPageComponent {
   private currentTime = this.store.selectSignal(selectCurrentTime);
   private liveTrading = this.store.selectSignal(selectTradingData);
   private liveSessions = this.store.selectSignal(selectSavedSessions);
+
+  // ---- .session.json export (active session's live state) ----
+  private liveDataRange = this.store.selectSignal(selectDataRange);
+  private liveActiveTf = this.store.selectSignal(marketFeature.selectActiveTf);
+  private liveCustomTf = this.store.selectSignal(marketFeature.selectCustomTf);
+  private livePlaybackSpeed = this.store.selectSignal(selectMsPerCandle);
+  private liveDrawings = this.store.selectSignal(drawingsFeature.selectItems);
+  private liveLoadedTfs = this.store.selectSignal(selectLoadedTfs);
 
   /** Flat list of every session as a card (live state wins for the open asset). */
   private allCards = computed<SessionCard[]>(() => {
@@ -420,6 +466,171 @@ export class SesionesPageComponent {
     input.value = '';
   }
 
+  // ---- .session.json import (R2: version gate + missing-dataset download + restore) ----
+
+  /** The parsed session pending restore (set while the missing-dataset modal is open). */
+  private pendingSession = signal<SessionFileV1 | null>(null);
+  /** Missing datasets to list in the modal (empty = modal closed). */
+  missing = signal<RequiredDataset[]>([]);
+  /** A dataset download is running. */
+  downloading = signal(false);
+  /** 0..100 download progress, or null before it starts. */
+  downloadProgress = signal<number | null>(null);
+  /** Error surfaced inside the missing-dataset modal. */
+  downloadError = signal('');
+
+  /**
+   * Imports a `.session.json`: version-gates it, prompts to download any missing
+   * datasets, then restores the full live session and opens the chart. Only the
+   * R2 deployment uses this; `dataSource==='csv'` keeps {@link onImportSession}.
+   */
+  async onImportSessionJson(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    this.importError.set('');
+    this.importInfo.set('');
+    try {
+      const text = await file.text();
+      const result = this.sessionService.parse(text);
+      if (result.status === 'future') {
+        this.importError.set(
+          `Actualiza el emulador para abrir esta sesión (versión ${result.version}).`,
+        );
+        return;
+      }
+      if (result.status === 'invalid') {
+        this.importError.set(result.reason);
+        return;
+      }
+      const session = result.session;
+      const missing = await this.sessionService.findMissingDatasets(session);
+      if (missing.length) {
+        // open the missing-dataset modal; restore continues from confirmDownload()
+        this.pendingSession.set(session);
+        this.downloadError.set('');
+        this.downloadProgress.set(null);
+        this.missing.set(missing);
+        return;
+      }
+      await this.restoreSession(session);
+    } catch (e) {
+      this.importError.set((e as Error).message);
+    }
+  }
+
+  /** Modal action: download the missing datasets from R2, then restore. */
+  async confirmDownload(): Promise<void> {
+    const session = this.pendingSession();
+    const missing = this.missing();
+    if (!session || !missing.length || this.downloading()) return;
+    this.downloading.set(true);
+    this.downloadError.set('');
+    this.downloadProgress.set(0);
+    try {
+      const manifest = await this.manifests.fetchManifest();
+      const jobs = missing.map((d) => this.jobForDataset(d));
+      await this.onboarding.runJobs(manifest, jobs, (p) =>
+        this.downloadProgress.set(Math.round((p.index / p.total) * 100)),
+      );
+      this.closeMissingModal();
+      await this.restoreSession(session);
+    } catch (e) {
+      this.downloadError.set(
+        (e as Error).message || 'No se pudieron descargar los datasets de R2.',
+      );
+      this.downloading.set(false);
+    }
+  }
+
+  /** Modal action: dismiss the missing-dataset prompt and abort the import. */
+  cancelDownload(): void {
+    if (this.downloading()) return;
+    this.closeMissingModal();
+  }
+
+  private closeMissingModal(): void {
+    this.missing.set([]);
+    this.pendingSession.set(null);
+    this.downloading.set(false);
+    this.downloadProgress.set(null);
+    this.downloadError.set('');
+  }
+
+  /** One onboarding job per missing partition (m1 carries the year; h1/d1 use 'all'). */
+  private jobForDataset(d: RequiredDataset): OnboardingJob {
+    const tf = d.timeframe.toLowerCase() as OnboardingJob['tf'];
+    return d.timeframe === 'M1'
+      ? { symbol: d.symbol, tf, year: String(d.year) }
+      : { symbol: d.symbol, tf, year: 'all' };
+  }
+
+  /**
+   * Restores a fully-validated session: reads the required anchor candles from
+   * the local cache, reconstructs the trading slice, and dispatches `switchAsset`
+   * with the race-safe `thenRestore` payload, then opens the chart.
+   */
+  private async restoreSession(session: SessionFileV1): Promise<void> {
+    const plan = restorePlan(session);
+    // selectedTfs are anchors (M1/H1/D1) — a subset of Timeframe — so read each
+    // anchor's stored candles and hand them to the workspace as PendingCsv.
+    const pending: PendingCsv[] = [];
+    for (const tf of plan.selectedTfs) {
+      const timeframe = tf as Timeframe;
+      const candles: Candle[] = await this.repo.getCandles(plan.symbol, timeframe);
+      pending.push({
+        tf: timeframe,
+        candles,
+        fileName: `${plan.symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
+      });
+    }
+
+    // Reconstruct the persistable trading slice from the session. Balance follows
+    // the realized convention used across the reducer: initialBalance + Σ profits.
+    const history = plan.trades as ClosedTrade[];
+    const initialBalance = session.context.initialBalance;
+    const realized = history.reduce((sum, t) => sum + t.profit, 0);
+    const lastClose = history.reduce((max, t) => Math.max(max, t.closeTime), 0);
+    const trading = {
+      ...defaultTradingData(initialBalance),
+      initialBalance,
+      balance: initialBalance + realized,
+      orders: plan.pendingOrders as PendingOrder[],
+      positions: [],
+      history,
+      lastProcessedTime: lastClose,
+      // an imported session is a finished backtest snapshot
+      sessionEnded: true,
+      sessionName: `Importada · ${this.shortDate(plan.thenGoTo)}`,
+    };
+
+    this.store.dispatch(
+      WorkspacesActions.switchAsset({
+        symbol: plan.symbol,
+        selectedTfs: plan.selectedTfs as Timeframe[],
+        thenLoad: pending,
+        thenGoTo: plan.thenGoTo,
+        thenRestore: {
+          trading,
+          drawings: plan.drawings as Drawing[],
+          intervalMinutes: plan.currentTimeframeMinutes,
+          playbackSpeed: plan.playbackSpeed,
+        },
+      }),
+    );
+    this.importInfo.set(`Sesión importada en ${plan.symbol} (${history.length} trades).`);
+    await this.router.navigateByUrl('/');
+  }
+
+  /** "dd/MM" of a unix-seconds timestamp (UTC), for the imported session name. */
+  private shortDate(unixSeconds: number): string {
+    if (unixSeconds <= 0) return '—';
+    const d = new Date(unixSeconds * 1000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}`;
+  }
+
   // ---- open / rename / delete (unchanged behavior) ----
 
   open(card: SessionCard): void {
@@ -493,6 +704,88 @@ export class SesionesPageComponent {
       await this.reload();
     }
     this.flash(`Sesión "${card.name}" eliminada.`);
+  }
+
+  /**
+   * Exports a card's session as a `.session.json`. The workspace's ACTIVE
+   * session (the one open on the chart, `card.id === null` for the current
+   * asset) is built from live state (same fields as the session-summary
+   * export, with a real data range/years). Any other card — an archived
+   * session, or the active session of an asset that is not on screen — is
+   * built from its STORED `trading` + cursor: no candle data is kept for it,
+   * so the data range defaults to empty. Anchor TFs/years are derived from the
+   * SYMBOL's locally downloaded datasets (`StorageManagerService.listDatasets`)
+   * rather than from `meta.selectedTfs`, so they stay consistent with each
+   * other: `'M1'` is only claimed as an anchor when M1 datasets actually exist
+   * for that symbol, and in that case `years` always has the years to match —
+   * otherwise `buildRequiredDatasets` would silently drop the M1 ref.
+   */
+  async exportSession(card: SessionCard): Promise<void> {
+    const isLiveActive = card.id === null && card.symbol === this.currentAsset();
+    const filename = `${card.symbol.toLowerCase()}-${card.name}.session.json`;
+
+    if (isLiveActive) {
+      const range = this.liveDataRange();
+      const snapshot = snapshotFromState({
+        symbol: card.symbol,
+        initialBalance: card.initialBalance,
+        startRangeSec: range?.from ?? 0,
+        endRangeSec: range?.to ?? 0,
+        replayTimeSec: this.currentTime(),
+        activeTf: this.liveActiveTf(),
+        customTfMinutes: this.liveCustomTf(),
+        playbackSpeed: this.livePlaybackSpeed(),
+        trades: this.liveTrading().history,
+        pendingOrders: this.liveTrading().orders,
+        drawings: this.liveDrawings(),
+        notes: [],
+        anchorTimeframes: this.liveLoadedTfs().filter((tf): tf is AnchorTf =>
+          ANCHOR_TFS.includes(tf as AnchorTf),
+        ),
+        years: yearsInRange(range?.from ?? 0, range?.to ?? 0),
+      });
+      this.sessionService.exportSession(snapshot, filename);
+      return;
+    }
+
+    // Archived session (or another asset's active one): stored data only.
+    const meta = await this.db.getMeta(card.symbol);
+    const session = card.id !== null ? meta?.sessions?.find((s) => s.id === card.id) : undefined;
+    const trading: TradingData | undefined = card.id !== null ? session?.trading : meta?.trading;
+    if (!trading) return;
+    const cursor = card.id !== null ? (session?.currentTime ?? 0) : (meta?.currentTime ?? 0);
+
+    // Derive anchorTimeframes + years from the symbol's locally downloaded
+    // datasets (not `meta.selectedTfs`) so the two always stay consistent:
+    // 'M1' is only claimed when M1 datasets exist, and years always covers
+    // them — otherwise buildRequiredDatasets would silently emit no M1 ref.
+    const symbolDatasets = (await this.storageManager.listDatasets()).filter(
+      (d) => d.symbol === card.symbol,
+    );
+    const anchorTimeframes = ANCHOR_TFS.filter((tf) =>
+      symbolDatasets.some((d) => d.timeframe === tf),
+    );
+    const years = [
+      ...new Set(symbolDatasets.filter((d) => d.timeframe === 'M1').map((d) => Number(d.year))),
+    ].sort((a, b) => a - b);
+
+    const snapshot = snapshotFromState({
+      symbol: card.symbol,
+      initialBalance: trading.initialBalance,
+      startRangeSec: 0,
+      endRangeSec: 0,
+      replayTimeSec: cursor,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      trades: trading.history,
+      pendingOrders: trading.orders,
+      drawings: [],
+      notes: [],
+      anchorTimeframes,
+      years,
+    });
+    this.sessionService.exportSession(snapshot, filename);
   }
 
   // ---- folders CRUD ----

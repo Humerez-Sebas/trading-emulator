@@ -7,6 +7,7 @@ import { SideDockComponent } from '../../components/side-dock/side-dock.componen
 import { SessionSummaryComponent } from '../../components/session-summary/session-summary.component';
 import { FloatingToolbarComponent } from '../../components/floating-toolbar/floating-toolbar.component';
 import { CsvStartDialogComponent } from '../../components/csv-start-dialog/csv-start-dialog.component';
+import { IntervalDialogComponent } from '../../components/interval-dialog/interval-dialog.component';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { settingsFeature } from '../../state/settings/settings.reducer';
 
@@ -21,6 +22,7 @@ import { settingsFeature } from '../../state/settings/settings.reducer';
     SessionSummaryComponent,
     FloatingToolbarComponent,
     CsvStartDialogComponent,
+    IntervalDialogComponent,
   ],
   template: `
     <div class="layout">
@@ -39,6 +41,7 @@ import { settingsFeature } from '../../state/settings/settings.reducer';
         <app-session-summary></app-session-summary>
       }
       <app-csv-start-dialog></app-csv-start-dialog>
+      <app-interval-dialog></app-interval-dialog>
     </div>
   `,
   styles: [

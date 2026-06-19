@@ -5,11 +5,30 @@ import { TradingActions } from '../../state/trading/trading.actions';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { buildSessionCsv } from '../../state/trading/session-csv';
 import { ClosedTrade } from '../../state/trading/trading.models';
-import { selectCurrentAsset, selectSessionStats } from '../../state/selectors';
+import { drawingsFeature } from '../../state/drawings/drawings.reducer';
+import { marketFeature } from '../../state/market/market.reducer';
+import {
+  selectCurrentAsset,
+  selectDataRange,
+  selectCurrentTime,
+  selectLoadedTfs,
+  selectMsPerCandle,
+  selectSessionStats,
+  selectTradingData,
+} from '../../state/selectors';
+import {
+  AnchorTf,
+  SessionService,
+  snapshotFromState,
+  yearsInRange,
+} from '../../services/session.service';
 import { TrashIconComponent } from '../icons/trash-icon.component';
 import { DialogService } from '../ui/dialog.service';
 import { ModalComponent } from '../ui/modal.component';
 import { ButtonDirective } from '../ui/button.directive';
+
+/** The only timeframes a session may reference (anchors). */
+const ANCHOR_TFS: readonly AnchorTf[] = ['M1', 'H1', 'D1'];
 
 /** End-of-session summary modal: metrics, equity sparkline, trade table. */
 @Component({
@@ -29,12 +48,23 @@ import { ButtonDirective } from '../ui/button.directive';
 export class SessionSummaryComponent {
   private store = inject(Store);
   private dialogs = inject(DialogService);
+  private sessionService = inject(SessionService);
 
   stats = this.store.selectSignal(selectSessionStats);
   history = this.store.selectSignal(tradingFeature.selectHistory);
   initialBalance = this.store.selectSignal(tradingFeature.selectInitialBalance);
   balance = this.store.selectSignal(tradingFeature.selectBalance);
   asset = this.store.selectSignal(selectCurrentAsset);
+
+  // ---- .session.json export ----
+  private dataRange = this.store.selectSignal(selectDataRange);
+  private currentTime = this.store.selectSignal(selectCurrentTime);
+  private activeTf = this.store.selectSignal(marketFeature.selectActiveTf);
+  private customTf = this.store.selectSignal(marketFeature.selectCustomTf);
+  private playbackSpeed = this.store.selectSignal(selectMsPerCandle);
+  private tradingData = this.store.selectSignal(selectTradingData);
+  private drawings = this.store.selectSignal(drawingsFeature.selectItems);
+  private loadedTfs = this.store.selectSignal(selectLoadedTfs);
 
   /** History sorted by close time, as shown in the table. */
   trades = computed(() => [...this.history()].sort((a, b) => a.closeTime - b.closeTime));
@@ -73,6 +103,30 @@ export class SessionSummaryComponent {
     a.download = `${symbol}_sesion.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  /** Exports the active session as a `.session.json` (no candle data). */
+  exportSession(): void {
+    const range = this.dataRange();
+    const snapshot = snapshotFromState({
+      symbol: this.asset() ?? '',
+      initialBalance: this.initialBalance(),
+      startRangeSec: range?.from ?? 0,
+      endRangeSec: range?.to ?? 0,
+      replayTimeSec: this.currentTime(),
+      activeTf: this.activeTf(),
+      customTfMinutes: this.customTf(),
+      playbackSpeed: this.playbackSpeed(),
+      trades: this.tradingData().history,
+      pendingOrders: this.tradingData().orders,
+      drawings: this.drawings(),
+      notes: [],
+      anchorTimeframes: this.loadedTfs().filter((tf): tf is AnchorTf =>
+        ANCHOR_TFS.includes(tf as AnchorTf),
+      ),
+      years: yearsInRange(range?.from ?? 0, range?.to ?? 0),
+    });
+    this.sessionService.exportSession(snapshot);
   }
 
   /** Shows/hides the trade's box on the chart (per-trade toggle). */

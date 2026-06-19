@@ -1,0 +1,189 @@
+<div class="page">
+  <header class="head">
+    <div>
+      <h1>Mercados</h1>
+      <p class="sub">
+        Datos de mercado (R2 / Parquet): descarga y administra particiones por símbolo.
+      </p>
+    </div>
+    @if (state() === 'ok' && datasetCount()) {
+      <span class="usage" title="Espacio ocupado por los datos en este navegador">
+        Uso: {{ totalLabel() }}
+      </span>
+    }
+  </header>
+
+  @if (state() === 'ok') {
+    <div class="toolbar">
+      <label class="search">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7"></circle>
+          <line x1="21" y1="21" x2="16.5" y2="16.5"></line>
+        </svg>
+        <span class="sr-only">Buscar activo</span>
+        <input
+          type="search"
+          placeholder="Buscar por símbolo…"
+          [value]="query()"
+          (input)="onQuery($event)"
+        />
+      </label>
+    </div>
+    @if (errorMsg()) {
+      <p class="action-error" role="alert">{{ errorMsg() }}</p>
+    }
+  }
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="status" role="status">Cargando catálogo de datos…</p>
+    }
+    @case ('error') {
+      <ui-empty-state title="No se pudo cargar el catálogo" [hint]="errorMsg()" [boxed]="true">
+        <svg
+          icon
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <button appButton variant="primary" (click)="load()">Reintentar</button>
+      </ui-empty-state>
+    }
+    @case ('ok') {
+      @if (!catalog().length) {
+        <ui-empty-state
+          [title]="
+            query()
+              ? 'Sin resultados para «' + query() + '»'
+              : 'El catálogo no tiene activos todavía'
+          "
+          [hint]="
+            query()
+              ? 'Prueba con el nombre del símbolo, p. ej. «XAUUSD» o «US30».'
+              : 'El manifiesto de R2 no contiene ningún símbolo. Sube datos al bucket y recarga.'
+          "
+          [boxed]="true"
+        />
+      }
+      <div class="cards">
+        @for (entry of catalog(); track entry.symbol) {
+          <article class="card">
+            <header class="card-head">
+              <div class="card-title">
+                <h3>{{ entry.symbol }}</h3>
+                <p class="cov-summary">
+                  {{ downloadedCount(entry) }} / {{ entry.partitions.length }} particiones
+                  descargadas
+                </p>
+              </div>
+              @if (hasPending(entry)) {
+                <button
+                  appButton
+                  variant="primary"
+                  size="sm"
+                  (click)="downloadAll(entry)"
+                  [disabled]="busySymbol() !== null"
+                >
+                  {{ busySymbol() === entry.symbol ? 'Descargando…' : 'Descargar lo que falta' }}
+                </button>
+              }
+            </header>
+
+            @if (busySymbol() === entry.symbol && progress(); as p) {
+              <div class="progress" role="status">
+                <p>Descargando… {{ p.index }} / {{ p.total }} ({{ progressPct() }}%)</p>
+                <div class="bar">
+                  <span class="fill" [style.width.%]="progressPct()"></span>
+                </div>
+              </div>
+            }
+
+            <ul class="parts" aria-label="Particiones disponibles">
+              @for (p of entry.partitions; track p.tf + '|' + p.partition) {
+                <li class="part" [class.is-downloaded]="p.downloaded">
+                  <span class="part-tf">{{ p.tf.toUpperCase() }}</span>
+                  <span class="part-key">{{ partitionLabel(p) }}</span>
+                  @if (p.downloaded) {
+                    @if (p.updateAvailable) {
+                      <span appBadge tone="accent" class="part-status"
+                        >Actualización disponible</span
+                      >
+                    } @else {
+                      <span class="part-status downloaded" aria-label="Descargado">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="3"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        Descargado
+                      </span>
+                    }
+                  } @else {
+                    <span appBadge tone="outline" class="part-status">Disponible</span>
+                  }
+
+                  <span class="part-actions">
+                    @if (!p.downloaded || p.updateAvailable) {
+                      <button
+                        appButton
+                        variant="subtle"
+                        size="sm"
+                        (click)="downloadPartition(entry.symbol, p)"
+                        [disabled]="busySymbol() !== null"
+                      >
+                        {{ p.updateAvailable ? 'Actualizar' : 'Descargar' }}
+                      </button>
+                    }
+                    @if (p.downloaded) {
+                      <button
+                        appButton
+                        variant="danger"
+                        size="sm"
+                        (click)="deletePartition(entry.symbol, p)"
+                        [disabled]="deletingId() !== null"
+                      >
+                        {{
+                          deletingId() ===
+                          entry.symbol + '|' + p.tf.toUpperCase() + '|' + p.partition
+                            ? 'Eliminando…'
+                            : 'Eliminar'
+                        }}
+                      </button>
+                    }
+                  </span>
+                </li>
+              }
+            </ul>
+          </article>
+        }
+      </div>
+    }
+  }
+</div>

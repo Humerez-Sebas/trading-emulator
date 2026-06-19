@@ -263,3 +263,264 @@ describe('WorkspaceDbService — v1 → v3 migration', () => {
     expect(info!.count).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v5: datasets + candles stores
+// ---------------------------------------------------------------------------
+
+const DB_NAME_V5 = 'emulador-workspaces';
+
+/** Opens the raw IndexedDB after the service has warmed it up at v5. */
+async function rawDb(svcInstance: WorkspaceDbService): Promise<IDBDatabase> {
+  // Trigger a no-op operation so the service opens (and upgrades) the DB first
+  await svcInstance.listMetas();
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    // Open at the same version the service uses (5) so fake-indexeddb does
+    // not try to upgrade or block on an in-progress transaction.
+    const req = indexedDB.open(DB_NAME_V5, 5);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    // Should never fire since service already upgraded, but guard for safety
+    req.onupgradeneeded = () =>
+      reject(new Error('rawDb: unexpected upgrade — service should already be at v5'));
+  });
+}
+
+describe('WorkspaceDbService — v5 schema: datasets store', () => {
+  it('objectStoreNames contains datasets after opening at v5', async () => {
+    const db = await rawDb(svc);
+    const names = Array.from(db.objectStoreNames);
+    db.close();
+    expect(names).toContain('datasets');
+  });
+
+  it('datasets store has keyPath "id"', async () => {
+    const db = await rawDb(svc);
+    const tx = db.transaction('datasets', 'readonly');
+    const store = tx.objectStore('datasets');
+    expect(store.keyPath).toBe('id');
+    db.close();
+  });
+
+  it('datasets store has compound index by_symbol_tf_year on [symbol, timeframe, year]', async () => {
+    const db = await rawDb(svc);
+    const tx = db.transaction('datasets', 'readonly');
+    const idx = tx.objectStore('datasets').index('by_symbol_tf_year');
+    expect(Array.from(idx.keyPath as string[])).toEqual(['symbol', 'timeframe', 'year']);
+    db.close();
+  });
+});
+
+describe('WorkspaceDbService — v5 schema: candles store', () => {
+  it('objectStoreNames contains candles after opening at v5', async () => {
+    const db = await rawDb(svc);
+    const names = Array.from(db.objectStoreNames);
+    db.close();
+    expect(names).toContain('candles');
+  });
+
+  it('candles store has keyPath "id" and autoIncrement true', async () => {
+    const db = await rawDb(svc);
+    const tx = db.transaction('candles', 'readonly');
+    const store = tx.objectStore('candles');
+    expect(store.keyPath).toBe('id');
+    expect(store.autoIncrement).toBe(true);
+    db.close();
+  });
+
+  it('candles store has compound index by_symbol_tf_time on [symbol, timeframe, time]', async () => {
+    const db = await rawDb(svc);
+    const tx = db.transaction('candles', 'readonly');
+    const idx = tx.objectStore('candles').index('by_symbol_tf_time');
+    expect(Array.from(idx.keyPath as string[])).toEqual(['symbol', 'timeframe', 'time']);
+    db.close();
+  });
+});
+
+describe('WorkspaceDbService — v5 schema: all existing stores still present', () => {
+  it('still contains meta, series, folders, symbols alongside new stores', async () => {
+    const db = await rawDb(svc);
+    const names = Array.from(db.objectStoreNames);
+    db.close();
+    expect(names).toContain('meta');
+    expect(names).toContain('series');
+    expect(names).toContain('folders');
+    expect(names).toContain('symbols');
+    expect(names).toContain('datasets');
+    expect(names).toContain('candles');
+    expect(names).toHaveLength(6);
+  });
+});
+
+describe('WorkspaceDbService — v4→v5 upgrade: data written at v4 is readable after v5 open', () => {
+  it('v4→v5 upgrade path: data written at v4 is readable after v5 open', async () => {
+    // Delete the database first to avoid VersionError from a lingering v5 connection
+    await new Promise<void>((resolve) => {
+      const del = indexedDB.deleteDatabase(DB_NAME_V5);
+      del.onsuccess = () => resolve();
+      del.onerror = () => resolve();
+      del.onblocked = () => resolve();
+    });
+
+    // 1. Seed a v4 database directly (only 4 stores: meta, series, folders, symbols)
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME_V5, 4);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('meta'))
+          db.createObjectStore('meta', { keyPath: 'symbol' });
+        if (!db.objectStoreNames.contains('series'))
+          db.createObjectStore('series', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('folders'))
+          db.createObjectStore('folders', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('symbols'))
+          db.createObjectStore('symbols', { keyPath: 'symbol' });
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(['meta', 'series'], 'readwrite');
+        const metaRecord = workspaceMeta({ symbol: 'ETHUSD' });
+        tx.objectStore('meta').put(metaRecord);
+        tx.objectStore('series').put({
+          key: 'ETHUSD|H1',
+          symbol: 'ETHUSD',
+          tf: 'H1',
+          candles: series(3),
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+
+    // 2. Open at v5 via the service — should trigger upgrade and add datasets+candles
+    const svc5 = new WorkspaceDbService();
+    const ws = await svc5.getWorkspace('ETHUSD');
+    expect(ws).toBeDefined();
+    expect(ws!.symbol).toBe('ETHUSD');
+    expect(ws!.series['H1']).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v5: datasets-store accessors (Task 6)
+// ---------------------------------------------------------------------------
+
+import type { CandleRecord, DatasetRecord } from './market-data-db';
+import { CANDLES_STORE } from './market-data-db';
+
+function datasetRecord(p: Partial<DatasetRecord> = {}): DatasetRecord {
+  return {
+    id: 'XAUUSD|M1|2024',
+    symbol: 'XAUUSD',
+    timeframe: 'M1',
+    year: '2024',
+    size: 1234,
+    etag: 'etag-2024',
+    updatedAt: '2026-06-18T12:00:00Z',
+    ...p,
+  };
+}
+
+/** Adds candle rows directly to the candles store (autoIncrement id). */
+async function seedCandles(records: Omit<CandleRecord, 'id'>[]): Promise<void> {
+  await svc.listMetas(); // ensure schema is open at v5
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 5);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onupgradeneeded = () => reject(new Error('unexpected upgrade'));
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CANDLES_STORE, 'readwrite');
+      const store = tx.objectStore(CANDLES_STORE);
+      for (const r of records) store.add(r);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function countCandlesFor(symbol: string, timeframe: string): Promise<number> {
+  return (await svc.listCandles(symbol, timeframe)).length;
+}
+
+describe('WorkspaceDbService — datasets store accessors (v5)', () => {
+  it('putDataset + getDataset round-trip', async () => {
+    const rec = datasetRecord();
+    await svc.putDataset(rec);
+    expect(await svc.getDataset(rec.id)).toEqual(rec);
+  });
+
+  it('getDataset returns undefined for an unknown id', async () => {
+    expect(await svc.getDataset('NOPE|M1|2000')).toBeUndefined();
+  });
+
+  it('putDataset upserts on the same id', async () => {
+    await svc.putDataset(datasetRecord({ etag: 'old' }));
+    await svc.putDataset(datasetRecord({ etag: 'new' }));
+    const got = await svc.getDataset('XAUUSD|M1|2024');
+    expect(got!.etag).toBe('new');
+    expect(await svc.listDatasets()).toHaveLength(1);
+  });
+
+  it('listDatasets returns all records sorted by id', async () => {
+    await svc.putDataset(datasetRecord({ id: 'XAUUSD|M1|2024', year: '2024' }));
+    await svc.putDataset(datasetRecord({ id: 'XAUUSD|M1|2023', year: '2023' }));
+    await svc.putDataset(datasetRecord({ id: 'XAUUSD|H1|all', timeframe: 'H1', year: 'all' }));
+    const list = await svc.listDatasets();
+    expect(list.map((d) => d.id)).toEqual(['XAUUSD|H1|all', 'XAUUSD|M1|2023', 'XAUUSD|M1|2024']);
+  });
+
+  it('listDatasets is empty by default', async () => {
+    expect(await svc.listDatasets()).toEqual([]);
+  });
+
+  it('deleteDataset removes a record', async () => {
+    await svc.putDataset(datasetRecord());
+    await svc.deleteDataset('XAUUSD|M1|2024');
+    expect(await svc.getDataset('XAUUSD|M1|2024')).toBeUndefined();
+  });
+});
+
+describe('WorkspaceDbService — clearDatasetCandles (re-ingestion dedup)', () => {
+  it('removes only the matching symbol+timeframe candles', async () => {
+    await seedCandles([
+      { symbol: 'XAUUSD', timeframe: 'M1', time: 1, open: 1, high: 1, low: 1, close: 1 },
+      { symbol: 'XAUUSD', timeframe: 'M1', time: 2, open: 1, high: 1, low: 1, close: 1 },
+      { symbol: 'XAUUSD', timeframe: 'H1', time: 3, open: 1, high: 1, low: 1, close: 1 },
+      { symbol: 'EURUSD', timeframe: 'M1', time: 4, open: 1, high: 1, low: 1, close: 1 },
+    ]);
+
+    await svc.clearDatasetCandles('XAUUSD', 'M1');
+
+    expect(await countCandlesFor('XAUUSD', 'M1')).toBe(0);
+    // siblings untouched
+    expect(await countCandlesFor('XAUUSD', 'H1')).toBe(1);
+    expect(await countCandlesFor('EURUSD', 'M1')).toBe(1);
+  });
+
+  it('is a no-op when there are no matching candles', async () => {
+    await seedCandles([
+      { symbol: 'EURUSD', timeframe: 'M1', time: 1, open: 1, high: 1, low: 1, close: 1 },
+    ]);
+    await svc.clearDatasetCandles('XAUUSD', 'M1');
+    expect(await countCandlesFor('EURUSD', 'M1')).toBe(1);
+  });
+
+  it('does not let an M1 query clear M15 candles (compound-index prefix safety)', async () => {
+    await seedCandles([
+      { symbol: 'XAUUSD', timeframe: 'M1', time: 1, open: 1, high: 1, low: 1, close: 1 },
+      { symbol: 'XAUUSD', timeframe: 'M15', time: 2, open: 1, high: 1, low: 1, close: 1 },
+    ]);
+    await svc.clearDatasetCandles('XAUUSD', 'M1');
+    expect(await countCandlesFor('XAUUSD', 'M1')).toBe(0);
+    expect(await countCandlesFor('XAUUSD', 'M15')).toBe(1);
+  });
+});
