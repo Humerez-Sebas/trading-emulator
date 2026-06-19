@@ -1,3 +1,4 @@
+/* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
 import { Inject, Injectable } from '@angular/core';
 import { environment } from '../../../environments/environment';
 import { MARKET_DATA_BASE_URL } from './market-data.config';

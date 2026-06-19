@@ -163,9 +163,7 @@ export class IntervalDialogComponent {
       this.progress.set(null);
       this.apply();
     } catch (e) {
-      this.downloadError.set(
-        (e as Error).message || 'La descarga falló. Inténtalo de nuevo.',
-      );
+      this.downloadError.set((e as Error).message || 'La descarga falló. Inténtalo de nuevo.');
       this.downloading.set(false);
       this.progress.set(null);
     }

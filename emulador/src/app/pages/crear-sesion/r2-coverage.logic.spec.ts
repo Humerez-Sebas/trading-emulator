@@ -37,7 +37,7 @@ describe('coverageRange', () => {
     const seriesByTf: Partial<Record<Timeframe, Candle[]>> = {
       M1: [candle(1000), candle(2000)],
       H1: [candle(1200), candle(1800)],
-      D1: [candle(1, ), candle(5000)] as Candle[],
+      D1: [candle(1), candle(5000)] as Candle[],
     };
     const range = coverageRange(seriesByTf, ['M1', 'H1']);
     expect(range).toEqual({ from: 1200, to: 1800 });

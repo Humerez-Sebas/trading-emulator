@@ -127,10 +127,7 @@ describe('market reducer: custom timeframe', () => {
     const s = reducer(undefined, { type: '@@init' } as any);
     const pending = reducer(s, MarketActions.changeCustomTimeframe({ minutes: 45 }));
     const candles = series(2);
-    const next = reducer(
-      pending,
-      MarketActions.customTimeframeGenerated({ minutes: 45, candles }),
-    );
+    const next = reducer(pending, MarketActions.customTimeframeGenerated({ minutes: 45, candles }));
     expect(next.customSeries).toEqual(candles);
   });
 

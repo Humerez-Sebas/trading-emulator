@@ -31,6 +31,7 @@ export class MissingDatasetDialogComponent {
   error = input('');
 
   download = output<void>();
+  // eslint-disable-next-line @angular-eslint/no-output-native -- `cancel` is the established API for this dialog (template + SesionesPageComponent both bind to it); renaming would touch call sites outside this change's scope.
   cancel = output<void>();
 
   /** Human label for one missing partition, e.g. "XAUUSD · M1 · 2024". */

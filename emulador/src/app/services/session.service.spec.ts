@@ -96,7 +96,11 @@ describe('buildSessionFile', () => {
       startRange: 1704067200000,
       endRange: 1735689600000,
     });
-    expect(file.state).toEqual({ replayTime: 1705000000000, currentTimeframe: 60, playbackSpeed: 1.5 });
+    expect(file.state).toEqual({
+      replayTime: 1705000000000,
+      currentTimeframe: 60,
+      playbackSpeed: 1.5,
+    });
     expect(file.trading).toEqual({ trades: [{ id: 't1' }], pendingOrders: [{ id: 'o1' }] });
     // no candles anywhere in the serialized file
     expect(JSON.stringify(file)).not.toMatch(/candle|"open"|"high"|"low"|"close"/i);
@@ -133,7 +137,9 @@ describe('missingDatasets', () => {
       ds({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024' }),
       ds({ id: 'XAUUSD|H1|all', timeframe: 'H1', year: 'all' }),
     ];
-    expect(missingDatasets(required, local)).toEqual([{ symbol: 'XAUUSD', timeframe: 'M1', year: 2025 }]);
+    expect(missingDatasets(required, local)).toEqual([
+      { symbol: 'XAUUSD', timeframe: 'M1', year: 2025 },
+    ]);
   });
 });
 
@@ -351,7 +357,9 @@ describe('SessionService.findMissingDatasets', () => {
     await db.putDataset(ds({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024' }));
     await db.putDataset(ds({ id: 'XAUUSD|D1|all', timeframe: 'D1', year: 'all' }));
     const svc = new SessionService(db);
-    const file = buildSessionFile(snapshot({ anchorTimeframes: ['M1', 'H1', 'D1'], years: [2024] }));
+    const file = buildSessionFile(
+      snapshot({ anchorTimeframes: ['M1', 'H1', 'D1'], years: [2024] }),
+    );
 
     const missing = await svc.findMissingDatasets(file);
 

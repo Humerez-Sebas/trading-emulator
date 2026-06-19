@@ -33,7 +33,9 @@ describe('buildCatalog', () => {
   };
 
   it('flags a downloaded partition with a stale local etag as updateAvailable', () => {
-    const datasets = [ds({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024', etag: 'e-2024-OLD' })];
+    const datasets = [
+      ds({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024', etag: 'e-2024-OLD' }),
+    ];
     const catalog = buildCatalog(manifest, datasets);
 
     expect(catalog).toHaveLength(1);
@@ -41,28 +43,52 @@ describe('buildCatalog', () => {
     expect(xau.symbol).toBe('XAUUSD');
 
     const m1_2024 = xau.partitions.find((p) => p.tf === 'm1' && p.partition === '2024');
-    expect(m1_2024).toEqual({ tf: 'm1', partition: '2024', downloaded: true, updateAvailable: true });
+    expect(m1_2024).toEqual({
+      tf: 'm1',
+      partition: '2024',
+      downloaded: true,
+      updateAvailable: true,
+    });
   });
 
   it('marks a manifest partition with no local record as not downloaded', () => {
-    const datasets = [ds({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024', etag: 'e-2024-OLD' })];
+    const datasets = [
+      ds({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024', etag: 'e-2024-OLD' }),
+    ];
     const catalog = buildCatalog(manifest, datasets);
     const xau = catalog[0];
 
     const m1_2025 = xau.partitions.find((p) => p.tf === 'm1' && p.partition === '2025');
-    expect(m1_2025).toEqual({ tf: 'm1', partition: '2025', downloaded: false, updateAvailable: false });
+    expect(m1_2025).toEqual({
+      tf: 'm1',
+      partition: '2025',
+      downloaded: false,
+      updateAvailable: false,
+    });
 
     const h1_all = xau.partitions.find((p) => p.tf === 'h1' && p.partition === 'all');
-    expect(h1_all).toEqual({ tf: 'h1', partition: 'all', downloaded: false, updateAvailable: false });
+    expect(h1_all).toEqual({
+      tf: 'h1',
+      partition: 'all',
+      downloaded: false,
+      updateAvailable: false,
+    });
   });
 
   it('marks a downloaded partition with a matching etag as up to date', () => {
-    const datasets = [ds({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024', etag: 'e-2024-NEW' })];
+    const datasets = [
+      ds({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024', etag: 'e-2024-NEW' }),
+    ];
     const catalog = buildCatalog(manifest, datasets);
     const xau = catalog[0];
 
     const m1_2024 = xau.partitions.find((p) => p.tf === 'm1' && p.partition === '2024');
-    expect(m1_2024).toEqual({ tf: 'm1', partition: '2024', downloaded: true, updateAvailable: false });
+    expect(m1_2024).toEqual({
+      tf: 'm1',
+      partition: '2024',
+      downloaded: true,
+      updateAvailable: false,
+    });
   });
 
   it('produces partitions in m1 (sorted) -> h1 -> d1 order', () => {
@@ -86,13 +112,20 @@ describe('buildCatalog', () => {
         XAUUSD: manifest.symbols['XAUUSD'],
       },
     };
-    const datasets = [ds({ id: 'EURUSD|D1|all', symbol: 'EURUSD', timeframe: 'D1', year: 'all', etag: 'e-d1' })];
+    const datasets = [
+      ds({ id: 'EURUSD|D1|all', symbol: 'EURUSD', timeframe: 'D1', year: 'all', etag: 'e-d1' }),
+    ];
     const catalog = buildCatalog(multiManifest, datasets);
 
     expect(catalog.map((c) => c.symbol)).toEqual(['EURUSD', 'XAUUSD']);
 
     const eurD1All = catalog[0].partitions.find((p) => p.tf === 'd1' && p.partition === 'all');
-    expect(eurD1All).toEqual({ tf: 'd1', partition: 'all', downloaded: true, updateAvailable: false });
+    expect(eurD1All).toEqual({
+      tf: 'd1',
+      partition: 'all',
+      downloaded: true,
+      updateAvailable: false,
+    });
   });
 
   it('returns an empty catalog for an empty manifest', () => {

@@ -79,8 +79,7 @@ function makeService(opts: {
   download?: ReturnType<typeof vi.fn>;
   worker?: FakeWorker;
 }) {
-  const download =
-    opts.download ?? vi.fn(() => Promise.resolve(new Uint8Array([1, 2, 3]).buffer));
+  const download = opts.download ?? vi.fn(() => Promise.resolve(new Uint8Array([1, 2, 3]).buffer));
   const worker = opts.worker ?? new FakeWorker();
   const svc = new DataOnboardingService(
     opts.db as never,

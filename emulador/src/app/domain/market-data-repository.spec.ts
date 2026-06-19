@@ -7,7 +7,7 @@
  *  3. CsvMarketDataRepository — delegates to WorkspaceDbService.getWorkspace
  */
 import 'fake-indexeddb/auto';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WorkspaceDbService } from '../services/workspace-db.service';
 import { workspaceDbStub } from '../testing/workspace-db.stub';
 import { series } from '../testing/fixtures';
@@ -53,11 +53,15 @@ async function seedCandlesDb(records: Omit<CandleRecord, 'id'>[]): Promise<IDBDa
         db.createObjectStore('symbols', { keyPath: 'symbol' });
       if (!db.objectStoreNames.contains('datasets')) {
         const datasets = db.createObjectStore('datasets', { keyPath: 'id' });
-        datasets.createIndex('by_symbol_tf_year', ['symbol', 'timeframe', 'year'], { unique: false });
+        datasets.createIndex('by_symbol_tf_year', ['symbol', 'timeframe', 'year'], {
+          unique: false,
+        });
       }
       if (!db.objectStoreNames.contains(CANDLES_STORE)) {
         const candles = db.createObjectStore(CANDLES_STORE, { keyPath: 'id', autoIncrement: true });
-        candles.createIndex(CANDLES_BY_SYMBOL_TF_TIME, ['symbol', 'timeframe', 'time'], { unique: false });
+        candles.createIndex(CANDLES_BY_SYMBOL_TF_TIME, ['symbol', 'timeframe', 'time'], {
+          unique: false,
+        });
       }
     };
 
@@ -189,7 +193,7 @@ describe('IndexedDbMarketDataRepository.getCandles', () => {
 
     const times = candles.map((c) => c.time);
     expect(times).not.toContain(7000); // M15 candle must be excluded
-    expect(candles).toHaveLength(3);   // only the three M1 candles
+    expect(candles).toHaveLength(3); // only the three M1 candles
   });
 });
 

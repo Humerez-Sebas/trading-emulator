@@ -16,7 +16,12 @@ import {
   selectSessionStats,
   selectTradingData,
 } from '../../state/selectors';
-import { AnchorTf, SessionService, snapshotFromState, yearsInRange } from '../../services/session.service';
+import {
+  AnchorTf,
+  SessionService,
+  snapshotFromState,
+  yearsInRange,
+} from '../../services/session.service';
 import { TrashIconComponent } from '../icons/trash-icon.component';
 import { DialogService } from '../ui/dialog.service';
 import { ModalComponent } from '../ui/modal.component';

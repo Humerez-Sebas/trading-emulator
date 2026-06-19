@@ -1,3 +1,4 @@
+/* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
 import { inject, Inject, Injectable, InjectionToken } from '@angular/core';
 import { Timeframe } from '../../models';
 import { DatasetRecord } from '../market-data-db';
@@ -87,7 +88,8 @@ export class DataOnboardingService {
   constructor(
     private readonly db: WorkspaceDbService = inject(WorkspaceDbService),
     private readonly downloads: ParquetDownloadService = inject(ParquetDownloadService),
-    @Inject(PARQUET_WORKER_FACTORY) private readonly workerFactory: WorkerFactory = spawnParquetWorker,
+    @Inject(PARQUET_WORKER_FACTORY)
+    private readonly workerFactory: WorkerFactory = spawnParquetWorker,
     // The manifest helpers are pure lookups (no I/O, no baseUrl needed), so a
     // plain instance is the default — keeps `runJob` injection-context free for
     // unit tests that construct the service with `new`.

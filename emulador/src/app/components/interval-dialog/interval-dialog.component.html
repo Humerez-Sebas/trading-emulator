@@ -21,9 +21,7 @@
 
       @if (neededAnchor(); as anchor) {
         <div class="notice">
-          <p>
-            Necesitas {{ anchor }} para {{ formatIntervalShort(minutes()!) }}.
-          </p>
+          <p>Necesitas {{ anchor }} para {{ formatIntervalShort(minutes()!) }}.</p>
           @if (downloadError()) {
             <p class="error" role="alert">{{ downloadError() }}</p>
           }

@@ -89,7 +89,8 @@ describe('parseInterval', () => {
     expect(parseInterval('3d')).toBe(4320);
   });
   it('rejects junk, zero, fractional, out-of-range', () => {
-    for (const bad of ['', 'abc', '0', '-5', '4.5', '2W', '99999999']) expect(parseInterval(bad)).toBeNull();
+    for (const bad of ['', 'abc', '0', '-5', '4.5', '2W', '99999999'])
+      expect(parseInterval(bad)).toBeNull();
   });
 });
 
@@ -113,11 +114,11 @@ describe('formatIntervalShort', () => {
 
 describe('loadedTfForMinutes', () => {
   it('returns the loaded TF matching the exact minutes', () => {
-    expect(loadedTfForMinutes(60, ['M1','H1','D1'])).toBe('H1');
-    expect(loadedTfForMinutes(1440, ['H1','D1'])).toBe('D1');
+    expect(loadedTfForMinutes(60, ['M1', 'H1', 'D1'])).toBe('H1');
+    expect(loadedTfForMinutes(1440, ['H1', 'D1'])).toBe('D1');
   });
   it('null when no loaded TF matches', () => {
-    expect(loadedTfForMinutes(45, ['H1','D1'])).toBeNull();
+    expect(loadedTfForMinutes(45, ['H1', 'D1'])).toBeNull();
     expect(loadedTfForMinutes(60, ['D1'])).toBeNull();
   });
 });

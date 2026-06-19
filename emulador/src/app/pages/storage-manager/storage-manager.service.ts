@@ -1,3 +1,4 @@
+/* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
 import { inject, Injectable } from '@angular/core';
 import type { DatasetRecord } from '../../services/market-data-db';
 import { WorkspaceDbService } from '../../services/workspace-db.service';

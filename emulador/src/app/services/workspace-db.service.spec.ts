@@ -281,7 +281,8 @@ async function rawDb(svcInstance: WorkspaceDbService): Promise<IDBDatabase> {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
     // Should never fire since service already upgraded, but guard for safety
-    req.onupgradeneeded = () => reject(new Error('rawDb: unexpected upgrade — service should already be at v5'));
+    req.onupgradeneeded = () =>
+      reject(new Error('rawDb: unexpected upgrade — service should already be at v5'));
   });
 }
 
@@ -474,11 +475,7 @@ describe('WorkspaceDbService — datasets store accessors (v5)', () => {
     await svc.putDataset(datasetRecord({ id: 'XAUUSD|M1|2023', year: '2023' }));
     await svc.putDataset(datasetRecord({ id: 'XAUUSD|H1|all', timeframe: 'H1', year: 'all' }));
     const list = await svc.listDatasets();
-    expect(list.map((d) => d.id)).toEqual([
-      'XAUUSD|H1|all',
-      'XAUUSD|M1|2023',
-      'XAUUSD|M1|2024',
-    ]);
+    expect(list.map((d) => d.id)).toEqual(['XAUUSD|H1|all', 'XAUUSD|M1|2023', 'XAUUSD|M1|2024']);
   });
 
   it('listDatasets is empty by default', async () => {

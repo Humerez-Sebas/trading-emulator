@@ -388,10 +388,7 @@ export class WorkspaceDbService {
    */
   async listCandles(symbol: string, timeframe: string): Promise<CandleRecord[]> {
     const db = await this.open();
-    const range = IDBKeyRange.bound(
-      [symbol, timeframe, -Infinity],
-      [symbol, timeframe, +Infinity],
-    );
+    const range = IDBKeyRange.bound([symbol, timeframe, -Infinity], [symbol, timeframe, +Infinity]);
     return this.request<CandleRecord[]>(
       db
         .transaction(CANDLES_STORE, 'readonly')
@@ -413,10 +410,7 @@ export class WorkspaceDbService {
     const db = await this.open();
     const tx = db.transaction(CANDLES_STORE, 'readwrite');
     const index = tx.objectStore(CANDLES_STORE).index(CANDLES_BY_SYMBOL_TF_TIME);
-    const range = IDBKeyRange.bound(
-      [symbol, timeframe, -Infinity],
-      [symbol, timeframe, +Infinity],
-    );
+    const range = IDBKeyRange.bound([symbol, timeframe, -Infinity], [symbol, timeframe, +Infinity]);
     const cursorReq = index.openCursor(range);
     cursorReq.onsuccess = () => {
       const cursor = cursorReq.result;
