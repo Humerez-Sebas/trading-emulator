@@ -19,8 +19,20 @@ import {
 } from '../../services/offline-catalog';
 import { authFeature } from '../../state/auth/auth.reducer';
 import { environment } from '../../../environments/environment';
+import { MarketDataRepository } from '../../domain/market-data.repository';
+import { StorageManagerService } from '../storage-manager/storage-manager.service';
+import { coverageRange, isEndValid, isStartValid } from './r2-coverage.logic';
 
 type Step = 1 | 2 | 3;
+
+/** Anchors the R2 pipeline ingests/serves — M1/H1/D1 only (see Task 3-6 specs). */
+const R2_ANCHORS: Timeframe[] = ['M1', 'H1', 'D1'];
+
+/** One pickable card in the R2 step 1 list: a downloaded asset + its anchors. */
+interface R2Asset {
+  symbol: string;
+  tfs: Timeframe[];
+}
 
 /**
  * Below this many expected candles the freshly downloaded chunks are ALSO
@@ -52,6 +64,15 @@ export class CrearSesionPageComponent {
   private route = inject(ActivatedRoute);
   private csvLoader = inject(CsvLoaderService);
   private status = this.store.selectSignal(authFeature.selectStatus);
+  private repo = inject(MarketDataRepository);
+  private storageManager = inject(StorageManagerService);
+
+  /**
+   * R2 branch (Task 6): the wizard re-sources from already-downloaded R2
+   * datasets instead of the backend harvester / uploaded CSVs. The csv and
+   * backend branches below stay fully intact for `dataSource === 'csv'`.
+   */
+  isR2 = environment.dataSource === 'r2';
 
   /** csv = create from uploaded files / catalog; backend = stored harvester. */
   source = signal<'backend' | 'csv'>(environment.offlineOnly ? 'csv' : 'backend');
@@ -79,6 +100,20 @@ export class CrearSesionPageComponent {
   progress = signal<{ loaded: number; total: number; tf: string } | null>(null);
   downloadError = signal('');
 
+  // ---- R2 branch state ----
+  /** Step 1: downloaded assets (unique symbols from `listDatasets`). */
+  r2Assets = signal<R2Asset[]>([]);
+  /** The picked R2 asset's symbol, or null before step 1 is done. */
+  r2Symbol = signal<string | null>(null);
+  /** Downloaded anchors for the picked symbol (M1/H1/D1 subset), in order. */
+  r2Tfs = signal<Timeframe[]>([]);
+  /** Candles per anchor, read once via `MarketDataRepository.getCandles` and
+   * cached here for both the coverage computation AND the confirm() reuse —
+   * never re-read. */
+  seriesByTf = signal<Partial<Record<Timeframe, Candle[]>>>({});
+  r2Loading = signal(false);
+  r2Error = signal('');
+
   /** TFs offered: parsed CSV / catalog coverage in CSV mode, else the backend symbol. */
   coverage = computed<TfCoverage[]>(() =>
     this.source() === 'csv' && this.parsedFiles().length
@@ -86,8 +121,14 @@ export class CrearSesionPageComponent {
       : (this.selected()?.cobertura ?? []),
   );
 
+  /** R2: intersection of the selected anchors' cached series (seconds). */
+  r2Range = computed(() =>
+    coverageRange(this.seriesByTf(), [...this.selectedTfs()] as Timeframe[]),
+  );
+
   /** Intersection of the selected TFs' ranges, for the date validation. */
   dateRange = computed(() => {
+    if (this.isR2) return this.r2Range();
     const chosen = this.coverage().filter((c) => this.selectedTfs().has(c.tf));
     if (!chosen.length) return null;
     return {
@@ -106,7 +147,9 @@ export class CrearSesionPageComponent {
   dateValid = computed(() => {
     const range = this.dateRange();
     const t = this.startEpoch();
-    if (!range || t === null) return false;
+    if (t === null) return false;
+    if (this.isR2) return isStartValid(range, t);
+    if (!range) return false;
     return t >= range.from && t <= range.to;
   });
 
@@ -124,7 +167,9 @@ export class CrearSesionPageComponent {
     const range = this.dateRange();
     const start = this.startEpoch();
     const end = this.endEpoch();
-    if (!range || start === null || end === null) return false;
+    if (start === null || end === null) return false;
+    if (this.isR2) return isEndValid(range, start, end);
+    if (!range) return false;
     // lexicographic ISO-date compare allows ending ON the last covered day
     return end > start && this.endDate() <= this.isoDate(range.to);
   });
@@ -139,6 +184,10 @@ export class CrearSesionPageComponent {
 
   constructor() {
     const preselect = this.route.snapshot.queryParamMap.get('symbol');
+    if (this.isR2) {
+      void this.loadR2Assets(preselect);
+      return;
+    }
     if (this.csvOnly()) {
       this.source.set('csv');
       this.loadCatalog(preselect);
@@ -159,6 +208,88 @@ export class CrearSesionPageComponent {
       },
       error: () => this.state.set('error'),
     });
+  }
+
+  /** R2 step 1: discover downloaded assets (unique symbol + its anchors). */
+  private async loadR2Assets(preselect: string | null): Promise<void> {
+    try {
+      const datasets = await this.storageManager.listDatasets();
+      const bySymbol = new Map<string, Set<Timeframe>>();
+      for (const d of datasets) {
+        const tf = d.timeframe as Timeframe;
+        if (!R2_ANCHORS.includes(tf)) continue; // anchors only: M1/H1/D1
+        if (!bySymbol.has(d.symbol)) bySymbol.set(d.symbol, new Set());
+        bySymbol.get(d.symbol)!.add(tf);
+      }
+      const assets: R2Asset[] = [...bySymbol.entries()]
+        .map(([symbol, tfs]) => ({
+          symbol,
+          tfs: R2_ANCHORS.filter((tf) => tfs.has(tf)),
+        }))
+        .sort((a, b) => a.symbol.localeCompare(b.symbol));
+      this.r2Assets.set(assets);
+      this.state.set('ok');
+      if (preselect) {
+        const match = assets.find((a) => a.symbol === preselect);
+        if (match) await this.pickR2Asset(match);
+      }
+    } catch (e) {
+      this.r2Error.set((e as Error).message || 'No se pudieron leer los activos descargados.');
+      this.state.set('ok'); // render the (empty) step with the error, not a hard error screen
+      this.r2Assets.set([]);
+    }
+  }
+
+  /** R2 step 1 -> 2: read+cache each downloaded anchor's candles once. */
+  async pickR2Asset(asset: R2Asset): Promise<void> {
+    this.r2Loading.set(true);
+    this.r2Error.set('');
+    try {
+      const entries = await Promise.all(
+        asset.tfs.map(async (tf) => [tf, await this.repo.getCandles(asset.symbol, tf)] as const),
+      );
+      const map: Partial<Record<Timeframe, Candle[]>> = {};
+      for (const [tf, candles] of entries) map[tf] = candles;
+      this.seriesByTf.set(map);
+      this.r2Symbol.set(asset.symbol);
+      this.r2Tfs.set(asset.tfs);
+      this.selectedTfs.set(new Set(asset.tfs));
+      this.defaultDate();
+      this.step.set(2);
+    } catch (e) {
+      this.r2Error.set((e as Error).message || 'No se pudieron leer las velas descargadas.');
+    }
+    this.r2Loading.set(false);
+  }
+
+  /**
+   * R2 confirm: build `thenLoad` from the CACHED series (selected TFs only —
+   * never re-read from the repository) and dispatch `switchAsset` BEFORE
+   * navigating, avoiding the known restore race.
+   */
+  async confirmR2(): Promise<void> {
+    const symbol = this.r2Symbol();
+    const start = this.startEpoch();
+    if (!symbol || start === null) return;
+    const tfs = [...this.selectedTfs()] as Timeframe[];
+    const series = this.seriesByTf();
+    const pending: PendingCsv[] = tfs.map((tf) => ({
+      tf,
+      candles: series[tf] ?? [],
+      fileName: `${symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
+    }));
+
+    this.store.dispatch(
+      WorkspacesActions.switchAsset({
+        symbol,
+        selectedTfs: tfs,
+        thenLoad: pending,
+        thenNewSession: { name: this.sessionName().trim() || null },
+        thenGoTo: start,
+        thenSessionEnd: this.endEpoch() ?? undefined,
+      }),
+    );
+    await this.router.navigateByUrl('/');
   }
 
   private async loadCatalog(preselect: string | null): Promise<void> {
@@ -229,7 +360,7 @@ export class CrearSesionPageComponent {
   }
 
   next(): void {
-    if (this.step() === 1 && this.selected()) this.step.set(2);
+    if (this.step() === 1 && (this.isR2 ? this.r2Symbol() : this.selected())) this.step.set(2);
     else if (this.step() === 2 && this.step2Valid()) this.step.set(3);
   }
 

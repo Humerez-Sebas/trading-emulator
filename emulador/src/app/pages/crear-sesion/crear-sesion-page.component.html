@@ -2,7 +2,7 @@
   <header class="head">
     <h1>Nueva sesión de backtesting</h1>
     <p class="steps" aria-live="polite">Paso {{ step() }} de 3</p>
-    @if (source() !== 'csv') {
+    @if (isR2 || source() !== 'csv') {
       <div class="bar" aria-hidden="true">
         <span class="fill" [style.width.%]="(step() / 3) * 100"></span>
       </div>
@@ -25,19 +25,50 @@
           <section aria-labelledby="step1-title">
             <h2 id="step1-title">Elige el activo</h2>
 
-            @if (!csvOnly()) {
-              <ui-segmented
-                ariaLabel="Origen de los datos"
-                [options]="[
-                  { value: 'backend', label: 'Catálogo' },
-                  { value: 'csv', label: 'Subir CSV' },
-                ]"
-                [value]="source()"
-                (valueChange)="source.set($any($event))"
-              />
-            }
+            @if (isR2) {
+              <!-- rama R2: solo activos ya descargados localmente -->
+              @if (r2Error()) {
+                <p class="csv-error" role="alert">{{ r2Error() }}</p>
+              }
+              @if (!r2Assets().length) {
+                <div class="empty">
+                  <p>Todavía no descargaste ningún activo.</p>
+                  <p class="hint">
+                    Ve a <strong>Mercados</strong> y descarga al menos una temporalidad (M1, H1 o
+                    D1) antes de crear una sesión.
+                  </p>
+                </div>
+              } @else {
+                <div class="assets" role="radiogroup" aria-label="Activo de la sesión">
+                  @for (a of r2Assets(); track a.symbol) {
+                    <button
+                      class="asset"
+                      role="radio"
+                      [attr.aria-checked]="r2Symbol() === a.symbol"
+                      [class.picked]="r2Symbol() === a.symbol"
+                      [disabled]="r2Loading()"
+                      (click)="pickR2Asset(a)"
+                    >
+                      <span class="name">{{ a.symbol }}</span>
+                      <span class="tfs">{{ a.tfs.join(', ') }}</span>
+                    </button>
+                  }
+                </div>
+              }
+            } @else {
+              @if (!csvOnly()) {
+                <ui-segmented
+                  ariaLabel="Origen de los datos"
+                  [options]="[
+                    { value: 'backend', label: 'Catálogo' },
+                    { value: 'csv', label: 'Subir CSV' },
+                  ]"
+                  [value]="source()"
+                  (valueChange)="source.set($any($event))"
+                />
+              }
 
-            @if (source() === 'csv') {
+              @if (source() === 'csv') {
               <!-- símbolos ya subidos (catálogo offline) -->
               @if (catalog().length) {
                 <h2>Tus activos</h2>
@@ -143,27 +174,43 @@
                 </div>
               }
             }
+            }
           </section>
         }
         @case (2) {
           <section aria-labelledby="step2-title">
-            <h2 id="step2-title">{{ selected()?.name }} — temporalidades y fecha de inicio</h2>
+            <h2 id="step2-title">
+              {{ isR2 ? r2Symbol() : selected()?.name }} — temporalidades y fecha de inicio
+            </h2>
             <p class="help">
               El gráfico abrirá en la fecha elegida con el histórico previo detrás.
             </p>
 
             <fieldset class="tf-set">
               <legend>Temporalidades</legend>
-              @for (c of coverage(); track c.tf) {
-                <label class="tf-row">
-                  <input
-                    type="checkbox"
-                    [checked]="selectedTfs().has(c.tf)"
-                    (change)="toggleTf(c.tf)"
-                  />
-                  <span class="tf">{{ c.tf }}</span>
-                  <span class="range">{{ rangeLabel(c) }}</span>
-                </label>
+              @if (isR2) {
+                @for (tf of r2Tfs(); track tf) {
+                  <label class="tf-row">
+                    <input
+                      type="checkbox"
+                      [checked]="selectedTfs().has(tf)"
+                      (change)="toggleTf(tf)"
+                    />
+                    <span class="tf">{{ tf }}</span>
+                  </label>
+                }
+              } @else {
+                @for (c of coverage(); track c.tf) {
+                  <label class="tf-row">
+                    <input
+                      type="checkbox"
+                      [checked]="selectedTfs().has(c.tf)"
+                      (change)="toggleTf(c.tf)"
+                    />
+                    <span class="tf">{{ c.tf }}</span>
+                    <span class="range">{{ rangeLabel(c) }}</span>
+                  </label>
+                }
               }
             </fieldset>
 
@@ -223,11 +270,11 @@
             <dl class="summary">
               <div>
                 <dt>Activo</dt>
-                <dd>{{ selected()?.name }}</dd>
+                <dd>{{ isR2 ? r2Symbol() : selected()?.name }}</dd>
               </div>
               <div>
                 <dt>Temporalidades</dt>
-                <dd>{{ chosenTfs().join(', ') }}</dd>
+                <dd>{{ (isR2 ? r2Tfs() : chosenTfs()).join(', ') }}</dd>
               </div>
               <div>
                 <dt>Inicio del replay</dt>
@@ -239,11 +286,17 @@
               </div>
               <div>
                 <dt>Histórico</dt>
-                <dd>Se descarga TODO el disponible (pasado scrolleable + futuro para avanzar)</dd>
+                <dd>
+                  {{
+                    isR2
+                      ? 'Se usa lo ya descargado en este navegador (pasado scrolleable + futuro para avanzar)'
+                      : 'Se descarga TODO el disponible (pasado scrolleable + futuro para avanzar)'
+                  }}
+                </dd>
               </div>
             </dl>
 
-            @if (source() !== 'csv') {
+            @if (!isR2 && source() !== 'csv') {
               @if (downloading()) {
                 <div class="progress" role="status">
                   <p>Descargando {{ progress()?.tf }}… {{ progressPct() }}%</p>
@@ -274,7 +327,10 @@
             appButton
             variant="primary"
             (click)="next()"
-            [disabled]="(step() === 1 && !selected()) || (step() === 2 && !step2Valid())"
+            [disabled]="
+              (step() === 1 && !(isR2 ? r2Symbol() : selected())) ||
+              (step() === 2 && !step2Valid())
+            "
           >
             Siguiente
           </button>
@@ -282,7 +338,7 @@
           <button
             appButton
             variant="primary"
-            (click)="source() === 'csv' ? confirmCsv() : confirm()"
+            (click)="isR2 ? confirmR2() : source() === 'csv' ? confirmCsv() : confirm()"
             [disabled]="downloading()"
           >
             {{ downloading() ? 'Descargando…' : 'Crear sesión' }}

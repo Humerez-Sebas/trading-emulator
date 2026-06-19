@@ -10,6 +10,18 @@ import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import { backendSymbol, tfCoverage, series, workspaceMeta } from '../../testing/fixtures';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { OfflineSymbol } from '../../services/offline-catalog';
+import { environment } from '../../../environments/environment';
+import { MarketDataRepository } from '../../domain/market-data.repository';
+import { StorageManagerService } from '../storage-manager/storage-manager.service';
+
+/** Stub repository/storage-manager: unused by the csv/backend branch tests
+ * below, but the component now injects them unconditionally. */
+function makeMarketDataRepositoryStub() {
+  return { getCandles: vi.fn().mockResolvedValue([]) };
+}
+function makeStorageManagerStub() {
+  return { listDatasets: vi.fn().mockResolvedValue([]) };
+}
 
 /** Builds a fake <input type=file> change event from CSV texts. */
 function csvFileEvent(files: { name: string; text: string }[]): Event {
@@ -92,6 +104,11 @@ function makeApiStub(
 }
 
 describe('CrearSesionPageComponent', () => {
+  // This suite covers the csv/backend branches exclusively; force that data
+  // source (dev env defaults to 'r2', which renders the separate R2 branch
+  // covered by its own tests / browser validation per the Task 6 brief).
+  const originalDataSource = environment.dataSource;
+
   let store: MockStore;
   let dispatch: ReturnType<typeof vi.spyOn>;
   let dbStub: ReturnType<typeof workspaceDbStub>;
@@ -105,6 +122,7 @@ describe('CrearSesionPageComponent', () => {
       dbOverride?: Partial<ReturnType<typeof workspaceDbStub>>;
     } = {},
   ) {
+    environment.dataSource = 'csv';
     dbStub = workspaceDbStub();
     if (options.dbOverride) Object.assign(dbStub, options.dbOverride);
     routerStub = { navigateByUrl: vi.fn().mockResolvedValue(undefined) };
@@ -117,6 +135,8 @@ describe('CrearSesionPageComponent', () => {
         { provide: WorkspaceDbService, useValue: dbStub },
         { provide: Router, useValue: routerStub },
         { provide: ActivatedRoute, useValue: makeRoute(options.routeSymbol ?? null) },
+        { provide: MarketDataRepository, useValue: makeMarketDataRepositoryStub() },
+        { provide: StorageManagerService, useValue: makeStorageManagerStub() },
       ],
     });
     store = TestBed.inject(MockStore);
@@ -125,6 +145,7 @@ describe('CrearSesionPageComponent', () => {
   }
 
   afterEach(() => {
+    environment.dataSource = originalDataSource;
     TestBed.resetTestingModule();
   });
 
@@ -412,6 +433,7 @@ describe('CrearSesionPageComponent', () => {
   // ---- confirm() — large dataset (>= 200k, hydrateFromDb path) ----
 
   it('confirm() uses hydrateFromDb path when total >= 200k', async () => {
+    environment.dataSource = 'csv';
     // Create a symbol with >= 200k velas
     const bigSymbol = backendSymbol({
       name: 'BIGASSET',
@@ -442,6 +464,8 @@ describe('CrearSesionPageComponent', () => {
         { provide: WorkspaceDbService, useValue: dbStub },
         { provide: Router, useValue: { navigateByUrl: vi.fn().mockResolvedValue(undefined) } },
         { provide: ActivatedRoute, useValue: makeRoute(null) },
+        { provide: MarketDataRepository, useValue: makeMarketDataRepositoryStub() },
+        { provide: StorageManagerService, useValue: makeStorageManagerStub() },
       ],
     });
     store = TestBed.inject(MockStore);
