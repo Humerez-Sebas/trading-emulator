@@ -94,6 +94,7 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
+            "setupFiles": ["src/test-setup.ts"],
             "coverageInclude": [
               "src/app/state/**/*.ts",
               "src/app/services/**/*.ts",
