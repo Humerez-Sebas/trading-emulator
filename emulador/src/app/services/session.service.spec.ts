@@ -8,8 +8,10 @@ import {
   EXPORTED_WITH,
   missingDatasets,
   parseSessionText,
+  restorePlan,
   SESSION_VERSION,
   SessionService,
+  snapshotFromState,
   type SessionSnapshot,
 } from './session.service';
 
@@ -110,6 +112,202 @@ describe('missingDatasets', () => {
       ds({ id: 'XAUUSD|H1|all', timeframe: 'H1', year: 'all' }),
     ];
     expect(missingDatasets(required, local)).toEqual([{ symbol: 'XAUUSD', timeframe: 'M1', year: 2025 }]);
+  });
+});
+
+describe('snapshotFromState', () => {
+  function stateInput(p: Partial<Parameters<typeof snapshotFromState>[0]> = {}) {
+    return {
+      symbol: 'XAUUSD',
+      initialBalance: 10000,
+      startRangeSec: 1704067200,
+      endRangeSec: 1735689600,
+      replayTimeSec: 1_700_000_000,
+      activeTf: 'H1' as const,
+      customTfMinutes: null,
+      playbackSpeed: 1.5,
+      trades: [{ id: 't1' }],
+      pendingOrders: [{ id: 'o1' }],
+      drawings: [{ id: 'd1' }],
+      notes: [],
+      anchorTimeframes: ['M1', 'H1', 'D1'] as const,
+      years: [2024, 2025],
+      id: 'fixed-uuid',
+      ...p,
+    };
+  }
+
+  it('converts seconds to milliseconds for the range/cursor fields', () => {
+    const snap = snapshotFromState(stateInput());
+    expect(snap.startRange).toBe(1704067200000);
+    expect(snap.endRange).toBe(1735689600000);
+    expect(snap.replayTime).toBe(1_700_000_000_000);
+  });
+
+  it('maps a custom interval in minutes, taking priority over activeTf', () => {
+    const snap = snapshotFromState(stateInput({ activeTf: 'H1', customTfMinutes: 45 }));
+    expect(snap.currentTimeframe).toBe(45);
+  });
+
+  it('maps activeTf to minutes when there is no custom interval', () => {
+    const snap = snapshotFromState(stateInput({ activeTf: 'D1', customTfMinutes: null }));
+    expect(snap.currentTimeframe).toBe(1440);
+  });
+
+  it('falls back to 0 minutes when neither activeTf nor customTfMinutes is set', () => {
+    const snap = snapshotFromState(stateInput({ activeTf: null, customTfMinutes: null }));
+    expect(snap.currentTimeframe).toBe(0);
+  });
+
+  it('passes the remaining fields straight through', () => {
+    const snap = snapshotFromState(stateInput());
+    expect(snap.symbol).toBe('XAUUSD');
+    expect(snap.initialBalance).toBe(10000);
+    expect(snap.playbackSpeed).toBe(1.5);
+    expect(snap.trades).toEqual([{ id: 't1' }]);
+    expect(snap.pendingOrders).toEqual([{ id: 'o1' }]);
+    expect(snap.drawings).toEqual([{ id: 'd1' }]);
+    expect(snap.notes).toEqual([]);
+    expect(snap.anchorTimeframes).toEqual(['M1', 'H1', 'D1']);
+    expect(snap.years).toEqual([2024, 2025]);
+    expect(snap.id).toBe('fixed-uuid');
+  });
+});
+
+describe('restorePlan', () => {
+  it('converts ms back to seconds and surfaces minutes/trading/annotations as-is', () => {
+    const file = buildSessionFile({
+      symbol: 'XAUUSD',
+      initialBalance: 10000,
+      startRange: 1704067200000,
+      endRange: 1735689600000,
+      replayTime: 1_700_000_000_000,
+      currentTimeframe: 60,
+      playbackSpeed: 1.5,
+      trades: [{ id: 't1' }],
+      pendingOrders: [{ id: 'o1' }],
+      drawings: [{ id: 'd1' }],
+      notes: [{ id: 'n1' }],
+      anchorTimeframes: ['M1', 'H1', 'D1'],
+      years: [2024, 2025],
+      id: 'fixed-uuid',
+    });
+
+    const plan = restorePlan(file);
+
+    expect(plan.symbol).toBe('XAUUSD');
+    expect(plan.thenGoTo).toBe(1_700_000_000);
+    expect(plan.startRangeSec).toBe(1704067200);
+    expect(plan.endRangeSec).toBe(1735689600);
+    expect(plan.currentTimeframeMinutes).toBe(60);
+    expect(plan.playbackSpeed).toBe(1.5);
+    expect(plan.trades).toEqual([{ id: 't1' }]);
+    expect(plan.pendingOrders).toEqual([{ id: 'o1' }]);
+    expect(plan.drawings).toEqual([{ id: 'd1' }]);
+    expect(plan.notes).toEqual([{ id: 'n1' }]);
+    expect(plan.selectedTfs).toEqual(['M1', 'H1', 'D1']);
+  });
+
+  it('dedupes selectedTfs from requiredDatasets while preserving M1/H1/D1 order', () => {
+    const file = buildSessionFile({
+      symbol: 'XAUUSD',
+      initialBalance: 10000,
+      startRange: 0,
+      endRange: 0,
+      replayTime: 0,
+      currentTimeframe: 60,
+      playbackSpeed: 1,
+      trades: [],
+      pendingOrders: [],
+      drawings: [],
+      notes: [],
+      anchorTimeframes: ['D1', 'M1', 'H1'],
+      years: [2024, 2025], // M1 expands to two refs (one per year) -> must dedupe
+      id: 'fixed-uuid',
+    });
+
+    const plan = restorePlan(file);
+
+    expect(plan.selectedTfs).toEqual(['M1', 'H1', 'D1']);
+  });
+});
+
+describe('snapshotFromState -> buildSessionFile -> parseSessionText -> restorePlan (round-trip)', () => {
+  it('round-trips a standard timeframe (H1), preserving units and payloads', () => {
+    const file = buildSessionFile(
+      snapshotFromState({
+        symbol: 'XAUUSD',
+        initialBalance: 10000,
+        startRangeSec: 1704067200,
+        endRangeSec: 1735689600,
+        replayTimeSec: 1_700_000_000,
+        activeTf: 'H1',
+        customTfMinutes: null,
+        playbackSpeed: 1.5,
+        trades: [{ id: 't1' }],
+        pendingOrders: [{ id: 'o1' }],
+        drawings: [{ id: 'd1' }],
+        notes: [{ id: 'n1' }],
+        anchorTimeframes: ['M1', 'H1', 'D1'],
+        years: [2024, 2025],
+        id: 'fixed-uuid',
+      }),
+    );
+
+    // the on-disk file stores ms for the cursor/range and minutes for the interval
+    expect(file.state.replayTime).toBe(1_700_000_000_000);
+    expect(file.state.currentTimeframe).toBe(60);
+
+    const text = JSON.stringify(file);
+    const parsed = parseSessionText(text);
+    expect(parsed.status).toBe('ok');
+    if (parsed.status !== 'ok') throw new Error('expected ok');
+
+    const plan = restorePlan(parsed.session);
+
+    expect(plan.symbol).toBe('XAUUSD');
+    expect(plan.thenGoTo).toBe(1_700_000_000); // back in seconds
+    expect(plan.startRangeSec).toBe(1704067200);
+    expect(plan.endRangeSec).toBe(1735689600);
+    expect(plan.currentTimeframeMinutes).toBe(60);
+    expect(plan.playbackSpeed).toBe(1.5);
+    expect(plan.trades).toEqual([{ id: 't1' }]);
+    expect(plan.pendingOrders).toEqual([{ id: 'o1' }]);
+    expect(plan.drawings).toEqual([{ id: 'd1' }]);
+    expect(plan.notes).toEqual([{ id: 'n1' }]);
+    expect(plan.selectedTfs).toEqual(['M1', 'H1', 'D1']);
+  });
+
+  it('round-trips a custom interval (45 minutes)', () => {
+    const file = buildSessionFile(
+      snapshotFromState({
+        symbol: 'EURUSD',
+        initialBalance: 5000,
+        startRangeSec: 1704067200,
+        endRangeSec: 1735689600,
+        replayTimeSec: 1_700_000_000,
+        activeTf: null,
+        customTfMinutes: 45,
+        playbackSpeed: 1,
+        trades: [],
+        pendingOrders: [],
+        drawings: [],
+        notes: [],
+        anchorTimeframes: ['H1'],
+        years: [],
+        id: 'fixed-uuid-2',
+      }),
+    );
+
+    expect(file.state.currentTimeframe).toBe(45);
+
+    const parsed = parseSessionText(JSON.stringify(file));
+    expect(parsed.status).toBe('ok');
+    if (parsed.status !== 'ok') throw new Error('expected ok');
+
+    const plan = restorePlan(parsed.session);
+    expect(plan.currentTimeframeMinutes).toBe(45);
+    expect(plan.symbol).toBe('EURUSD');
   });
 });
 

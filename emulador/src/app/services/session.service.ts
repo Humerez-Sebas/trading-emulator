@@ -1,4 +1,5 @@
 import { inject, Injectable } from '@angular/core';
+import { TIMEFRAME_SECONDS, type Timeframe } from '../models';
 import type { DatasetRecord } from './market-data-db';
 import { WorkspaceDbService } from './workspace-db.service';
 
@@ -133,6 +134,111 @@ export function buildSessionFile(s: SessionSnapshot): SessionFileV1 {
     },
     trading: { trades: s.trades, pendingOrders: s.pendingOrders },
     annotations: { drawings: s.drawings, notes: s.notes },
+  };
+}
+
+/**
+ * Everything {@link snapshotFromState} reads from live NgRx state to build a
+ * {@link SessionSnapshot}. Times here are unix SECONDS (as the app/state store
+ * them); the active interval is expressed as either a standard {@link Timeframe}
+ * or a custom minutes value — the custom value wins when both are present.
+ */
+export interface StateSnapshotInput {
+  symbol: string;
+  initialBalance: number;
+  /** Data range start, unix SECONDS (UTC). */
+  startRangeSec: number;
+  /** Data range end, unix SECONDS (UTC). */
+  endRangeSec: number;
+  /** Replay cursor, unix SECONDS (UTC). */
+  replayTimeSec: number;
+  /** Active standard timeframe, or null when a custom interval is active. */
+  activeTf: Timeframe | null;
+  /** Active custom interval in minutes, or null when a standard TF is active. */
+  customTfMinutes: number | null;
+  playbackSpeed: number;
+  trades: unknown[];
+  pendingOrders: unknown[];
+  drawings: unknown[];
+  notes: unknown[];
+  anchorTimeframes: AnchorTf[];
+  years: number[];
+  id?: string;
+}
+
+/**
+ * Builds a {@link SessionSnapshot} (epoch MILLISECONDS, interval in MINUTES)
+ * from live state expressed in unix SECONDS / {@link Timeframe}. Pure: no
+ * Angular DI, no I/O — safe to unit test directly.
+ */
+export function snapshotFromState(input: StateSnapshotInput): SessionSnapshot {
+  const currentTimeframe =
+    input.customTfMinutes ?? (input.activeTf ? TIMEFRAME_SECONDS[input.activeTf] / 60 : 0);
+  return {
+    symbol: input.symbol,
+    initialBalance: input.initialBalance,
+    startRange: input.startRangeSec * 1000,
+    endRange: input.endRangeSec * 1000,
+    replayTime: input.replayTimeSec * 1000,
+    currentTimeframe,
+    playbackSpeed: input.playbackSpeed,
+    trades: input.trades,
+    pendingOrders: input.pendingOrders,
+    drawings: input.drawings,
+    notes: input.notes,
+    anchorTimeframes: input.anchorTimeframes,
+    years: input.years,
+    id: input.id,
+  };
+}
+
+/** Order in which {@link restorePlan} reports `selectedTfs` (anchors only). */
+const ANCHOR_TF_ORDER: AnchorTf[] = ['M1', 'H1', 'D1'];
+
+/**
+ * Everything the import flow needs to restore live state from a parsed
+ * {@link SessionFileV1}: times converted back to unix SECONDS, the interval
+ * kept in MINUTES (the caller routes that to a {@link Timeframe} or a custom
+ * interval), and the trading/annotation payloads passed through.
+ */
+export interface RestorePlan {
+  symbol: string;
+  /** Anchor timeframes to ensure are loaded, deduped, in M1/H1/D1 order. */
+  selectedTfs: AnchorTf[];
+  /** Replay cursor to seek to once data is loaded, unix SECONDS (UTC). */
+  thenGoTo: number;
+  /** Data range start, unix SECONDS (UTC). */
+  startRangeSec: number;
+  /** Data range end, unix SECONDS (UTC). */
+  endRangeSec: number;
+  currentTimeframeMinutes: number;
+  playbackSpeed: number;
+  trades: unknown[];
+  pendingOrders: unknown[];
+  drawings: unknown[];
+  notes: unknown[];
+}
+
+/**
+ * Maps a parsed {@link SessionFileV1} (epoch MILLISECONDS, interval in MINUTES)
+ * back to the values the import flow dispatches into state (unix SECONDS).
+ * Pure: no Angular DI, no I/O.
+ */
+export function restorePlan(file: SessionFileV1): RestorePlan {
+  const requiredAnchors = new Set(file.requiredDatasets.map((d) => d.timeframe));
+  const selectedTfs = ANCHOR_TF_ORDER.filter((tf) => requiredAnchors.has(tf));
+  return {
+    symbol: file.context.symbol,
+    selectedTfs,
+    thenGoTo: Math.round(file.state.replayTime / 1000),
+    startRangeSec: Math.round(file.context.startRange / 1000),
+    endRangeSec: Math.round(file.context.endRange / 1000),
+    currentTimeframeMinutes: file.state.currentTimeframe,
+    playbackSpeed: file.state.playbackSpeed,
+    trades: file.trading.trades,
+    pendingOrders: file.trading.pendingOrders,
+    drawings: file.annotations.drawings,
+    notes: file.annotations.notes,
   };
 }
 
