@@ -1,54 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { Candle, Timeframe } from '../../models';
-import { coverageRange, isEndValid, isStartValid } from './r2-coverage.logic';
+import { intersectBounds, isEndValid, isStartValid } from './r2-coverage.logic';
 
-function candle(time: number): Candle {
-  return { time, open: 1, high: 1, low: 1, close: 1 };
-}
-
-describe('coverageRange', () => {
-  it('returns null when no TFs are selected', () => {
-    const seriesByTf: Partial<Record<Timeframe, Candle[]>> = {
-      M1: [candle(1000), candle(2000)],
-    };
-    expect(coverageRange(seriesByTf, [])).toBeNull();
+describe('intersectBounds', () => {
+  it('intersects per-anchor bounds over the selected TFs (max from, min to)', () => {
+    const bounds = { M1: { from: 1000, to: 2000 }, H1: { from: 1200, to: 1800 } } as const;
+    expect(intersectBounds(bounds, ['M1', 'H1'])).toEqual({ from: 1200, to: 1800 });
+    expect(intersectBounds(bounds, ['M1'])).toEqual({ from: 1000, to: 2000 });
   });
-
-  it('returns null when the selected TF has no loaded series', () => {
-    const seriesByTf: Partial<Record<Timeframe, Candle[]>> = {};
-    expect(coverageRange(seriesByTf, ['M1'])).toBeNull();
-  });
-
-  it('returns null when the selected TF series is empty', () => {
-    const seriesByTf: Partial<Record<Timeframe, Candle[]>> = { M1: [] };
-    expect(coverageRange(seriesByTf, ['M1'])).toBeNull();
-  });
-
-  it('computes the intersection across selected TFs: max desde, min hasta', () => {
-    const seriesByTf: Partial<Record<Timeframe, Candle[]>> = {
-      M1: [candle(1000), candle(1500), candle(2000)],
-      H1: [candle(1200), candle(1800)],
-    };
-    const range = coverageRange(seriesByTf, ['M1', 'H1']);
-    expect(range).toEqual({ from: 1200, to: 1800 });
-  });
-
-  it('ignores TFs that are not selected even if loaded', () => {
-    const seriesByTf: Partial<Record<Timeframe, Candle[]>> = {
-      M1: [candle(1000), candle(2000)],
-      H1: [candle(1200), candle(1800)],
-      D1: [candle(1), candle(5000)] as Candle[],
-    };
-    const range = coverageRange(seriesByTf, ['M1', 'H1']);
-    expect(range).toEqual({ from: 1200, to: 1800 });
-  });
-
-  it('uses a single selected TF range directly', () => {
-    const seriesByTf: Partial<Record<Timeframe, Candle[]>> = {
-      M1: [candle(1000), candle(1500), candle(2000)],
-    };
-    const range = coverageRange(seriesByTf, ['M1']);
-    expect(range).toEqual({ from: 1000, to: 2000 });
+  it('returns null when nothing selected or no bounds present', () => {
+    expect(intersectBounds({}, ['M1'])).toBeNull();
+    expect(intersectBounds({ M1: { from: 1, to: 2 } }, [])).toBeNull();
   });
 });
 

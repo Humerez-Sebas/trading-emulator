@@ -338,9 +338,17 @@
             appButton
             variant="primary"
             (click)="isR2 ? confirmR2() : source() === 'csv' ? confirmCsv() : confirm()"
-            [disabled]="downloading()"
+            [disabled]="isR2 ? r2Loading() : downloading()"
           >
-            {{ downloading() ? 'Descargando…' : 'Crear sesión' }}
+            {{
+              isR2
+                ? r2Loading()
+                  ? 'Cargando…'
+                  : 'Crear sesión'
+                : downloading()
+                  ? 'Descargando…'
+                  : 'Crear sesión'
+            }}
           </button>
         }
       </footer>
