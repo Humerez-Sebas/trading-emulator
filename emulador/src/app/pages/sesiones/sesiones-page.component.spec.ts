@@ -17,6 +17,21 @@ import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { workspaceMeta, savedSession, closed } from '../../testing/fixtures';
 import { defaultTradingData, SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { DialogService } from '../../components/ui/dialog.service';
+import { SessionService } from '../../services/session.service';
+import type { DatasetRecord } from '../../services/market-data-db';
+
+function dataset(p: Partial<DatasetRecord> = {}): DatasetRecord {
+  return {
+    id: 'XAUUSD|M1|2024',
+    symbol: 'XAUUSD',
+    timeframe: 'M1',
+    year: '2024',
+    size: 0,
+    etag: '',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+    ...p,
+  };
+}
 
 function card(p: Partial<SessionCard> = {}): SessionCard {
   return {
@@ -340,6 +355,69 @@ describe('SesionesPageComponent', () => {
     await settle();
     await component.remove(card({ symbol: 'XAUUSD', id: 's1' }));
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  // ---- exportSession (archived card) ----
+
+  it('exportSession (archived) derives anchorTimeframes + years from the symbol\'s local datasets, keeping M1 refs consistent', async () => {
+    const session = savedSession({ id: 's1', name: 'Vieja' });
+    const meta = workspaceMeta({ symbol: 'XAUUSD', sessions: [session] });
+    create({
+      currentAsset: 'US30', // not the live asset → archived/stored path
+      db: {
+        listMetas: vi.fn().mockResolvedValue([meta]),
+        getMeta: vi.fn().mockResolvedValue(meta),
+        listDatasets: vi.fn().mockResolvedValue([
+          dataset({ id: 'XAUUSD|M1|2023', symbol: 'XAUUSD', timeframe: 'M1', year: '2023' }),
+          dataset({ id: 'XAUUSD|M1|2024', symbol: 'XAUUSD', timeframe: 'M1', year: '2024' }),
+          dataset({ id: 'XAUUSD|H1|all', symbol: 'XAUUSD', timeframe: 'H1', year: 'all' }),
+          // a different symbol's M1 must not leak into XAUUSD's years
+          dataset({ id: 'US30|M1|2099', symbol: 'US30', timeframe: 'M1', year: '2099' }),
+        ]),
+      },
+    });
+    await settle();
+
+    const exportSpy = vi
+      .spyOn(SessionService.prototype, 'exportSession')
+      .mockReturnValue({} as ReturnType<SessionService['exportSession']>);
+
+    await component.exportSession(card({ symbol: 'XAUUSD', id: 's1', name: 'Vieja' }));
+
+    expect(exportSpy).toHaveBeenCalledTimes(1);
+    const snapshot = exportSpy.mock.calls[0][0];
+    expect(snapshot.anchorTimeframes).toEqual(['M1', 'H1']);
+    expect(snapshot.years).toEqual([2023, 2024]);
+    exportSpy.mockRestore();
+  });
+
+  it('exportSession (archived) claims no M1 anchor when the symbol has no local M1 datasets', async () => {
+    const session = savedSession({ id: 's1', name: 'Vieja' });
+    const meta = workspaceMeta({ symbol: 'XAUUSD', sessions: [session] });
+    create({
+      currentAsset: 'US30',
+      db: {
+        listMetas: vi.fn().mockResolvedValue([meta]),
+        getMeta: vi.fn().mockResolvedValue(meta),
+        listDatasets: vi
+          .fn()
+          .mockResolvedValue([
+            dataset({ id: 'XAUUSD|H1|all', symbol: 'XAUUSD', timeframe: 'H1', year: 'all' }),
+          ]),
+      },
+    });
+    await settle();
+
+    const exportSpy = vi
+      .spyOn(SessionService.prototype, 'exportSession')
+      .mockReturnValue({} as ReturnType<SessionService['exportSession']>);
+
+    await component.exportSession(card({ symbol: 'XAUUSD', id: 's1', name: 'Vieja' }));
+
+    const snapshot = exportSpy.mock.calls[0][0];
+    expect(snapshot.anchorTimeframes).toEqual(['H1']);
+    expect(snapshot.years).toEqual([]);
+    exportSpy.mockRestore();
   });
 
   // ---- folders CRUD ----

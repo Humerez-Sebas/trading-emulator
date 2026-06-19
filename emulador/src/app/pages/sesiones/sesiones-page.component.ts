@@ -3,6 +3,7 @@ import { DatePipe, DecimalPipe, PercentPipe, NgTemplateOutlet } from '@angular/c
 import { Router, RouterLink } from '@angular/router';
 import { Store } from '@ngrx/store';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import {
   AnchorTf,
   SessionService,
@@ -13,7 +14,7 @@ import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import { isSessionCsv, parseSessionCsv } from '../../state/trading/session-csv';
-import { symbolFromFileName, Timeframe } from '../../models';
+import { symbolFromFileName } from '../../models';
 import {
   selectCurrentAsset,
   selectCurrentTime,
@@ -132,6 +133,7 @@ export class SesionesPageComponent {
   private router = inject(Router);
   private dialogs = inject(DialogService);
   private sessionService = inject(SessionService);
+  private storageManager = inject(StorageManagerService);
 
   state = signal<'loading' | 'ok'>('loading');
   private metas = signal<WorkspaceMeta[]>([]);
@@ -525,8 +527,12 @@ export class SesionesPageComponent {
    * export, with a real data range/years). Any other card — an archived
    * session, or the active session of an asset that is not on screen — is
    * built from its STORED `trading` + cursor: no candle data is kept for it,
-   * so the data range/years default to empty; anchor TFs fall back to the
-   * workspace's recorded `selectedTfs` (or none if that wasn't recorded).
+   * so the data range defaults to empty. Anchor TFs/years are derived from the
+   * SYMBOL's locally downloaded datasets (`StorageManagerService.listDatasets`)
+   * rather than from `meta.selectedTfs`, so they stay consistent with each
+   * other: `'M1'` is only claimed as an anchor when M1 datasets actually exist
+   * for that symbol, and in that case `years` always has the years to match —
+   * otherwise `buildRequiredDatasets` would silently drop the M1 ref.
    */
   async exportSession(card: SessionCard): Promise<void> {
     const isLiveActive = card.id === null && card.symbol === this.currentAsset();
@@ -562,9 +568,22 @@ export class SesionesPageComponent {
     const trading: TradingData | undefined = card.id !== null ? session?.trading : meta?.trading;
     if (!trading) return;
     const cursor = card.id !== null ? (session?.currentTime ?? 0) : (meta?.currentTime ?? 0);
-    const anchorTimeframes = (meta?.selectedTfs ?? []).filter((tf): tf is Timeframe & AnchorTf =>
-      ANCHOR_TFS.includes(tf as AnchorTf),
+
+    // Derive anchorTimeframes + years from the symbol's locally downloaded
+    // datasets (not `meta.selectedTfs`) so the two always stay consistent:
+    // 'M1' is only claimed when M1 datasets exist, and years always covers
+    // them — otherwise buildRequiredDatasets would silently emit no M1 ref.
+    const symbolDatasets = (await this.storageManager.listDatasets()).filter(
+      (d) => d.symbol === card.symbol,
     );
+    const anchorTimeframes = ANCHOR_TFS.filter((tf) =>
+      symbolDatasets.some((d) => d.timeframe === tf),
+    );
+    const years = [
+      ...new Set(
+        symbolDatasets.filter((d) => d.timeframe === 'M1').map((d) => Number(d.year)),
+      ),
+    ].sort((a, b) => a - b);
 
     const snapshot = snapshotFromState({
       symbol: card.symbol,
@@ -580,7 +599,7 @@ export class SesionesPageComponent {
       drawings: [],
       notes: [],
       anchorTimeframes,
-      years: [],
+      years,
     });
     this.sessionService.exportSession(snapshot, filename);
   }
