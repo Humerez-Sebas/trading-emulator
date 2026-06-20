@@ -12,7 +12,8 @@ function describeError(e: unknown): string {
   const msg = e instanceof Error ? e.message : '';
   if (/invalid login credentials/i.test(msg)) return 'Correo o contraseña incorrectos';
   if (/network|fetch/i.test(msg)) return 'No se pudo conectar con el servidor';
-  return msg || 'Algo salió mal, inténtalo de nuevo';
+  if (/email not confirmed/i.test(msg)) return 'Tu cuenta aún no está confirmada';
+  return 'Algo salió mal, inténtalo de nuevo';
 }
 
 const GUEST_KEY = 'emulador.guest';

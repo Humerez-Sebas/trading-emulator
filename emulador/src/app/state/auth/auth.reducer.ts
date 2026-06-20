@@ -4,9 +4,10 @@ import { AuthActions } from './auth.actions';
 
 /**
  * - `unknown`: still checking the session at startup.
- * - `authenticated`: cookie session valid.
- * - `anonymous`: backend reachable, no session -> guarded routes redirect.
- * - `offline`: backend unreachable -> the app stays usable with local CSVs.
+ * - `authenticated`: a valid Supabase session.
+ * - `anonymous`: no Supabase session -> guarded routes redirect to /login.
+ * - `offline`: the auth check threw (rare, since the session is read locally) -> the app
+ *   stays usable as guest.
  * - `guest`: deliberate no-account mode (static build or explicit choice).
  */
 export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous' | 'offline' | 'guest';

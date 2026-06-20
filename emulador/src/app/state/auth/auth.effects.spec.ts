@@ -140,6 +140,17 @@ describe('AuthEffects', () => {
       );
     });
 
+    it('login → authFailure with the unconfirmed-email message', async () => {
+      auth.signIn.mockRejectedValue(new Error('Email not confirmed'));
+
+      const p = firstValueFrom(effects.login$);
+      actions$.next(AuthActions.login({ email: 'a@b.com', password: 'pass12', returnUrl: null }));
+
+      expect(await p).toEqual(
+        AuthActions.authFailure({ error: 'Tu cuenta aún no está confirmada' }),
+      );
+    });
+
     it('login → authFailure with a generic message for an unknown error', async () => {
       auth.signIn.mockRejectedValue(new Error(''));
 
