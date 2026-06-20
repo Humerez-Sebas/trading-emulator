@@ -309,6 +309,9 @@
                 <p class="invalid" role="alert">{{ downloadError() }}</p>
               }
             }
+            @if (isR2 && r2Error()) {
+              <p class="csv-error" role="alert">{{ r2Error() }}</p>
+            }
           </section>
         }
       }
