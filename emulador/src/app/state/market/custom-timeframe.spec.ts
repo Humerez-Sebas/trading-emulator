@@ -105,10 +105,13 @@ describe('formatIntervalVerbose', () => {
 });
 
 describe('formatIntervalShort', () => {
-  it('compact canonical', () => {
-    expect(formatIntervalShort(45)).toBe('45m');
-    expect(formatIntervalShort(120)).toBe('2h');
-    expect(formatIntervalShort(1440)).toBe('1D');
+  it('uses MT5-style prefix (M/H/D), consistent with the M1/H1/D1 buttons', () => {
+    expect(formatIntervalShort(45)).toBe('M45');
+    expect(formatIntervalShort(90)).toBe('M90');
+    expect(formatIntervalShort(120)).toBe('H2');
+    expect(formatIntervalShort(180)).toBe('H3');
+    expect(formatIntervalShort(1440)).toBe('D1');
+    expect(formatIntervalShort(4320)).toBe('D3');
   });
 });
 

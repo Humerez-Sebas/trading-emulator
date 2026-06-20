@@ -1,4 +1,4 @@
-import { Candle, Timeframe } from '../../models';
+import { Timeframe } from '../../models';
 
 /** A common date range across one or more timeframes, in unix seconds. */
 export interface CoverageRange {
@@ -6,29 +6,18 @@ export interface CoverageRange {
   to: number;
 }
 
-/**
- * Intersection of the SELECTED timeframes' loaded series, in unix seconds.
- * Mirrors the existing backend `dateRange` computed (max desde, min hasta):
- * `from` is the latest "first candle" among the selected series, `to` is the
- * earliest "last candle". Candles are assumed sorted ascending by `time`.
- *
- * Returns `null` when nothing is selected, or a selected TF has no loaded
- * (or empty) series — the caller can't validate a date without it.
- */
-export function coverageRange(
-  seriesByTf: Partial<Record<Timeframe, Candle[]>>,
+/** Intersection (max from, min to) of the selected anchors' bounds, or null. */
+export function intersectBounds(
+  boundsByTf: Partial<Record<Timeframe, { from: number; to: number }>>,
   selectedTfs: Timeframe[],
-): CoverageRange | null {
-  if (!selectedTfs.length) return null;
-  const ranges: CoverageRange[] = [];
-  for (const tf of selectedTfs) {
-    const candles = seriesByTf[tf];
-    if (!candles || !candles.length) return null;
-    ranges.push({ from: candles[0].time, to: candles[candles.length - 1].time });
-  }
+): { from: number; to: number } | null {
+  const chosen = selectedTfs
+    .map((tf) => boundsByTf[tf])
+    .filter((b): b is { from: number; to: number } => !!b);
+  if (!chosen.length) return null;
   return {
-    from: Math.max(...ranges.map((r) => r.from)),
-    to: Math.min(...ranges.map((r) => r.to)),
+    from: Math.max(...chosen.map((b) => b.from)),
+    to: Math.min(...chosen.map((b) => b.to)),
   };
 }
 

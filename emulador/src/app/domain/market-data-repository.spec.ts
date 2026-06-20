@@ -198,6 +198,40 @@ describe('IndexedDbMarketDataRepository.getCandles', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 2b. IndexedDbMarketDataRepository.getCoverage
+// ---------------------------------------------------------------------------
+
+describe('IndexedDbMarketDataRepository.getCoverage', () => {
+  let db: IDBDatabase;
+
+  // Unique symbol so this describe's data can't collide with the
+  // `getCandles` describe above, which shares the same fake-indexeddb
+  // instance for the whole file (see test-setup.ts: reset is per-file).
+  beforeAll(async () => {
+    db = await seedCandlesDb([
+      // unordered on purpose: proves first/last come from the cursor, not
+      // insertion order
+      { symbol: 'COVUSD', timeframe: 'M1', time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 },
+      { symbol: 'COVUSD', timeframe: 'M1', time: 3000, open: 1, high: 2, low: 0.5, close: 1.5 },
+      { symbol: 'COVUSD', timeframe: 'M1', time: 2000, open: 1, high: 2, low: 0.5, close: 1.5 },
+      { symbol: 'COVUSD', timeframe: 'H1', time: 500, open: 1, high: 2, low: 0.5, close: 1.5 },
+    ]);
+  });
+
+  afterAll(() => {
+    db?.close();
+  });
+
+  it('returns first/last candle time via cursor without loading all rows', async () => {
+    const repo = new IndexedDbMarketDataRepository();
+
+    expect(await repo.getCoverage('COVUSD', 'M1')).toEqual({ from: 1000, to: 3000 });
+    expect(await repo.getCoverage('COVUSD', 'H1')).toEqual({ from: 500, to: 500 }); // single candle
+    expect(await repo.getCoverage('COVUSD', 'D1')).toBeNull(); // no rows
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 3. CsvMarketDataRepository
 // ---------------------------------------------------------------------------
 

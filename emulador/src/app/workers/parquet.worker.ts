@@ -63,6 +63,7 @@ async function ingest(req: ParquetWorkerRequest): Promise<void> {
   // Decode Parquet -> Arrow. parquet-wasm 0.7: readParquet returns a wasm
   // Table; bridge to apache-arrow via an Arrow IPC stream.
   const { readParquet } = await getParquet();
+
   const { tableFromIPC } = await import('apache-arrow');
   const wasmTable = readParquet(new Uint8Array(buffer));
   const table = tableFromIPC(wasmTable.intoIPCStream());
@@ -70,7 +71,7 @@ async function ingest(req: ParquetWorkerRequest): Promise<void> {
   const records = arrowTableToCandles(table, symbol, timeframe);
   const total = records.length;
 
-  const inserted = await bulkInsertCandles(records, 10_000, (insertedSoFar) => {
+  const inserted = await bulkInsertCandles(records, 50_000, (insertedSoFar) => {
     post({ type: 'progress', inserted: insertedSoFar, total });
   });
 

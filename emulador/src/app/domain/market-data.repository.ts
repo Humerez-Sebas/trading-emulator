@@ -13,6 +13,15 @@ export abstract class MarketDataRepository {
    * by `time` (unix seconds UTC).
    */
   abstract getCandles(symbol: string, timeframe: Timeframe): Promise<Candle[]>;
+
+  /**
+   * Earliest and latest candle `time` (unix seconds UTC) for the symbol+tf, or
+   * `null` when there are none. Cheap: reads only the two edge rows.
+   */
+  abstract getCoverage(
+    symbol: string,
+    timeframe: Timeframe,
+  ): Promise<{ from: number; to: number } | null>;
 }
 
 // ---------------------------------------------------------------------------

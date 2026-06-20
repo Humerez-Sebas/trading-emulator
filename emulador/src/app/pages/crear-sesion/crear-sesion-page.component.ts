@@ -21,7 +21,7 @@ import { authFeature } from '../../state/auth/auth.reducer';
 import { environment } from '../../../environments/environment';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
-import { coverageRange, isEndValid, isStartValid } from './r2-coverage.logic';
+import { intersectBounds, isEndValid, isStartValid } from './r2-coverage.logic';
 
 type Step = 1 | 2 | 3;
 
@@ -107,10 +107,8 @@ export class CrearSesionPageComponent {
   r2Symbol = signal<string | null>(null);
   /** Downloaded anchors for the picked symbol (M1/H1/D1 subset), in order. */
   r2Tfs = signal<Timeframe[]>([]);
-  /** Candles per anchor, read once via `MarketDataRepository.getCandles` and
-   * cached here for both the coverage computation AND the confirm() reuse —
-   * never re-read. */
-  seriesByTf = signal<Partial<Record<Timeframe, Candle[]>>>({});
+  /** R2: cheap per-anchor coverage bounds (seconds), read on pick via getCoverage. */
+  boundsByTf = signal<Partial<Record<Timeframe, { from: number; to: number }>>>({});
   r2Loading = signal(false);
   r2Error = signal('');
 
@@ -121,9 +119,9 @@ export class CrearSesionPageComponent {
       : (this.selected()?.cobertura ?? []),
   );
 
-  /** R2: intersection of the selected anchors' cached series (seconds). */
+  /** R2: intersection of the selected anchors' cheap coverage bounds (seconds). */
   r2Range = computed(() =>
-    coverageRange(this.seriesByTf(), [...this.selectedTfs()] as Timeframe[]),
+    intersectBounds(this.boundsByTf(), [...this.selectedTfs()] as Timeframe[]),
   );
 
   /** Intersection of the selected TFs' ranges, for the date validation. */
@@ -240,17 +238,17 @@ export class CrearSesionPageComponent {
     }
   }
 
-  /** R2 step 1 -> 2: read+cache each downloaded anchor's candles once. */
+  /** R2 step 1 -> 2: read each downloaded anchor's cheap coverage (first/last). */
   async pickR2Asset(asset: R2Asset): Promise<void> {
     this.r2Loading.set(true);
     this.r2Error.set('');
     try {
       const entries = await Promise.all(
-        asset.tfs.map(async (tf) => [tf, await this.repo.getCandles(asset.symbol, tf)] as const),
+        asset.tfs.map(async (tf) => [tf, await this.repo.getCoverage(asset.symbol, tf)] as const),
       );
-      const map: Partial<Record<Timeframe, Candle[]>> = {};
-      for (const [tf, candles] of entries) map[tf] = candles;
-      this.seriesByTf.set(map);
+      const bounds: Partial<Record<Timeframe, { from: number; to: number }>> = {};
+      for (const [tf, b] of entries) if (b) bounds[tf] = b;
+      this.boundsByTf.set(bounds);
       this.r2Symbol.set(asset.symbol);
       this.r2Tfs.set(asset.tfs);
       this.selectedTfs.set(new Set(asset.tfs));
@@ -263,33 +261,44 @@ export class CrearSesionPageComponent {
   }
 
   /**
-   * R2 confirm: build `thenLoad` from the CACHED series (selected TFs only —
-   * never re-read from the repository) and dispatch `switchAsset` BEFORE
-   * navigating, avoiding the known restore race.
+   * R2 confirm: the heavy full-candle load is DEFERRED to this step (the
+   * click only read cheap coverage bounds). Reads each selected anchor's
+   * full series via `getCandles` here, behind the `r2Loading` flag, then
+   * dispatches `switchAsset` BEFORE navigating, avoiding the known restore
+   * race.
    */
   async confirmR2(): Promise<void> {
     const symbol = this.r2Symbol();
     const start = this.startEpoch();
-    if (!symbol || start === null) return;
+    if (!symbol || start === null || this.r2Loading()) return;
     const tfs = [...this.selectedTfs()] as Timeframe[];
-    const series = this.seriesByTf();
-    const pending: PendingCsv[] = tfs.map((tf) => ({
-      tf,
-      candles: series[tf] ?? [],
-      fileName: `${symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
-    }));
-
-    this.store.dispatch(
-      WorkspacesActions.switchAsset({
-        symbol,
-        selectedTfs: tfs,
-        thenLoad: pending,
-        thenNewSession: { name: this.sessionName().trim() || null },
-        thenGoTo: start,
-        thenSessionEnd: this.endEpoch() ?? undefined,
-      }),
-    );
-    await this.router.navigateByUrl('/');
+    this.r2Loading.set(true);
+    this.r2Error.set('');
+    try {
+      const pending: PendingCsv[] = [];
+      for (const tf of tfs) {
+        const candles = await this.repo.getCandles(symbol, tf);
+        pending.push({
+          tf,
+          candles,
+          fileName: `${symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
+        });
+      }
+      this.store.dispatch(
+        WorkspacesActions.switchAsset({
+          symbol,
+          selectedTfs: tfs,
+          thenLoad: pending,
+          thenNewSession: { name: this.sessionName().trim() || null },
+          thenGoTo: start,
+          thenSessionEnd: this.endEpoch() ?? undefined,
+        }),
+      );
+      await this.router.navigateByUrl('/');
+    } catch (e) {
+      this.r2Error.set((e as Error).message || 'No se pudieron cargar las velas.');
+      this.r2Loading.set(false);
+    }
   }
 
   private async loadCatalog(preselect: string | null): Promise<void> {

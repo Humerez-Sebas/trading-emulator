@@ -1,5 +1,10 @@
 @if (open()) {
-  <app-modal title="Cambiar temporalidad" size="sm" (closed)="close()">
+  <app-modal
+    title="Cambiar temporalidad"
+    size="sm"
+    [autoFocus]="'.interval-input'"
+    (closed)="close()"
+  >
     <div class="modal-pad body">
       <input
         #input

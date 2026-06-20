@@ -93,4 +93,37 @@ export class IndexedDbMarketDataRepository extends MarketDataRepository {
       req.onerror = () => reject(req.error);
     });
   }
+
+  /** @inheritdoc */
+  async getCoverage(
+    symbol: string,
+    timeframe: Timeframe,
+  ): Promise<{ from: number; to: number } | null> {
+    const db = await this.open();
+    const range = IDBKeyRange.bound([symbol, timeframe, -Infinity], [symbol, timeframe, +Infinity]);
+    const from = await this.edgeTime(db, range, 'next');
+    if (from === null) return null;
+    const to = await this.edgeTime(db, range, 'prev');
+    return { from, to: to ?? from };
+  }
+
+  /** The `time` of the first (`next`) or last (`prev`) row in the index range. */
+  private edgeTime(
+    db: IDBDatabase,
+    range: IDBKeyRange,
+    dir: 'next' | 'prev',
+  ): Promise<number | null> {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CANDLES_STORE, 'readonly');
+      const req = tx
+        .objectStore(CANDLES_STORE)
+        .index(CANDLES_BY_SYMBOL_TF_TIME)
+        .openCursor(range, dir);
+      req.onsuccess = () => {
+        const cursor = req.result;
+        resolve(cursor ? (cursor.value as CandleRecord).time : null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
 }

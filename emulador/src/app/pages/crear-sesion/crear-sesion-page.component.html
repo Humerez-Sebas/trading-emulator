@@ -309,6 +309,9 @@
                 <p class="invalid" role="alert">{{ downloadError() }}</p>
               }
             }
+            @if (isR2 && r2Error()) {
+              <p class="csv-error" role="alert">{{ r2Error() }}</p>
+            }
           </section>
         }
       }
@@ -338,9 +341,17 @@
             appButton
             variant="primary"
             (click)="isR2 ? confirmR2() : source() === 'csv' ? confirmCsv() : confirm()"
-            [disabled]="downloading()"
+            [disabled]="isR2 ? r2Loading() : downloading()"
           >
-            {{ downloading() ? 'Descargando…' : 'Crear sesión' }}
+            {{
+              isR2
+                ? r2Loading()
+                  ? 'Cargando…'
+                  : 'Crear sesión'
+                : downloading()
+                  ? 'Descargando…'
+                  : 'Crear sesión'
+            }}
           </button>
         }
       </footer>

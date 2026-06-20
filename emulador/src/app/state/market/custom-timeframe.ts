@@ -66,13 +66,13 @@ export function formatIntervalVerbose(min: number): string {
 }
 
 /**
- * Formats an interval (in minutes) into compact canonical form: "45m", "2h", "1D".
- * Prefers the coarsest unit.
+ * Formats an interval (in minutes) into compact canonical form: "M45", "H2", "D1".
+ * Prefers the coarsest unit, using MT5-style prefix.
  */
 export function formatIntervalShort(min: number): string {
-  if (min % 1440 === 0) return `${min / 1440}D`;
-  if (min % 60 === 0) return `${min / 60}h`;
-  return `${min}m`;
+  if (min % 1440 === 0) return `D${min / 1440}`;
+  if (min % 60 === 0) return `H${min / 60}`;
+  return `M${min}`;
 }
 
 /**
