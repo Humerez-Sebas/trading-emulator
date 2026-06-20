@@ -15,32 +15,24 @@
         <polyline points="16 7 22 7 22 13"></polyline>
       </svg>
     </div>
-    <h1 id="auth-title">{{ isLogin() ? 'Iniciar sesión' : 'Crear cuenta' }}</h1>
-    <p class="sub">
-      {{
-        isLogin()
-          ? 'Entra para acceder a los mercados y tus sesiones.'
-          : 'Solo necesitas un usuario y una contraseña.'
-      }}
-    </p>
+    <h1 id="auth-title">Iniciar sesión</h1>
+    <p class="sub">Entra para acceder a los mercados y tus sesiones.</p>
 
     @if (offline()) {
       <p class="offline" role="status">
-        El servidor no está disponible. Puedes seguir usando el emulador sin cuenta
-        <a routerLink="/">cargando un CSV</a>.
+        El servidor no está disponible. Puedes seguir usando el emulador sin cuenta como invitado.
       </p>
     }
 
     <label class="field">
-      <span>Usuario</span>
+      <span>Correo</span>
       <input
-        type="text"
-        name="username"
-        autocomplete="username"
-        [ngModel]="username()"
-        (ngModelChange)="username.set($event)"
+        type="email"
+        name="email"
+        autocomplete="email"
+        [ngModel]="email()"
+        (ngModelChange)="email.set($event)"
         required
-        minlength="3"
       />
     </label>
 
@@ -49,15 +41,12 @@
       <input
         type="password"
         name="password"
-        [attr.autocomplete]="isLogin() ? 'current-password' : 'new-password'"
+        autocomplete="current-password"
         [ngModel]="password()"
         (ngModelChange)="password.set($event)"
         required
         minlength="6"
       />
-      @if (!isLogin()) {
-        <small>Mínimo 6 caracteres.</small>
-      }
     </label>
 
     @if (error()) {
@@ -74,23 +63,13 @@
     >
       @if (pending()) {
         <span class="spinner" aria-hidden="true"></span>
-        {{ isLogin() ? 'Entrando…' : 'Creando cuenta…' }}
+        Entrando…
       } @else {
-        {{ isLogin() ? 'Entrar' : 'Crear cuenta' }}
+        Entrar
       }
     </button>
 
-    <p class="alt">
-      @if (isLogin()) {
-        @if (registrationEnabled) {
-          ¿No tienes cuenta? <a routerLink="/registro">Regístrate</a>
-        }
-      } @else {
-        ¿Ya tienes cuenta? <a routerLink="/login">Inicia sesión</a>
-      }
-    </p>
-
-    @if (guestModeEnabled && isLogin()) {
+    @if (guestModeEnabled) {
       <div class="divider"><span>o</span></div>
       <button appButton variant="ghost" [block]="true" type="button" (click)="continueAsGuest()">
         <svg

@@ -1,24 +1,22 @@
 import { inject, Injectable } from '@angular/core';
-import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Actions, createEffect, ofType, ROOT_EFFECTS_INIT } from '@ngrx/effects';
-import { of } from 'rxjs';
+import { from, of } from 'rxjs';
 import { catchError, exhaustMap, map, tap } from 'rxjs/operators';
-import { BackendApiService } from '../../services/backend-api.service';
+import { SupabaseAuthService } from '../../auth/supabase-auth.service';
 import { AuthActions } from './auth.actions';
 import { environment } from '../../../environments/environment';
 
-/** User-facing message (Spanish) from a backend error. */
+/** User-facing message (Spanish) from a Supabase/auth error. */
 function describeError(e: unknown): string {
-  const err = e as HttpErrorResponse;
-  if (err.status === 0) return 'No se pudo conectar con el servidor';
-  const detail = (err.error as { detail?: unknown } | null)?.detail;
-  return typeof detail === 'string' ? detail : 'Algo salió mal, inténtalo de nuevo';
+  const msg = e instanceof Error ? e.message : '';
+  if (/invalid login credentials/i.test(msg)) return 'Correo o contraseña incorrectos';
+  if (/network|fetch/i.test(msg)) return 'No se pudo conectar con el servidor';
+  return msg || 'Algo salió mal, inténtalo de nuevo';
 }
 
 const GUEST_KEY = 'emulador.guest';
 
-/** Whether the user previously chose guest mode (full-stack reload). */
 function guestPersisted(): boolean {
   try {
     return localStorage.getItem(GUEST_KEY) === '1';
@@ -30,7 +28,7 @@ function guestPersisted(): boolean {
 @Injectable()
 export class AuthEffects {
   private actions$ = inject(Actions);
-  private api = inject(BackendApiService);
+  private auth = inject(SupabaseAuthService);
   private router = inject(Router);
 
   init$ = createEffect(() =>
@@ -40,34 +38,25 @@ export class AuthEffects {
     ),
   );
 
-  /**
-   * Who am I? In an offlineOnly (static) build we never reach for a backend and
-   * resolve straight to guest. Otherwise: 401 = anonymous (unless a guest choice
-   * was persisted), network failure = offline (CSV-only mode).
-   */
   check$ = createEffect(() =>
     this.actions$.pipe(
       ofType(AuthActions.checkSession),
       exhaustMap(() => {
         if (environment.offlineOnly) return of(AuthActions.continueAsGuest());
-        return this.api.me().pipe(
-          map((user) => AuthActions.sessionResolved({ user, offline: false })),
-          catchError((e: HttpErrorResponse) => {
-            if (e.status === 0) {
-              return of(AuthActions.sessionResolved({ user: null, offline: true }));
-            }
-            return of(
-              guestPersisted()
+        return from(this.auth.getUser()).pipe(
+          map((user) =>
+            user
+              ? AuthActions.sessionResolved({ user, offline: false })
+              : guestPersisted()
                 ? AuthActions.continueAsGuest()
                 : AuthActions.sessionResolved({ user: null, offline: false }),
-            );
-          }),
+          ),
+          catchError(() => of(AuthActions.sessionResolved({ user: null, offline: true }))),
         );
       }),
     ),
   );
 
-  /** Remembers the guest choice so a reload stays in guest mode. */
   persistGuest$ = createEffect(
     () =>
       this.actions$.pipe(
@@ -86,20 +75,8 @@ export class AuthEffects {
   login$ = createEffect(() =>
     this.actions$.pipe(
       ofType(AuthActions.login),
-      exhaustMap(({ username, password, returnUrl }) =>
-        this.api.login(username, password).pipe(
-          map((user) => AuthActions.authSuccess({ user, returnUrl })),
-          catchError((e) => of(AuthActions.authFailure({ error: describeError(e) }))),
-        ),
-      ),
-    ),
-  );
-
-  register$ = createEffect(() =>
-    this.actions$.pipe(
-      ofType(AuthActions.register),
-      exhaustMap(({ username, password, returnUrl }) =>
-        this.api.register(username, password).pipe(
+      exhaustMap(({ email, password, returnUrl }) =>
+        from(this.auth.signIn(email, password)).pipe(
           map((user) => AuthActions.authSuccess({ user, returnUrl })),
           catchError((e) => of(AuthActions.authFailure({ error: describeError(e) }))),
         ),
@@ -120,9 +97,8 @@ export class AuthEffects {
     this.actions$.pipe(
       ofType(AuthActions.logout),
       exhaustMap(() =>
-        this.api.logout().pipe(
+        from(this.auth.signOut()).pipe(
           map(() => AuthActions.loggedOut()),
-          // even if the server call fails, drop the local session
           catchError(() => of(AuthActions.loggedOut())),
         ),
       ),

@@ -13,13 +13,6 @@ export const routes: Routes = [
   },
   {
     path: 'login',
-    data: { mode: 'login' },
-    loadComponent: () =>
-      import('./pages/auth/auth-page.component').then((m) => m.AuthPageComponent),
-  },
-  {
-    path: 'registro',
-    data: { mode: 'register' },
     loadComponent: () =>
       import('./pages/auth/auth-page.component').then((m) => m.AuthPageComponent),
   },
