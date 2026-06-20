@@ -81,12 +81,13 @@ function makeService(opts: {
 }) {
   const download = opts.download ?? vi.fn(() => Promise.resolve(new Uint8Array([1, 2, 3]).buffer));
   const worker = opts.worker ?? new FakeWorker();
+  const factory = vi.fn(() => worker as never);
   const svc = new DataOnboardingService(
     opts.db as never,
     { downloadParquet: download } as never,
-    () => worker as never,
+    factory,
   );
-  return { svc, download, worker };
+  return { svc, download, worker, factory };
 }
 
 const M1_JOB: OnboardingJob = { symbol: 'XAUUSD', tf: 'm1', year: '2024' };
@@ -97,7 +98,7 @@ describe('DataOnboardingService.runJob', () => {
     const db = dbStub();
     const { svc, download, worker } = makeService({ db });
 
-    await svc.runJob(MANIFEST, M1_JOB);
+    await svc.runJob(MANIFEST, M1_JOB, worker as never);
 
     // m1 partition 2024 -> file "2024.parquet"
     expect(download).toHaveBeenCalledWith('XAUUSD', 'm1', '2024.parquet');
@@ -111,16 +112,16 @@ describe('DataOnboardingService.runJob', () => {
   it('uploads "all.parquet" and tf "H1" for an h1 job', async () => {
     const db = dbStub();
     const { svc, download, worker } = makeService({ db });
-    await svc.runJob(MANIFEST, H1_JOB);
+    await svc.runJob(MANIFEST, H1_JOB, worker as never);
     expect(download).toHaveBeenCalledWith('XAUUSD', 'h1', 'all.parquet');
     expect(worker.posted[0].timeframe).toBe('H1');
   });
 
   it('records the DatasetRecord with size/etag/updatedAt from the manifest', async () => {
     const db = dbStub();
-    const { svc } = makeService({ db });
+    const { svc, worker } = makeService({ db });
 
-    await svc.runJob(MANIFEST, M1_JOB);
+    await svc.runJob(MANIFEST, M1_JOB, worker as never);
 
     expect(db.putDataset).toHaveBeenCalledTimes(1);
     expect(db._store.get('XAUUSD|M1|2024')).toEqual<DatasetRecord>({
@@ -148,7 +149,7 @@ describe('DataOnboardingService.runJob', () => {
     ]);
     const { svc, download, worker } = makeService({ db });
 
-    const result = await svc.runJob(MANIFEST, M1_JOB);
+    const result = await svc.runJob(MANIFEST, M1_JOB, worker as never);
 
     expect(result).toBe('skipped');
     expect(download).not.toHaveBeenCalled();
@@ -170,7 +171,7 @@ describe('DataOnboardingService.runJob', () => {
     ]);
     const { svc, download, worker } = makeService({ db });
 
-    const result = await svc.runJob(MANIFEST, M1_JOB);
+    const result = await svc.runJob(MANIFEST, M1_JOB, worker as never);
 
     expect(result).toBe('ingested');
     // candles cleared before re-ingest to avoid duplicate rows
@@ -182,8 +183,8 @@ describe('DataOnboardingService.runJob', () => {
 
   it('does NOT clear candles on a first-time ingest (no prior dataset)', async () => {
     const db = dbStub();
-    const { svc } = makeService({ db });
-    await svc.runJob(MANIFEST, M1_JOB);
+    const { svc, worker } = makeService({ db });
+    await svc.runJob(MANIFEST, M1_JOB, worker as never);
     expect(db.clearDatasetCandles).not.toHaveBeenCalled();
   });
 
@@ -192,23 +193,25 @@ describe('DataOnboardingService.runJob', () => {
     const worker = new FakeWorker({ response: 'error', errorMessage: 'parquet corrupto' });
     const { svc } = makeService({ db, worker });
 
-    await expect(svc.runJob(MANIFEST, M1_JOB)).rejects.toThrow(/parquet corrupto/i);
+    await expect(svc.runJob(MANIFEST, M1_JOB, worker as never)).rejects.toThrow(
+      /parquet corrupto/i,
+    );
     expect(db.putDataset).not.toHaveBeenCalled();
   });
 
   it('throws for a partition missing from the manifest', async () => {
     const db = dbStub();
-    const { svc } = makeService({ db });
+    const { svc, worker } = makeService({ db });
     await expect(
-      svc.runJob(MANIFEST, { symbol: 'XAUUSD', tf: 'm1', year: '1999' }),
+      svc.runJob(MANIFEST, { symbol: 'XAUUSD', tf: 'm1', year: '1999' }, worker as never),
     ).rejects.toThrow(/manifest|partición|partition/i);
   });
 
-  it('terminates the worker after a successful ingest', async () => {
+  it('does NOT terminate the worker after a bare runJob (the batch owns the lifecycle)', async () => {
     const db = dbStub();
     const { svc, worker } = makeService({ db });
-    await svc.runJob(MANIFEST, M1_JOB);
-    expect(worker.terminated).toBe(true);
+    await svc.runJob(MANIFEST, M1_JOB, worker as never);
+    expect(worker.terminated).toBe(false);
   });
 });
 
@@ -248,5 +251,32 @@ describe('DataOnboardingService.runJobs (batch with progress)', () => {
     expect(progress.map((p) => p.status)).toEqual(['skipped', 'ingested']);
     expect(download).toHaveBeenCalledTimes(1);
     expect(download).toHaveBeenCalledWith('XAUUSD', 'm1', '2024.parquet');
+  });
+
+  it('reuses ONE worker across the whole batch and terminates it exactly once at the end', async () => {
+    const db = dbStub([
+      {
+        id: 'XAUUSD|H1|all',
+        symbol: 'XAUUSD',
+        timeframe: 'H1',
+        year: 'all',
+        size: 50,
+        etag: 'eh1', // matches manifest -> this job will be SKIPPED
+        updatedAt: '2026-01-03T00:00:00Z',
+      },
+    ]);
+    const { svc, worker, factory } = makeService({ db });
+
+    // H1 is skipped (etag match); M1 and D1 are ingested -> 2 non-skipped jobs.
+    const D1_JOB: OnboardingJob = { symbol: 'XAUUSD', tf: 'd1', year: 'all' };
+    await svc.runJobs(MANIFEST, [H1_JOB, M1_JOB, D1_JOB]);
+
+    // (a) the factory was called exactly once for the whole batch.
+    expect(factory).toHaveBeenCalledTimes(1);
+    // (b) only the non-skipped partitions were posted to the (single) worker.
+    expect(worker.posted).toHaveLength(2);
+    expect(worker.posted.map((p) => p.timeframe)).toEqual(['M1', 'D1']);
+    // (c) the worker is terminated exactly once, after the batch finishes.
+    expect(worker.terminated).toBe(true);
   });
 });

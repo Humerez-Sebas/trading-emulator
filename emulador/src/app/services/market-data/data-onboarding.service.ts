@@ -75,6 +75,9 @@ export const PARQUET_WORKER_FACTORY = new InjectionToken<WorkerFactory>('PARQUET
  * off-thread ingestion worker, awaits the worker's `done`, and records the
  * `DatasetRecord` so the next launch can skip it.
  *
+ * `runJobs` spawns ONE Parquet worker for the whole batch (see `ingestOn`)
+ * instead of one per partition, eliminating per-file `parquet-wasm` re-init.
+ *
  * Re-ingestion dedup: the `candles` store has auto-increment ids and a
  * non-unique index, so re-running an already-present partition would DUPLICATE
  * candles. When a dataset already exists with a *different* etag, its candles
@@ -106,7 +109,7 @@ export class DataOnboardingService {
    * matches the manifest, otherwise `'ingested'` after a successful worker run.
    * Rejects if the partition is missing from the manifest or the worker errors.
    */
-  async runJob(manifest: Manifest, job: OnboardingJob): Promise<JobOutcome> {
+  async runJob(manifest: Manifest, job: OnboardingJob, worker: IngestWorker): Promise<JobOutcome> {
     const { symbol, tf, year } = job;
     const entry = this.manifests.getEntry(manifest, symbol, tf, year);
     if (!entry) {
@@ -129,18 +132,10 @@ export class DataOnboardingService {
     }
 
     // 3) download the parquet bytes for this partition (`<year>.parquet`).
-    // [r2-perf] Task 5 measurement-only instrumentation: fetch vs ingest timing.
-    // Removed in Task 6 once the optimization it informs is validated.
-    const tFetch0 = performance.now();
     const buffer = await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`);
-    const tFetch1 = performance.now();
 
-    // 4) hand off to the worker and await its terminal message.
-    await this.ingest(buffer, symbol, timeframe);
-    const tIngest1 = performance.now();
-    console.debug(
-      `[r2-perf] ${id}: fetch=${Math.round(tFetch1 - tFetch0)}ms ingest=${Math.round(tIngest1 - tFetch1)}ms bytes=${buffer.byteLength}`,
-    );
+    // 4) hand off to the (batch-shared) worker and await its terminal message.
+    await this.ingestOn(worker, buffer, symbol, timeframe);
 
     // 5) record the dataset (size/etag/updatedAt straight from the manifest).
     const record: DatasetRecord = {
@@ -159,6 +154,11 @@ export class DataOnboardingService {
   /**
    * Runs a batch of jobs in order, invoking `onProgress` once per completed
    * job. A failing job rejects the whole batch (the wizard surfaces the error).
+   *
+   * A single Parquet worker is spawned for the whole batch and reused across
+   * partitions — `parquet-wasm` caches its WASM init internally, so one
+   * worker instance means one init instead of one per partition. The worker
+   * is always terminated when the batch settles (success or failure).
    */
   async runJobs(
     manifest: Manifest,
@@ -166,34 +166,40 @@ export class DataOnboardingService {
     onProgress?: (progress: OnboardingProgress) => void,
   ): Promise<void> {
     const total = jobs.length;
-    for (let i = 0; i < jobs.length; i++) {
-      const job = jobs[i];
-      const status = await this.runJob(manifest, job);
-      onProgress?.({ index: i + 1, total, job, status });
+    const worker = this.workerFactory();
+    try {
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        const status = await this.runJob(manifest, job, worker);
+        onProgress?.({ index: i + 1, total, job, status });
+      }
+    } finally {
+      worker.terminate();
     }
   }
 
   /**
-   * Posts the downloaded bytes into a fresh worker and resolves on `done`,
-   * rejecting on `error` or a worker-level error. The worker is always
-   * terminated when the promise settles.
+   * Posts the downloaded bytes into the given worker and resolves on `done`,
+   * rejecting on `error` or a worker-level error. Does NOT terminate the
+   * worker — the caller (`runJobs`) owns its lifecycle across the batch.
    */
-  private ingest(buffer: ArrayBuffer, symbol: string, timeframe: Timeframe): Promise<void> {
-    const worker = this.workerFactory();
+  private ingestOn(
+    worker: IngestWorker,
+    buffer: ArrayBuffer,
+    symbol: string,
+    timeframe: Timeframe,
+  ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
         const msg = ev.data;
         if (msg.type === 'done') {
-          worker.terminate();
           resolve();
         } else if (msg.type === 'error') {
-          worker.terminate();
           reject(new Error(msg.message));
         }
         // 'progress' messages are ignored here (wizard shows per-job progress).
       };
       worker.onerror = (err: unknown) => {
-        worker.terminate();
         reject(err instanceof Error ? err : new Error(String(err)));
       };
       worker.postMessage({ buffer, symbol, timeframe });
