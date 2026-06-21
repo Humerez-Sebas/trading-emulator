@@ -1,12 +1,13 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
-import { AuthUser } from '../../services/backend-api.service';
+import { AuthUser } from './auth.models';
 import { AuthActions } from './auth.actions';
 
 /**
  * - `unknown`: still checking the session at startup.
- * - `authenticated`: cookie session valid.
- * - `anonymous`: backend reachable, no session -> guarded routes redirect.
- * - `offline`: backend unreachable -> the app stays usable with local CSVs.
+ * - `authenticated`: a valid Supabase session.
+ * - `anonymous`: no Supabase session -> guarded routes redirect to /login.
+ * - `offline`: the auth check threw (rare, since the session is read locally) -> the app
+ *   stays usable as guest.
  * - `guest`: deliberate no-account mode (static build or explicit choice).
  */
 export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous' | 'offline' | 'guest';
@@ -14,7 +15,7 @@ export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous' | 'offline' |
 export interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
-  /** A login/register request is in flight (submit feedback). */
+  /** A login request is in flight (submit feedback). */
   pending: boolean;
   error: string | null;
 }
@@ -38,11 +39,7 @@ export const authFeature = createFeature({
         status: user ? 'authenticated' : offline ? 'offline' : 'anonymous',
       }),
     ),
-    on(
-      AuthActions.login,
-      AuthActions.register,
-      (state): AuthState => ({ ...state, pending: true, error: null }),
-    ),
+    on(AuthActions.login, (state): AuthState => ({ ...state, pending: true, error: null })),
     on(
       AuthActions.authSuccess,
       (state, { user }): AuthState => ({

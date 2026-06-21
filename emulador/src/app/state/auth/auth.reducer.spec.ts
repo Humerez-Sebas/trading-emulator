@@ -8,7 +8,7 @@ function initial() {
   return reducer(undefined, { type: '@@init' } as any);
 }
 
-const user = { id: 1, username: 'alice' };
+const user = { id: 'u1', email: 'alice@example.com' };
 
 describe('auth reducer: sessionResolved', () => {
   it('user present → status authenticated', () => {
@@ -29,19 +29,12 @@ describe('auth reducer: sessionResolved', () => {
   });
 });
 
-describe('auth reducer: login / register', () => {
+describe('auth reducer: login', () => {
   it('login sets pending:true and clears error', () => {
-    const s = { ...initial(), error: 'old error' };
-    const next = reducer(s, AuthActions.login({ username: 'u', password: 'p', returnUrl: null }));
-    expect(next.pending).toBe(true);
-    expect(next.error).toBeNull();
-  });
-
-  it('register sets pending:true and clears error', () => {
     const s = { ...initial(), error: 'old error' };
     const next = reducer(
       s,
-      AuthActions.register({ username: 'u', password: 'p', returnUrl: null }),
+      AuthActions.login({ email: 'u@example.com', password: 'p', returnUrl: null }),
     );
     expect(next.pending).toBe(true);
     expect(next.error).toBeNull();

@@ -2,43 +2,33 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { provideMockActions } from '@ngrx/effects/testing';
 import { provideMockStore } from '@ngrx/store/testing';
-import { of, throwError, Subject } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { Subject, firstValueFrom } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HttpErrorResponse } from '@angular/common/http';
 
 import { AuthEffects } from './auth.effects';
 import { AuthActions } from './auth.actions';
-import { BackendApiService } from '../../services/backend-api.service';
+import { SupabaseAuthService } from '../../auth/supabase-auth.service';
 import { ROOT_EFFECTS_INIT } from '@ngrx/effects';
 
 describe('AuthEffects', () => {
   let actions$: Subject<any>;
-  let api: Record<keyof BackendApiService, ReturnType<typeof vi.fn>>;
+  let auth: {
+    getUser: ReturnType<typeof vi.fn>;
+    signIn: ReturnType<typeof vi.fn>;
+    signOut: ReturnType<typeof vi.fn>;
+  };
   let router: { navigateByUrl: ReturnType<typeof vi.fn> };
   let effects: AuthEffects;
 
-  const mockUser = { id: 1, username: 'test' };
-
-  function httpError(status: number, detail?: string): HttpErrorResponse {
-    return new HttpErrorResponse({
-      status,
-      error: detail ? { detail } : null,
-      url: 'http://localhost:8000/test',
-    });
-  }
+  const mockUser = { id: 'u1', email: 'a@b.com' };
 
   beforeEach(() => {
     actions$ = new Subject();
-    api = {
-      me: vi.fn(),
-      login: vi.fn(),
-      register: vi.fn(),
-      logout: vi.fn(),
-      refresh: vi.fn(),
-      symbols: vi.fn(),
-      downloadChunked: vi.fn(),
-    } as any;
+    auth = {
+      getUser: vi.fn(),
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+    };
 
     router = { navigateByUrl: vi.fn() };
 
@@ -47,7 +37,7 @@ describe('AuthEffects', () => {
         AuthEffects,
         provideMockActions(() => actions$),
         provideMockStore(),
-        { provide: BackendApiService, useValue: api },
+        { provide: SupabaseAuthService, useValue: auth },
         { provide: Router, useValue: router },
       ],
     });
@@ -67,8 +57,8 @@ describe('AuthEffects', () => {
   });
 
   describe('check$', () => {
-    it('dispatches sessionResolved with user and offline:false on success', async () => {
-      api.me.mockReturnValue(of(mockUser));
+    it('checkSession → authenticated when a session exists', async () => {
+      auth.getUser.mockResolvedValue(mockUser);
 
       const p = firstValueFrom(effects.check$);
       actions$.next(AuthActions.checkSession());
@@ -76,17 +66,8 @@ describe('AuthEffects', () => {
       expect(await p).toEqual(AuthActions.sessionResolved({ user: mockUser, offline: false }));
     });
 
-    it('dispatches sessionResolved with user:null and offline:true on status 0 error', async () => {
-      api.me.mockReturnValue(throwError(() => httpError(0)));
-
-      const p = firstValueFrom(effects.check$);
-      actions$.next(AuthActions.checkSession());
-
-      expect(await p).toEqual(AuthActions.sessionResolved({ user: null, offline: true }));
-    });
-
-    it('dispatches sessionResolved with user:null and offline:false on status 401', async () => {
-      api.me.mockReturnValue(throwError(() => httpError(401)));
+    it('checkSession → anonymous when no session and no guest flag', async () => {
+      auth.getUser.mockResolvedValue(null);
 
       const p = firstValueFrom(effects.check$);
       actions$.next(AuthActions.checkSession());
@@ -94,14 +75,23 @@ describe('AuthEffects', () => {
       expect(await p).toEqual(AuthActions.sessionResolved({ user: null, offline: false }));
     });
 
-    it('honors a persisted guest flag on a 401 (anonymous) response', async () => {
+    it('honors a persisted guest flag when there is no session', async () => {
       localStorage.setItem('emulador.guest', '1');
-      api.me.mockReturnValue(throwError(() => httpError(401)));
+      auth.getUser.mockResolvedValue(null);
 
       const p = firstValueFrom(effects.check$);
       actions$.next(AuthActions.checkSession());
 
       expect(await p).toEqual(AuthActions.continueAsGuest());
+    });
+
+    it('checkSession → offline when getUser throws', async () => {
+      auth.getUser.mockRejectedValue(new Error('boom'));
+
+      const p = firstValueFrom(effects.check$);
+      actions$.next(AuthActions.checkSession());
+
+      expect(await p).toEqual(AuthActions.sessionResolved({ user: null, offline: true }));
     });
   });
 
@@ -117,66 +107,59 @@ describe('AuthEffects', () => {
   });
 
   describe('login$', () => {
-    it('dispatches authSuccess on successful login', async () => {
-      api.login.mockReturnValue(of(mockUser));
+    it('login → authSuccess on success', async () => {
+      auth.signIn.mockResolvedValue(mockUser);
 
       const p = firstValueFrom(effects.login$);
-      actions$.next(AuthActions.login({ username: 'test', password: 'pass', returnUrl: '/home' }));
+      actions$.next(
+        AuthActions.login({ email: 'a@b.com', password: 'pass12', returnUrl: '/home' }),
+      );
 
       expect(await p).toEqual(AuthActions.authSuccess({ user: mockUser, returnUrl: '/home' }));
     });
 
-    it('dispatches authFailure with "No se pudo conectar" when status 0 (describeError branch)', async () => {
-      api.login.mockReturnValue(throwError(() => httpError(0)));
+    it('login → authFailure with the Spanish credentials message', async () => {
+      auth.signIn.mockRejectedValue(new Error('Invalid login credentials'));
 
       const p = firstValueFrom(effects.login$);
-      actions$.next(AuthActions.login({ username: 'test', password: 'pass', returnUrl: null }));
+      actions$.next(AuthActions.login({ email: 'a@b.com', password: 'pass12', returnUrl: null }));
+
+      expect(await p).toEqual(
+        AuthActions.authFailure({ error: 'Correo o contraseña incorrectos' }),
+      );
+    });
+
+    it('login → authFailure with the network message', async () => {
+      auth.signIn.mockRejectedValue(new Error('Failed to fetch'));
+
+      const p = firstValueFrom(effects.login$);
+      actions$.next(AuthActions.login({ email: 'a@b.com', password: 'pass12', returnUrl: null }));
 
       expect(await p).toEqual(
         AuthActions.authFailure({ error: 'No se pudo conectar con el servidor' }),
       );
     });
 
-    it('dispatches authFailure with the detail string when error.detail is a string', async () => {
-      api.login.mockReturnValue(throwError(() => httpError(400, 'Credenciales incorrectas')));
+    it('login → authFailure with the unconfirmed-email message', async () => {
+      auth.signIn.mockRejectedValue(new Error('Email not confirmed'));
 
       const p = firstValueFrom(effects.login$);
-      actions$.next(AuthActions.login({ username: 'x', password: 'y', returnUrl: null }));
+      actions$.next(AuthActions.login({ email: 'a@b.com', password: 'pass12', returnUrl: null }));
 
-      expect(await p).toEqual(AuthActions.authFailure({ error: 'Credenciales incorrectas' }));
+      expect(await p).toEqual(
+        AuthActions.authFailure({ error: 'Tu cuenta aún no está confirmada' }),
+      );
     });
 
-    it('dispatches authFailure with generic message when error.detail is not a string', async () => {
-      api.login.mockReturnValue(throwError(() => httpError(500)));
+    it('login → authFailure with a generic message for an unknown error', async () => {
+      auth.signIn.mockRejectedValue(new Error(''));
 
       const p = firstValueFrom(effects.login$);
-      actions$.next(AuthActions.login({ username: 'x', password: 'y', returnUrl: null }));
+      actions$.next(AuthActions.login({ email: 'a@b.com', password: 'pass12', returnUrl: null }));
 
       expect(await p).toEqual(
         AuthActions.authFailure({ error: 'Algo salió mal, inténtalo de nuevo' }),
       );
-    });
-  });
-
-  describe('register$', () => {
-    it('dispatches authSuccess on successful registration', async () => {
-      api.register.mockReturnValue(of(mockUser));
-
-      const p = firstValueFrom(effects.register$);
-      actions$.next(
-        AuthActions.register({ username: 'newuser', password: 'pass123', returnUrl: null }),
-      );
-
-      expect(await p).toEqual(AuthActions.authSuccess({ user: mockUser, returnUrl: null }));
-    });
-
-    it('dispatches authFailure on registration error', async () => {
-      api.register.mockReturnValue(throwError(() => httpError(409, 'Usuario ya existe')));
-
-      const p = firstValueFrom(effects.register$);
-      actions$.next(AuthActions.register({ username: 'taken', password: 'pass', returnUrl: null }));
-
-      expect(await p).toEqual(AuthActions.authFailure({ error: 'Usuario ya existe' }));
     });
   });
 
@@ -201,8 +184,8 @@ describe('AuthEffects', () => {
   });
 
   describe('logout$', () => {
-    it('dispatches loggedOut after successful logout', async () => {
-      api.logout.mockReturnValue(of(undefined));
+    it('logout → loggedOut after a successful signOut', async () => {
+      auth.signOut.mockResolvedValue(undefined);
 
       const p = firstValueFrom(effects.logout$);
       actions$.next(AuthActions.logout());
@@ -210,8 +193,8 @@ describe('AuthEffects', () => {
       expect(await p).toEqual(AuthActions.loggedOut());
     });
 
-    it('dispatches loggedOut even when the server call fails (catchError)', async () => {
-      api.logout.mockReturnValue(throwError(() => httpError(500)));
+    it('dispatches loggedOut even when signOut fails (catchError)', async () => {
+      auth.signOut.mockRejectedValue(new Error('boom'));
 
       const p = firstValueFrom(effects.logout$);
       actions$.next(AuthActions.logout());

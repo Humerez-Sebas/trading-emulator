@@ -23,6 +23,7 @@
     "@angular/router": "^21.2.0",
     "@ngrx/effects": "^21.1.1",
     "@ngrx/store": "^21.1.1",
+    "@supabase/supabase-js": "^2.108.2",
     "apache-arrow": "^21.1.0",
     "lightweight-charts": "^5.2.0",
     "parquet-wasm": "^0.7.1",

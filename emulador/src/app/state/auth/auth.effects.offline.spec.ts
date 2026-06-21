@@ -1,4 +1,4 @@
-// offlineOnly build: the session check must NOT touch the backend.
+// offlineOnly build: the session check must NOT touch Supabase.
 // We mutate environment.offlineOnly before injecting the effect so that
 // check$'s exhaustMap callback reads the flag at dispatch time.
 import { TestBed } from '@angular/core/testing';
@@ -9,25 +9,25 @@ import { Subject, firstValueFrom } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthEffects } from './auth.effects';
 import { AuthActions } from './auth.actions';
-import { BackendApiService } from '../../services/backend-api.service';
+import { SupabaseAuthService } from '../../auth/supabase-auth.service';
 import { environment } from '../../../environments/environment';
 
 describe('AuthEffects (offlineOnly build)', () => {
   let actions$: Subject<any>;
-  let api: { me: ReturnType<typeof vi.fn> };
+  let auth: { getUser: ReturnType<typeof vi.fn> };
   let effects: AuthEffects;
 
   beforeEach(() => {
     environment.offlineOnly = true;
 
     actions$ = new Subject();
-    api = { me: vi.fn() } as any;
+    auth = { getUser: vi.fn() } as any;
     TestBed.configureTestingModule({
       providers: [
         AuthEffects,
         provideMockActions(() => actions$),
         provideMockStore(),
-        { provide: BackendApiService, useValue: api },
+        { provide: SupabaseAuthService, useValue: auth },
         { provide: Router, useValue: { navigateByUrl: vi.fn() } },
       ],
     });
@@ -38,10 +38,10 @@ describe('AuthEffects (offlineOnly build)', () => {
     environment.offlineOnly = false;
   });
 
-  it('check$ resolves to continueAsGuest without calling api.me', async () => {
+  it('check$ resolves to continueAsGuest without calling auth.getUser', async () => {
     const p = firstValueFrom(effects.check$);
     actions$.next(AuthActions.checkSession());
     expect(await p).toEqual(AuthActions.continueAsGuest());
-    expect(api.me).not.toHaveBeenCalled();
+    expect(auth.getUser).not.toHaveBeenCalled();
   });
 });

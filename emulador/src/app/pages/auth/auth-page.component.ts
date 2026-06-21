@@ -1,6 +1,6 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Store } from '@ngrx/store';
 import { AuthActions } from '../../state/auth/auth.actions';
 import { authFeature } from '../../state/auth/auth.reducer';
@@ -8,14 +8,13 @@ import { ButtonDirective } from '../../components/ui/button.directive';
 import { environment } from '../../../environments/environment';
 
 /**
- * Login and registration share one page; the route data decides the mode.
- * Form UX per the design guidelines: real labels (not placeholder-only)
- * and explicit submit feedback (loading -> success/error).
+ * Login page (invite-only: no registration). Real labels + explicit submit
+ * feedback (loading -> error). Guest mode entry preserved.
  */
 @Component({
   selector: 'app-auth-page',
   standalone: true,
-  imports: [FormsModule, RouterLink, ButtonDirective],
+  imports: [FormsModule, ButtonDirective],
   templateUrl: './auth-page.component.html',
   styleUrl: './auth-page.component.css',
 })
@@ -24,23 +23,20 @@ export class AuthPageComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  /** 'login' | 'register', provided by the route data. */
-  mode = input<'login' | 'register'>('login');
-
   pending = this.store.selectSignal(authFeature.selectPending);
   error = this.store.selectSignal(authFeature.selectError);
   status = this.store.selectSignal(authFeature.selectStatus);
 
-  username = signal('');
+  email = signal('');
   password = signal('');
 
-  isLogin = computed(() => this.mode() === 'login');
   offline = computed(() => this.status() === 'offline');
-  // hidden in prod (closed registration); the backend also enforces it (403)
-  registrationEnabled = environment.registrationEnabled;
   guestModeEnabled = environment.guestModeEnabled;
 
-  valid = computed(() => this.username().trim().length >= 3 && this.password().length >= 6);
+  private static readonly EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  valid = computed(
+    () => AuthPageComponent.EMAIL_RE.test(this.email().trim()) && this.password().length >= 6,
+  );
 
   continueAsGuest(): void {
     this.store.dispatch(AuthActions.continueAsGuest());
@@ -50,13 +46,8 @@ export class AuthPageComponent {
   submit(): void {
     if (!this.valid() || this.pending()) return;
     const returnUrl = this.route.snapshot.queryParamMap.get('volver');
-    const payload = {
-      username: this.username().trim(),
-      password: this.password(),
-      returnUrl,
-    };
     this.store.dispatch(
-      this.isLogin() ? AuthActions.login(payload) : AuthActions.register(payload),
+      AuthActions.login({ email: this.email().trim(), password: this.password(), returnUrl }),
     );
   }
 }

@@ -41,13 +41,6 @@ describe('AuthPageComponent', () => {
     TestBed.resetTestingModule();
   });
 
-  it('isLogin is true when mode is "login"', () => {
-    create();
-    // default input is 'login' — but signals from input() need a host
-    // so we test the computed derived directly by checking the default
-    expect(component.isLogin()).toBe(true);
-  });
-
   it('offline() is true when status selector emits "offline"', () => {
     create();
     store.overrideSelector(authFeature.selectStatus, 'offline');
@@ -62,30 +55,30 @@ describe('AuthPageComponent', () => {
     expect(component.offline()).toBe(false);
   });
 
-  it('valid() is false when username < 3 chars', () => {
+  it('valid() is false when email is not a valid address', () => {
     create();
-    component.username.set('ab');
+    component.email.set('not-an-email');
     component.password.set('secret123');
     expect(component.valid()).toBe(false);
   });
 
   it('valid() is false when password < 6 chars', () => {
     create();
-    component.username.set('alice');
+    component.email.set('alice@example.com');
     component.password.set('abc');
     expect(component.valid()).toBe(false);
   });
 
-  it('valid() is true when username >= 3 and password >= 6', () => {
+  it('valid() is true with a valid email and password >= 6', () => {
     create();
-    component.username.set('alice');
+    component.email.set('alice@example.com');
     component.password.set('secret123');
     expect(component.valid()).toBe(true);
   });
 
   it('submit() does nothing when invalid', () => {
     create();
-    component.username.set('ab');
+    component.email.set('nope');
     component.password.set('123');
     component.submit();
     expect(dispatch).not.toHaveBeenCalled();
@@ -95,38 +88,26 @@ describe('AuthPageComponent', () => {
     create();
     store.overrideSelector(authFeature.selectPending, true);
     store.refreshState();
-    component.username.set('alice');
+    component.email.set('alice@example.com');
     component.password.set('secret123');
     component.submit();
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it('submit() dispatches login with trimmed username and returnUrl', () => {
+  it('submit() dispatches login with trimmed email and returnUrl', () => {
     create('/back');
     store.overrideSelector(authFeature.selectPending, false);
     store.refreshState();
-    component.username.set('  alice  ');
+    component.email.set('  alice@example.com  ');
     component.password.set('secret123');
     component.submit();
     expect(dispatch).toHaveBeenCalledWith(
-      AuthActions.login({ username: 'alice', password: 'secret123', returnUrl: '/back' }),
+      AuthActions.login({
+        email: 'alice@example.com',
+        password: 'secret123',
+        returnUrl: '/back',
+      }),
     );
-  });
-
-  it('submit() dispatches register in register mode', () => {
-    create(null);
-    store.overrideSelector(authFeature.selectPending, false);
-    store.refreshState();
-    component.username.set('bob');
-    component.password.set('password1');
-    // Simulate register mode by reading isLogin as false
-    // The mode input defaults to 'login', so we override the computed signal
-    // by using a trick: since mode is an input signal we cannot set it directly
-    // in unit test without a host; instead verify the login dispatch default
-    component.submit();
-    expect(dispatch).toHaveBeenCalled();
-    const call = dispatch.mock.calls[0][0] as ReturnType<typeof AuthActions.login>;
-    expect(call['type']).toContain('Login');
   });
 
   it('continueAsGuest dispatches the action and navigates home', () => {
