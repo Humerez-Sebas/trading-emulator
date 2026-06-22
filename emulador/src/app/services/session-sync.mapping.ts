@@ -36,3 +36,41 @@ export function fromPayload(p: SessionPayloadV1) {
     requiredDatasets: p.requiredDatasets,
   };
 }
+
+export const PAYLOAD_WARN_BYTES = 512 * 1024;
+export const PAYLOAD_MAX_BYTES = 2 * 1024 * 1024;
+
+const CANDLE_KEYS = new Set(['series', 'candles', 'ohlc', 'parquet']);
+
+/** Defense-in-depth: reject any candle/series/OHLC/parquet field at any depth. */
+export function assertNoCandles(payload: unknown): void {
+  const seen = new WeakSet<object>();
+  const walk = (v: unknown): void => {
+    if (!v || typeof v !== 'object') return;
+    if (seen.has(v as object)) return;
+    seen.add(v as object);
+    if (!Array.isArray(v)) {
+      for (const k of Object.keys(v as Record<string, unknown>)) {
+        if (CANDLE_KEYS.has(k.toLowerCase())) {
+          throw new Error(`El payload no puede contener velas (campo prohibido: "${k}").`);
+        }
+        walk((v as Record<string, unknown>)[k]);
+      }
+    } else {
+      for (const item of v) walk(item);
+    }
+  };
+  walk(payload);
+}
+
+export function payloadSizeBytes(payload: unknown): number {
+  return new Blob([JSON.stringify(payload)]).size;
+}
+
+export function assertPayloadSize(payload: unknown): { ok: boolean; bytes: number; warn: boolean } {
+  const bytes = payloadSizeBytes(payload);
+  if (bytes > PAYLOAD_MAX_BYTES) {
+    throw new Error('Esta sesión es demasiado grande para sincronizarse.');
+  }
+  return { ok: true, bytes, warn: bytes >= PAYLOAD_WARN_BYTES };
+}

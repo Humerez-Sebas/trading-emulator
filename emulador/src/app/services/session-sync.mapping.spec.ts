@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { toPayload, fromPayload } from './session-sync.mapping';
+import {
+  toPayload,
+  fromPayload,
+  assertNoCandles,
+  assertPayloadSize,
+  PAYLOAD_MAX_BYTES,
+} from './session-sync.mapping';
 import {
   SESSION_PAYLOAD_VERSION,
   type PayloadInput,
@@ -62,5 +68,29 @@ describe('toPayload / fromPayload', () => {
     expect(back.trading).toEqual(input.trading);
     expect(back.cursor).toBe(input.currentTime);
     expect(back.requiredDatasets).toEqual(input.requiredDatasets);
+  });
+});
+
+describe('assertNoCandles', () => {
+  it('passes a clean payload', () => {
+    expect(() => assertNoCandles({ trading: {}, drawings: [] })).not.toThrow();
+  });
+  it('throws when a series/candles/ohlc field is present (any depth)', () => {
+    expect(() => assertNoCandles({ trading: {}, series: [{ time: 1, open: 1 }] })).toThrow(
+      /candle|series|ohlc/i,
+    );
+    expect(() => assertNoCandles({ a: { candles: [] } })).toThrow();
+  });
+});
+
+describe('assertPayloadSize', () => {
+  it('returns warn:false for a small payload', () => {
+    const r = assertPayloadSize({ x: 1 });
+    expect(r.ok).toBe(true);
+    expect(r.warn).toBe(false);
+  });
+  it('throws when over the 2 MB hard cap', () => {
+    const huge = { blob: 'x'.repeat(PAYLOAD_MAX_BYTES + 10) };
+    expect(() => assertPayloadSize(huge)).toThrow(/grande|large|size/i);
   });
 });
