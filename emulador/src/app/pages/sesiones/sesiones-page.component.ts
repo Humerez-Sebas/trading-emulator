@@ -822,12 +822,17 @@ export class SesionesPageComponent {
   private async materializeAndOpen(card: SessionCard, payload: SessionPayloadV1): Promise<void> {
     if (!card.id) return;
     const restored = fromPayload(payload);
+    // `card.createdAt` for a cloud-only card is `Date.parse(summary.updatedAt)` —
+    // the cloud version's edit time. Stamping both fields with it marks the
+    // materialized local copy as "synced as of the cloud version" (not dirty).
     const session: SavedSession = {
       id: card.id,
       name: card.name,
       createdAt: card.createdAt,
       currentTime: restored.cursor,
       trading: restored.trading,
+      clientUpdatedAt: card.createdAt,
+      syncedAt: card.createdAt,
     };
     const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
     meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
@@ -884,6 +889,15 @@ export class SesionesPageComponent {
       meta.sessions = (meta.sessions ?? []).filter((s) => s.id !== card.id);
       await this.db.putMeta(meta);
       await this.reload();
+      if (this.authStatus() === 'authenticated') {
+        try {
+          await this.db.addPendingDelete({ entity: 'session', id: card.id });
+          await this.sync.flushPendingDeletes();
+        } catch {
+          // Local delete already applied; the pending-delete record (if it made
+          // it to IndexedDB) is retried on the next flush — local-first.
+        }
+      }
     }
     this.flash(`Sesión "${card.name}" eliminada.`);
   }

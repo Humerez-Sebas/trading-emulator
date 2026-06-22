@@ -497,6 +497,48 @@ describe('SesionesPageComponent', () => {
     );
   });
 
+  it('open: materializing a cloud-only card stamps clientUpdatedAt + syncedAt with the cloud updatedAt ms (not dirty)', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    const cloudUpdatedAtMs = Date.parse('2024-03-15T10:00:00.000Z');
+    create({
+      currentAsset: 'US30',
+      db: { getMeta: vi.fn().mockResolvedValue(undefined), putMeta },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(
+      card({
+        symbol: 'XAUUSD',
+        id: 'cloud-1',
+        cloudOnly: true,
+        createdAt: cloudUpdatedAtMs,
+      }),
+    );
+
+    expect(putMeta).toHaveBeenCalled();
+    const metaArg = putMeta.mock.calls[0][0];
+    const session = metaArg.sessions.find((s: { id: string }) => s.id === 'cloud-1');
+    expect(session).toBeTruthy();
+    expect(session.clientUpdatedAt).toBe(cloudUpdatedAtMs);
+    expect(session.syncedAt).toBe(cloudUpdatedAtMs);
+  });
+
   it('open: a cloud-only card surfaces a Spanish error when the fetch fails (no restore dispatch)', async () => {
     const fetchPayload = vi.fn().mockRejectedValue(new Error('Network down'));
     create({ currentAsset: 'US30', sync: { fetchPayload } });
@@ -704,6 +746,63 @@ describe('SesionesPageComponent', () => {
     await settle();
     await component.remove(card({ symbol: 'XAUUSD', id: 's1' }));
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('remove off-screen (non-current-asset) card propagates the delete to the cloud when authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, addPendingDelete, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(putMeta).toHaveBeenCalled();
+    expect(addPendingDelete).toHaveBeenCalledWith({ entity: 'session', id: 's1' });
+    expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
+  });
+
+  it('remove off-screen card does NOT touch sync when not authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'anonymous',
+      db: { getMeta, putMeta, addPendingDelete, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(putMeta).toHaveBeenCalled();
+    expect(addPendingDelete).not.toHaveBeenCalled();
+    expect(syncStub.flushPendingDeletes).not.toHaveBeenCalled();
+  });
+
+  it('remove off-screen card local mutation survives a sync failure (local-first)', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+      sync: { flushPendingDeletes: vi.fn().mockRejectedValue(new Error('offline')) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await expect(component.remove(card({ symbol: 'EURUSD', id: 's1' }))).resolves.toBeUndefined();
+    expect(putMeta).toHaveBeenCalled();
   });
 
   // ---- exportSession (archived card) ----
