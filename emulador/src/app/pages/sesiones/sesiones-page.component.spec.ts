@@ -234,11 +234,7 @@ describe('SesionesPageComponent', () => {
     expect(matches[0].name).toBe('Local'); // local wins
   });
 
-  it('needsDownload is true when required datasets are missing locally, false when present', async () => {
-    const needsIt = summary({
-      id: 'needs-1',
-      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
-    });
+  it('needsDownload is false when the required dataset is present locally', async () => {
     const hasIt = summary({
       id: 'has-1',
       requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
@@ -258,12 +254,12 @@ describe('SesionesPageComponent', () => {
           },
         ]),
       },
-      sync: { listSummaries: vi.fn().mockResolvedValue([needsIt, hasIt]) },
+      sync: { listSummaries: vi.fn().mockResolvedValue([hasIt]) },
     });
     await settle();
 
     const cards = component.groups().flatMap((g) => g.cards);
-    expect(cards.find((c) => c.id === 'needs-1')!.needsDownload).toBe(false);
+    expect(cards.find((c) => c.id === 'has-1')!.needsDownload).toBe(false);
   });
 
   it('needsDownload is true when the required dataset is absent from the local cache', async () => {
@@ -502,6 +498,135 @@ describe('SesionesPageComponent', () => {
     expect(component.importError()).toBe('Network down');
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+  });
+
+  it('open: a cloud-only card with missing datasets opens the download modal instead of materializing immediately', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'M1', year: 2024 }],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(undefined),
+        putMeta,
+        listDatasets: vi.fn().mockResolvedValue([]), // nothing cached locally
+      },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(fetchPayload).toHaveBeenCalledWith('cloud-1');
+    expect(component.missing()).toEqual([{ symbol: 'XAUUSD', timeframe: 'M1', year: 2024 }]);
+    // nothing materialized or opened yet — waiting on confirmDownload()
+    expect(putMeta).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+  });
+
+  it('open: confirming the download for a cloud-only card runs the R2 jobs, then materializes + opens', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(undefined),
+        putMeta,
+        listDatasets: vi.fn().mockResolvedValue([]),
+      },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+    expect(component.missing()).toHaveLength(1);
+
+    await component.confirmDownload();
+
+    expect(manifestStub.fetchManifest).toHaveBeenCalled();
+    const [, jobs] = onboardingStub.runJobs.mock.calls[0];
+    expect(jobs).toEqual([{ symbol: 'XAUUSD', tf: 'h1', year: 'all' }]);
+    expect(component.missing()).toHaveLength(0); // modal closed
+    expect(putMeta).toHaveBeenCalled(); // materialized after download
+    expect(dispatch).toHaveBeenCalledWith(
+      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+    );
+  });
+
+  it('open: a cloud-only card whose datasets are already cached opens directly, no modal', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(undefined),
+        putMeta,
+        listDatasets: vi.fn().mockResolvedValue([
+          {
+            id: 'XAUUSD|H1|all',
+            symbol: 'XAUUSD',
+            timeframe: 'H1',
+            year: 'all',
+            size: 0,
+            etag: '',
+            updatedAt: '',
+          },
+        ]),
+      },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(component.missing()).toHaveLength(0);
+    expect(putMeta).toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(
+      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
     );
   });
 

@@ -16,7 +16,7 @@ import {
 } from '../../services/session.service';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { fromPayload } from '../../services/session-sync.mapping';
-import { SessionSummary } from '../../services/session-sync.models';
+import { SessionPayloadV1, SessionSummary } from '../../services/session-sync.models';
 import { authFeature } from '../../state/auth/auth.reducer';
 import type { DatasetRecord } from '../../services/market-data-db';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -60,6 +60,16 @@ import { MissingDatasetDialogComponent } from '../../components/missing-dataset-
 const ANCHOR_TFS: readonly AnchorTf[] = ['M1', 'H1', 'D1'];
 
 type Density = 'card' | 'row';
+
+/**
+ * What runs after the missing-dataset modal's download completes. Both the
+ * `.session.json` import and a cloud-only card's open route through the same
+ * modal/`runJobs` plumbing — this discriminates what to do once the missing
+ * datasets have landed locally.
+ */
+type PendingDownload =
+  | { kind: 'jsonImport'; session: SessionFileV1 }
+  | { kind: 'cloudOpen'; card: SessionCard; payload: SessionPayloadV1 };
 
 /** One row in the folder navigator sidebar. */
 interface SidebarItem {
@@ -540,8 +550,8 @@ export class SesionesPageComponent {
 
   // ---- .session.json import (R2: version gate + missing-dataset download + restore) ----
 
-  /** The parsed session pending restore (set while the missing-dataset modal is open). */
-  private pendingSession = signal<SessionFileV1 | null>(null);
+  /** What to do once the missing-dataset modal's download completes (open = modal open). */
+  private pendingDownload = signal<PendingDownload | null>(null);
   /** Missing datasets to list in the modal (empty = modal closed). */
   missing = signal<RequiredDataset[]>([]);
   /** A dataset download is running. */
@@ -580,7 +590,7 @@ export class SesionesPageComponent {
       const missing = await this.sessionService.findMissingDatasets(session);
       if (missing.length) {
         // open the missing-dataset modal; restore continues from confirmDownload()
-        this.pendingSession.set(session);
+        this.pendingDownload.set({ kind: 'jsonImport', session });
         this.downloadError.set('');
         this.downloadProgress.set(null);
         this.missing.set(missing);
@@ -592,11 +602,11 @@ export class SesionesPageComponent {
     }
   }
 
-  /** Modal action: download the missing datasets from R2, then restore. */
+  /** Modal action: download the missing datasets from R2, then run the pending action. */
   async confirmDownload(): Promise<void> {
-    const session = this.pendingSession();
+    const pending = this.pendingDownload();
     const missing = this.missing();
-    if (!session || !missing.length || this.downloading()) return;
+    if (!pending || !missing.length || this.downloading()) return;
     this.downloading.set(true);
     this.downloadError.set('');
     this.downloadProgress.set(0);
@@ -607,7 +617,11 @@ export class SesionesPageComponent {
         this.downloadProgress.set(Math.round((p.index / p.total) * 100)),
       );
       this.closeMissingModal();
-      await this.restoreSession(session);
+      if (pending.kind === 'jsonImport') {
+        await this.restoreSession(pending.session);
+      } else {
+        await this.materializeAndOpen(pending.card, pending.payload);
+      }
     } catch (e) {
       this.downloadError.set(
         (e as Error).message || 'No se pudieron descargar los datasets de R2.',
@@ -616,7 +630,7 @@ export class SesionesPageComponent {
     }
   }
 
-  /** Modal action: dismiss the missing-dataset prompt and abort the import. */
+  /** Modal action: dismiss the missing-dataset prompt and abort the import/open. */
   cancelDownload(): void {
     if (this.downloading()) return;
     this.closeMissingModal();
@@ -624,7 +638,7 @@ export class SesionesPageComponent {
 
   private closeMissingModal(): void {
     this.missing.set([]);
-    this.pendingSession.set(null);
+    this.pendingDownload.set(null);
     this.downloading.set(false);
     this.downloadProgress.set(null);
     this.downloadError.set('');
@@ -707,11 +721,14 @@ export class SesionesPageComponent {
 
   async open(card: SessionCard): Promise<void> {
     if (card.cloudOnly) {
-      const pulled = await this.pullCloudOnlySession(card);
-      if (!pulled) return; // error already surfaced; stay on the page
-      card = pulled;
+      await this.openCloudOnlySession(card);
+      return;
     }
+    await this.dispatchOpen(card);
+  }
 
+  /** Dispatches the switchSession/switchAsset open for an already-local card and navigates. */
+  private async dispatchOpen(card: SessionCard): Promise<void> {
     if (card.symbol === this.currentAsset()) {
       if (card.id !== null) {
         this.store.dispatch(
@@ -733,33 +750,50 @@ export class SesionesPageComponent {
   }
 
   /**
-   * Pulls a cloud-only card's full payload, materializes it as a local
-   * `SavedSession` on its symbol's workspace meta, and reloads so the rest of
-   * the existing open/restore flow can treat it like any other local card.
-   * Returns the now-local card, or `null` if the fetch failed (error surfaced
-   * via `importError`).
+   * Opens a cloud-only card: fetches its payload, then — if its required
+   * datasets aren't all cached locally — routes through the SAME
+   * missing-dataset modal/`runJobs` download used by the `.session.json`
+   * import (so candles still load from R2 before the chart opens). With no
+   * missing datasets it materializes and opens immediately, as before.
    */
-  private async pullCloudOnlySession(card: SessionCard): Promise<SessionCard | null> {
-    if (!card.id) return null;
+  private async openCloudOnlySession(card: SessionCard): Promise<void> {
+    if (!card.id) return;
     try {
       const payload = await this.sync.fetchPayload(card.id);
-      const restored = fromPayload(payload);
-      const session: SavedSession = {
-        id: card.id,
-        name: card.name,
-        createdAt: card.createdAt,
-        currentTime: restored.cursor,
-        trading: restored.trading,
-      };
-      const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
-      meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
-      await this.db.putMeta(meta);
-      await this.reload();
-      return { ...card, cloudOnly: false, needsDownload: false };
+      const missing = missingDatasets(payload.requiredDatasets, this.localDatasets());
+      if (missing.length) {
+        this.pendingDownload.set({ kind: 'cloudOpen', card, payload });
+        this.downloadError.set('');
+        this.downloadProgress.set(null);
+        this.missing.set(missing);
+        return;
+      }
+      await this.materializeAndOpen(card, payload);
     } catch (e) {
       this.importError.set((e as Error).message || 'No se pudo descargar la sesión desde la nube.');
-      return null;
     }
+  }
+
+  /**
+   * Materializes a cloud-only card's payload as a local `SavedSession` on its
+   * symbol's workspace meta, reloads so the rest of the app treats it like any
+   * other local card, then runs the normal open dispatch + navigation.
+   */
+  private async materializeAndOpen(card: SessionCard, payload: SessionPayloadV1): Promise<void> {
+    if (!card.id) return;
+    const restored = fromPayload(payload);
+    const session: SavedSession = {
+      id: card.id,
+      name: card.name,
+      createdAt: card.createdAt,
+      currentTime: restored.cursor,
+      trading: restored.trading,
+    };
+    const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
+    meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
+    await this.db.putMeta(meta);
+    await this.reload();
+    await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });
   }
 
   async rename(card: SessionCard): Promise<void> {
