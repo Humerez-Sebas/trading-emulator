@@ -1,5 +1,5 @@
 ﻿import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionSyncService } from './session-sync.service';
 import type { SupabaseService } from '../auth/supabase.service';
 import { PAYLOAD_MAX_BYTES } from './session-sync.mapping';
@@ -754,5 +754,54 @@ describe('SessionSyncService.flushDirty — active session push', () => {
 
     const updated = await db.getMeta('EURUSD');
     expect(updated?.activeSyncedAt).toBe(200);
+  });
+});
+
+describe('SessionSyncService.markActiveDirty', () => {
+  let db: WorkspaceDbService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('stamps activeClientUpdatedAt for a real active session', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'A',
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta(meta);
+
+    const service = makeService({}, db);
+    vi.spyOn(Date, 'now').mockReturnValue(12345);
+
+    await service.markActiveDirty('EURUSD');
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.activeClientUpdatedAt).toBe(12345);
+
+    vi.restoreAllMocks();
+  });
+
+  it('does nothing for an untouched default session', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      trading: defaultTradingData(),
+    });
+    await db.putMeta(meta);
+
+    const service = makeService({}, db);
+
+    await service.markActiveDirty('EURUSD');
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.activeClientUpdatedAt).toBeUndefined();
+  });
+
+  it('does nothing when there is no meta for the symbol', async () => {
+    const service = makeService({}, db);
+
+    await expect(service.markActiveDirty('NOPE')).resolves.toBeUndefined();
+    expect(await db.getMeta('NOPE')).toBeUndefined();
   });
 });

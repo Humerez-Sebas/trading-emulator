@@ -428,6 +428,14 @@ export class SessionSyncService {
     }
   }
 
+  /** Stamp the active session's LWW clock so flushDirty will push it. Only for a real session. */
+  async markActiveDirty(symbol: string): Promise<void> {
+    const meta = await this.db.getMeta(symbol);
+    if (!meta?.trading || !isRealSession(meta.trading)) return;
+    meta.activeClientUpdatedAt = Date.now();
+    await this.db.putMeta(meta);
+  }
+
   /**
    * D4 best-effort: ensure each symbol's `activeSessionId` points at a
    * sensible session (the existing one if still present, else the newest by

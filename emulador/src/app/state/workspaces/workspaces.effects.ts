@@ -78,9 +78,24 @@ export class WorkspacesEffects {
         filter(([, current]) => !!current),
         concatMap(([meta, current]) =>
           from(
-            this.db
-              .putMeta({ symbol: current!, ...meta, lastModified: Date.now() })
-              .catch(() => undefined),
+            (async () => {
+              // selectWorkspaceMetaSnapshot omits the sync bookkeeping fields
+              // (activeSessionId/activeClientUpdatedAt/activeSyncedAt) — read
+              // the existing record first and re-apply them, otherwise every
+              // persist here would clobber the active session's stable id and
+              // LWW clock, causing duplicate cloud rows on the next sync.
+              const existing = await this.db.getMeta(current!).catch(() => undefined);
+              await this.db
+                .putMeta({
+                  symbol: current!,
+                  ...meta,
+                  lastModified: Date.now(),
+                  activeSessionId: existing?.activeSessionId,
+                  activeClientUpdatedAt: existing?.activeClientUpdatedAt,
+                  activeSyncedAt: existing?.activeSyncedAt,
+                })
+                .catch(() => undefined);
+            })(),
           ),
         ),
       ),

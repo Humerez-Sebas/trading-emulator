@@ -576,5 +576,41 @@ describe('WorkspacesEffects', () => {
 
       expect(db.putMeta).not.toHaveBeenCalled();
     });
+
+    it('CLOBBER fix: preserves activeSessionId/activeClientUpdatedAt/activeSyncedAt from the existing record', async () => {
+      vi.useFakeTimers();
+      setupTestBed();
+      // Existing record already has sync bookkeeping fields set (e.g. a
+      // session pushed to the cloud earlier). selectWorkspaceMetaSnapshot
+      // never carries these — persistMeta$ must read them back from the
+      // existing meta instead of overwriting them with undefined.
+      db.getMeta!.mockResolvedValue({
+        symbol: SYMBOL,
+        activeSessionId: 'sess-123',
+        activeClientUpdatedAt: 555,
+        activeSyncedAt: 555,
+      });
+      store.overrideSelector(selectCurrentAsset, SYMBOL);
+      store.overrideSelector(selectWorkspaceMetaSnapshot, metaSnap);
+      store.refreshState();
+
+      const sub = effects.persistMeta$.subscribe();
+      store.refreshState();
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      vi.useRealTimers();
+
+      expect(db.putMeta).toHaveBeenCalledWith(
+        expect.objectContaining({
+          symbol: SYMBOL,
+          activeSessionId: 'sess-123',
+          activeClientUpdatedAt: 555,
+          activeSyncedAt: 555,
+        }),
+      );
+    });
   });
 });
