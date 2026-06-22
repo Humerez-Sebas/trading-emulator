@@ -5,6 +5,9 @@ import {
   assertNoCandles,
   assertPayloadSize,
   PAYLOAD_MAX_BYTES,
+  isRealSession,
+  computeSparkline,
+  winRateOf,
 } from './session-sync.mapping';
 import {
   SESSION_PAYLOAD_VERSION,
@@ -92,5 +95,43 @@ describe('assertPayloadSize', () => {
   it('throws when over the 2 MB hard cap', () => {
     const huge = { blob: 'x'.repeat(PAYLOAD_MAX_BYTES + 10) };
     expect(() => assertPayloadSize(huge)).toThrow(/grande|large|size/i);
+  });
+});
+
+describe('isRealSession', () => {
+  it('false for an untouched default session', () => {
+    expect(isRealSession(defaultTradingData())).toBe(false);
+  });
+  it('true with a closed trade, a custom name, or sessionEnded archived', () => {
+    const withTrade = defaultTradingData();
+    withTrade.history = [{ id: 't', profit: 5 } as never];
+    expect(isRealSession(withTrade)).toBe(true);
+    const named = defaultTradingData();
+    named.sessionName = 'Mi plan';
+    expect(isRealSession(named)).toBe(true);
+  });
+});
+
+describe('computeSparkline', () => {
+  it('returns [] with no closed trades', () => {
+    expect(computeSparkline(defaultTradingData())).toEqual([]);
+  });
+  it('builds a downsampled cumulative-equity curve capped at maxPoints', () => {
+    const t = defaultTradingData(1000);
+    t.history = Array.from({ length: 100 }, (_, i) => ({ closeTime: i + 1, profit: 1 }) as never);
+    const sp = computeSparkline(t, 32);
+    expect(sp.length).toBeLessThanOrEqual(32);
+    expect(sp.at(-1)).toBeGreaterThan(sp[0]); // equity rose
+  });
+});
+
+describe('winRateOf', () => {
+  it('undefined with no closed trades', () => {
+    expect(winRateOf(defaultTradingData())).toBeUndefined();
+  });
+  it('is wins / total', () => {
+    const t = defaultTradingData();
+    t.history = [{ profit: 5 } as never, { profit: -2 } as never, { profit: 1 } as never];
+    expect(winRateOf(t)).toBeCloseTo(2 / 3);
   });
 });

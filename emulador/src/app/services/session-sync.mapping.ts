@@ -1,3 +1,4 @@
+import type { TradingData, ClosedTrade } from '../state/trading/trading.models';
 import {
   SESSION_PAYLOAD_VERSION,
   type PayloadInput,
@@ -73,4 +74,32 @@ export function assertPayloadSize(payload: unknown): { ok: boolean; bytes: numbe
     throw new Error('Esta sesión es demasiado grande para sincronizarse.');
   }
   return { ok: true, bytes, warn: bytes >= PAYLOAD_WARN_BYTES };
+}
+
+export function isRealSession(t: TradingData): boolean {
+  return (
+    t.orders.length > 0 ||
+    t.positions.length > 0 ||
+    t.history.length > 0 ||
+    t.sessionName != null ||
+    t.sessionEnded
+  );
+}
+
+export function computeSparkline(t: TradingData, maxPoints = 32): number[] {
+  const closed = [...t.history].sort((a, b) => a.closeTime - b.closeTime);
+  if (!closed.length) return [];
+  let equity = t.initialBalance;
+  const curve = closed.map((c: ClosedTrade) => (equity += c.profit));
+  if (curve.length <= maxPoints) return curve.map((v) => Math.round(v));
+  const step = (curve.length - 1) / (maxPoints - 1);
+  const out: number[] = [];
+  for (let i = 0; i < maxPoints; i++) out.push(Math.round(curve[Math.round(i * step)]));
+  return out;
+}
+
+export function winRateOf(t: TradingData): number | undefined {
+  if (!t.history.length) return undefined;
+  const wins = t.history.filter((c) => c.profit > 0).length;
+  return wins / t.history.length;
 }
