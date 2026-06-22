@@ -1,7 +1,23 @@
 <div class="page" [class.is-dragging]="dragging()">
   <header class="head">
     <div>
-      <h1>Sesiones</h1>
+      <div class="title-line">
+        <h1>Sesiones</h1>
+        @switch (syncState()) {
+          @case ('syncing') {
+            <span appBadge tone="outline">Sincronizando…</span>
+          }
+          @case ('synced') {
+            <span appBadge tone="up">Sincronizado</span>
+          }
+          @case ('offline') {
+            <span appBadge tone="down">Sin conexión</span>
+          }
+          @default {
+            <span appBadge tone="neutral">Solo local</span>
+          }
+        }
+      </div>
       <p class="sub">Organiza tus backtests por estrategia o por activo.</p>
     </div>
     <div class="head-actions">
@@ -263,7 +279,12 @@
                       }
                       {{ card.name }}
                     </button>
-                    <span appBadge tone="neutral" [chip]="true">{{ card.symbol }}</span>
+                    <span class="row-asset">
+                      <span appBadge tone="neutral" [chip]="true">{{ card.symbol }}</span>
+                      @if (card.needsDownload) {
+                        <span appBadge tone="outline">Necesita descarga</span>
+                      }
+                    </span>
                     <span class="num" [class.up]="card.pnl >= 0" [class.down]="card.pnl < 0">
                       {{ card.pnl >= 0 ? '+' : '' }}{{ card.pnl | number: '1.0-0' }} $
                     </span>
@@ -368,6 +389,9 @@
                                 <span appBadge tone="accent">Activa</span>
                               }
                               <span appBadge tone="neutral" [chip]="true">{{ card.symbol }}</span>
+                              @if (card.needsDownload) {
+                                <span appBadge tone="outline">Necesita descarga</span>
+                              }
                             </div>
                           </div>
                           <button appButton variant="subtle" size="sm" (click)="open(card)">

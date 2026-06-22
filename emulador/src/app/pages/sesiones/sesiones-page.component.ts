@@ -6,6 +6,7 @@ import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import {
   AnchorTf,
+  missingDatasets,
   RequiredDataset,
   restorePlan,
   SessionFileV1,
@@ -13,6 +14,11 @@ import {
   snapshotFromState,
   yearsInRange,
 } from '../../services/session.service';
+import { SessionSyncService } from '../../services/session-sync.service';
+import { fromPayload } from '../../services/session-sync.mapping';
+import { SessionSummary } from '../../services/session-sync.models';
+import { authFeature } from '../../state/auth/auth.reducer';
+import type { DatasetRecord } from '../../services/market-data-db';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
@@ -39,8 +45,8 @@ import {
 } from '../../state/selectors';
 import { marketFeature } from '../../state/market/market.reducer';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
-import { SessionFolder, TradingData } from '../../state/trading/trading.models';
-import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
+import { SavedSession, SessionFolder, TradingData } from '../../state/trading/trading.models';
+import { emptyWorkspace, WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { TrashIconComponent } from '../../components/icons/trash-icon.component';
 import { DialogService } from '../../components/ui/dialog.service';
 import { ButtonDirective } from '../../components/ui/button.directive';
@@ -87,6 +93,10 @@ export interface SessionCard {
   folderId: string | null;
   /** Cumulative balance series (incl. initial) for the preview sparkline. */
   equity: number[];
+  /** True for a cloud-only session not yet pulled into local storage. */
+  cloudOnly?: boolean;
+  /** True when this session's required datasets aren't all in the local cache. */
+  needsDownload?: boolean;
 }
 
 interface SessionGroup {
@@ -152,9 +162,12 @@ export class SesionesPageComponent {
   private repo = inject(MarketDataRepository);
   private onboarding = inject(DataOnboardingService);
   private manifests = inject(ManifestService);
+  private sync = inject(SessionSyncService);
 
   /** R2 deployment uses `.session.json` import; CSV keeps the legacy path. */
   isR2 = environment.dataSource === 'r2';
+
+  private authStatus = this.store.selectSignal(authFeature.selectStatus);
 
   state = signal<'loading' | 'ok'>('loading');
   private metas = signal<WorkspaceMeta[]>([]);
@@ -162,6 +175,13 @@ export class SesionesPageComponent {
   info = signal('');
   importInfo = signal('');
   importError = signal('');
+
+  /** Lightweight cloud session list (Task 4/8), loaded when authenticated. */
+  private cloudSummaries = signal<SessionSummary[]>([]);
+  /** Local dataset cache snapshot, used to decide `needsDownload` for cloud cards. */
+  private localDatasets = signal<DatasetRecord[]>([]);
+  /** Cloud sync status for the header chip. */
+  syncState = signal<'local' | 'syncing' | 'synced' | 'offline'>('local');
 
   groupBy = signal<GroupBy>('carpeta');
   search = signal('');
@@ -232,11 +252,42 @@ export class SesionesPageComponent {
     return out;
   });
 
+  /**
+   * `allCards` plus one card per cloud summary whose id isn't already a local
+   * card — local always wins (it has the full trading data). Cloud-only cards
+   * carry only what the lightweight summary provides: sparkline (equity),
+   * trade count and the "necesita descarga" flag from `needsDownload`.
+   */
+  private mergedCards = computed<SessionCard[]>(() => {
+    const local = this.allCards();
+    const localIds = new Set(local.map((c) => c.id).filter((id): id is string => id !== null));
+    const localDatasets = this.localDatasets();
+    const cloudOnly: SessionCard[] = this.cloudSummaries()
+      .filter((s) => !localIds.has(s.id))
+      .map((s) => ({
+        id: s.id,
+        symbol: s.symbol,
+        name: s.name,
+        trades: s.tradeCount,
+        balance: s.balance,
+        initialBalance: s.initialBalance,
+        pnl: s.balance - s.initialBalance,
+        createdAt: Date.parse(s.updatedAt),
+        cursor: s.cursor,
+        active: false,
+        folderId: s.folderId,
+        equity: s.sparkline ?? [],
+        cloudOnly: true,
+        needsDownload: missingDatasets(s.requiredDatasets, localDatasets).length > 0,
+      }));
+    return [...local, ...cloudOnly];
+  });
+
   /** Search filter by session name or asset symbol (instant). */
   private searchedCards = computed<SessionCard[]>(() => {
     const q = this.search().trim().toLowerCase();
-    if (!q) return this.allCards();
-    return this.allCards().filter(
+    if (!q) return this.mergedCards();
+    return this.mergedCards().filter(
       (c) => c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q),
     );
   });
@@ -330,7 +381,7 @@ export class SesionesPageComponent {
     return groups;
   });
 
-  total = computed(() => this.allCards().length);
+  total = computed(() => this.mergedCards().length);
 
   private sortCards(cards: SessionCard[]): SessionCard[] {
     // active first, then most recently touched
@@ -352,6 +403,27 @@ export class SesionesPageComponent {
       this.metas.set([]);
       this.folders.set([]);
     }
+
+    try {
+      this.localDatasets.set(await this.db.listDatasets());
+    } catch {
+      this.localDatasets.set([]);
+    }
+
+    if (this.authStatus() === 'authenticated') {
+      this.syncState.set('syncing');
+      try {
+        this.cloudSummaries.set(await this.sync.listSummaries());
+        this.syncState.set('synced');
+      } catch {
+        this.cloudSummaries.set([]);
+        this.syncState.set('offline');
+      }
+    } else {
+      this.cloudSummaries.set([]);
+      this.syncState.set('local');
+    }
+
     this.state.set('ok');
   }
 
@@ -633,7 +705,13 @@ export class SesionesPageComponent {
 
   // ---- open / rename / delete (unchanged behavior) ----
 
-  open(card: SessionCard): void {
+  async open(card: SessionCard): Promise<void> {
+    if (card.cloudOnly) {
+      const pulled = await this.pullCloudOnlySession(card);
+      if (!pulled) return; // error already surfaced; stay on the page
+      card = pulled;
+    }
+
     if (card.symbol === this.currentAsset()) {
       if (card.id !== null) {
         this.store.dispatch(
@@ -652,6 +730,36 @@ export class SesionesPageComponent {
       );
     }
     void this.router.navigateByUrl('/');
+  }
+
+  /**
+   * Pulls a cloud-only card's full payload, materializes it as a local
+   * `SavedSession` on its symbol's workspace meta, and reloads so the rest of
+   * the existing open/restore flow can treat it like any other local card.
+   * Returns the now-local card, or `null` if the fetch failed (error surfaced
+   * via `importError`).
+   */
+  private async pullCloudOnlySession(card: SessionCard): Promise<SessionCard | null> {
+    if (!card.id) return null;
+    try {
+      const payload = await this.sync.fetchPayload(card.id);
+      const restored = fromPayload(payload);
+      const session: SavedSession = {
+        id: card.id,
+        name: card.name,
+        createdAt: card.createdAt,
+        currentTime: restored.cursor,
+        trading: restored.trading,
+      };
+      const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
+      meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
+      await this.db.putMeta(meta);
+      await this.reload();
+      return { ...card, cloudOnly: false, needsDownload: false };
+    } catch (e) {
+      this.importError.set((e as Error).message || 'No se pudo descargar la sesión desde la nube.');
+      return null;
+    }
   }
 
   async rename(card: SessionCard): Promise<void> {

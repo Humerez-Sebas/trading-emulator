@@ -13,11 +13,14 @@ import {
   selectTradingData,
   selectSavedSessions,
 } from '../../state/selectors';
+import { authFeature } from '../../state/auth/auth.reducer';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { workspaceMeta, savedSession, closed } from '../../testing/fixtures';
 import { defaultTradingData, SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { DialogService } from '../../components/ui/dialog.service';
 import { SessionService } from '../../services/session.service';
+import { SessionSyncService } from '../../services/session-sync.service';
+import { SessionSummary } from '../../services/session-sync.models';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { DataOnboardingService } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
@@ -58,6 +61,25 @@ function folder(p: Partial<SessionFolder> = {}): SessionFolder {
   return { id: 'f1', name: 'Estrategia A', order: 0, ...p };
 }
 
+function summary(p: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    id: 'cloud-1',
+    name: 'Sesión nube',
+    symbol: 'XAUUSD',
+    folderId: null,
+    schemaVersion: 1,
+    updatedAt: '2024-01-01T00:00:00.000Z',
+    lastOpenedAt: null,
+    requiredDatasets: [],
+    tradeCount: 3,
+    initialBalance: 10000,
+    balance: 10500,
+    cursor: 100,
+    sparkline: [10000, 10200, 10500],
+    ...p,
+  };
+}
+
 describe('SesionesPageComponent', () => {
   let store: MockStore;
   let dispatch: ReturnType<typeof vi.spyOn>;
@@ -71,6 +93,7 @@ describe('SesionesPageComponent', () => {
   let repoStub: { getCandles: ReturnType<typeof vi.fn> };
   let onboardingStub: { runJobs: ReturnType<typeof vi.fn> };
   let manifestStub: { fetchManifest: ReturnType<typeof vi.fn> };
+  let syncStub: { listSummaries: ReturnType<typeof vi.fn>; fetchPayload: ReturnType<typeof vi.fn> };
   let component: SesionesPageComponent;
 
   function create(
@@ -83,6 +106,11 @@ describe('SesionesPageComponent', () => {
       repo?: Partial<{ getCandles: ReturnType<typeof vi.fn> }>;
       onboarding?: Partial<{ runJobs: ReturnType<typeof vi.fn> }>;
       manifest?: Partial<{ fetchManifest: ReturnType<typeof vi.fn> }>;
+      sync?: Partial<{
+        listSummaries: ReturnType<typeof vi.fn>;
+        fetchPayload: ReturnType<typeof vi.fn>;
+      }>;
+      authStatus?: 'unknown' | 'authenticated' | 'anonymous' | 'offline' | 'guest';
     } = {},
   ) {
     dbStub = workspaceDbStub();
@@ -100,6 +128,11 @@ describe('SesionesPageComponent', () => {
       fetchManifest: vi.fn().mockResolvedValue({ version: 1, symbols: {} }),
       ...opts.manifest,
     };
+    syncStub = {
+      listSummaries: vi.fn().mockResolvedValue([]),
+      fetchPayload: vi.fn().mockResolvedValue(undefined),
+      ...opts.sync,
+    };
 
     TestBed.configureTestingModule({
       providers: [
@@ -111,6 +144,7 @@ describe('SesionesPageComponent', () => {
         { provide: MarketDataRepository, useValue: repoStub },
         { provide: DataOnboardingService, useValue: onboardingStub },
         { provide: ManifestService, useValue: manifestStub },
+        { provide: SessionSyncService, useValue: syncStub },
       ],
     });
 
@@ -119,6 +153,7 @@ describe('SesionesPageComponent', () => {
     store.overrideSelector(selectCurrentTime, opts.currentTime ?? 0);
     store.overrideSelector(selectTradingData, opts.liveTrading ?? defaultTradingData());
     store.overrideSelector(selectSavedSessions, opts.liveSessions ?? []);
+    store.overrideSelector(authFeature.selectStatus, opts.authStatus ?? 'anonymous');
     store.refreshState();
 
     dispatch = vi.spyOn(store, 'dispatch');
@@ -158,6 +193,121 @@ describe('SesionesPageComponent', () => {
     await settle();
     expect(component.state()).toBe('ok');
     expect(component.total()).toBe(0);
+  });
+
+  // ---- cloud sync (Task 11) ----
+
+  it('authenticated + a cloud-only summary -> appends a cloud card (sparkline equity, cloudOnly)', async () => {
+    const cloudSummary = summary({ id: 'cloud-1', requiredDatasets: [] });
+    create({
+      authStatus: 'authenticated',
+      sync: { listSummaries: vi.fn().mockResolvedValue([cloudSummary]) },
+    });
+    await settle();
+
+    expect(component.syncState()).toBe('synced');
+    const cloudCard = component
+      .groups()
+      .flatMap((g) => g.cards)
+      .find((c) => c.id === 'cloud-1');
+    expect(cloudCard).toBeTruthy();
+    expect(cloudCard!.cloudOnly).toBe(true);
+    expect(cloudCard!.equity).toEqual(cloudSummary.sparkline);
+  });
+
+  it('a cloud summary whose id matches a local session does not duplicate the card', async () => {
+    const local = savedSession({ id: 'dup-1', name: 'Local' });
+    const meta = workspaceMeta({ symbol: 'XAUUSD', sessions: [local] });
+    const cloudSummary = summary({ id: 'dup-1', name: 'Nube' });
+    create({
+      authStatus: 'authenticated',
+      db: { listMetas: vi.fn().mockResolvedValue([meta]) },
+      sync: { listSummaries: vi.fn().mockResolvedValue([cloudSummary]) },
+    });
+    await settle();
+
+    const matches = component
+      .groups()
+      .flatMap((g) => g.cards)
+      .filter((c) => c.id === 'dup-1');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].name).toBe('Local'); // local wins
+  });
+
+  it('needsDownload is true when required datasets are missing locally, false when present', async () => {
+    const needsIt = summary({
+      id: 'needs-1',
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
+    });
+    const hasIt = summary({
+      id: 'has-1',
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
+    });
+    create({
+      authStatus: 'authenticated',
+      db: {
+        listDatasets: vi.fn().mockResolvedValue([
+          {
+            id: 'XAUUSD|H1|all',
+            symbol: 'XAUUSD',
+            timeframe: 'H1',
+            year: 'all',
+            size: 0,
+            etag: '',
+            updatedAt: '',
+          },
+        ]),
+      },
+      sync: { listSummaries: vi.fn().mockResolvedValue([needsIt, hasIt]) },
+    });
+    await settle();
+
+    const cards = component.groups().flatMap((g) => g.cards);
+    expect(cards.find((c) => c.id === 'needs-1')!.needsDownload).toBe(false);
+  });
+
+  it('needsDownload is true when the required dataset is absent from the local cache', async () => {
+    const needsIt = summary({
+      id: 'needs-2',
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'M1', year: 2024 }],
+    });
+    create({
+      authStatus: 'authenticated',
+      db: { listDatasets: vi.fn().mockResolvedValue([]) },
+      sync: { listSummaries: vi.fn().mockResolvedValue([needsIt]) },
+    });
+    await settle();
+
+    const cards = component.groups().flatMap((g) => g.cards);
+    expect(cards.find((c) => c.id === 'needs-2')!.needsDownload).toBe(true);
+  });
+
+  it('not authenticated -> listSummaries is not called, syncState is local, no cloud cards', async () => {
+    const listSummaries = vi.fn().mockResolvedValue([summary()]);
+    create({ authStatus: 'anonymous', sync: { listSummaries } });
+    await settle();
+
+    expect(listSummaries).not.toHaveBeenCalled();
+    expect(component.syncState()).toBe('local');
+    expect(
+      component
+        .groups()
+        .flatMap((g) => g.cards)
+        .some((c) => c.cloudOnly),
+    ).toBe(false);
+  });
+
+  it('listSummaries rejects -> syncState is offline and the local list still renders', async () => {
+    const meta = workspaceMeta({ symbol: 'XAUUSD' });
+    create({
+      authStatus: 'authenticated',
+      db: { listMetas: vi.fn().mockResolvedValue([meta]) },
+      sync: { listSummaries: vi.fn().mockRejectedValue(new Error('offline')) },
+    });
+    await settle();
+
+    expect(component.syncState()).toBe('offline');
+    expect(component.total()).toBe(1); // local active card still rendered
   });
 
   // ---- grouping ----
@@ -305,6 +455,53 @@ describe('SesionesPageComponent', () => {
     component.open(card({ symbol: 'XAUUSD', id: 's1' }));
     expect(dispatch).toHaveBeenCalledWith(
       WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 's1' }),
+    );
+  });
+
+  it('open: a cloud-only card fetches the payload before running the restore flow', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: { getMeta: vi.fn().mockResolvedValue(undefined), putMeta },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(fetchPayload).toHaveBeenCalledWith('cloud-1');
+    expect(putMeta).toHaveBeenCalled();
+    // once locally materialized, the existing other-asset open flow runs
+    expect(dispatch).toHaveBeenCalledWith(
+      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+    );
+  });
+
+  it('open: a cloud-only card surfaces a Spanish error when the fetch fails (no restore dispatch)', async () => {
+    const fetchPayload = vi.fn().mockRejectedValue(new Error('Network down'));
+    create({ currentAsset: 'US30', sync: { fetchPayload } });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(component.importError()).toBe('Network down');
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
     );
   });
 
