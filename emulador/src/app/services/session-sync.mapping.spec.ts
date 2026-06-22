@@ -10,6 +10,7 @@ import {
   winRateOf,
   flattenWorkspace,
   reconstructWorkspaces,
+  mergeByLww,
 } from './session-sync.mapping';
 import {
   SESSION_PAYLOAD_VERSION,
@@ -390,5 +391,95 @@ describe('reconstructWorkspaces', () => {
     const ws = workspaces.get('EURUSD')!;
     expect(ws.activeSessionId).toBe('a1');
     expect(ws.active.trading).toEqual(archived[0].trading);
+  });
+});
+
+interface MergeItem {
+  id: string;
+  clientUpdatedAt: number;
+  tag: string;
+}
+
+function item(id: string, clientUpdatedAt: number, tag: string): MergeItem {
+  return { id, clientUpdatedAt, tag };
+}
+
+describe('mergeByLww', () => {
+  it('cloud-newer overwrites local: merged has cloud version, id not pushed', () => {
+    const local = [item('a', 100, 'local')];
+    const cloud = [item('a', 200, 'cloud')];
+    const result = mergeByLww(local, cloud, new Set(['a']));
+
+    expect(result.merged).toEqual([item('a', 200, 'cloud')]);
+    expect(result.toPushIds).not.toContain('a');
+    expect(result.toDeleteLocalIds).toEqual([]);
+  });
+
+  it('local-newer stays and is pushed', () => {
+    const local = [item('a', 200, 'local')];
+    const cloud = [item('a', 100, 'cloud')];
+    const result = mergeByLww(local, cloud, new Set(['a']));
+
+    expect(result.merged).toEqual([item('a', 200, 'local')]);
+    expect(result.toPushIds).toContain('a');
+    expect(result.toDeleteLocalIds).toEqual([]);
+  });
+
+  it('equal clientUpdatedAt: not pushed, item kept once (local version)', () => {
+    const local = [item('a', 100, 'local')];
+    const cloud = [item('a', 100, 'cloud')];
+    const result = mergeByLww(local, cloud, new Set(['a']));
+
+    expect(result.merged).toEqual([item('a', 100, 'local')]);
+    expect(result.toPushIds).not.toContain('a');
+    expect(result.merged.length).toBe(1);
+  });
+
+  it('cloud-only is added: present in merged, not in toPushIds/toDeleteLocalIds', () => {
+    const local: MergeItem[] = [];
+    const cloud = [item('b', 100, 'cloud')];
+    const result = mergeByLww(local, cloud, new Set());
+
+    expect(result.merged).toEqual([item('b', 100, 'cloud')]);
+    expect(result.toPushIds).not.toContain('b');
+    expect(result.toDeleteLocalIds).not.toContain('b');
+  });
+
+  it('local never-synced (not in syncedIds), absent from cloud: kept and pushed', () => {
+    const local = [item('c', 100, 'local')];
+    const cloud: MergeItem[] = [];
+    const result = mergeByLww(local, cloud, new Set());
+
+    expect(result.merged).toEqual([item('c', 100, 'local')]);
+    expect(result.toPushIds).toContain('c');
+    expect(result.toDeleteLocalIds).not.toContain('c');
+  });
+
+  it('D1: local previously-synced (in syncedIds), absent from cloud: deleted locally, not merged, not pushed', () => {
+    const local = [item('d', 100, 'local')];
+    const cloud: MergeItem[] = [];
+    const result = mergeByLww(local, cloud, new Set(['d']));
+
+    expect(result.toDeleteLocalIds).toContain('d');
+    expect(result.merged).not.toContainEqual(item('d', 100, 'local'));
+    expect(result.toPushIds).not.toContain('d');
+  });
+
+  it('determinism: kept-local items keep local order, then cloud-only items in cloud order; inputs untouched', () => {
+    const local = [item('k1', 100, 'local1'), item('k2', 100, 'local2')];
+    const cloud = [item('c1', 50, 'cloud1'), item('k2', 100, 'local2'), item('c2', 50, 'cloud2')];
+    const localCopy = local.map((x) => ({ ...x }));
+    const cloudCopy = cloud.map((x) => ({ ...x }));
+
+    const result = mergeByLww(local, cloud, new Set());
+
+    expect(result.merged).toEqual([
+      item('k1', 100, 'local1'),
+      item('k2', 100, 'local2'),
+      item('c1', 50, 'cloud1'),
+      item('c2', 50, 'cloud2'),
+    ]);
+    expect(local).toEqual(localCopy);
+    expect(cloud).toEqual(cloudCopy);
   });
 });

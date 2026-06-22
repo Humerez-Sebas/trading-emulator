@@ -11,6 +11,7 @@ import {
   type ReconstructedWorkspace,
   type SessionView,
   type DatasetRef,
+  type LwwMergeResult,
 } from './session-sync.models';
 
 export function toPayload(i: PayloadInput): SessionPayloadV1 {
@@ -251,4 +252,53 @@ export function reconstructWorkspaces(
   }
 
   return result;
+}
+
+/**
+ * Pure LWW merge of a local set against a cloud set, with cloud-authoritative
+ * membership (D1): a local entity previously synced (id ∈ syncedIds) but
+ * absent from the cloud pull was deleted on another device and is removed
+ * locally. A never-synced local-only entity (id ∉ syncedIds) is a local
+ * creation, kept and queued for push. Generic over folders/sessions (T9).
+ * Deterministic: `merged` keeps local order for kept-local items, then
+ * appends cloud-only items in cloud order. No DI/IO, no input mutation.
+ */
+export function mergeByLww<T extends { id: string; clientUpdatedAt: number }>(
+  local: T[],
+  cloud: T[],
+  syncedIds: ReadonlySet<string>,
+): LwwMergeResult<T> {
+  const cloudById = new Map(cloud.map((c) => [c.id, c]));
+  const localIds = new Set(local.map((l) => l.id));
+
+  const merged: T[] = [];
+  const toPushIds: string[] = [];
+  const toDeleteLocalIds: string[] = [];
+
+  for (const localItem of local) {
+    const cloudItem = cloudById.get(localItem.id);
+    if (cloudItem) {
+      if (cloudItem.clientUpdatedAt > localItem.clientUpdatedAt) {
+        merged.push(cloudItem);
+      } else if (localItem.clientUpdatedAt > cloudItem.clientUpdatedAt) {
+        merged.push(localItem);
+        toPushIds.push(localItem.id);
+      } else {
+        merged.push(localItem);
+      }
+    } else if (syncedIds.has(localItem.id)) {
+      toDeleteLocalIds.push(localItem.id);
+    } else {
+      merged.push(localItem);
+      toPushIds.push(localItem.id);
+    }
+  }
+
+  for (const cloudItem of cloud) {
+    if (!localIds.has(cloudItem.id)) {
+      merged.push(cloudItem);
+    }
+  }
+
+  return { merged, toPushIds, toDeleteLocalIds };
 }

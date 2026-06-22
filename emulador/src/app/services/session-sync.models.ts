@@ -133,3 +133,18 @@ export interface ReconstructedWorkspace {
   active: RestoredView; // full restored active view (trading, cursor, drawings, ranges, ...)
   sessions: SavedSession[]; // archived: { id, name, createdAt, currentTime, trading }
 }
+
+/** One folder as it lives in the cloud (camelCase domain view). owner_id is set at the Supabase boundary, not here. */
+export interface CloudFolderRow {
+  id: string;
+  name: string;
+  sort: number; // folders.sort — drag-drop order
+  clientUpdatedAt: number; // epoch ms (LWW key)
+}
+
+/** Result of an LWW merge of a local set against a cloud set. */
+export interface LwwMergeResult<T> {
+  merged: T[]; // the reconciled set to store locally
+  toPushIds: string[]; // local entities to upload (never-synced local-only + local-strictly-newer)
+  toDeleteLocalIds: string[]; // previously-synced locals now absent from cloud (D1)
+}
