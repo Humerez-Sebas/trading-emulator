@@ -93,6 +93,14 @@ h1 {
   background: var(--accent-subtle);
   border-color: var(--accent);
 }
+.side-row[draggable='true'] {
+  cursor: grab;
+}
+.side-row.folder-drag-over {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  border-style: dashed;
+}
 .side-btn {
   flex: 1;
   min-width: 0;

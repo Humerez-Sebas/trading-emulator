@@ -124,6 +124,42 @@ function newId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** Sparse step between reassigned folder `order` values (room to insert later without a full re-sort). */
+const FOLDER_ORDER_STEP = 1000;
+
+/**
+ * Pure reorder helper for the folder sidebar's drag-drop. Given the current
+ * folder order and a drag of `draggedId` onto `targetId`, returns a NEW array
+ * (input untouched) with the dragged folder moved just before `targetId`
+ * (dropping a folder onto itself is a no-op) and every folder's `order`
+ * reassigned with a sparse step (1000, 2000, 3000…) so the persisted order
+ * matches the new visual order. Only folders whose `order` actually changed
+ * get `clientUpdatedAt` bumped to `now`, so unaffected folders stay clean
+ * (not re-pushed to the cloud on every drag).
+ */
+export function reorderFolders(
+  folders: readonly SessionFolder[],
+  draggedId: string,
+  targetId: string,
+  now: number,
+): SessionFolder[] {
+  if (draggedId === targetId) return [...folders];
+  const dragged = folders.find((f) => f.id === draggedId);
+  if (!dragged) return [...folders];
+  const targetIndex = folders.findIndex((f) => f.id === targetId);
+  if (targetIndex === -1) return [...folders];
+
+  const without = folders.filter((f) => f.id !== draggedId);
+  const insertAt = without.findIndex((f) => f.id === targetId);
+  const reordered = [...without.slice(0, insertAt), dragged, ...without.slice(insertAt)];
+
+  return reordered.map((f, i) => {
+    const order = (i + 1) * FOLDER_ORDER_STEP;
+    if (order === f.order) return f;
+    return { ...f, order, clientUpdatedAt: now };
+  });
+}
+
 /** Cumulative balance after each closed trade (chronological), incl. initial. */
 function equityCurve(t: TradingData): number[] {
   const sorted = [...t.history].sort((a, b) => a.closeTime - b.closeTime);
@@ -203,6 +239,10 @@ export class SesionesPageComponent {
   /** Drag-and-drop state for moving a session into a folder. */
   dragging = signal<SessionCard | null>(null);
   dragOverKey = signal<string | null>(null);
+
+  /** Drag-and-drop state for REORDERING folders (distinct from `dragging`, which moves a session). */
+  draggingFolder = signal<string | null>(null);
+  folderDragOverId = signal<string | null>(null);
 
   private currentAsset = this.store.selectSignal(selectCurrentAsset);
   private currentTime = this.store.selectSignal(selectCurrentTime);
@@ -942,8 +982,9 @@ export class SesionesPageComponent {
     });
     if (!name) return;
     const order = (this.folders().at(-1)?.order ?? -1) + 1;
-    await this.db.putFolder({ id: newId(), name, order });
+    await this.db.putFolder({ id: newId(), name, order, clientUpdatedAt: Date.now() });
     await this.reloadFolders();
+    await this.syncDirtyFolders();
     this.flash(`Carpeta "${name}" creada.`);
   }
 
@@ -956,8 +997,9 @@ export class SesionesPageComponent {
       maxLength: 40,
     });
     if (!name || name === folder.name) return;
-    await this.db.putFolder({ ...folder, name });
+    await this.db.putFolder({ ...folder, name, clientUpdatedAt: Date.now() });
     await this.reloadFolders();
+    await this.syncDirtyFolders();
     this.flash(`Carpeta renombrada a "${name}".`);
   }
 
@@ -971,7 +1013,26 @@ export class SesionesPageComponent {
     if (!confirmed) return;
     await this.db.deleteFolder(folder.id);
     await this.reloadFolders();
+    if (this.authStatus() === 'authenticated') {
+      try {
+        await this.db.addPendingDelete({ entity: 'folder', id: folder.id });
+        await this.sync.flushPendingDeletes();
+      } catch {
+        // Local delete already applied; the pending-delete record (if it made
+        // it to IndexedDB) is retried on the next flush — local-first.
+      }
+    }
     this.flash(`Carpeta "${folder.name}" eliminada.`);
+  }
+
+  /** Pushes locally-dirty folders to the cloud when authenticated. Local mutation already happened — never let a sync failure surface to the user. */
+  private async syncDirtyFolders(): Promise<void> {
+    if (this.authStatus() !== 'authenticated') return;
+    try {
+      await this.sync.flushDirty();
+    } catch {
+      // Offline/transient — stays dirty locally, retried on next flush.
+    }
   }
 
   /** Moves a session into a folder (folderId null = unassign). */
@@ -1048,6 +1109,55 @@ export class SesionesPageComponent {
     this.dragOverKey.set(null);
     this.dragging.set(null);
     if (card && item.key !== 'all') void this.moveToFolder(card, item.folderId);
+  }
+
+  // ---- sidebar folder REORDER drag & drop (distinct from session-into-folder above) ----
+
+  onFolderDragStart(item: SidebarItem, event: DragEvent): void {
+    if (!item.removable) return; // only real folders ('all' / '__none__' are not orderable)
+    this.draggingFolder.set(item.key);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', item.key);
+    }
+  }
+
+  onFolderDragEnd(): void {
+    this.draggingFolder.set(null);
+    this.folderDragOverId.set(null);
+  }
+
+  onFolderDragOver(item: SidebarItem, event: DragEvent): void {
+    const draggedId = this.draggingFolder();
+    if (!draggedId || !item.removable || item.key === draggedId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    this.folderDragOverId.set(item.key);
+  }
+
+  onFolderDragLeave(item: SidebarItem): void {
+    if (this.folderDragOverId() === item.key) this.folderDragOverId.set(null);
+  }
+
+  async onFolderDrop(item: SidebarItem, event: DragEvent): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    const draggedId = this.draggingFolder();
+    this.folderDragOverId.set(null);
+    this.draggingFolder.set(null);
+    if (!draggedId || !item.removable || draggedId === item.key) return;
+
+    const previous = this.folders();
+    const reordered = reorderFolders(previous, draggedId, item.key, Date.now());
+    const previousOrderById = new Map(previous.map((f) => [f.id, f.order]));
+    const changed = reordered.filter((f) => f.order !== previousOrderById.get(f.id));
+    if (!changed.length) return;
+    this.folders.set(reordered);
+    for (const f of changed) {
+      await this.db.putFolder(f);
+    }
+    await this.syncDirtyFolders();
   }
 
   private flash(message: string): void {

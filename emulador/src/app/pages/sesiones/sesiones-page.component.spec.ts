@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SesionesPageComponent, SessionCard } from './sesiones-page.component';
+import { SesionesPageComponent, SessionCard, reorderFolders } from './sesiones-page.component';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -93,7 +93,12 @@ describe('SesionesPageComponent', () => {
   let repoStub: { getCandles: ReturnType<typeof vi.fn> };
   let onboardingStub: { runJobs: ReturnType<typeof vi.fn> };
   let manifestStub: { fetchManifest: ReturnType<typeof vi.fn> };
-  let syncStub: { listSummaries: ReturnType<typeof vi.fn>; fetchPayload: ReturnType<typeof vi.fn> };
+  let syncStub: {
+    listSummaries: ReturnType<typeof vi.fn>;
+    fetchPayload: ReturnType<typeof vi.fn>;
+    flushDirty: ReturnType<typeof vi.fn>;
+    flushPendingDeletes: ReturnType<typeof vi.fn>;
+  };
   let component: SesionesPageComponent;
 
   function create(
@@ -109,6 +114,8 @@ describe('SesionesPageComponent', () => {
       sync?: Partial<{
         listSummaries: ReturnType<typeof vi.fn>;
         fetchPayload: ReturnType<typeof vi.fn>;
+        flushDirty: ReturnType<typeof vi.fn>;
+        flushPendingDeletes: ReturnType<typeof vi.fn>;
       }>;
       authStatus?: 'unknown' | 'authenticated' | 'anonymous' | 'offline' | 'guest';
     } = {},
@@ -131,6 +138,8 @@ describe('SesionesPageComponent', () => {
     syncStub = {
       listSummaries: vi.fn().mockResolvedValue([]),
       fetchPayload: vi.fn().mockResolvedValue(undefined),
+      flushDirty: vi.fn().mockResolvedValue(undefined),
+      flushPendingDeletes: vi.fn().mockResolvedValue(undefined),
       ...opts.sync,
     };
 
@@ -798,6 +807,236 @@ describe('SesionesPageComponent', () => {
     await settle();
     await component.deleteFolder(folder({ id: 'f1' }));
     expect(deleteFolder).toHaveBeenCalledWith('f1');
+  });
+
+  // ---- folder CRUD: cloud sync (Task 12) ----
+
+  it('createFolder stamps clientUpdatedAt and flushes when authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'authenticated', db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Scalping');
+    await settle();
+    await component.createFolder();
+    expect(putFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Scalping', clientUpdatedAt: expect.any(Number) }),
+    );
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('createFolder does NOT sync when not authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'anonymous', db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Scalping');
+    await settle();
+    await component.createFolder();
+    expect(putFolder).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
+  it('renameFolder stamps clientUpdatedAt and flushes when authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'authenticated', db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Renombrada');
+    await settle();
+    await component.renameFolder(folder({ id: 'f1', name: 'Vieja' }));
+    expect(putFolder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'f1',
+        name: 'Renombrada',
+        clientUpdatedAt: expect.any(Number),
+      }),
+    );
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('renameFolder does NOT sync when not authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'anonymous', db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Renombrada');
+    await settle();
+    await component.renameFolder(folder({ id: 'f1', name: 'Vieja' }));
+    expect(putFolder).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
+  it('deleteFolder propagates the delete (addPendingDelete + flushPendingDeletes) when authenticated', async () => {
+    const deleteFolder = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'authenticated', db: { deleteFolder, addPendingDelete } });
+    dialogsStub.confirm.mockResolvedValue(true);
+    await settle();
+    await component.deleteFolder(folder({ id: 'f1' }));
+    expect(deleteFolder).toHaveBeenCalledWith('f1');
+    expect(addPendingDelete).toHaveBeenCalledWith({ entity: 'folder', id: 'f1' });
+    expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
+  });
+
+  it('deleteFolder does NOT touch sync when not authenticated', async () => {
+    const deleteFolder = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'anonymous', db: { deleteFolder, addPendingDelete } });
+    dialogsStub.confirm.mockResolvedValue(true);
+    await settle();
+    await component.deleteFolder(folder({ id: 'f1' }));
+    expect(deleteFolder).toHaveBeenCalledWith('f1');
+    expect(addPendingDelete).not.toHaveBeenCalled();
+    expect(syncStub.flushPendingDeletes).not.toHaveBeenCalled();
+  });
+
+  it('createFolder/renameFolder/deleteFolder local mutation survives a sync failure (local-first)', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const deleteFolder = vi.fn().mockResolvedValue(undefined);
+    create({
+      authStatus: 'authenticated',
+      db: { putFolder, deleteFolder },
+      sync: { flushDirty: vi.fn().mockRejectedValue(new Error('offline')) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Scalping');
+    dialogsStub.confirm.mockResolvedValue(true);
+    await settle();
+    await expect(component.createFolder()).resolves.toBeUndefined();
+    expect(putFolder).toHaveBeenCalled();
+    await expect(component.deleteFolder(folder({ id: 'f1' }))).resolves.toBeUndefined();
+    expect(deleteFolder).toHaveBeenCalledWith('f1');
+  });
+
+  // ---- pure reorder helper (Task 12) ----
+
+  describe('reorderFolders (pure helper)', () => {
+    const NOW = 5000;
+
+    it('moving the last folder above the first reassigns sparse order, preserving new visual order', () => {
+      const a = folder({ id: 'a', name: 'A', order: 1000 });
+      const b = folder({ id: 'b', name: 'B', order: 2000 });
+      const c = folder({ id: 'c', name: 'C', order: 3000 });
+      const result = reorderFolders([a, b, c], 'c', 'a', NOW);
+      expect(result.map((f) => f.id)).toEqual(['c', 'a', 'b']);
+      expect(result.map((f) => f.order)).toEqual([1000, 2000, 3000]);
+    });
+
+    it('bumps clientUpdatedAt only on folders whose order actually changed', () => {
+      const a = folder({ id: 'a', name: 'A', order: 1000 });
+      const b = folder({ id: 'b', name: 'B', order: 2000 });
+      const c = folder({ id: 'c', name: 'C', order: 3000 });
+      const d = folder({ id: 'd', name: 'D', order: 4000 });
+      // move c above b: a stays at index 0/order 1000 (unchanged); c,b,d shift.
+      const result = reorderFolders([a, b, c, d], 'c', 'b', NOW);
+      expect(result.map((f) => f.id)).toEqual(['a', 'c', 'b', 'd']);
+      const byId = new Map(result.map((f) => [f.id, f]));
+      expect(byId.get('a')!.clientUpdatedAt).toBeUndefined(); // order unchanged (still 1000)
+      expect(byId.get('c')!.clientUpdatedAt).toBe(NOW);
+      expect(byId.get('b')!.clientUpdatedAt).toBe(NOW);
+      expect(byId.get('d')!.clientUpdatedAt).toBeUndefined(); // still last, order unchanged (4000)
+    });
+
+    it('does not mutate the input array or its folder objects', () => {
+      const a = folder({ id: 'a', name: 'A', order: 1000 });
+      const b = folder({ id: 'b', name: 'B', order: 2000 });
+      const input = [a, b];
+      const inputCopy = input.map((f) => ({ ...f }));
+      reorderFolders(input, 'b', 'a', NOW);
+      expect(input).toEqual(inputCopy);
+      expect(input[0]).toBe(a);
+      expect(input[1]).toBe(b);
+    });
+
+    it('dropping a folder onto itself is a no-op (new array, same content)', () => {
+      const a = folder({ id: 'a', order: 1000 });
+      const b = folder({ id: 'b', order: 2000 });
+      const result = reorderFolders([a, b], 'a', 'a', NOW);
+      expect(result).toEqual([a, b]);
+      expect(result).not.toBe([a, b]); // still a new array (pure fn contract)
+    });
+
+    it('unknown dragged or target id returns the list unchanged', () => {
+      const a = folder({ id: 'a', order: 1000 });
+      const b = folder({ id: 'b', order: 2000 });
+      expect(reorderFolders([a, b], 'missing', 'a', NOW)).toEqual([a, b]);
+      expect(reorderFolders([a, b], 'a', 'missing', NOW)).toEqual([a, b]);
+    });
+  });
+
+  // ---- folder reorder drag-drop UI (Task 12) ----
+
+  it('folder drag start/end track draggingFolder (sidebar item only)', async () => {
+    create();
+    await settle();
+    const item = { key: 'f1', label: 'A', folderId: 'f1', count: 0, removable: true };
+    const ev = { dataTransfer: { setData: vi.fn(), effectAllowed: '' } } as unknown as DragEvent;
+    component.onFolderDragStart(item, ev);
+    expect(component.draggingFolder()).toBe('f1');
+    component.onFolderDragEnd();
+    expect(component.draggingFolder()).toBeNull();
+  });
+
+  it('folder drag start ignores non-removable rows (all / sin carpeta)', async () => {
+    create();
+    await settle();
+    const item = { key: 'all', label: 'Todas', folderId: null, count: 0, removable: false };
+    const ev = { dataTransfer: { setData: vi.fn(), effectAllowed: '' } } as unknown as DragEvent;
+    component.onFolderDragStart(item, ev);
+    expect(component.draggingFolder()).toBeNull();
+  });
+
+  it('dropping a dragged folder onto another persists the reordered folders and syncs when authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const a = folder({ id: 'a', name: 'A', order: 1000 });
+    const b = folder({ id: 'b', name: 'B', order: 2000 });
+    const c = folder({ id: 'c', name: 'C', order: 3000 });
+    create({
+      authStatus: 'authenticated',
+      db: { putFolder, listFolders: vi.fn().mockResolvedValue([a, b, c]) },
+    });
+    await settle();
+
+    component.draggingFolder.set('c');
+    const ev = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as DragEvent;
+    await component.onFolderDrop(
+      { key: 'a', label: 'A', folderId: 'a', count: 0, removable: true },
+      ev,
+    );
+
+    expect(putFolder).toHaveBeenCalled();
+    expect(component.folders().map((f) => f.id)).toEqual(['c', 'a', 'b']);
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+    expect(component.draggingFolder()).toBeNull();
+  });
+
+  it('dropping a dragged folder does NOT sync when not authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const a = folder({ id: 'a', name: 'A', order: 1000 });
+    const b = folder({ id: 'b', name: 'B', order: 2000 });
+    create({
+      authStatus: 'anonymous',
+      db: { putFolder, listFolders: vi.fn().mockResolvedValue([a, b]) },
+    });
+    await settle();
+
+    component.draggingFolder.set('b');
+    const ev = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as DragEvent;
+    await component.onFolderDrop(
+      { key: 'a', label: 'A', folderId: 'a', count: 0, removable: true },
+      ev,
+    );
+
+    expect(putFolder).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
+  it('dropping a folder onto a non-removable row (all/sin carpeta) is a no-op', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const a = folder({ id: 'a', order: 1000 });
+    create({ db: { putFolder, listFolders: vi.fn().mockResolvedValue([a]) } });
+    await settle();
+
+    component.draggingFolder.set('a');
+    const ev = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as DragEvent;
+    await component.onFolderDrop(
+      { key: 'all', label: 'Todas', folderId: null, count: 0, removable: false },
+      ev,
+    );
+
+    expect(putFolder).not.toHaveBeenCalled();
   });
 
   // ---- moveToFolder ----
