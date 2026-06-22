@@ -1,11 +1,30 @@
-﻿import { describe, expect, it } from 'vitest';
+﻿import 'fake-indexeddb/auto';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { SessionSyncService } from './session-sync.service';
 import type { SupabaseService } from '../auth/supabase.service';
 import { PAYLOAD_MAX_BYTES } from './session-sync.mapping';
 import type { CloudFolderRow, CloudSessionRow, SessionPayloadV1 } from './session-sync.models';
+import { WorkspaceDbService } from './workspace-db.service';
+import { workspaceMeta, savedSession } from '../testing/fixtures';
 
-function makeService(client: unknown): SessionSyncService {
-  return new SessionSyncService({ client } as unknown as SupabaseService);
+function makeService(client: unknown, db?: WorkspaceDbService): SessionSyncService {
+  return new SessionSyncService(
+    { client } as unknown as SupabaseService,
+    db ?? new WorkspaceDbService(),
+  );
+}
+
+const SYNC_DB_NAME = 'emulador-workspaces';
+
+/** Delete the workspaces DB and return a fresh, real (fake-indexeddb-backed) WorkspaceDbService. */
+async function freshDb(): Promise<WorkspaceDbService> {
+  await new Promise<void>((res, rej) => {
+    const req = indexedDB.deleteDatabase(SYNC_DB_NAME);
+    req.onsuccess = () => res();
+    req.onerror = () => rej(req.error);
+    req.onblocked = () => res();
+  });
+  return new WorkspaceDbService();
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +64,7 @@ class FakeQueryBuilder implements PromiseLike<FakeResult> {
 
   delete(): this {
     this.deleted = true;
+    this.recorder.callOrder.push(`delete:${this.table}`);
     return this;
   }
 
@@ -52,6 +72,7 @@ class FakeQueryBuilder implements PromiseLike<FakeResult> {
     this.upsertRow = row;
     this.upsertOpts = opts;
     this.recorder.upsertCalls.push({ table: this.table, row, opts });
+    this.recorder.callOrder.push(`upsert:${this.table}`);
     return this;
   }
 
@@ -63,21 +84,37 @@ class FakeQueryBuilder implements PromiseLike<FakeResult> {
     onfulfilled?: (value: FakeResult) => TResult1 | PromiseLike<TResult1>,
     onrejected?: (reason: unknown) => TResult2 | PromiseLike<TResult2>,
   ): PromiseLike<TResult1 | TResult2> {
-    const result = this.deleted
-      ? this.recorder.resolveDelete(this.table, this)
-      : this.upsertRow !== undefined
-        ? this.recorder.resolveUpsert(this.table, this)
-        : this.recorder.resolveSelect(this.table, this);
+    if (this.deleted) {
+      this.recorder.deleteCalls.push({ table: this.table, eqCol: this.eqCol, eqVal: this.eqVal });
+      const result = this.recorder.resolveDelete(this.table, this);
+      return Promise.resolve(result).then(onfulfilled, onrejected);
+    }
+    if (this.upsertRow !== undefined) {
+      const result = this.recorder.resolveUpsert(this.table, this);
+      return Promise.resolve(result).then(onfulfilled, onrejected);
+    }
+    // select(...) — record only here (not in select()) so we know which
+    // table/call this resolves; also where a one-shot rejection is honored.
+    this.recorder.callOrder.push(`select:${this.table}`);
+    const rejectFn = this.recorder.rejectSelectOnce?.[this.table];
+    if (rejectFn?.()) {
+      return Promise.reject(new Error(`fake-reject:${this.table}`)).then(onfulfilled, onrejected);
+    }
+    const result = this.recorder.resolveSelect(this.table, this);
     return Promise.resolve(result).then(onfulfilled, onrejected);
   }
 }
 
 interface Recorder {
   upsertCalls: { table: string; row: unknown; opts: unknown }[];
+  deleteCalls: { table: string; eqCol: string | undefined; eqVal: unknown }[];
+  callOrder: string[];
   resolveSelect: (table: string, b: FakeQueryBuilder) => FakeResult;
   resolveSingle: (table: string, b: FakeQueryBuilder) => FakeResult;
   resolveUpsert: (table: string, b: FakeQueryBuilder) => FakeResult;
   resolveDelete: (table: string, b: FakeQueryBuilder) => FakeResult;
+  /** Per-table one-shot "reject the next select" toggles (offline-resilience test). */
+  rejectSelectOnce?: Record<string, () => boolean>;
 }
 
 function makeFakeClient(opts: {
@@ -88,6 +125,8 @@ function makeFakeClient(opts: {
 }) {
   const recorder: Recorder = {
     upsertCalls: [],
+    deleteCalls: [],
+    callOrder: [],
     resolveSelect: (table) => {
       if (table === 'sessions') return { data: opts.summaryRows ?? [], error: null };
       if (table === 'folders') return { data: opts.folderRows ?? [], error: null };
@@ -382,6 +421,8 @@ describe('SessionSyncService error propagation', () => {
     client.from = () => {
       const b = new FakeQueryBuilder('sessions', {
         upsertCalls: [],
+        deleteCalls: [],
+        callOrder: [],
         resolveSelect: () => ({ data: null, error: { message: 'boom' } }),
         resolveSingle: () => ({ data: null, error: { message: 'boom' } }),
         resolveUpsert: () => ({ data: null, error: { message: 'boom' } }),
@@ -392,5 +433,248 @@ describe('SessionSyncService error propagation', () => {
     const service = makeService(client);
 
     await expect(service.listSummaries()).rejects.toThrow('boom');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 9: pullAndMerge / flushDirty / flushPendingDeletes — orchestration
+// over a REAL in-memory WorkspaceDbService (fake-indexeddb) + the fake
+// Supabase client above (extended with listFolders/listSummaries support).
+// ---------------------------------------------------------------------------
+
+describe('SessionSyncService.flushPendingDeletes', () => {
+  let db: WorkspaceDbService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('replays a pending session delete and a pending folder delete, then clears them', async () => {
+    await db.addPendingDelete({ entity: 'session', id: 'sess-1' });
+    await db.addPendingDelete({ entity: 'folder', id: 'folder-1' });
+    const { client, recorder } = makeFakeClient({});
+    const service = makeService(client, db);
+
+    await service.flushPendingDeletes();
+
+    expect(recorder.deleteCalls).toEqual(
+      expect.arrayContaining([
+        { table: 'sessions', eqCol: 'id', eqVal: 'sess-1' },
+        { table: 'folders', eqCol: 'id', eqVal: 'folder-1' },
+      ]),
+    );
+    expect(await db.listPendingDeletes()).toEqual([]);
+  });
+
+  it('one failing delete does not abort the others and is left pending', async () => {
+    await db.addPendingDelete({ entity: 'session', id: 'sess-bad' });
+    await db.addPendingDelete({ entity: 'folder', id: 'folder-ok' });
+    const { client } = makeFakeClient({});
+    client.from = (table: string) =>
+      new FakeQueryBuilder(table, {
+        upsertCalls: [],
+        deleteCalls: [],
+        callOrder: [],
+        resolveSelect: () => ({ data: [], error: null }),
+        resolveSingle: () => ({ data: null, error: null }),
+        resolveUpsert: () => ({ data: null, error: null }),
+        resolveDelete: (t) =>
+          t === 'sessions'
+            ? { data: null, error: { message: 'boom' } }
+            : { data: null, error: null },
+      });
+    const service = makeService(client, db);
+
+    await expect(service.flushPendingDeletes()).resolves.toBeUndefined();
+
+    const remaining = await db.listPendingDeletes();
+    expect(remaining).toEqual([{ entity: 'session', id: 'sess-bad' }]);
+  });
+});
+
+describe('SessionSyncService.flushDirty — folders', () => {
+  let db: WorkspaceDbService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('upserts a dirty folder (sort from local order) and advances its syncedAt', async () => {
+    await db.putFolder({
+      id: 'f1',
+      name: 'Estrategia A',
+      order: 3,
+      clientUpdatedAt: 5000,
+      syncedAt: 1000,
+    });
+    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const service = makeService(client, db);
+
+    await service.flushDirty();
+
+    expect(recorder.upsertCalls.length).toBe(1);
+    const row = recorder.upsertCalls[0].row as Record<string, unknown>;
+    expect(row['sort']).toBe(3);
+    const stored = (await db.listFolders())[0];
+    expect(stored.syncedAt).toBe(5000);
+  });
+
+  it('does not push a clean folder', async () => {
+    await db.putFolder({
+      id: 'f2',
+      name: 'Limpia',
+      order: 0,
+      clientUpdatedAt: 1000,
+      syncedAt: 1000,
+    });
+    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const service = makeService(client, db);
+
+    await service.flushDirty();
+
+    expect(recorder.upsertCalls.length).toBe(0);
+  });
+});
+
+describe('SessionSyncService.pullAndMerge', () => {
+  let db: WorkspaceDbService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('runs flushPendingDeletes BEFORE the folder/session pulls, and sets lastPullAt at the end', async () => {
+    await db.addPendingDelete({ entity: 'session', id: 'sess-old' });
+    const { client, recorder } = makeFakeClient({ summaryRows: [], folderRows: [] });
+    const service = makeService(client, db);
+
+    expect(await db.getLastPullAt()).toBeNull();
+
+    await service.pullAndMerge();
+
+    const deleteIdx = recorder.callOrder.indexOf('delete:sessions');
+    const foldersSelectIdx = recorder.callOrder.indexOf('select:folders');
+    const sessionsSelectIdx = recorder.callOrder.indexOf('select:sessions');
+    expect(deleteIdx).toBeGreaterThanOrEqual(0);
+    expect(deleteIdx).toBeLessThan(foldersSelectIdx);
+    expect(deleteIdx).toBeLessThan(sessionsSelectIdx);
+    expect(await db.getLastPullAt()).not.toBeNull();
+  });
+
+  it('a cloud-newer session overwrites local (and is not re-pushed)', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [
+        savedSession({
+          id: 'sess-1',
+          name: 'Local',
+          clientUpdatedAt: 1000,
+          syncedAt: 1000,
+        }),
+      ],
+    });
+    await db.putMeta(meta);
+
+    const cloudRow = {
+      id: 'sess-1',
+      name: 'Cloud',
+      symbol: 'EURUSD',
+      folder_id: null,
+      client_updated_at: new Date(5000).toISOString(),
+      last_opened_at: null,
+      required_datasets: [],
+      trades_count: 0,
+      initial_balance: 10000,
+      balance: 10000,
+      cursor: 0,
+      schema_version: 1,
+      summary: null,
+    };
+    const { client, recorder } = makeFakeClient({ summaryRows: [cloudRow], folderRows: [] });
+    const service = makeService(client, db);
+
+    await service.pullAndMerge();
+
+    // cloud-newer => not pushed back to the cloud
+    expect(recorder.upsertCalls.find((c) => c.table === 'sessions')).toBeUndefined();
+  });
+
+  it('a never-synced local session is pushed (upsertSession called)', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [
+        savedSession({
+          id: 'sess-new',
+          name: 'Nueva local',
+          clientUpdatedAt: 9000,
+          syncedAt: undefined,
+        }),
+      ],
+    });
+    await db.putMeta(meta);
+
+    const { client, recorder } = makeFakeClient({ summaryRows: [], folderRows: [] });
+    const service = makeService(client, db);
+
+    await service.pullAndMerge();
+
+    const sessionUpsert = recorder.upsertCalls.find((c) => c.table === 'sessions');
+    expect(sessionUpsert).toBeDefined();
+    expect((sessionUpsert!.row as Record<string, unknown>)['id']).toBe('sess-new');
+  });
+
+  it('a synced-absent local session is removed (D1) and not re-pushed', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [
+        savedSession({
+          id: 'sess-gone',
+          name: 'Borrada en otro dispositivo',
+          clientUpdatedAt: 1000,
+          syncedAt: 1000,
+        }),
+      ],
+    });
+    await db.putMeta(meta);
+
+    const { client, recorder } = makeFakeClient({ summaryRows: [], folderRows: [] });
+    const service = makeService(client, db);
+
+    await service.pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.sessions?.some((s) => s.id === 'sess-gone')).toBe(false);
+    expect(recorder.upsertCalls.find((c) => c.table === 'sessions')).toBeUndefined();
+  });
+
+  it('offline resilience: a rejecting listSummaries does not throw and leaves local state intact', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [savedSession({ id: 'sess-keep', clientUpdatedAt: 1000, syncedAt: 1000 })],
+    });
+    await db.putMeta(meta);
+
+    const { client, recorder } = makeFakeClient({ summaryRows: [], folderRows: [] });
+    let rejected = false;
+    recorder.rejectSelectOnce = {
+      sessions: () => {
+        if (!rejected) {
+          rejected = true;
+          return true;
+        }
+        return false;
+      },
+    };
+    const service = makeService(client, db);
+
+    await expect(service.pullAndMerge()).resolves.toBeUndefined();
+
+    const stillThere = await db.getMeta('EURUSD');
+    expect(stillThere?.sessions?.some((s) => s.id === 'sess-keep')).toBe(true);
+    expect(await db.getLastPullAt()).not.toBeNull();
   });
 });
