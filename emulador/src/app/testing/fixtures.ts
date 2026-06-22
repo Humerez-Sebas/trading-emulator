@@ -119,6 +119,9 @@ export function workspaceMeta(p: Partial<WorkspaceMeta> = {}): WorkspaceMeta {
     trading: ws.trading,
     sessions: ws.sessions,
     lastModified: ws.lastModified,
+    activeSessionId: p.activeSessionId,
+    activeClientUpdatedAt: p.activeClientUpdatedAt,
+    activeSyncedAt: p.activeSyncedAt,
   };
 }
 

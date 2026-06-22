@@ -5,7 +5,8 @@ import type { SupabaseService } from '../auth/supabase.service';
 import { PAYLOAD_MAX_BYTES } from './session-sync.mapping';
 import type { CloudFolderRow, CloudSessionRow, SessionPayloadV1 } from './session-sync.models';
 import { WorkspaceDbService } from './workspace-db.service';
-import { workspaceMeta, savedSession } from '../testing/fixtures';
+import { workspaceMeta, savedSession, position } from '../testing/fixtures';
+import { defaultTradingData } from '../state/trading/trading.models';
 
 function makeService(client: unknown, db?: WorkspaceDbService): SessionSyncService {
   return new SessionSyncService(
@@ -561,7 +562,7 @@ describe('SessionSyncService.pullAndMerge', () => {
     expect(await db.getLastPullAt()).not.toBeNull();
   });
 
-  it('a cloud-newer session overwrites local (and is not re-pushed)', async () => {
+  it('a cloud-newer session is left for lazy payload refresh on open (not re-pushed, local data intact)', async () => {
     const meta = workspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: undefined,
@@ -598,6 +599,14 @@ describe('SessionSyncService.pullAndMerge', () => {
 
     // cloud-newer => not pushed back to the cloud
     expect(recorder.upsertCalls.find((c) => c.table === 'sessions')).toBeUndefined();
+
+    // Cloud-won sessions are NOT materialized here — the full payload (name,
+    // trading, etc.) is fetched lazily on open (spec §11 step 6 /
+    // reconstructWorkspaces + fetchPayload), not during pullAndMerge. The
+    // local copy must remain exactly as it was until that lazy refresh.
+    const updated = await db.getMeta('EURUSD');
+    const stillLocal = updated?.sessions?.find((s) => s.id === 'sess-1');
+    expect(stillLocal?.name).toBe('Local');
   });
 
   it('a never-synced local session is pushed (upsertSession called)', async () => {
@@ -676,5 +685,74 @@ describe('SessionSyncService.pullAndMerge', () => {
     const stillThere = await db.getMeta('EURUSD');
     expect(stillThere?.sessions?.some((s) => s.id === 'sess-keep')).toBe(true);
     expect(await db.getLastPullAt()).not.toBeNull();
+  });
+
+  it('a synced-absent ACTIVE session is cleared locally (D1) without a cloud delete or re-push', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'A',
+      activeClientUpdatedAt: 1000,
+      activeSyncedAt: 1000,
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta(meta);
+
+    // Cloud no longer has 'A' — it was deleted on another device.
+    const { client, recorder } = makeFakeClient({ summaryRows: [], folderRows: [] });
+    const service = makeService(client, db);
+
+    await service.pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.activeSessionId).toBeUndefined();
+    expect(updated?.trading?.positions ?? []).toEqual([]);
+    expect(updated?.trading?.history ?? []).toEqual([]);
+    expect(updated?.trading?.sessionName ?? null).toBeNull();
+
+    // D1 removal of the active session is local-only — never a cloud delete,
+    // and never re-pushed/re-created as an upsert.
+    expect(
+      recorder.deleteCalls.find((c) => c.table === 'sessions' && c.eqVal === 'A'),
+    ).toBeUndefined();
+    expect(
+      recorder.upsertCalls.find(
+        (c) => c.table === 'sessions' && (c.row as Record<string, unknown>)['id'] === 'A',
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe('SessionSyncService.flushDirty — active session push', () => {
+  let db: WorkspaceDbService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('pushes a dirty active session and advances activeSyncedAt to activeClientUpdatedAt', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'B',
+      activeClientUpdatedAt: 200,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta(meta);
+
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      folderRows: [],
+      userId: 'user-1',
+    });
+    const service = makeService(client, db);
+
+    await service.flushDirty();
+
+    const sessionUpsert = recorder.upsertCalls.find((c) => c.table === 'sessions');
+    expect(sessionUpsert).toBeDefined();
+    expect((sessionUpsert!.row as Record<string, unknown>)['id']).toBe('B');
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.activeSyncedAt).toBe(200);
   });
 });
