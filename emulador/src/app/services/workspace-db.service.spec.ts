@@ -270,19 +270,19 @@ describe('WorkspaceDbService — v1 → v3 migration', () => {
 
 const DB_NAME_V5 = 'emulador-workspaces';
 
-/** Opens the raw IndexedDB after the service has warmed it up at v5. */
+/** Opens the raw IndexedDB after the service has warmed it up at the current DB_VERSION. */
 async function rawDb(svcInstance: WorkspaceDbService): Promise<IDBDatabase> {
   // Trigger a no-op operation so the service opens (and upgrades) the DB first
   await svcInstance.listMetas();
   return new Promise<IDBDatabase>((resolve, reject) => {
-    // Open at the same version the service uses (5) so fake-indexeddb does
-    // not try to upgrade or block on an in-progress transaction.
-    const req = indexedDB.open(DB_NAME_V5, 5);
+    // Open at the same version the service uses so fake-indexeddb does not
+    // try to upgrade or block on an in-progress transaction.
+    const req = indexedDB.open(DB_NAME_V5, DB_VERSION);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
     // Should never fire since service already upgraded, but guard for safety
     req.onupgradeneeded = () =>
-      reject(new Error('rawDb: unexpected upgrade — service should already be at v5'));
+      reject(new Error('rawDb: unexpected upgrade — service should already be at DB_VERSION'));
   });
 }
 
@@ -348,7 +348,8 @@ describe('WorkspaceDbService — v5 schema: all existing stores still present', 
     expect(names).toContain('symbols');
     expect(names).toContain('datasets');
     expect(names).toContain('candles');
-    expect(names).toHaveLength(6);
+    expect(names).toContain('sync');
+    expect(names).toHaveLength(7);
   });
 });
 
@@ -410,7 +411,7 @@ describe('WorkspaceDbService — v4→v5 upgrade: data written at v4 is readable
 // ---------------------------------------------------------------------------
 
 import type { CandleRecord, DatasetRecord } from './market-data-db';
-import { CANDLES_STORE } from './market-data-db';
+import { CANDLES_STORE, DB_VERSION } from './market-data-db';
 
 function datasetRecord(p: Partial<DatasetRecord> = {}): DatasetRecord {
   return {
@@ -427,9 +428,9 @@ function datasetRecord(p: Partial<DatasetRecord> = {}): DatasetRecord {
 
 /** Adds candle rows directly to the candles store (autoIncrement id). */
 async function seedCandles(records: Omit<CandleRecord, 'id'>[]): Promise<void> {
-  await svc.listMetas(); // ensure schema is open at v5
+  await svc.listMetas(); // ensure schema is open at the current DB_VERSION
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 5);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
     req.onupgradeneeded = () => reject(new Error('unexpected upgrade'));
@@ -486,6 +487,56 @@ describe('WorkspaceDbService — datasets store accessors (v5)', () => {
     await svc.putDataset(datasetRecord());
     await svc.deleteDataset('XAUUSD|M1|2024');
     expect(await svc.getDataset('XAUUSD|M1|2024')).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v6: sync bookkeeping store (Task 7)
+// ---------------------------------------------------------------------------
+
+describe('WorkspaceDbService — sync bookkeeping (v6)', () => {
+  it('addPendingDelete + listPendingDeletes round-trips a single record', async () => {
+    await svc.addPendingDelete({ entity: 'session', id: 's1' });
+    const list = await svc.listPendingDeletes();
+    expect(list).toEqual([{ entity: 'session', id: 's1' }]);
+  });
+
+  it('listPendingDeletes returns multiple records of different entities', async () => {
+    await svc.addPendingDelete({ entity: 'session', id: 's1' });
+    await svc.addPendingDelete({ entity: 'folder', id: 'f1' });
+    const list = await svc.listPendingDeletes();
+    expect(list).toHaveLength(2);
+    expect(list).toEqual(
+      expect.arrayContaining([
+        { entity: 'session', id: 's1' },
+        { entity: 'folder', id: 'f1' },
+      ]),
+    );
+  });
+
+  it('removePendingDelete removes only the matching record', async () => {
+    await svc.addPendingDelete({ entity: 'session', id: 's1' });
+    await svc.addPendingDelete({ entity: 'folder', id: 'f1' });
+    await svc.removePendingDelete('s1');
+    const list = await svc.listPendingDeletes();
+    expect(list).toEqual([{ entity: 'folder', id: 'f1' }]);
+  });
+
+  it('getLastPullAt returns null before any set', async () => {
+    expect(await svc.getLastPullAt()).toBeNull();
+  });
+
+  it('setLastPullAt + getLastPullAt round-trips the timestamp', async () => {
+    await svc.setLastPullAt(123456);
+    expect(await svc.getLastPullAt()).toBe(123456);
+  });
+
+  it('pending-delete records and the lastPullAt record coexist without leaking into listPendingDeletes', async () => {
+    await svc.addPendingDelete({ entity: 'session', id: 's1' });
+    await svc.setLastPullAt(999);
+    const list = await svc.listPendingDeletes();
+    expect(list).toEqual([{ entity: 'session', id: 's1' }]);
+    expect(await svc.getLastPullAt()).toBe(999);
   });
 });
 

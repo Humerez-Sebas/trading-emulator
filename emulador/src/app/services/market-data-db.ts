@@ -16,7 +16,7 @@
 export const DB_NAME = 'emulador-workspaces';
 
 /** Current schema version. Owned/upgraded by the main thread only. */
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 
 // ---- object store names ----
 export const META_STORE = 'meta';
@@ -25,6 +25,7 @@ export const FOLDERS_STORE = 'folders';
 export const SYMBOLS_STORE = 'symbols';
 export const DATASETS_STORE = 'datasets';
 export const CANDLES_STORE = 'candles';
+export const SYNC_STORE = 'sync';
 /** v1 single-store name, migrated away on upgrade. */
 export const LEGACY_STORE = 'workspaces';
 

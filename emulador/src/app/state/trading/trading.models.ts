@@ -107,6 +107,10 @@ export interface SessionFolder {
   name: string;
   /** Manual sort order in the sidebar/list. */
   order: number;
+  /** LWW edit time, epoch ms (spec §10). Absent until first synced. */
+  clientUpdatedAt?: number;
+  /** Last successful push, epoch ms. dirty ⇔ clientUpdatedAt > (syncedAt ?? 0). */
+  syncedAt?: number;
 }
 
 /**
@@ -121,6 +125,10 @@ export interface SavedSession {
   /** Replay cursor (UTC seconds) to restore when reopening the session. */
   currentTime: number;
   trading: TradingData;
+  /** LWW edit time, epoch ms (spec §10). Absent until first synced. */
+  clientUpdatedAt?: number;
+  /** Last successful push, epoch ms. dirty ⇔ clientUpdatedAt > (syncedAt ?? 0). */
+  syncedAt?: number;
 }
 
 export interface TradingState extends TradingData {

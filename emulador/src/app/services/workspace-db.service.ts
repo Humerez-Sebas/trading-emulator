@@ -17,6 +17,7 @@ import {
   META_STORE,
   SERIES_STORE,
   SYMBOLS_STORE,
+  SYNC_STORE,
 } from './market-data-db';
 
 // Schema constants and the CandleRecord/DatasetRecord row types are shared,
@@ -112,6 +113,10 @@ export class WorkspaceDbService {
             candles.createIndex(CANDLES_BY_SYMBOL_TF_TIME, ['symbol', 'timeframe', 'time'], {
               unique: false,
             });
+          }
+          // v6: session-sync bookkeeping (pending deletes + lastPullAt), keyed by `key`
+          if (!db.objectStoreNames.contains(SYNC_STORE)) {
+            db.createObjectStore(SYNC_STORE, { keyPath: 'key' });
           }
         };
         req.onsuccess = () => {
@@ -419,6 +424,66 @@ export class WorkspaceDbService {
         cursor.continue();
       }
     };
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // ---- session-sync bookkeeping (v6) ----
+  //
+  // The `sync` store holds two unrelated record shapes, distinguished by a
+  // `key` prefix: `pendingDelete:<id>` for entities deleted locally while
+  // offline (replayed against the cloud on the next push), and the single
+  // `lastPullAt` record tracking the last successful pull's epoch ms.
+
+  /** Records a local delete to replay against the cloud on the next push. */
+  async addPendingDelete(d: { entity: 'session' | 'folder'; id: string }): Promise<void> {
+    const db = await this.open();
+    const tx = db.transaction(SYNC_STORE, 'readwrite');
+    tx.objectStore(SYNC_STORE).put({ key: `pendingDelete:${d.id}`, entity: d.entity, id: d.id });
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /** All pending deletes recorded while offline (sync layer replays these). */
+  async listPendingDeletes(): Promise<{ entity: 'session' | 'folder'; id: string }[]> {
+    const db = await this.open();
+    const all = await this.request<{ key: string; entity: 'session' | 'folder'; id: string }[]>(
+      db.transaction(SYNC_STORE, 'readonly').objectStore(SYNC_STORE).getAll(),
+    );
+    return all
+      .filter((r) => r.key.startsWith('pendingDelete:'))
+      .map((r) => ({ entity: r.entity, id: r.id }));
+  }
+
+  /** Clears a pending delete once the cloud delete has been confirmed. */
+  async removePendingDelete(id: string): Promise<void> {
+    const db = await this.open();
+    const tx = db.transaction(SYNC_STORE, 'readwrite');
+    tx.objectStore(SYNC_STORE).delete(`pendingDelete:${id}`);
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /** Epoch ms of the last successful pull, or null before the first pull. */
+  async getLastPullAt(): Promise<number | null> {
+    const db = await this.open();
+    const record = await this.request<{ key: string; value: number } | undefined>(
+      db.transaction(SYNC_STORE, 'readonly').objectStore(SYNC_STORE).get('lastPullAt'),
+    );
+    return record?.value ?? null;
+  }
+
+  /** Records the epoch ms of a successful pull. */
+  async setLastPullAt(ms: number): Promise<void> {
+    const db = await this.open();
+    const tx = db.transaction(SYNC_STORE, 'readwrite');
+    tx.objectStore(SYNC_STORE).put({ key: 'lastPullAt', value: ms });
     return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
