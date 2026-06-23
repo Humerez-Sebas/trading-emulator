@@ -43,7 +43,7 @@ export class CrearSesionPageComponent {
   private repo = inject(MarketDataRepository);
   private storageManager = inject(StorageManagerService);
 
-  state = signal<'loading' | 'ok' | 'error'>('loading');
+  state = signal<'loading' | 'ok'>('loading');
 
   step = signal<Step>(1);
   selectedTfs = signal<Set<string>>(new Set());

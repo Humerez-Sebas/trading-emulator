@@ -11,12 +11,6 @@
     @case ('loading') {
       <p class="status" role="status">Cargando activos…</p>
     }
-    @case ('error') {
-      <div class="empty">
-        <p>No se pudo conectar con el servidor.</p>
-        <p class="hint">Levanta el backend con <code>docker compose up</code> y recarga.</p>
-      </div>
-    }
     @case ('ok') {
       @switch (step()) {
         @case (1) {
