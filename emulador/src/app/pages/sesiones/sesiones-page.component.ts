@@ -45,6 +45,7 @@ import {
 } from '../../state/selectors';
 import { marketFeature } from '../../state/market/market.reducer';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
+import { tradingFeature } from '../../state/trading/trading.reducer';
 import { SavedSession, SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { emptyWorkspace, WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { TrashIconComponent } from '../../components/icons/trash-icon.component';
@@ -87,6 +88,12 @@ interface SidebarItem {
 export interface SessionCard {
   /** Archived session id; null = the workspace's ACTIVE session. */
   id: string | null;
+  /**
+   * The cloud row id this card maps to: the archived session's id, or — for the
+   * ACTIVE card (whose `id` is null) — the workspace's `activeSessionId`. Used to
+   * de-duplicate a local card against its own cloud summary.
+   */
+  syncId?: string | null;
   symbol: string;
   name: string;
   trades: number;
@@ -250,6 +257,8 @@ export class SesionesPageComponent {
   private currentTime = this.store.selectSignal(selectCurrentTime);
   private liveTrading = this.store.selectSignal(selectTradingData);
   private liveSessions = this.store.selectSignal(selectSavedSessions);
+  /** The current asset's active-session cloud id (Fix #2 state field), to de-dup its cloud card. */
+  private liveActiveSessionId = this.store.selectSignal(tradingFeature.selectActiveSessionId);
 
   // ---- .session.json export (active session's live state) ----
   private liveDataRange = this.store.selectSignal(selectDataRange);
@@ -271,6 +280,7 @@ export class SesionesPageComponent {
       if (trading) {
         out.push({
           id: null,
+          syncId: live ? this.liveActiveSessionId() : (meta.activeSessionId ?? null),
           symbol: meta.symbol,
           name: trading.sessionName ?? 'Sesión en curso',
           trades: trading.history.length,
@@ -287,6 +297,7 @@ export class SesionesPageComponent {
       for (const s of sessions) {
         out.push({
           id: s.id,
+          syncId: s.id,
           symbol: meta.symbol,
           name: s.name,
           trades: s.trading.history.length,
@@ -312,12 +323,17 @@ export class SesionesPageComponent {
    */
   private mergedCards = computed<SessionCard[]>(() => {
     const local = this.allCards();
-    const localIds = new Set(local.map((c) => c.id).filter((id): id is string => id !== null));
+    // De-dup by the cloud row id each local card maps to (`syncId`): an archived
+    // card's id, or the ACTIVE card's `activeSessionId` (its `id` is null). This
+    // hides a cloud summary that is just the cloud copy of a local session —
+    // otherwise the active session shows twice (local card + its cloud row).
+    const localIds = new Set(local.map((c) => c.syncId).filter((id): id is string => id != null));
     const localDatasets = this.localDatasets();
     const cloudOnly: SessionCard[] = this.cloudSummaries()
       .filter((s) => !localIds.has(s.id))
       .map((s) => ({
         id: s.id,
+        syncId: s.id,
         symbol: s.symbol,
         name: s.name,
         trades: s.tradeCount,
@@ -881,6 +897,44 @@ export class SesionesPageComponent {
       if (card.id !== null) await this.syncDirty();
     }
     this.flash(`Sesión renombrada a "${name}".`);
+  }
+
+  /**
+   * Archives the ACTIVE session: moves it into the saved list (keeping its cloud
+   * id) and starts a fresh empty session. For the current asset that's the
+   * reducer's `newSession`; for an off-screen asset we replicate it on the meta.
+   */
+  async archive(card: SessionCard): Promise<void> {
+    if (!card.active) return;
+    if (card.symbol === this.currentAsset()) {
+      this.store.dispatch(TradingActions.newSession({ currentCursor: this.currentTime() }));
+    } else {
+      const meta = await this.db.getMeta(card.symbol);
+      const t = meta?.trading;
+      if (!meta || !t) return;
+      const real = t.orders.length > 0 || t.positions.length > 0 || t.history.length > 0;
+      if (real || t.sessionName !== null) {
+        meta.sessions = [
+          ...(meta.sessions ?? []),
+          {
+            id: meta.activeSessionId ?? newId(),
+            name: t.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
+            createdAt: Date.now(),
+            currentTime: meta.currentTime,
+            trading: { ...t },
+            clientUpdatedAt: meta.activeClientUpdatedAt,
+            syncedAt: meta.activeSyncedAt,
+          },
+        ];
+      }
+      meta.trading = defaultTradingData(t.initialBalance);
+      meta.activeSessionId = newId();
+      meta.activeClientUpdatedAt = undefined;
+      meta.activeSyncedAt = undefined;
+      await this.db.putMeta(meta);
+      await this.reload();
+    }
+    this.flash('Sesión archivada.');
   }
 
   async remove(card: SessionCard): Promise<void> {

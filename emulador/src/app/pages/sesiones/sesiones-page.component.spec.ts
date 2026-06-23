@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SesionesPageComponent, SessionCard, reorderFolders } from './sesiones-page.component';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { TradingActions } from '../../state/trading/trading.actions';
+import { tradingFeature } from '../../state/trading/trading.reducer';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import {
@@ -1554,6 +1555,94 @@ describe('SesionesPageComponent', () => {
     expect(component.folderName('f1')).toBe('A');
     expect(component.folderName(null)).toBe('Sin carpeta');
     expect(component.folderName('ghost')).toBe('Sin carpeta');
+  });
+
+  // ---- dedup active session vs its cloud row ----
+
+  it('dedups the active session against its own cloud summary (no duplicate card)', async () => {
+    const meta = workspaceMeta({ symbol: 'NAS100', activeSessionId: 'X' });
+    create({
+      currentAsset: 'NAS100',
+      authStatus: 'authenticated',
+      liveTrading: {
+        ...defaultTradingData(),
+        sessionName: 'aaa',
+        history: [{ profit: 250 } as never],
+      },
+      db: {
+        listMetas: vi.fn().mockResolvedValue([meta]),
+        listFolders: vi.fn().mockResolvedValue([]),
+        listDatasets: vi.fn().mockResolvedValue([]),
+      },
+      sync: {
+        listSummaries: vi.fn().mockResolvedValue([
+          {
+            id: 'X',
+            symbol: 'NAS100',
+            name: 'aaa',
+            folderId: null,
+            schemaVersion: 1,
+            updatedAt: new Date().toISOString(),
+            lastOpenedAt: null,
+            requiredDatasets: [],
+            tradeCount: 1,
+            initialBalance: 10000,
+            balance: 10250,
+            cursor: 0,
+            sparkline: [10000, 10250],
+          },
+        ]),
+      },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'X');
+    store.refreshState();
+    await settle();
+    // Without the fix the cloud summary X would render as a second card.
+    expect(component.total()).toBe(1);
+  });
+
+  // ---- archive ----
+
+  it('archive on the current-asset active card dispatches newSession', async () => {
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      db: { listMetas: vi.fn().mockResolvedValue([]), listFolders: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+    await component.archive(card({ symbol: 'NAS100', id: null, active: true }));
+    expect(dispatch).toHaveBeenCalledWith(TradingActions.newSession({ currentCursor: 500 }));
+  });
+
+  it('archive on an off-screen active card moves it into meta.sessions (keeps cloud id) and resets', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'eur-active',
+      activeSyncedAt: 7,
+      trading: { ...defaultTradingData(), sessionName: 'plan', history: [{ profit: 5 } as never] },
+    });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta,
+        putMeta,
+        listMetas: vi.fn().mockResolvedValue([]),
+        listFolders: vi.fn().mockResolvedValue([]),
+      },
+    });
+    await settle();
+    await component.archive(card({ symbol: 'EURUSD', id: null, active: true }));
+    const written = putMeta.mock.calls.at(-1)![0] as {
+      sessions: { id: string }[];
+      trading: TradingData;
+      activeSessionId?: string;
+    };
+    expect(written.sessions).toHaveLength(1);
+    expect(written.sessions[0].id).toBe('eur-active');
+    expect(written.trading.history).toEqual([]);
+    expect(written.activeSessionId).not.toBe('eur-active');
   });
 
   beforeEach(() => {

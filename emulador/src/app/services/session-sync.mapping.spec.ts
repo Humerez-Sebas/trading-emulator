@@ -123,11 +123,17 @@ describe('computeSparkline', () => {
   it('returns [] with no closed trades', () => {
     expect(computeSparkline(defaultTradingData())).toEqual([]);
   });
+  it('a single closed trade yields two points starting at the initial balance (renders a line)', () => {
+    const t = defaultTradingData(1000);
+    t.history = [{ closeTime: 1, profit: 250 } as never];
+    expect(computeSparkline(t)).toEqual([1000, 1250]);
+  });
   it('builds a downsampled cumulative-equity curve capped at maxPoints', () => {
     const t = defaultTradingData(1000);
     t.history = Array.from({ length: 100 }, (_, i) => ({ closeTime: i + 1, profit: 1 }) as never);
     const sp = computeSparkline(t, 32);
     expect(sp.length).toBeLessThanOrEqual(32);
+    expect(sp[0]).toBe(1000); // starts at the initial balance
     expect(sp.at(-1)).toBeGreaterThan(sp[0]); // equity rose
   });
 });

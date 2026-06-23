@@ -98,8 +98,15 @@ export function isRealSession(t: TradingData): boolean {
 export function computeSparkline(t: TradingData, maxPoints = 32): number[] {
   const closed = [...t.history].sort((a, b) => a.closeTime - b.closeTime);
   if (!closed.length) return [];
+  // Start at the initial balance (same as the Sessions page's local equityCurve)
+  // so a single closed trade yields TWO points and renders a line — otherwise a
+  // 1-trade session shows the empty "Sin operaciones" placeholder on a cloud card.
+  const curve: number[] = [t.initialBalance];
   let equity = t.initialBalance;
-  const curve = closed.map((c: ClosedTrade) => (equity += c.profit));
+  for (const c of closed as ClosedTrade[]) {
+    equity += c.profit;
+    curve.push(equity);
+  }
   if (curve.length <= maxPoints) return curve.map((v) => Math.round(v));
   const step = (curve.length - 1) / (maxPoints - 1);
   const out: number[] = [];
