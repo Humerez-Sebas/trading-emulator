@@ -1,12 +1,11 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideHttpClient } from '@angular/common/http';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideStore } from '@ngrx/store';
 import { provideEffects } from '@ngrx/effects';
 import { provideMarketDataRepository } from './domain/market-data-repository.provider';
 
 import { routes } from './app.routes';
-import { authInterceptor } from './auth/auth.interceptor';
 import { marketFeature } from './state/market/market.reducer';
 import { replayFeature } from './state/replay/replay.reducer';
 import { settingsFeature } from './state/settings/settings.reducer';
@@ -26,7 +25,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideMarketDataRepository(),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideHttpClient(),
     provideRouter(routes, withComponentInputBinding()),
     provideStore({
       [marketFeature.name]: marketFeature.reducer,
