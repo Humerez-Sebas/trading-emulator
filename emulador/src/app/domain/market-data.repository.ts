@@ -23,15 +23,3 @@ export abstract class MarketDataRepository {
     timeframe: Timeframe,
   ): Promise<{ from: number; to: number } | null>;
 }
-
-// ---------------------------------------------------------------------------
-// Factory helper — pure function, easy to unit-test independently
-// ---------------------------------------------------------------------------
-
-/** Selects the correct repository implementation based on the `dataSource` flag. */
-export function pickMarketDataRepository(
-  dataSource: 'csv' | 'r2',
-  impls: { idb: MarketDataRepository; csv: MarketDataRepository },
-): MarketDataRepository {
-  return dataSource === 'r2' ? impls.idb : impls.csv;
-}
