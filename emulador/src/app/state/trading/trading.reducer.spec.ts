@@ -720,9 +720,22 @@ describe('trading reducer: restoreSession', () => {
   });
 });
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 describe('trading reducer: stable activeSessionId (Part A)', () => {
   it('initialState.activeSessionId is null', () => {
     expect(reducer(undefined, { type: '@@init' }).activeSessionId).toBeNull();
+  });
+
+  it('newSession assigns a UUID activeSessionId (cloud id column is uuid)', () => {
+    const next = reducer(state(), TradingActions.newSession({ currentCursor: 0 }));
+    expect(next.activeSessionId).toMatch(UUID_RE);
+  });
+
+  it('archiveActive mints a UUID id for the archived session when no active id', () => {
+    const s = state({ history: [closed()], activeSessionId: null });
+    const next = reducer(s, TradingActions.newSession({ currentCursor: 100 }));
+    expect(next.savedSessions[0].id).toMatch(UUID_RE);
   });
 
   it('newSession sets a fresh activeSessionId', () => {

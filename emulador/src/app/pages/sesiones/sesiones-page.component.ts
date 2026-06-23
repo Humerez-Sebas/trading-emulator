@@ -120,8 +120,10 @@ interface SessionGroup {
 
 type GroupBy = 'carpeta' | 'activo';
 
+// Folder/session ids become Supabase row ids (uuid columns), so they MUST be
+// valid UUIDs or the push is rejected with Postgres 22P02 (invalid uuid syntax).
 function newId(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  return crypto.randomUUID();
 }
 
 /** Sparse step between reassigned folder `order` values (room to insert later without a full re-sort). */

@@ -18,8 +18,13 @@ const initialState: TradingState = {
   activeSessionId: null,
 };
 
+// Session ids become Supabase row ids (the `sessions.id` column is `uuid`), so
+// they MUST be valid UUIDs — a timestamp+random string is rejected with
+// Postgres 22P02 "invalid input syntax for type uuid" and the push silently
+// fails. (Order/position ids live inside the payload jsonb, but a uuid is fine
+// for them too.)
 function newId(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  return crypto.randomUUID();
 }
 
 function hasActivity(state: TradingState): boolean {
