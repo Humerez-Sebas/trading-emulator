@@ -14,14 +14,12 @@ import { drawingsFeature } from './state/drawings/drawings.reducer';
 import { workspacesFeature } from './state/workspaces/workspaces.reducer';
 import { tradingFeature } from './state/trading/trading.reducer';
 import { authFeature } from './state/auth/auth.reducer';
-import { userSymbolsFeature } from './state/user-symbols/user-symbols.reducer';
 import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
 import { WorkspacesEffects } from './state/workspaces/workspaces.effects';
 import { TradingEffects } from './state/trading/trading.effects';
 import { AuthEffects } from './state/auth/auth.effects';
-import { UserSymbolsEffects } from './state/user-symbols/user-symbols.effects';
 import { SessionSyncEffects } from './state/sync/session-sync.effects';
 
 export const appConfig: ApplicationConfig = {
@@ -38,7 +36,6 @@ export const appConfig: ApplicationConfig = {
       [workspacesFeature.name]: workspacesFeature.reducer,
       [tradingFeature.name]: tradingFeature.reducer,
       [authFeature.name]: authFeature.reducer,
-      [userSymbolsFeature.name]: userSymbolsFeature.reducer,
     }),
     provideEffects(
       MarketEffects,
@@ -47,7 +44,6 @@ export const appConfig: ApplicationConfig = {
       WorkspacesEffects,
       TradingEffects,
       AuthEffects,
-      UserSymbolsEffects,
       SessionSyncEffects,
     ),
   ],

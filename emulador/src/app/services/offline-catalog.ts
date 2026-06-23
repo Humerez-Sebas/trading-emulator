@@ -1,8 +1,16 @@
 import { Candle, Timeframe } from '../models';
-import { TfCoverage } from './backend-api.service';
 
 /** Default category for user-uploaded CSV symbols in the offline catalog. */
 export const DEFAULT_OFFLINE_CATEGORY = 'Mis CSV';
+
+/** Per-timeframe coverage rollup: first/last candle time and count. */
+export interface TfCoverage {
+  tf: string;
+  /** UTC epoch seconds of the first/last candle stored. */
+  desde: number;
+  hasta: number;
+  velas: number;
+}
 
 /**
  * Browser-side analog of a backend symbol: the metadata the offline Markets
