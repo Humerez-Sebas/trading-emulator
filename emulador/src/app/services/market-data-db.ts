@@ -22,7 +22,6 @@ export const DB_VERSION = 6;
 export const META_STORE = 'meta';
 export const SERIES_STORE = 'series';
 export const FOLDERS_STORE = 'folders';
-export const SYMBOLS_STORE = 'symbols';
 export const DATASETS_STORE = 'datasets';
 export const CANDLES_STORE = 'candles';
 export const SYNC_STORE = 'sync';
