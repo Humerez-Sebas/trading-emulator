@@ -1,7 +1,23 @@
 <div class="page" [class.is-dragging]="dragging()">
   <header class="head">
     <div>
-      <h1>Sesiones</h1>
+      <div class="title-line">
+        <h1>Sesiones</h1>
+        @switch (syncState()) {
+          @case ('syncing') {
+            <span appBadge tone="outline">Sincronizando…</span>
+          }
+          @case ('synced') {
+            <span appBadge tone="up">Sincronizado</span>
+          }
+          @case ('offline') {
+            <span appBadge tone="down">Sin conexión</span>
+          }
+          @default {
+            <span appBadge tone="neutral">Solo local</span>
+          }
+        }
+      </div>
       <p class="sub">Organiza tus backtests por estrategia o por activo.</p>
     </div>
     <div class="head-actions">
@@ -91,9 +107,17 @@
                 [class.active]="selectedKey() === item.key"
                 [class.is-drop]="item.key !== 'all'"
                 [class.drag-over]="dragOverKey() === 'side:' + item.key"
-                (dragover)="onSidebarDragOver(item, $event)"
-                (dragleave)="onSidebarDragLeave(item)"
-                (drop)="onSidebarDrop(item, $event)"
+                [class.folder-drag-over]="folderDragOverId() === item.key"
+                [draggable]="item.removable"
+                (dragstart)="onFolderDragStart(item, $event)"
+                (dragend)="onFolderDragEnd()"
+                (dragover)="
+                  draggingFolder()
+                    ? onFolderDragOver(item, $event)
+                    : onSidebarDragOver(item, $event)
+                "
+                (dragleave)="draggingFolder() ? onFolderDragLeave(item) : onSidebarDragLeave(item)"
+                (drop)="draggingFolder() ? onFolderDrop(item, $event) : onSidebarDrop(item, $event)"
               >
                 <button
                   class="side-btn"
@@ -263,7 +287,12 @@
                       }
                       {{ card.name }}
                     </button>
-                    <span appBadge tone="neutral" [chip]="true">{{ card.symbol }}</span>
+                    <span class="row-asset">
+                      <span appBadge tone="neutral" [chip]="true">{{ card.symbol }}</span>
+                      @if (card.needsDownload) {
+                        <span appBadge tone="outline">Necesita descarga</span>
+                      }
+                    </span>
                     <span class="num" [class.up]="card.pnl >= 0" [class.down]="card.pnl < 0">
                       {{ card.pnl >= 0 ? '+' : '' }}{{ card.pnl | number: '1.0-0' }} $
                     </span>
@@ -368,6 +397,9 @@
                                 <span appBadge tone="accent">Activa</span>
                               }
                               <span appBadge tone="neutral" [chip]="true">{{ card.symbol }}</span>
+                              @if (card.needsDownload) {
+                                <span appBadge tone="outline">Necesita descarga</span>
+                              }
                             </div>
                           </div>
                           <button appButton variant="subtle" size="sm" (click)="open(card)">
@@ -466,6 +498,9 @@
 <ng-template #actionMenu let-card="card">
   <ui-menu ariaLabel="Acciones de la sesión">
     <button class="ui-menu-item" (click)="rename(card)">Renombrar</button>
+    @if (card.active) {
+      <button class="ui-menu-item" (click)="archive(card)">Archivar</button>
+    }
     <button class="ui-menu-item" (click)="exportSession(card)">
       Exportar sesión (.session.json)
     </button>
@@ -518,11 +553,9 @@
         }
       </button>
     }
-    @if (!card.active) {
-      <div class="ui-menu-sep"></div>
-      <button class="ui-menu-item ui-menu-item--danger" (click)="remove(card)">
-        <app-trash-icon /> Eliminar
-      </button>
-    }
+    <div class="ui-menu-sep"></div>
+    <button class="ui-menu-item ui-menu-item--danger" (click)="remove(card)">
+      <app-trash-icon /> Eliminar
+    </button>
   </ui-menu>
 </ng-template>

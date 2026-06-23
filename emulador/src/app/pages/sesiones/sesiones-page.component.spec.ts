@@ -2,9 +2,10 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SesionesPageComponent, SessionCard } from './sesiones-page.component';
+import { SesionesPageComponent, SessionCard, reorderFolders } from './sesiones-page.component';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { TradingActions } from '../../state/trading/trading.actions';
+import { tradingFeature } from '../../state/trading/trading.reducer';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import {
@@ -13,11 +14,15 @@ import {
   selectTradingData,
   selectSavedSessions,
 } from '../../state/selectors';
+import { authFeature } from '../../state/auth/auth.reducer';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { workspaceMeta, savedSession, closed } from '../../testing/fixtures';
 import { defaultTradingData, SessionFolder, TradingData } from '../../state/trading/trading.models';
+import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { DialogService } from '../../components/ui/dialog.service';
 import { SessionService } from '../../services/session.service';
+import { SessionSyncService } from '../../services/session-sync.service';
+import { SessionSummary } from '../../services/session-sync.models';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { DataOnboardingService } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
@@ -58,6 +63,25 @@ function folder(p: Partial<SessionFolder> = {}): SessionFolder {
   return { id: 'f1', name: 'Estrategia A', order: 0, ...p };
 }
 
+function summary(p: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    id: 'cloud-1',
+    name: 'Sesión nube',
+    symbol: 'XAUUSD',
+    folderId: null,
+    schemaVersion: 1,
+    updatedAt: '2024-01-01T00:00:00.000Z',
+    lastOpenedAt: null,
+    requiredDatasets: [],
+    tradeCount: 3,
+    initialBalance: 10000,
+    balance: 10500,
+    cursor: 100,
+    sparkline: [10000, 10200, 10500],
+    ...p,
+  };
+}
+
 describe('SesionesPageComponent', () => {
   let store: MockStore;
   let dispatch: ReturnType<typeof vi.spyOn>;
@@ -71,6 +95,12 @@ describe('SesionesPageComponent', () => {
   let repoStub: { getCandles: ReturnType<typeof vi.fn> };
   let onboardingStub: { runJobs: ReturnType<typeof vi.fn> };
   let manifestStub: { fetchManifest: ReturnType<typeof vi.fn> };
+  let syncStub: {
+    listSummaries: ReturnType<typeof vi.fn>;
+    fetchPayload: ReturnType<typeof vi.fn>;
+    flushDirty: ReturnType<typeof vi.fn>;
+    flushPendingDeletes: ReturnType<typeof vi.fn>;
+  };
   let component: SesionesPageComponent;
 
   function create(
@@ -83,6 +113,13 @@ describe('SesionesPageComponent', () => {
       repo?: Partial<{ getCandles: ReturnType<typeof vi.fn> }>;
       onboarding?: Partial<{ runJobs: ReturnType<typeof vi.fn> }>;
       manifest?: Partial<{ fetchManifest: ReturnType<typeof vi.fn> }>;
+      sync?: Partial<{
+        listSummaries: ReturnType<typeof vi.fn>;
+        fetchPayload: ReturnType<typeof vi.fn>;
+        flushDirty: ReturnType<typeof vi.fn>;
+        flushPendingDeletes: ReturnType<typeof vi.fn>;
+      }>;
+      authStatus?: 'unknown' | 'authenticated' | 'anonymous' | 'offline' | 'guest';
     } = {},
   ) {
     dbStub = workspaceDbStub();
@@ -100,6 +137,13 @@ describe('SesionesPageComponent', () => {
       fetchManifest: vi.fn().mockResolvedValue({ version: 1, symbols: {} }),
       ...opts.manifest,
     };
+    syncStub = {
+      listSummaries: vi.fn().mockResolvedValue([]),
+      fetchPayload: vi.fn().mockResolvedValue(undefined),
+      flushDirty: vi.fn().mockResolvedValue(undefined),
+      flushPendingDeletes: vi.fn().mockResolvedValue(undefined),
+      ...opts.sync,
+    };
 
     TestBed.configureTestingModule({
       providers: [
@@ -111,6 +155,7 @@ describe('SesionesPageComponent', () => {
         { provide: MarketDataRepository, useValue: repoStub },
         { provide: DataOnboardingService, useValue: onboardingStub },
         { provide: ManifestService, useValue: manifestStub },
+        { provide: SessionSyncService, useValue: syncStub },
       ],
     });
 
@@ -119,6 +164,7 @@ describe('SesionesPageComponent', () => {
     store.overrideSelector(selectCurrentTime, opts.currentTime ?? 0);
     store.overrideSelector(selectTradingData, opts.liveTrading ?? defaultTradingData());
     store.overrideSelector(selectSavedSessions, opts.liveSessions ?? []);
+    store.overrideSelector(authFeature.selectStatus, opts.authStatus ?? 'anonymous');
     store.refreshState();
 
     dispatch = vi.spyOn(store, 'dispatch');
@@ -158,6 +204,117 @@ describe('SesionesPageComponent', () => {
     await settle();
     expect(component.state()).toBe('ok');
     expect(component.total()).toBe(0);
+  });
+
+  // ---- cloud sync (Task 11) ----
+
+  it('authenticated + a cloud-only summary -> appends a cloud card (sparkline equity, cloudOnly)', async () => {
+    const cloudSummary = summary({ id: 'cloud-1', requiredDatasets: [] });
+    create({
+      authStatus: 'authenticated',
+      sync: { listSummaries: vi.fn().mockResolvedValue([cloudSummary]) },
+    });
+    await settle();
+
+    expect(component.syncState()).toBe('synced');
+    const cloudCard = component
+      .groups()
+      .flatMap((g) => g.cards)
+      .find((c) => c.id === 'cloud-1');
+    expect(cloudCard).toBeTruthy();
+    expect(cloudCard!.cloudOnly).toBe(true);
+    expect(cloudCard!.equity).toEqual(cloudSummary.sparkline);
+  });
+
+  it('a cloud summary whose id matches a local session does not duplicate the card', async () => {
+    const local = savedSession({ id: 'dup-1', name: 'Local' });
+    const meta = workspaceMeta({ symbol: 'XAUUSD', sessions: [local] });
+    const cloudSummary = summary({ id: 'dup-1', name: 'Nube' });
+    create({
+      authStatus: 'authenticated',
+      db: { listMetas: vi.fn().mockResolvedValue([meta]) },
+      sync: { listSummaries: vi.fn().mockResolvedValue([cloudSummary]) },
+    });
+    await settle();
+
+    const matches = component
+      .groups()
+      .flatMap((g) => g.cards)
+      .filter((c) => c.id === 'dup-1');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].name).toBe('Local'); // local wins
+  });
+
+  it('needsDownload is false when the required dataset is present locally', async () => {
+    const hasIt = summary({
+      id: 'has-1',
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
+    });
+    create({
+      authStatus: 'authenticated',
+      db: {
+        listDatasets: vi.fn().mockResolvedValue([
+          {
+            id: 'XAUUSD|H1|all',
+            symbol: 'XAUUSD',
+            timeframe: 'H1',
+            year: 'all',
+            size: 0,
+            etag: '',
+            updatedAt: '',
+          },
+        ]),
+      },
+      sync: { listSummaries: vi.fn().mockResolvedValue([hasIt]) },
+    });
+    await settle();
+
+    const cards = component.groups().flatMap((g) => g.cards);
+    expect(cards.find((c) => c.id === 'has-1')!.needsDownload).toBe(false);
+  });
+
+  it('needsDownload is true when the required dataset is absent from the local cache', async () => {
+    const needsIt = summary({
+      id: 'needs-2',
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'M1', year: 2024 }],
+    });
+    create({
+      authStatus: 'authenticated',
+      db: { listDatasets: vi.fn().mockResolvedValue([]) },
+      sync: { listSummaries: vi.fn().mockResolvedValue([needsIt]) },
+    });
+    await settle();
+
+    const cards = component.groups().flatMap((g) => g.cards);
+    expect(cards.find((c) => c.id === 'needs-2')!.needsDownload).toBe(true);
+  });
+
+  it('not authenticated -> listSummaries is not called, syncState is local, no cloud cards', async () => {
+    const listSummaries = vi.fn().mockResolvedValue([summary()]);
+    create({ authStatus: 'anonymous', sync: { listSummaries } });
+    await settle();
+
+    expect(listSummaries).not.toHaveBeenCalled();
+    expect(component.syncState()).toBe('local');
+    expect(
+      component
+        .groups()
+        .flatMap((g) => g.cards)
+        .some((c) => c.cloudOnly),
+    ).toBe(false);
+  });
+
+  it('listSummaries rejects -> syncState is offline and the local list still renders', async () => {
+    const meta = workspaceMeta({ symbol: 'XAUUSD' });
+    create({
+      authStatus: 'authenticated',
+      db: { listMetas: vi.fn().mockResolvedValue([meta]) },
+      sync: { listSummaries: vi.fn().mockRejectedValue(new Error('offline')) },
+    });
+    await settle();
+
+    expect(component.syncState()).toBe('offline');
+    expect(component.total()).toBe(1); // local active card still rendered
   });
 
   // ---- grouping ----
@@ -308,6 +465,224 @@ describe('SesionesPageComponent', () => {
     );
   });
 
+  it('open: a cloud-only card fetches the payload before running the restore flow', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: { getMeta: vi.fn().mockResolvedValue(undefined), putMeta },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(fetchPayload).toHaveBeenCalledWith('cloud-1');
+    expect(putMeta).toHaveBeenCalled();
+    // once locally materialized, the existing other-asset open flow runs
+    expect(dispatch).toHaveBeenCalledWith(
+      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+    );
+  });
+
+  it('open: materializing a cloud-only card stamps clientUpdatedAt + syncedAt with the cloud updatedAt ms (not dirty)', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    const cloudUpdatedAtMs = Date.parse('2024-03-15T10:00:00.000Z');
+    create({
+      currentAsset: 'US30',
+      db: { getMeta: vi.fn().mockResolvedValue(undefined), putMeta },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(
+      card({
+        symbol: 'XAUUSD',
+        id: 'cloud-1',
+        cloudOnly: true,
+        createdAt: cloudUpdatedAtMs,
+      }),
+    );
+
+    expect(putMeta).toHaveBeenCalled();
+    const metaArg = putMeta.mock.calls[0][0];
+    const session = metaArg.sessions.find((s: { id: string }) => s.id === 'cloud-1');
+    expect(session).toBeTruthy();
+    expect(session.clientUpdatedAt).toBe(cloudUpdatedAtMs);
+    expect(session.syncedAt).toBe(cloudUpdatedAtMs);
+  });
+
+  it('open: a cloud-only card surfaces a Spanish error when the fetch fails (no restore dispatch)', async () => {
+    const fetchPayload = vi.fn().mockRejectedValue(new Error('Network down'));
+    create({ currentAsset: 'US30', sync: { fetchPayload } });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(component.importError()).toBe('Network down');
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+  });
+
+  it('open: a cloud-only card with missing datasets opens the download modal instead of materializing immediately', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'M1', year: 2024 }],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(undefined),
+        putMeta,
+        listDatasets: vi.fn().mockResolvedValue([]), // nothing cached locally
+      },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(fetchPayload).toHaveBeenCalledWith('cloud-1');
+    expect(component.missing()).toEqual([{ symbol: 'XAUUSD', timeframe: 'M1', year: 2024 }]);
+    // nothing materialized or opened yet — waiting on confirmDownload()
+    expect(putMeta).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+  });
+
+  it('open: confirming the download for a cloud-only card runs the R2 jobs, then materializes + opens', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(undefined),
+        putMeta,
+        listDatasets: vi.fn().mockResolvedValue([]),
+      },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+    expect(component.missing()).toHaveLength(1);
+
+    await component.confirmDownload();
+
+    expect(manifestStub.fetchManifest).toHaveBeenCalled();
+    const [, jobs] = onboardingStub.runJobs.mock.calls[0];
+    expect(jobs).toEqual([{ symbol: 'XAUUSD', tf: 'h1', year: 'all' }]);
+    expect(component.missing()).toHaveLength(0); // modal closed
+    expect(putMeta).toHaveBeenCalled(); // materialized after download
+    expect(dispatch).toHaveBeenCalledWith(
+      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+    );
+  });
+
+  it('open: a cloud-only card whose datasets are already cached opens directly, no modal', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' }],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(undefined),
+        putMeta,
+        listDatasets: vi.fn().mockResolvedValue([
+          {
+            id: 'XAUUSD|H1|all',
+            symbol: 'XAUUSD',
+            timeframe: 'H1',
+            year: 'all',
+            size: 0,
+            etag: '',
+            updatedAt: '',
+          },
+        ]),
+      },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(component.missing()).toHaveLength(0);
+    expect(putMeta).toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(
+      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+    );
+  });
+
   // ---- rename ----
 
   it('rename current-asset active → setSessionName', async () => {
@@ -318,13 +693,18 @@ describe('SesionesPageComponent', () => {
     expect(dispatch).toHaveBeenCalledWith(TradingActions.setSessionName({ name: 'Nuevo' }));
   });
 
-  it('rename current-asset archived → renameSession', async () => {
+  it('rename current-asset archived → renameSession (with clientUpdatedAt)', async () => {
     create({ currentAsset: 'XAUUSD' });
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
     await component.rename(card({ symbol: 'XAUUSD', id: 's1' }));
     expect(dispatch).toHaveBeenCalledWith(
-      TradingActions.renameSession({ id: 's1', name: 'Nuevo' }),
+      expect.objectContaining({
+        type: TradingActions.renameSession.type,
+        id: 's1',
+        name: 'Nuevo',
+        clientUpdatedAt: expect.any(Number),
+      }),
     );
   });
 
@@ -350,6 +730,63 @@ describe('SesionesPageComponent', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it('rename off-screen archived stamps clientUpdatedAt + flushes when authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await component.rename(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(putMeta).toHaveBeenCalled();
+    const written = putMeta.mock.calls[0][0] as WorkspaceMeta;
+    const edited = written.sessions!.find((s) => s.id === 's1')!;
+    expect(edited.name).toBe('Nuevo');
+    expect(edited.clientUpdatedAt).toEqual(expect.any(Number));
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('rename off-screen archived does NOT flush when not authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'anonymous',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await component.rename(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(putMeta).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
+  it('rename off-screen archived local mutation survives a sync failure (local-first)', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+      sync: { flushDirty: vi.fn().mockRejectedValue(new Error('offline')) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await expect(component.rename(card({ symbol: 'EURUSD', id: 's1' }))).resolves.toBeUndefined();
+    expect(putMeta).toHaveBeenCalled();
+  });
+
   // ---- remove ----
 
   it('remove active card is a no-op', async () => {
@@ -373,6 +810,115 @@ describe('SesionesPageComponent', () => {
     await settle();
     await component.remove(card({ symbol: 'XAUUSD', id: 's1' }));
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('remove off-screen (non-current-asset) card propagates the delete to the cloud when authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, addPendingDelete, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(putMeta).toHaveBeenCalled();
+    expect(addPendingDelete).toHaveBeenCalledWith({ entity: 'session', id: 's1' });
+    expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
+  });
+
+  it('remove ACTIVE off-screen session resets the workspace + propagates cloud delete when synced', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-active',
+      activeSyncedAt: 123,
+      trading: { ...defaultTradingData(), history: [{ profit: 5 } as never] },
+    });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, addPendingDelete, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'EURUSD', id: null, active: true }));
+
+    const written = putMeta.mock.calls.at(-1)![0] as {
+      trading: TradingData;
+      activeSessionId?: string;
+      activeSyncedAt?: number;
+    };
+    expect(written.trading.history).toEqual([]);
+    expect(written.activeSessionId).not.toBe('cloud-active');
+    expect(written.activeSyncedAt).toBeUndefined();
+    expect(addPendingDelete).toHaveBeenCalledWith({ entity: 'session', id: 'cloud-active' });
+    expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
+  });
+
+  it('remove ACTIVE current-asset session dispatches deleteActiveSession', async () => {
+    const meta = workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'a1' });
+    create({
+      currentAsset: 'XAUUSD',
+      authStatus: 'authenticated',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(meta),
+        putMeta: vi.fn().mockResolvedValue(undefined),
+        addPendingDelete: vi.fn().mockResolvedValue(undefined),
+        listMetas: vi.fn().mockResolvedValue([]),
+      },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'XAUUSD', id: null, active: true }));
+
+    expect(dispatch).toHaveBeenCalledWith(TradingActions.deleteActiveSession());
+  });
+
+  it('remove off-screen card does NOT touch sync when not authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'anonymous',
+      db: { getMeta, putMeta, addPendingDelete, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(putMeta).toHaveBeenCalled();
+    expect(addPendingDelete).not.toHaveBeenCalled();
+    expect(syncStub.flushPendingDeletes).not.toHaveBeenCalled();
+  });
+
+  it('remove off-screen card local mutation survives a sync failure (local-first)', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+      sync: { flushPendingDeletes: vi.fn().mockRejectedValue(new Error('offline')) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await expect(component.remove(card({ symbol: 'EURUSD', id: 's1' }))).resolves.toBeUndefined();
+    expect(putMeta).toHaveBeenCalled();
   });
 
   // ---- exportSession (archived card) ----
@@ -478,6 +1024,236 @@ describe('SesionesPageComponent', () => {
     expect(deleteFolder).toHaveBeenCalledWith('f1');
   });
 
+  // ---- folder CRUD: cloud sync (Task 12) ----
+
+  it('createFolder stamps clientUpdatedAt and flushes when authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'authenticated', db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Scalping');
+    await settle();
+    await component.createFolder();
+    expect(putFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Scalping', clientUpdatedAt: expect.any(Number) }),
+    );
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('createFolder does NOT sync when not authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'anonymous', db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Scalping');
+    await settle();
+    await component.createFolder();
+    expect(putFolder).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
+  it('renameFolder stamps clientUpdatedAt and flushes when authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'authenticated', db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Renombrada');
+    await settle();
+    await component.renameFolder(folder({ id: 'f1', name: 'Vieja' }));
+    expect(putFolder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'f1',
+        name: 'Renombrada',
+        clientUpdatedAt: expect.any(Number),
+      }),
+    );
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('renameFolder does NOT sync when not authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'anonymous', db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Renombrada');
+    await settle();
+    await component.renameFolder(folder({ id: 'f1', name: 'Vieja' }));
+    expect(putFolder).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
+  it('deleteFolder propagates the delete (addPendingDelete + flushPendingDeletes) when authenticated', async () => {
+    const deleteFolder = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'authenticated', db: { deleteFolder, addPendingDelete } });
+    dialogsStub.confirm.mockResolvedValue(true);
+    await settle();
+    await component.deleteFolder(folder({ id: 'f1' }));
+    expect(deleteFolder).toHaveBeenCalledWith('f1');
+    expect(addPendingDelete).toHaveBeenCalledWith({ entity: 'folder', id: 'f1' });
+    expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
+  });
+
+  it('deleteFolder does NOT touch sync when not authenticated', async () => {
+    const deleteFolder = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({ authStatus: 'anonymous', db: { deleteFolder, addPendingDelete } });
+    dialogsStub.confirm.mockResolvedValue(true);
+    await settle();
+    await component.deleteFolder(folder({ id: 'f1' }));
+    expect(deleteFolder).toHaveBeenCalledWith('f1');
+    expect(addPendingDelete).not.toHaveBeenCalled();
+    expect(syncStub.flushPendingDeletes).not.toHaveBeenCalled();
+  });
+
+  it('createFolder/renameFolder/deleteFolder local mutation survives a sync failure (local-first)', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const deleteFolder = vi.fn().mockResolvedValue(undefined);
+    create({
+      authStatus: 'authenticated',
+      db: { putFolder, deleteFolder },
+      sync: { flushDirty: vi.fn().mockRejectedValue(new Error('offline')) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Scalping');
+    dialogsStub.confirm.mockResolvedValue(true);
+    await settle();
+    await expect(component.createFolder()).resolves.toBeUndefined();
+    expect(putFolder).toHaveBeenCalled();
+    await expect(component.deleteFolder(folder({ id: 'f1' }))).resolves.toBeUndefined();
+    expect(deleteFolder).toHaveBeenCalledWith('f1');
+  });
+
+  // ---- pure reorder helper (Task 12) ----
+
+  describe('reorderFolders (pure helper)', () => {
+    const NOW = 5000;
+
+    it('moving the last folder above the first reassigns sparse order, preserving new visual order', () => {
+      const a = folder({ id: 'a', name: 'A', order: 1000 });
+      const b = folder({ id: 'b', name: 'B', order: 2000 });
+      const c = folder({ id: 'c', name: 'C', order: 3000 });
+      const result = reorderFolders([a, b, c], 'c', 'a', NOW);
+      expect(result.map((f) => f.id)).toEqual(['c', 'a', 'b']);
+      expect(result.map((f) => f.order)).toEqual([1000, 2000, 3000]);
+    });
+
+    it('bumps clientUpdatedAt only on folders whose order actually changed', () => {
+      const a = folder({ id: 'a', name: 'A', order: 1000 });
+      const b = folder({ id: 'b', name: 'B', order: 2000 });
+      const c = folder({ id: 'c', name: 'C', order: 3000 });
+      const d = folder({ id: 'd', name: 'D', order: 4000 });
+      // move c above b: a stays at index 0/order 1000 (unchanged); c,b,d shift.
+      const result = reorderFolders([a, b, c, d], 'c', 'b', NOW);
+      expect(result.map((f) => f.id)).toEqual(['a', 'c', 'b', 'd']);
+      const byId = new Map(result.map((f) => [f.id, f]));
+      expect(byId.get('a')!.clientUpdatedAt).toBeUndefined(); // order unchanged (still 1000)
+      expect(byId.get('c')!.clientUpdatedAt).toBe(NOW);
+      expect(byId.get('b')!.clientUpdatedAt).toBe(NOW);
+      expect(byId.get('d')!.clientUpdatedAt).toBeUndefined(); // still last, order unchanged (4000)
+    });
+
+    it('does not mutate the input array or its folder objects', () => {
+      const a = folder({ id: 'a', name: 'A', order: 1000 });
+      const b = folder({ id: 'b', name: 'B', order: 2000 });
+      const input = [a, b];
+      const inputCopy = input.map((f) => ({ ...f }));
+      reorderFolders(input, 'b', 'a', NOW);
+      expect(input).toEqual(inputCopy);
+      expect(input[0]).toBe(a);
+      expect(input[1]).toBe(b);
+    });
+
+    it('dropping a folder onto itself is a no-op (new array, same content)', () => {
+      const a = folder({ id: 'a', order: 1000 });
+      const b = folder({ id: 'b', order: 2000 });
+      const result = reorderFolders([a, b], 'a', 'a', NOW);
+      expect(result).toEqual([a, b]);
+      expect(result).not.toBe([a, b]); // still a new array (pure fn contract)
+    });
+
+    it('unknown dragged or target id returns the list unchanged', () => {
+      const a = folder({ id: 'a', order: 1000 });
+      const b = folder({ id: 'b', order: 2000 });
+      expect(reorderFolders([a, b], 'missing', 'a', NOW)).toEqual([a, b]);
+      expect(reorderFolders([a, b], 'a', 'missing', NOW)).toEqual([a, b]);
+    });
+  });
+
+  // ---- folder reorder drag-drop UI (Task 12) ----
+
+  it('folder drag start/end track draggingFolder (sidebar item only)', async () => {
+    create();
+    await settle();
+    const item = { key: 'f1', label: 'A', folderId: 'f1', count: 0, removable: true };
+    const ev = { dataTransfer: { setData: vi.fn(), effectAllowed: '' } } as unknown as DragEvent;
+    component.onFolderDragStart(item, ev);
+    expect(component.draggingFolder()).toBe('f1');
+    component.onFolderDragEnd();
+    expect(component.draggingFolder()).toBeNull();
+  });
+
+  it('folder drag start ignores non-removable rows (all / sin carpeta)', async () => {
+    create();
+    await settle();
+    const item = { key: 'all', label: 'Todas', folderId: null, count: 0, removable: false };
+    const ev = { dataTransfer: { setData: vi.fn(), effectAllowed: '' } } as unknown as DragEvent;
+    component.onFolderDragStart(item, ev);
+    expect(component.draggingFolder()).toBeNull();
+  });
+
+  it('dropping a dragged folder onto another persists the reordered folders and syncs when authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const a = folder({ id: 'a', name: 'A', order: 1000 });
+    const b = folder({ id: 'b', name: 'B', order: 2000 });
+    const c = folder({ id: 'c', name: 'C', order: 3000 });
+    create({
+      authStatus: 'authenticated',
+      db: { putFolder, listFolders: vi.fn().mockResolvedValue([a, b, c]) },
+    });
+    await settle();
+
+    component.draggingFolder.set('c');
+    const ev = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as DragEvent;
+    await component.onFolderDrop(
+      { key: 'a', label: 'A', folderId: 'a', count: 0, removable: true },
+      ev,
+    );
+
+    expect(putFolder).toHaveBeenCalled();
+    expect(component.folders().map((f) => f.id)).toEqual(['c', 'a', 'b']);
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+    expect(component.draggingFolder()).toBeNull();
+  });
+
+  it('dropping a dragged folder does NOT sync when not authenticated', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const a = folder({ id: 'a', name: 'A', order: 1000 });
+    const b = folder({ id: 'b', name: 'B', order: 2000 });
+    create({
+      authStatus: 'anonymous',
+      db: { putFolder, listFolders: vi.fn().mockResolvedValue([a, b]) },
+    });
+    await settle();
+
+    component.draggingFolder.set('b');
+    const ev = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as DragEvent;
+    await component.onFolderDrop(
+      { key: 'a', label: 'A', folderId: 'a', count: 0, removable: true },
+      ev,
+    );
+
+    expect(putFolder).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
+  it('dropping a folder onto a non-removable row (all/sin carpeta) is a no-op', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const a = folder({ id: 'a', order: 1000 });
+    create({ db: { putFolder, listFolders: vi.fn().mockResolvedValue([a]) } });
+    await settle();
+
+    component.draggingFolder.set('a');
+    const ev = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as DragEvent;
+    await component.onFolderDrop(
+      { key: 'all', label: 'Todas', folderId: null, count: 0, removable: false },
+      ev,
+    );
+
+    expect(putFolder).not.toHaveBeenCalled();
+  });
+
   // ---- moveToFolder ----
 
   it('moveToFolder no-op when already in that folder', async () => {
@@ -487,13 +1263,56 @@ describe('SesionesPageComponent', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it('moveToFolder current-asset → setSessionFolder', async () => {
+  it('moveToFolder current-asset → setSessionFolder (with clientUpdatedAt)', async () => {
     create({ currentAsset: 'XAUUSD' });
     await settle();
     await component.moveToFolder(card({ symbol: 'XAUUSD', id: 's1', folderId: null }), 'f1');
     expect(dispatch).toHaveBeenCalledWith(
-      TradingActions.setSessionFolder({ id: 's1', folderId: 'f1' }),
+      expect.objectContaining({
+        type: TradingActions.setSessionFolder.type,
+        id: 's1',
+        folderId: 'f1',
+        clientUpdatedAt: expect.any(Number),
+      }),
     );
+  });
+
+  it('moveToFolder off-screen archived stamps clientUpdatedAt + flushes when authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+
+    await component.moveToFolder(card({ symbol: 'EURUSD', id: 's1', folderId: null }), 'f1');
+
+    expect(putMeta).toHaveBeenCalled();
+    const written = putMeta.mock.calls[0][0] as WorkspaceMeta;
+    const edited = written.sessions!.find((s) => s.id === 's1')!;
+    expect(edited.trading.folderId).toBe('f1');
+    expect(edited.clientUpdatedAt).toEqual(expect.any(Number));
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('moveToFolder off-screen archived does NOT flush when not authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'anonymous',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+
+    await component.moveToFolder(card({ symbol: 'EURUSD', id: 's1', folderId: null }), 'f1');
+
+    expect(putMeta).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
   });
 
   it('moveToFolder other-asset writes the meta directly', async () => {
@@ -530,7 +1349,12 @@ describe('SesionesPageComponent', () => {
     const ev = { preventDefault: vi.fn() } as unknown as DragEvent;
     component.onGroupDrop({ key: 'f1', label: 'A', folderId: 'f1', cards: [] }, ev);
     expect(dispatch).toHaveBeenCalledWith(
-      TradingActions.setSessionFolder({ id: 's1', folderId: 'f1' }),
+      expect.objectContaining({
+        type: TradingActions.setSessionFolder.type,
+        id: 's1',
+        folderId: 'f1',
+        clientUpdatedAt: expect.any(Number),
+      }),
     );
     expect(component.dragging()).toBeNull();
   });
@@ -731,6 +1555,94 @@ describe('SesionesPageComponent', () => {
     expect(component.folderName('f1')).toBe('A');
     expect(component.folderName(null)).toBe('Sin carpeta');
     expect(component.folderName('ghost')).toBe('Sin carpeta');
+  });
+
+  // ---- dedup active session vs its cloud row ----
+
+  it('dedups the active session against its own cloud summary (no duplicate card)', async () => {
+    const meta = workspaceMeta({ symbol: 'NAS100', activeSessionId: 'X' });
+    create({
+      currentAsset: 'NAS100',
+      authStatus: 'authenticated',
+      liveTrading: {
+        ...defaultTradingData(),
+        sessionName: 'aaa',
+        history: [{ profit: 250 } as never],
+      },
+      db: {
+        listMetas: vi.fn().mockResolvedValue([meta]),
+        listFolders: vi.fn().mockResolvedValue([]),
+        listDatasets: vi.fn().mockResolvedValue([]),
+      },
+      sync: {
+        listSummaries: vi.fn().mockResolvedValue([
+          {
+            id: 'X',
+            symbol: 'NAS100',
+            name: 'aaa',
+            folderId: null,
+            schemaVersion: 1,
+            updatedAt: new Date().toISOString(),
+            lastOpenedAt: null,
+            requiredDatasets: [],
+            tradeCount: 1,
+            initialBalance: 10000,
+            balance: 10250,
+            cursor: 0,
+            sparkline: [10000, 10250],
+          },
+        ]),
+      },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'X');
+    store.refreshState();
+    await settle();
+    // Without the fix the cloud summary X would render as a second card.
+    expect(component.total()).toBe(1);
+  });
+
+  // ---- archive ----
+
+  it('archive on the current-asset active card dispatches newSession', async () => {
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      db: { listMetas: vi.fn().mockResolvedValue([]), listFolders: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+    await component.archive(card({ symbol: 'NAS100', id: null, active: true }));
+    expect(dispatch).toHaveBeenCalledWith(TradingActions.newSession({ currentCursor: 500 }));
+  });
+
+  it('archive on an off-screen active card moves it into meta.sessions (keeps cloud id) and resets', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'eur-active',
+      activeSyncedAt: 7,
+      trading: { ...defaultTradingData(), sessionName: 'plan', history: [{ profit: 5 } as never] },
+    });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta,
+        putMeta,
+        listMetas: vi.fn().mockResolvedValue([]),
+        listFolders: vi.fn().mockResolvedValue([]),
+      },
+    });
+    await settle();
+    await component.archive(card({ symbol: 'EURUSD', id: null, active: true }));
+    const written = putMeta.mock.calls.at(-1)![0] as {
+      sessions: { id: string }[];
+      trading: TradingData;
+      activeSessionId?: string;
+    };
+    expect(written.sessions).toHaveLength(1);
+    expect(written.sessions[0].id).toBe('eur-active');
+    expect(written.trading.history).toEqual([]);
+    expect(written.activeSessionId).not.toBe('eur-active');
   });
 
   beforeEach(() => {

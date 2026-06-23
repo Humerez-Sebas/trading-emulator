@@ -25,6 +25,7 @@ describe('TradingEffects', () => {
       ...defaultTradingData(),
       summaryOpen: false,
       savedSessions: [],
+      activeSessionId: null,
       ...overrides,
     };
   }

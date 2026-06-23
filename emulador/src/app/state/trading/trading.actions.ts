@@ -73,10 +73,25 @@ export const TradingActions = createActionGroup({
     /** Archives the active session and restores a saved one. */
     'Switch Session': props<{ id: string; currentCursor: number }>(),
     'Delete Session': props<{ id: string }>(),
-    /** Renames an ARCHIVED session (the active one uses Set Session Name). */
-    'Rename Session': props<{ id: string; name: string }>(),
-    /** Assigns a session to a folder (id null = the active session). */
-    'Set Session Folder': props<{ id: string | null; folderId: string | null }>(),
+    /** Deletes the ACTIVE/in-progress session: resets it to a fresh empty session (no archive). */
+    'Delete Active Session': emptyProps(),
+    /**
+     * Renames an ARCHIVED session (the active one uses Set Session Name).
+     * `clientUpdatedAt` (epoch ms, from the dispatcher) stamps the edited
+     * SavedSession's LWW clock so the rename is pushed on the next flush.
+     */
+    'Rename Session': props<{ id: string; name: string; clientUpdatedAt: number }>(),
+    /**
+     * Assigns a session to a folder (id null = the active session).
+     * `clientUpdatedAt` (epoch ms, from the dispatcher) stamps the edited
+     * archived SavedSession's LWW clock; ignored for the active session
+     * (id null), whose dirty flag is handled by markActiveDirty elsewhere.
+     */
+    'Set Session Folder': props<{
+      id: string | null;
+      folderId: string | null;
+      clientUpdatedAt: number;
+    }>(),
     /**
      * Loads a session exported as CSV: archives the active session (if it
      * has activity) and shows the imported trades as an ended session.

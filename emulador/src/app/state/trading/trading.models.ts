@@ -107,6 +107,10 @@ export interface SessionFolder {
   name: string;
   /** Manual sort order in the sidebar/list. */
   order: number;
+  /** LWW edit time, epoch ms (spec §10). Absent until first synced. */
+  clientUpdatedAt?: number;
+  /** Last successful push, epoch ms. dirty ⇔ clientUpdatedAt > (syncedAt ?? 0). */
+  syncedAt?: number;
 }
 
 /**
@@ -121,6 +125,10 @@ export interface SavedSession {
   /** Replay cursor (UTC seconds) to restore when reopening the session. */
   currentTime: number;
   trading: TradingData;
+  /** LWW edit time, epoch ms (spec §10). Absent until first synced. */
+  clientUpdatedAt?: number;
+  /** Last successful push, epoch ms. dirty ⇔ clientUpdatedAt > (syncedAt ?? 0). */
+  syncedAt?: number;
 }
 
 export interface TradingState extends TradingData {
@@ -128,6 +136,14 @@ export interface TradingState extends TradingData {
   summaryOpen: boolean;
   /** Archived sessions of the current workspace. */
   savedSessions: SavedSession[];
+  /**
+   * Stable identity of the ACTIVE session (= its cloud row id once synced).
+   * Carried through archive/switch/import transitions so an archived session
+   * keeps the same id its cloud row has (no duplicate on the next pull). Lives
+   * in state (not TradingData) — it is session identity, not persisted trading
+   * data; it round-trips via the meta snapshot (WorkspaceMeta.activeSessionId).
+   */
+  activeSessionId: string | null;
 }
 
 /** The persistable TradingData subset of a larger object (e.g. the state). */

@@ -28,5 +28,8 @@ export function workspaceDbStub(): Partial<
     putSymbol: vi.fn().mockResolvedValue(undefined),
     removeSymbol: vi.fn().mockResolvedValue(undefined),
     listDatasets: vi.fn().mockResolvedValue([]),
+    addPendingDelete: vi.fn().mockResolvedValue(undefined),
+    listPendingDeletes: vi.fn().mockResolvedValue([]),
+    removePendingDelete: vi.fn().mockResolvedValue(undefined),
   };
 }

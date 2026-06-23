@@ -78,9 +78,25 @@ export class WorkspacesEffects {
         filter(([, current]) => !!current),
         concatMap(([meta, current]) =>
           from(
-            this.db
-              .putMeta({ symbol: current!, ...meta, lastModified: Date.now() })
-              .catch(() => undefined),
+            (async () => {
+              // The stable activeSessionId now lives in NgRx state and is
+              // carried by selectWorkspaceMetaSnapshot (state owns it), so it
+              // is written straight from `meta`. The LWW clocks
+              // (activeClientUpdatedAt/activeSyncedAt) remain sync-only (NOT in
+              // the snapshot) — read the existing record first and re-apply
+              // them, otherwise every persist here would clobber them with
+              // undefined, breaking the dirty check on the next sync.
+              const existing = await this.db.getMeta(current!).catch(() => undefined);
+              await this.db
+                .putMeta({
+                  symbol: current!,
+                  ...meta,
+                  lastModified: Date.now(),
+                  activeClientUpdatedAt: existing?.activeClientUpdatedAt,
+                  activeSyncedAt: existing?.activeSyncedAt,
+                })
+                .catch(() => undefined);
+            })(),
           ),
         ),
       ),

@@ -39,6 +39,7 @@ describe('WorkspacesEffects', () => {
     drawings: [],
     trading: defaultTradingData(),
     sessions: [],
+    activeSessionId: null,
   };
 
   function setupTestBed(overrideDb?: Partial<ReturnType<typeof workspaceDbStub>>) {
@@ -575,6 +576,48 @@ describe('WorkspacesEffects', () => {
       vi.useRealTimers();
 
       expect(db.putMeta).not.toHaveBeenCalled();
+    });
+
+    it('activeSessionId flows from the snapshot; the two sync clocks are preserved from the existing record', async () => {
+      vi.useFakeTimers();
+      setupTestBed();
+      // The stable activeSessionId now lives in NgRx state and is carried by
+      // selectWorkspaceMetaSnapshot, so persistMeta$ writes it straight from
+      // the snapshot. The LWW clocks (activeClientUpdatedAt/activeSyncedAt)
+      // remain sync-only (NOT in the snapshot), so they must still be read
+      // back from the existing record instead of being clobbered to undefined.
+      db.getMeta!.mockResolvedValue({
+        symbol: SYMBOL,
+        activeSessionId: 'stale-existing-id',
+        activeClientUpdatedAt: 555,
+        activeSyncedAt: 555,
+      });
+      store.overrideSelector(selectCurrentAsset, SYMBOL);
+      store.overrideSelector(selectWorkspaceMetaSnapshot, {
+        ...metaSnap,
+        activeSessionId: 'sess-from-snapshot',
+      });
+      store.refreshState();
+
+      const sub = effects.persistMeta$.subscribe();
+      store.refreshState();
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      vi.useRealTimers();
+
+      expect(db.putMeta).toHaveBeenCalledWith(
+        expect.objectContaining({
+          symbol: SYMBOL,
+          // snapshot wins for the stable id (state owns it now)
+          activeSessionId: 'sess-from-snapshot',
+          // clocks still preserved from the existing record
+          activeClientUpdatedAt: 555,
+          activeSyncedAt: 555,
+        }),
+      );
     });
   });
 });

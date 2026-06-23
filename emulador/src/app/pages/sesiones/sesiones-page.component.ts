@@ -6,6 +6,7 @@ import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import {
   AnchorTf,
+  missingDatasets,
   RequiredDataset,
   restorePlan,
   SessionFileV1,
@@ -13,6 +14,11 @@ import {
   snapshotFromState,
   yearsInRange,
 } from '../../services/session.service';
+import { SessionSyncService } from '../../services/session-sync.service';
+import { fromPayload } from '../../services/session-sync.mapping';
+import { SessionPayloadV1, SessionSummary } from '../../services/session-sync.models';
+import { authFeature } from '../../state/auth/auth.reducer';
+import type { DatasetRecord } from '../../services/market-data-db';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
@@ -39,8 +45,9 @@ import {
 } from '../../state/selectors';
 import { marketFeature } from '../../state/market/market.reducer';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
-import { SessionFolder, TradingData } from '../../state/trading/trading.models';
-import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
+import { tradingFeature } from '../../state/trading/trading.reducer';
+import { SavedSession, SessionFolder, TradingData } from '../../state/trading/trading.models';
+import { emptyWorkspace, WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { TrashIconComponent } from '../../components/icons/trash-icon.component';
 import { DialogService } from '../../components/ui/dialog.service';
 import { ButtonDirective } from '../../components/ui/button.directive';
@@ -54,6 +61,16 @@ import { MissingDatasetDialogComponent } from '../../components/missing-dataset-
 const ANCHOR_TFS: readonly AnchorTf[] = ['M1', 'H1', 'D1'];
 
 type Density = 'card' | 'row';
+
+/**
+ * What runs after the missing-dataset modal's download completes. Both the
+ * `.session.json` import and a cloud-only card's open route through the same
+ * modal/`runJobs` plumbing — this discriminates what to do once the missing
+ * datasets have landed locally.
+ */
+type PendingDownload =
+  | { kind: 'jsonImport'; session: SessionFileV1 }
+  | { kind: 'cloudOpen'; card: SessionCard; payload: SessionPayloadV1 };
 
 /** One row in the folder navigator sidebar. */
 interface SidebarItem {
@@ -71,6 +88,12 @@ interface SidebarItem {
 export interface SessionCard {
   /** Archived session id; null = the workspace's ACTIVE session. */
   id: string | null;
+  /**
+   * The cloud row id this card maps to: the archived session's id, or — for the
+   * ACTIVE card (whose `id` is null) — the workspace's `activeSessionId`. Used to
+   * de-duplicate a local card against its own cloud summary.
+   */
+  syncId?: string | null;
   symbol: string;
   name: string;
   trades: number;
@@ -87,6 +110,10 @@ export interface SessionCard {
   folderId: string | null;
   /** Cumulative balance series (incl. initial) for the preview sparkline. */
   equity: number[];
+  /** True for a cloud-only session not yet pulled into local storage. */
+  cloudOnly?: boolean;
+  /** True when this session's required datasets aren't all in the local cache. */
+  needsDownload?: boolean;
 }
 
 interface SessionGroup {
@@ -100,8 +127,46 @@ interface SessionGroup {
 
 type GroupBy = 'carpeta' | 'activo';
 
+// Folder/session ids become Supabase row ids (uuid columns), so they MUST be
+// valid UUIDs or the push is rejected with Postgres 22P02 (invalid uuid syntax).
 function newId(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  return crypto.randomUUID();
+}
+
+/** Sparse step between reassigned folder `order` values (room to insert later without a full re-sort). */
+const FOLDER_ORDER_STEP = 1000;
+
+/**
+ * Pure reorder helper for the folder sidebar's drag-drop. Given the current
+ * folder order and a drag of `draggedId` onto `targetId`, returns a NEW array
+ * (input untouched) with the dragged folder moved just before `targetId`
+ * (dropping a folder onto itself is a no-op) and every folder's `order`
+ * reassigned with a sparse step (1000, 2000, 3000…) so the persisted order
+ * matches the new visual order. Only folders whose `order` actually changed
+ * get `clientUpdatedAt` bumped to `now`, so unaffected folders stay clean
+ * (not re-pushed to the cloud on every drag).
+ */
+export function reorderFolders(
+  folders: readonly SessionFolder[],
+  draggedId: string,
+  targetId: string,
+  now: number,
+): SessionFolder[] {
+  if (draggedId === targetId) return [...folders];
+  const dragged = folders.find((f) => f.id === draggedId);
+  if (!dragged) return [...folders];
+  const targetIndex = folders.findIndex((f) => f.id === targetId);
+  if (targetIndex === -1) return [...folders];
+
+  const without = folders.filter((f) => f.id !== draggedId);
+  const insertAt = without.findIndex((f) => f.id === targetId);
+  const reordered = [...without.slice(0, insertAt), dragged, ...without.slice(insertAt)];
+
+  return reordered.map((f, i) => {
+    const order = (i + 1) * FOLDER_ORDER_STEP;
+    if (order === f.order) return f;
+    return { ...f, order, clientUpdatedAt: now };
+  });
 }
 
 /** Cumulative balance after each closed trade (chronological), incl. initial. */
@@ -152,9 +217,12 @@ export class SesionesPageComponent {
   private repo = inject(MarketDataRepository);
   private onboarding = inject(DataOnboardingService);
   private manifests = inject(ManifestService);
+  private sync = inject(SessionSyncService);
 
   /** R2 deployment uses `.session.json` import; CSV keeps the legacy path. */
   isR2 = environment.dataSource === 'r2';
+
+  private authStatus = this.store.selectSignal(authFeature.selectStatus);
 
   state = signal<'loading' | 'ok'>('loading');
   private metas = signal<WorkspaceMeta[]>([]);
@@ -162,6 +230,13 @@ export class SesionesPageComponent {
   info = signal('');
   importInfo = signal('');
   importError = signal('');
+
+  /** Lightweight cloud session list (Task 4/8), loaded when authenticated. */
+  private cloudSummaries = signal<SessionSummary[]>([]);
+  /** Local dataset cache snapshot, used to decide `needsDownload` for cloud cards. */
+  private localDatasets = signal<DatasetRecord[]>([]);
+  /** Cloud sync status for the header chip. */
+  syncState = signal<'local' | 'syncing' | 'synced' | 'offline'>('local');
 
   groupBy = signal<GroupBy>('carpeta');
   search = signal('');
@@ -174,10 +249,16 @@ export class SesionesPageComponent {
   dragging = signal<SessionCard | null>(null);
   dragOverKey = signal<string | null>(null);
 
+  /** Drag-and-drop state for REORDERING folders (distinct from `dragging`, which moves a session). */
+  draggingFolder = signal<string | null>(null);
+  folderDragOverId = signal<string | null>(null);
+
   private currentAsset = this.store.selectSignal(selectCurrentAsset);
   private currentTime = this.store.selectSignal(selectCurrentTime);
   private liveTrading = this.store.selectSignal(selectTradingData);
   private liveSessions = this.store.selectSignal(selectSavedSessions);
+  /** The current asset's active-session cloud id (Fix #2 state field), to de-dup its cloud card. */
+  private liveActiveSessionId = this.store.selectSignal(tradingFeature.selectActiveSessionId);
 
   // ---- .session.json export (active session's live state) ----
   private liveDataRange = this.store.selectSignal(selectDataRange);
@@ -199,6 +280,7 @@ export class SesionesPageComponent {
       if (trading) {
         out.push({
           id: null,
+          syncId: live ? this.liveActiveSessionId() : (meta.activeSessionId ?? null),
           symbol: meta.symbol,
           name: trading.sessionName ?? 'Sesión en curso',
           trades: trading.history.length,
@@ -215,6 +297,7 @@ export class SesionesPageComponent {
       for (const s of sessions) {
         out.push({
           id: s.id,
+          syncId: s.id,
           symbol: meta.symbol,
           name: s.name,
           trades: s.trading.history.length,
@@ -232,11 +315,47 @@ export class SesionesPageComponent {
     return out;
   });
 
+  /**
+   * `allCards` plus one card per cloud summary whose id isn't already a local
+   * card — local always wins (it has the full trading data). Cloud-only cards
+   * carry only what the lightweight summary provides: sparkline (equity),
+   * trade count and the "necesita descarga" flag from `needsDownload`.
+   */
+  private mergedCards = computed<SessionCard[]>(() => {
+    const local = this.allCards();
+    // De-dup by the cloud row id each local card maps to (`syncId`): an archived
+    // card's id, or the ACTIVE card's `activeSessionId` (its `id` is null). This
+    // hides a cloud summary that is just the cloud copy of a local session —
+    // otherwise the active session shows twice (local card + its cloud row).
+    const localIds = new Set(local.map((c) => c.syncId).filter((id): id is string => id != null));
+    const localDatasets = this.localDatasets();
+    const cloudOnly: SessionCard[] = this.cloudSummaries()
+      .filter((s) => !localIds.has(s.id))
+      .map((s) => ({
+        id: s.id,
+        syncId: s.id,
+        symbol: s.symbol,
+        name: s.name,
+        trades: s.tradeCount,
+        balance: s.balance,
+        initialBalance: s.initialBalance,
+        pnl: s.balance - s.initialBalance,
+        createdAt: Date.parse(s.updatedAt),
+        cursor: s.cursor,
+        active: false,
+        folderId: s.folderId,
+        equity: s.sparkline ?? [],
+        cloudOnly: true,
+        needsDownload: missingDatasets(s.requiredDatasets, localDatasets).length > 0,
+      }));
+    return [...local, ...cloudOnly];
+  });
+
   /** Search filter by session name or asset symbol (instant). */
   private searchedCards = computed<SessionCard[]>(() => {
     const q = this.search().trim().toLowerCase();
-    if (!q) return this.allCards();
-    return this.allCards().filter(
+    if (!q) return this.mergedCards();
+    return this.mergedCards().filter(
       (c) => c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q),
     );
   });
@@ -330,7 +449,7 @@ export class SesionesPageComponent {
     return groups;
   });
 
-  total = computed(() => this.allCards().length);
+  total = computed(() => this.mergedCards().length);
 
   private sortCards(cards: SessionCard[]): SessionCard[] {
     // active first, then most recently touched
@@ -352,6 +471,27 @@ export class SesionesPageComponent {
       this.metas.set([]);
       this.folders.set([]);
     }
+
+    try {
+      this.localDatasets.set(await this.db.listDatasets());
+    } catch {
+      this.localDatasets.set([]);
+    }
+
+    if (this.authStatus() === 'authenticated') {
+      this.syncState.set('syncing');
+      try {
+        this.cloudSummaries.set(await this.sync.listSummaries());
+        this.syncState.set('synced');
+      } catch {
+        this.cloudSummaries.set([]);
+        this.syncState.set('offline');
+      }
+    } else {
+      this.cloudSummaries.set([]);
+      this.syncState.set('local');
+    }
+
     this.state.set('ok');
   }
 
@@ -468,8 +608,8 @@ export class SesionesPageComponent {
 
   // ---- .session.json import (R2: version gate + missing-dataset download + restore) ----
 
-  /** The parsed session pending restore (set while the missing-dataset modal is open). */
-  private pendingSession = signal<SessionFileV1 | null>(null);
+  /** What to do once the missing-dataset modal's download completes (open = modal open). */
+  private pendingDownload = signal<PendingDownload | null>(null);
   /** Missing datasets to list in the modal (empty = modal closed). */
   missing = signal<RequiredDataset[]>([]);
   /** A dataset download is running. */
@@ -508,7 +648,7 @@ export class SesionesPageComponent {
       const missing = await this.sessionService.findMissingDatasets(session);
       if (missing.length) {
         // open the missing-dataset modal; restore continues from confirmDownload()
-        this.pendingSession.set(session);
+        this.pendingDownload.set({ kind: 'jsonImport', session });
         this.downloadError.set('');
         this.downloadProgress.set(null);
         this.missing.set(missing);
@@ -520,11 +660,11 @@ export class SesionesPageComponent {
     }
   }
 
-  /** Modal action: download the missing datasets from R2, then restore. */
+  /** Modal action: download the missing datasets from R2, then run the pending action. */
   async confirmDownload(): Promise<void> {
-    const session = this.pendingSession();
+    const pending = this.pendingDownload();
     const missing = this.missing();
-    if (!session || !missing.length || this.downloading()) return;
+    if (!pending || !missing.length || this.downloading()) return;
     this.downloading.set(true);
     this.downloadError.set('');
     this.downloadProgress.set(0);
@@ -535,7 +675,11 @@ export class SesionesPageComponent {
         this.downloadProgress.set(Math.round((p.index / p.total) * 100)),
       );
       this.closeMissingModal();
-      await this.restoreSession(session);
+      if (pending.kind === 'jsonImport') {
+        await this.restoreSession(pending.session);
+      } else {
+        await this.materializeAndOpen(pending.card, pending.payload);
+      }
     } catch (e) {
       this.downloadError.set(
         (e as Error).message || 'No se pudieron descargar los datasets de R2.',
@@ -544,7 +688,7 @@ export class SesionesPageComponent {
     }
   }
 
-  /** Modal action: dismiss the missing-dataset prompt and abort the import. */
+  /** Modal action: dismiss the missing-dataset prompt and abort the import/open. */
   cancelDownload(): void {
     if (this.downloading()) return;
     this.closeMissingModal();
@@ -552,7 +696,7 @@ export class SesionesPageComponent {
 
   private closeMissingModal(): void {
     this.missing.set([]);
-    this.pendingSession.set(null);
+    this.pendingDownload.set(null);
     this.downloading.set(false);
     this.downloadProgress.set(null);
     this.downloadError.set('');
@@ -633,7 +777,16 @@ export class SesionesPageComponent {
 
   // ---- open / rename / delete (unchanged behavior) ----
 
-  open(card: SessionCard): void {
+  async open(card: SessionCard): Promise<void> {
+    if (card.cloudOnly) {
+      await this.openCloudOnlySession(card);
+      return;
+    }
+    await this.dispatchOpen(card);
+  }
+
+  /** Dispatches the switchSession/switchAsset open for an already-local card and navigates. */
+  private async dispatchOpen(card: SessionCard): Promise<void> {
     if (card.symbol === this.currentAsset()) {
       if (card.id !== null) {
         this.store.dispatch(
@@ -654,6 +807,58 @@ export class SesionesPageComponent {
     void this.router.navigateByUrl('/');
   }
 
+  /**
+   * Opens a cloud-only card: fetches its payload, then — if its required
+   * datasets aren't all cached locally — routes through the SAME
+   * missing-dataset modal/`runJobs` download used by the `.session.json`
+   * import (so candles still load from R2 before the chart opens). With no
+   * missing datasets it materializes and opens immediately, as before.
+   */
+  private async openCloudOnlySession(card: SessionCard): Promise<void> {
+    if (!card.id) return;
+    try {
+      const payload = await this.sync.fetchPayload(card.id);
+      const missing = missingDatasets(payload.requiredDatasets, this.localDatasets());
+      if (missing.length) {
+        this.pendingDownload.set({ kind: 'cloudOpen', card, payload });
+        this.downloadError.set('');
+        this.downloadProgress.set(null);
+        this.missing.set(missing);
+        return;
+      }
+      await this.materializeAndOpen(card, payload);
+    } catch (e) {
+      this.importError.set((e as Error).message || 'No se pudo descargar la sesión desde la nube.');
+    }
+  }
+
+  /**
+   * Materializes a cloud-only card's payload as a local `SavedSession` on its
+   * symbol's workspace meta, reloads so the rest of the app treats it like any
+   * other local card, then runs the normal open dispatch + navigation.
+   */
+  private async materializeAndOpen(card: SessionCard, payload: SessionPayloadV1): Promise<void> {
+    if (!card.id) return;
+    const restored = fromPayload(payload);
+    // `card.createdAt` for a cloud-only card is `Date.parse(summary.updatedAt)` —
+    // the cloud version's edit time. Stamping both fields with it marks the
+    // materialized local copy as "synced as of the cloud version" (not dirty).
+    const session: SavedSession = {
+      id: card.id,
+      name: card.name,
+      createdAt: card.createdAt,
+      currentTime: restored.cursor,
+      trading: restored.trading,
+      clientUpdatedAt: card.createdAt,
+      syncedAt: card.createdAt,
+    };
+    const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
+    meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
+    await this.db.putMeta(meta);
+    await this.reload();
+    await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });
+  }
+
   async rename(card: SessionCard): Promise<void> {
     const name = await this.dialogs.prompt({
       title: 'Renombrar sesión',
@@ -665,25 +870,74 @@ export class SesionesPageComponent {
     if (!name || name === card.name) return;
     if (card.symbol === this.currentAsset()) {
       if (card.id === null) this.store.dispatch(TradingActions.setSessionName({ name }));
-      else this.store.dispatch(TradingActions.renameSession({ id: card.id, name }));
+      else
+        this.store.dispatch(
+          TradingActions.renameSession({ id: card.id, name, clientUpdatedAt: Date.now() }),
+        );
     } else {
       const meta = await this.db.getMeta(card.symbol);
       if (!meta) return;
       if (card.id === null) {
         if (meta.trading) meta.trading = { ...meta.trading, sessionName: name };
       } else {
+        // stamp the edited archived session's LWW clock so the rename pushes
         meta.sessions = (meta.sessions ?? []).map((s) =>
-          s.id === card.id ? { ...s, name, trading: { ...s.trading, sessionName: name } } : s,
+          s.id === card.id
+            ? {
+                ...s,
+                name,
+                trading: { ...s.trading, sessionName: name },
+                clientUpdatedAt: Date.now(),
+              }
+            : s,
         );
       }
       await this.db.putMeta(meta);
       await this.reload();
+      if (card.id !== null) await this.syncDirty();
     }
     this.flash(`Sesión renombrada a "${name}".`);
   }
 
+  /**
+   * Archives the ACTIVE session: moves it into the saved list (keeping its cloud
+   * id) and starts a fresh empty session. For the current asset that's the
+   * reducer's `newSession`; for an off-screen asset we replicate it on the meta.
+   */
+  async archive(card: SessionCard): Promise<void> {
+    if (!card.active) return;
+    if (card.symbol === this.currentAsset()) {
+      this.store.dispatch(TradingActions.newSession({ currentCursor: this.currentTime() }));
+    } else {
+      const meta = await this.db.getMeta(card.symbol);
+      const t = meta?.trading;
+      if (!meta || !t) return;
+      const real = t.orders.length > 0 || t.positions.length > 0 || t.history.length > 0;
+      if (real || t.sessionName !== null) {
+        meta.sessions = [
+          ...(meta.sessions ?? []),
+          {
+            id: meta.activeSessionId ?? newId(),
+            name: t.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
+            createdAt: Date.now(),
+            currentTime: meta.currentTime,
+            trading: { ...t },
+            clientUpdatedAt: meta.activeClientUpdatedAt,
+            syncedAt: meta.activeSyncedAt,
+          },
+        ];
+      }
+      meta.trading = defaultTradingData(t.initialBalance);
+      meta.activeSessionId = newId();
+      meta.activeClientUpdatedAt = undefined;
+      meta.activeSyncedAt = undefined;
+      await this.db.putMeta(meta);
+      await this.reload();
+    }
+    this.flash('Sesión archivada.');
+  }
+
   async remove(card: SessionCard): Promise<void> {
-    if (card.id === null) return;
     const confirmed = await this.dialogs.deleteSession({
       name: card.name,
       symbol: card.symbol,
@@ -694,6 +948,33 @@ export class SesionesPageComponent {
       equity: card.equity,
     });
     if (!confirmed) return;
+    // Active "Sesión en curso" (no archived id): reset the workspace to a fresh
+    // empty session and propagate the cloud delete if it had been synced.
+    if (card.id === null) {
+      const meta = await this.db.getMeta(card.symbol);
+      const oldId = meta?.activeSessionId;
+      const wasSynced = meta?.activeSyncedAt != null;
+      if (card.symbol === this.currentAsset()) {
+        this.store.dispatch(TradingActions.deleteActiveSession());
+      } else if (meta) {
+        meta.trading = defaultTradingData(meta.trading?.initialBalance);
+        meta.activeSessionId = newId();
+        meta.activeClientUpdatedAt = undefined;
+        meta.activeSyncedAt = undefined;
+        await this.db.putMeta(meta);
+        await this.reload();
+      }
+      if (this.authStatus() === 'authenticated' && oldId && wasSynced) {
+        try {
+          await this.db.addPendingDelete({ entity: 'session', id: oldId });
+          await this.sync.flushPendingDeletes();
+        } catch {
+          // local-first: the cloud delete is retried on the next flush/pull.
+        }
+      }
+      this.flash('Sesión en curso eliminada.');
+      return;
+    }
     if (card.symbol === this.currentAsset()) {
       this.store.dispatch(TradingActions.deleteSession({ id: card.id }));
     } else {
@@ -702,6 +983,15 @@ export class SesionesPageComponent {
       meta.sessions = (meta.sessions ?? []).filter((s) => s.id !== card.id);
       await this.db.putMeta(meta);
       await this.reload();
+      if (this.authStatus() === 'authenticated') {
+        try {
+          await this.db.addPendingDelete({ entity: 'session', id: card.id });
+          await this.sync.flushPendingDeletes();
+        } catch {
+          // Local delete already applied; the pending-delete record (if it made
+          // it to IndexedDB) is retried on the next flush — local-first.
+        }
+      }
     }
     this.flash(`Sesión "${card.name}" eliminada.`);
   }
@@ -800,8 +1090,9 @@ export class SesionesPageComponent {
     });
     if (!name) return;
     const order = (this.folders().at(-1)?.order ?? -1) + 1;
-    await this.db.putFolder({ id: newId(), name, order });
+    await this.db.putFolder({ id: newId(), name, order, clientUpdatedAt: Date.now() });
     await this.reloadFolders();
+    await this.syncDirty();
     this.flash(`Carpeta "${name}" creada.`);
   }
 
@@ -814,8 +1105,9 @@ export class SesionesPageComponent {
       maxLength: 40,
     });
     if (!name || name === folder.name) return;
-    await this.db.putFolder({ ...folder, name });
+    await this.db.putFolder({ ...folder, name, clientUpdatedAt: Date.now() });
     await this.reloadFolders();
+    await this.syncDirty();
     this.flash(`Carpeta renombrada a "${name}".`);
   }
 
@@ -829,26 +1121,51 @@ export class SesionesPageComponent {
     if (!confirmed) return;
     await this.db.deleteFolder(folder.id);
     await this.reloadFolders();
+    if (this.authStatus() === 'authenticated') {
+      try {
+        await this.db.addPendingDelete({ entity: 'folder', id: folder.id });
+        await this.sync.flushPendingDeletes();
+      } catch {
+        // Local delete already applied; the pending-delete record (if it made
+        // it to IndexedDB) is retried on the next flush — local-first.
+      }
+    }
     this.flash(`Carpeta "${folder.name}" eliminada.`);
+  }
+
+  /** Pushes locally-dirty sessions/folders to the cloud when authenticated. Local mutation already happened — never let a sync failure surface to the user. */
+  private async syncDirty(): Promise<void> {
+    if (this.authStatus() !== 'authenticated') return;
+    try {
+      await this.sync.flushDirty();
+    } catch {
+      // Offline/transient — stays dirty locally, retried on next flush.
+    }
   }
 
   /** Moves a session into a folder (folderId null = unassign). */
   async moveToFolder(card: SessionCard, folderId: string | null): Promise<void> {
     if (card.folderId === folderId) return;
     if (card.symbol === this.currentAsset()) {
-      this.store.dispatch(TradingActions.setSessionFolder({ id: card.id, folderId }));
+      this.store.dispatch(
+        TradingActions.setSessionFolder({ id: card.id, folderId, clientUpdatedAt: Date.now() }),
+      );
     } else {
       const meta = await this.db.getMeta(card.symbol);
       if (!meta) return;
       if (card.id === null) {
         if (meta.trading) meta.trading = { ...meta.trading, folderId };
       } else {
+        // stamp the edited archived session's LWW clock so the move pushes
         meta.sessions = (meta.sessions ?? []).map((s) =>
-          s.id === card.id ? { ...s, trading: { ...s.trading, folderId } } : s,
+          s.id === card.id
+            ? { ...s, trading: { ...s.trading, folderId }, clientUpdatedAt: Date.now() }
+            : s,
         );
       }
       await this.db.putMeta(meta);
       await this.reload();
+      if (card.id !== null) await this.syncDirty();
     }
     this.flash(folderId ? `Movida a "${this.folderName(folderId)}".` : 'Movida a "Sin carpeta".');
   }
@@ -906,6 +1223,55 @@ export class SesionesPageComponent {
     this.dragOverKey.set(null);
     this.dragging.set(null);
     if (card && item.key !== 'all') void this.moveToFolder(card, item.folderId);
+  }
+
+  // ---- sidebar folder REORDER drag & drop (distinct from session-into-folder above) ----
+
+  onFolderDragStart(item: SidebarItem, event: DragEvent): void {
+    if (!item.removable) return; // only real folders ('all' / '__none__' are not orderable)
+    this.draggingFolder.set(item.key);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', item.key);
+    }
+  }
+
+  onFolderDragEnd(): void {
+    this.draggingFolder.set(null);
+    this.folderDragOverId.set(null);
+  }
+
+  onFolderDragOver(item: SidebarItem, event: DragEvent): void {
+    const draggedId = this.draggingFolder();
+    if (!draggedId || !item.removable || item.key === draggedId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    this.folderDragOverId.set(item.key);
+  }
+
+  onFolderDragLeave(item: SidebarItem): void {
+    if (this.folderDragOverId() === item.key) this.folderDragOverId.set(null);
+  }
+
+  async onFolderDrop(item: SidebarItem, event: DragEvent): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    const draggedId = this.draggingFolder();
+    this.folderDragOverId.set(null);
+    this.draggingFolder.set(null);
+    if (!draggedId || !item.removable || draggedId === item.key) return;
+
+    const previous = this.folders();
+    const reordered = reorderFolders(previous, draggedId, item.key, Date.now());
+    const previousOrderById = new Map(previous.map((f) => [f.id, f.order]));
+    const changed = reordered.filter((f) => f.order !== previousOrderById.get(f.id));
+    if (!changed.length) return;
+    this.folders.set(reordered);
+    for (const f of changed) {
+      await this.db.putFolder(f);
+    }
+    await this.syncDirty();
   }
 
   private flash(message: string): void {
