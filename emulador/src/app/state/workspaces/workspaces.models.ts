@@ -31,8 +31,12 @@ export interface Workspace {
   /** Archived backtesting sessions (optional pre-V2.2). */
   sessions?: SavedSession[];
   lastModified: number;
-  /** Stable id of the active session (= its cloud row id once synced). D4. */
-  activeSessionId?: string;
+  /**
+   * Stable id of the active session (= its cloud row id once synced). D4.
+   * Carried by the NgRx meta snapshot (TradingState owns it), so it may be
+   * explicitly `null` (a workspace whose active session has no id yet).
+   */
+  activeSessionId?: string | null;
   /** Active session LWW edit time, epoch ms (spec §10). */
   activeClientUpdatedAt?: number;
   /** Active session last successful push, epoch ms (spec §10). dirty ⇔ activeClientUpdatedAt > (activeSyncedAt ?? 0). */

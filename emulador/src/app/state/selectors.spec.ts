@@ -44,7 +44,12 @@ describe('selectChartStyle', () => {
 // ---- selectTradingData ----
 describe('selectTradingData', () => {
   it('returns pickTradingData result (no summaryOpen, no savedSessions)', () => {
-    const state = { ...defaultTradingData(), summaryOpen: true, savedSessions: [] };
+    const state = {
+      ...defaultTradingData(),
+      summaryOpen: true,
+      savedSessions: [],
+      activeSessionId: null,
+    };
     const result = selectTradingData.projector(state);
     expect('summaryOpen' in result).toBe(false);
     expect('savedSessions' in result).toBe(false);
@@ -78,7 +83,7 @@ describe('selectWorkspaceSnapshot', () => {
 
 // ---- selectWorkspaceMetaSnapshot ----
 describe('selectWorkspaceMetaSnapshot', () => {
-  it('bundles correct keys (incl. selectedTfs) and has NO series field', () => {
+  it('bundles correct keys (incl. selectedTfs + activeSessionId) and has NO series field', () => {
     const trading = defaultTradingData();
     const result = selectWorkspaceMetaSnapshot.projector(
       { H1: 'file.csv' },
@@ -88,12 +93,28 @@ describe('selectWorkspaceMetaSnapshot', () => {
       [],
       trading,
       [],
+      'sess-42',
     );
     expect('series' in result).toBe(false);
     expect(result.files).toEqual({ H1: 'file.csv' });
     expect(result.activeTf).toBe('H1');
     expect(result.selectedTfs).toEqual(['M5', 'H1']);
     expect(result.currentTime).toBe(3600);
+    expect(result.activeSessionId).toBe('sess-42');
+  });
+
+  it('carries a null activeSessionId through', () => {
+    const result = selectWorkspaceMetaSnapshot.projector(
+      {},
+      null,
+      null,
+      0,
+      [],
+      defaultTradingData(),
+      [],
+      null,
+    );
+    expect(result.activeSessionId).toBeNull();
   });
 
   it('maps a null selection to undefined (legacy sessions)', () => {
@@ -105,6 +126,7 @@ describe('selectWorkspaceMetaSnapshot', () => {
       [],
       defaultTradingData(),
       [],
+      null,
     );
     expect(result.selectedTfs).toBeUndefined();
   });
@@ -312,7 +334,12 @@ describe('selectPointSize', () => {
 // ---- selectTradePanelView ----
 describe('selectTradePanelView', () => {
   it('price is null when there is no current candle', () => {
-    const trading = { ...defaultTradingData(), summaryOpen: false, savedSessions: [] };
+    const trading = {
+      ...defaultTradingData(),
+      summaryOpen: false,
+      savedSessions: [],
+      activeSessionId: null,
+    };
     const result = selectTradePanelView.projector(trading, null, 100, 0.01);
     expect(result.price).toBeNull();
   });
@@ -324,6 +351,7 @@ describe('selectTradePanelView', () => {
       positions: [pos],
       summaryOpen: false,
       savedSessions: [],
+      activeSessionId: null,
     };
     const c = candle(3600, 4010, 4020, 3990, 4010);
     const result = selectTradePanelView.projector(trading, c, 100, 0.01);
@@ -341,6 +369,7 @@ describe('selectTradePanelView', () => {
       sessionEnded: true,
       summaryOpen: true,
       savedSessions: [],
+      activeSessionId: null,
     };
     const c = candle(3600, 100, 101, 99, 100);
     const result = selectTradePanelView.projector(trading, c, 1, 0.01);
@@ -473,7 +502,12 @@ describe('selectSessionStats', () => {
 describe('selectFillContext', () => {
   it('bundles candles/idx/tfSeconds/lower/contractSize/trading', () => {
     const candles = series(3);
-    const trading = { ...defaultTradingData(), summaryOpen: false, savedSessions: [] };
+    const trading = {
+      ...defaultTradingData(),
+      summaryOpen: false,
+      savedSessions: [],
+      activeSessionId: null,
+    };
     const lower = series(3, 0, 300);
     const result = selectFillContext.projector(candles, 2, 3600, lower, 100, trading);
     expect(result.candles).toBe(candles);

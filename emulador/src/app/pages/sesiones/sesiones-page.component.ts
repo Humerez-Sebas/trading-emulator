@@ -852,19 +852,31 @@ export class SesionesPageComponent {
     if (!name || name === card.name) return;
     if (card.symbol === this.currentAsset()) {
       if (card.id === null) this.store.dispatch(TradingActions.setSessionName({ name }));
-      else this.store.dispatch(TradingActions.renameSession({ id: card.id, name }));
+      else
+        this.store.dispatch(
+          TradingActions.renameSession({ id: card.id, name, clientUpdatedAt: Date.now() }),
+        );
     } else {
       const meta = await this.db.getMeta(card.symbol);
       if (!meta) return;
       if (card.id === null) {
         if (meta.trading) meta.trading = { ...meta.trading, sessionName: name };
       } else {
+        // stamp the edited archived session's LWW clock so the rename pushes
         meta.sessions = (meta.sessions ?? []).map((s) =>
-          s.id === card.id ? { ...s, name, trading: { ...s.trading, sessionName: name } } : s,
+          s.id === card.id
+            ? {
+                ...s,
+                name,
+                trading: { ...s.trading, sessionName: name },
+                clientUpdatedAt: Date.now(),
+              }
+            : s,
         );
       }
       await this.db.putMeta(meta);
       await this.reload();
+      if (card.id !== null) await this.syncDirty();
     }
     this.flash(`Sesión renombrada a "${name}".`);
   }
@@ -998,7 +1010,7 @@ export class SesionesPageComponent {
     const order = (this.folders().at(-1)?.order ?? -1) + 1;
     await this.db.putFolder({ id: newId(), name, order, clientUpdatedAt: Date.now() });
     await this.reloadFolders();
-    await this.syncDirtyFolders();
+    await this.syncDirty();
     this.flash(`Carpeta "${name}" creada.`);
   }
 
@@ -1013,7 +1025,7 @@ export class SesionesPageComponent {
     if (!name || name === folder.name) return;
     await this.db.putFolder({ ...folder, name, clientUpdatedAt: Date.now() });
     await this.reloadFolders();
-    await this.syncDirtyFolders();
+    await this.syncDirty();
     this.flash(`Carpeta renombrada a "${name}".`);
   }
 
@@ -1039,8 +1051,8 @@ export class SesionesPageComponent {
     this.flash(`Carpeta "${folder.name}" eliminada.`);
   }
 
-  /** Pushes locally-dirty folders to the cloud when authenticated. Local mutation already happened — never let a sync failure surface to the user. */
-  private async syncDirtyFolders(): Promise<void> {
+  /** Pushes locally-dirty sessions/folders to the cloud when authenticated. Local mutation already happened — never let a sync failure surface to the user. */
+  private async syncDirty(): Promise<void> {
     if (this.authStatus() !== 'authenticated') return;
     try {
       await this.sync.flushDirty();
@@ -1053,19 +1065,25 @@ export class SesionesPageComponent {
   async moveToFolder(card: SessionCard, folderId: string | null): Promise<void> {
     if (card.folderId === folderId) return;
     if (card.symbol === this.currentAsset()) {
-      this.store.dispatch(TradingActions.setSessionFolder({ id: card.id, folderId }));
+      this.store.dispatch(
+        TradingActions.setSessionFolder({ id: card.id, folderId, clientUpdatedAt: Date.now() }),
+      );
     } else {
       const meta = await this.db.getMeta(card.symbol);
       if (!meta) return;
       if (card.id === null) {
         if (meta.trading) meta.trading = { ...meta.trading, folderId };
       } else {
+        // stamp the edited archived session's LWW clock so the move pushes
         meta.sessions = (meta.sessions ?? []).map((s) =>
-          s.id === card.id ? { ...s, trading: { ...s.trading, folderId } } : s,
+          s.id === card.id
+            ? { ...s, trading: { ...s.trading, folderId }, clientUpdatedAt: Date.now() }
+            : s,
         );
       }
       await this.db.putMeta(meta);
       await this.reload();
+      if (card.id !== null) await this.syncDirty();
     }
     this.flash(folderId ? `Movida a "${this.folderName(folderId)}".` : 'Movida a "Sin carpeta".');
   }
@@ -1171,7 +1189,7 @@ export class SesionesPageComponent {
     for (const f of changed) {
       await this.db.putFolder(f);
     }
-    await this.syncDirtyFolders();
+    await this.syncDirty();
   }
 
   private flash(message: string): void {

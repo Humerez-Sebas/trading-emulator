@@ -39,6 +39,7 @@ describe('WorkspacesEffects', () => {
     drawings: [],
     trading: defaultTradingData(),
     sessions: [],
+    activeSessionId: null,
   };
 
   function setupTestBed(overrideDb?: Partial<ReturnType<typeof workspaceDbStub>>) {
@@ -577,21 +578,25 @@ describe('WorkspacesEffects', () => {
       expect(db.putMeta).not.toHaveBeenCalled();
     });
 
-    it('CLOBBER fix: preserves activeSessionId/activeClientUpdatedAt/activeSyncedAt from the existing record', async () => {
+    it('activeSessionId flows from the snapshot; the two sync clocks are preserved from the existing record', async () => {
       vi.useFakeTimers();
       setupTestBed();
-      // Existing record already has sync bookkeeping fields set (e.g. a
-      // session pushed to the cloud earlier). selectWorkspaceMetaSnapshot
-      // never carries these — persistMeta$ must read them back from the
-      // existing meta instead of overwriting them with undefined.
+      // The stable activeSessionId now lives in NgRx state and is carried by
+      // selectWorkspaceMetaSnapshot, so persistMeta$ writes it straight from
+      // the snapshot. The LWW clocks (activeClientUpdatedAt/activeSyncedAt)
+      // remain sync-only (NOT in the snapshot), so they must still be read
+      // back from the existing record instead of being clobbered to undefined.
       db.getMeta!.mockResolvedValue({
         symbol: SYMBOL,
-        activeSessionId: 'sess-123',
+        activeSessionId: 'stale-existing-id',
         activeClientUpdatedAt: 555,
         activeSyncedAt: 555,
       });
       store.overrideSelector(selectCurrentAsset, SYMBOL);
-      store.overrideSelector(selectWorkspaceMetaSnapshot, metaSnap);
+      store.overrideSelector(selectWorkspaceMetaSnapshot, {
+        ...metaSnap,
+        activeSessionId: 'sess-from-snapshot',
+      });
       store.refreshState();
 
       const sub = effects.persistMeta$.subscribe();
@@ -606,7 +611,9 @@ describe('WorkspacesEffects', () => {
       expect(db.putMeta).toHaveBeenCalledWith(
         expect.objectContaining({
           symbol: SYMBOL,
-          activeSessionId: 'sess-123',
+          // snapshot wins for the stable id (state owns it now)
+          activeSessionId: 'sess-from-snapshot',
+          // clocks still preserved from the existing record
           activeClientUpdatedAt: 555,
           activeSyncedAt: 555,
         }),

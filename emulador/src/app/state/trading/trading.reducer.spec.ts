@@ -17,7 +17,13 @@ import { Candle } from '../../models';
 const reducer = tradingFeature.reducer;
 
 function state(partial: Partial<TradingState> = {}): TradingState {
-  return { ...defaultTradingData(), summaryOpen: false, savedSessions: [], ...partial };
+  return {
+    ...defaultTradingData(),
+    summaryOpen: false,
+    savedSessions: [],
+    activeSessionId: null,
+    ...partial,
+  };
 }
 
 function order(partial: Partial<PendingOrder> = {}): PendingOrder {
@@ -185,9 +191,15 @@ describe('trading reducer: trade box hide/delete', () => {
   });
 
   it('setSessionFolder on the active session (id null) sets state.folderId', () => {
-    const next = reducer(state(), TradingActions.setSessionFolder({ id: null, folderId: 'f1' }));
+    const next = reducer(
+      state(),
+      TradingActions.setSessionFolder({ id: null, folderId: 'f1', clientUpdatedAt: 1 }),
+    );
     expect(next.folderId).toBe('f1');
-    const cleared = reducer(next, TradingActions.setSessionFolder({ id: null, folderId: null }));
+    const cleared = reducer(
+      next,
+      TradingActions.setSessionFolder({ id: null, folderId: null, clientUpdatedAt: 2 }),
+    );
     expect(cleared.folderId).toBeNull();
   });
 
@@ -200,8 +212,27 @@ describe('trading reducer: trade box hide/delete', () => {
       trading: { ...defaultTradingData(), folderId: null },
     };
     const s = state({ savedSessions: [saved] });
-    const next = reducer(s, TradingActions.setSessionFolder({ id: 's1', folderId: 'f2' }));
+    const next = reducer(
+      s,
+      TradingActions.setSessionFolder({ id: 's1', folderId: 'f2', clientUpdatedAt: 1234 }),
+    );
     expect(next.savedSessions[0].trading.folderId).toBe('f2');
+  });
+
+  it('setSessionFolder on an archived session stamps clientUpdatedAt from the action', () => {
+    const saved = {
+      id: 's1',
+      name: 'A',
+      createdAt: 1,
+      currentTime: 0,
+      trading: { ...defaultTradingData(), folderId: null },
+    };
+    const s = state({ savedSessions: [saved] });
+    const next = reducer(
+      s,
+      TradingActions.setSessionFolder({ id: 's1', folderId: 'f2', clientUpdatedAt: 9999 }),
+    );
+    expect(next.savedSessions[0].clientUpdatedAt).toBe(9999);
   });
 
   it('renameSession renames an archived session (and its inner trading name)', () => {
@@ -213,11 +244,33 @@ describe('trading reducer: trade box hide/delete', () => {
       trading: { ...defaultTradingData(), sessionName: 'Vieja' },
     };
     const s = state({ savedSessions: [saved] });
-    const next = reducer(s, TradingActions.renameSession({ id: 's1', name: '  Nueva  ' }));
+    const next = reducer(
+      s,
+      TradingActions.renameSession({ id: 's1', name: '  Nueva  ', clientUpdatedAt: 1234 }),
+    );
     expect(next.savedSessions[0].name).toBe('Nueva');
     expect(next.savedSessions[0].trading.sessionName).toBe('Nueva');
-    const noop = reducer(s, TradingActions.renameSession({ id: 's1', name: '   ' }));
+    const noop = reducer(
+      s,
+      TradingActions.renameSession({ id: 's1', name: '   ', clientUpdatedAt: 1234 }),
+    );
     expect(noop.savedSessions[0].name).toBe('Vieja');
+  });
+
+  it('renameSession stamps clientUpdatedAt from the action on the edited session', () => {
+    const saved = {
+      id: 's1',
+      name: 'Vieja',
+      createdAt: 1,
+      currentTime: 500,
+      trading: { ...defaultTradingData(), sessionName: 'Vieja' },
+    };
+    const s = state({ savedSessions: [saved] });
+    const next = reducer(
+      s,
+      TradingActions.renameSession({ id: 's1', name: 'Nueva', clientUpdatedAt: 7777 }),
+    );
+    expect(next.savedSessions[0].clientUpdatedAt).toBe(7777);
   });
 
   it('restores legacy workspaces (history without box fields) as visible', () => {
@@ -634,6 +687,83 @@ describe('trading reducer: restoreSession', () => {
     const next = reducer(s, TradingActions.restoreSession({ trading: defaultTradingData() }));
     expect(next.summaryOpen).toBe(true);
     expect(next.savedSessions).toEqual([saved]);
+  });
+});
+
+describe('trading reducer: stable activeSessionId (Part A)', () => {
+  it('initialState.activeSessionId is null', () => {
+    expect(reducer(undefined, { type: '@@init' }).activeSessionId).toBeNull();
+  });
+
+  it('newSession sets a fresh activeSessionId', () => {
+    const s = state({ activeSessionId: 'old-active' });
+    const next = reducer(s, TradingActions.newSession({ currentCursor: 0 }));
+    expect(next.activeSessionId).not.toBeNull();
+    expect(next.activeSessionId).not.toBe('old-active');
+  });
+
+  it('newSession archives the outgoing active under its own activeSessionId (reuse, no mint)', () => {
+    const s = state({ history: [closed()], activeSessionId: 'active-id-1' });
+    const next = reducer(s, TradingActions.newSession({ currentCursor: 100 }));
+    expect(next.savedSessions).toHaveLength(1);
+    expect(next.savedSessions[0].id).toBe('active-id-1');
+  });
+
+  it('archiveActive mints a NEW id when activeSessionId is null', () => {
+    const s = state({ history: [closed()], activeSessionId: null });
+    const next = reducer(s, TradingActions.newSession({ currentCursor: 100 }));
+    expect(next.savedSessions).toHaveLength(1);
+    expect(next.savedSessions[0].id).toBeTruthy();
+  });
+
+  it('switchSession archives the outgoing under its id and sets activeSessionId to the restored id', () => {
+    const saved = {
+      id: 's1',
+      name: 'Target',
+      createdAt: 1,
+      currentTime: 500,
+      trading: { ...defaultTradingData(), sessionName: 'Target' },
+    };
+    const s = state({
+      history: [closed()],
+      savedSessions: [saved],
+      activeSessionId: 'outgoing-id',
+    });
+    const next = reducer(s, TradingActions.switchSession({ id: 's1', currentCursor: 999 }));
+    // restored session's id becomes the active identity
+    expect(next.activeSessionId).toBe('s1');
+    // outgoing was archived under its own activeSessionId
+    expect(next.savedSessions.find((ss) => ss.id === 'outgoing-id')).toBeDefined();
+    // target removed from the saved list
+    expect(next.savedSessions.find((ss) => ss.id === 's1')).toBeUndefined();
+  });
+
+  it('sessionImported archives under activeSessionId and sets a fresh activeSessionId', () => {
+    const s = state({ history: [closed()], activeSessionId: 'imp-outgoing' });
+    const trades = [closed({ id: 'ti', profit: 100, closeTime: 1700000000 })];
+    const next = reducer(s, TradingActions.sessionImported({ trades, currentCursor: 0 }));
+    expect(next.savedSessions.find((ss) => ss.id === 'imp-outgoing')).toBeDefined();
+    expect(next.activeSessionId).not.toBeNull();
+    expect(next.activeSessionId).not.toBe('imp-outgoing');
+  });
+
+  it('restoreSession sets a fresh activeSessionId', () => {
+    const s = state({ activeSessionId: 'before-restore' });
+    const next = reducer(s, TradingActions.restoreSession({ trading: defaultTradingData() }));
+    expect(next.activeSessionId).not.toBeNull();
+    expect(next.activeSessionId).not.toBe('before-restore');
+  });
+
+  it('workspaceRestored adopts the workspace.activeSessionId when present', () => {
+    const ws = workspace({ activeSessionId: 'cloud-row-id' });
+    const next = reducer(state(), WorkspacesActions.workspaceRestored({ workspace: ws }));
+    expect(next.activeSessionId).toBe('cloud-row-id');
+  });
+
+  it('workspaceRestored assigns a fresh activeSessionId when the workspace lacks one', () => {
+    const ws = workspace(); // emptyWorkspace-like, no activeSessionId
+    const next = reducer(state(), WorkspacesActions.workspaceRestored({ workspace: ws }));
+    expect(next.activeSessionId).toBeTruthy();
   });
 });
 

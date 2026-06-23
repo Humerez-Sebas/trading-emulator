@@ -79,18 +79,19 @@ export class WorkspacesEffects {
         concatMap(([meta, current]) =>
           from(
             (async () => {
-              // selectWorkspaceMetaSnapshot omits the sync bookkeeping fields
-              // (activeSessionId/activeClientUpdatedAt/activeSyncedAt) — read
-              // the existing record first and re-apply them, otherwise every
-              // persist here would clobber the active session's stable id and
-              // LWW clock, causing duplicate cloud rows on the next sync.
+              // The stable activeSessionId now lives in NgRx state and is
+              // carried by selectWorkspaceMetaSnapshot (state owns it), so it
+              // is written straight from `meta`. The LWW clocks
+              // (activeClientUpdatedAt/activeSyncedAt) remain sync-only (NOT in
+              // the snapshot) — read the existing record first and re-apply
+              // them, otherwise every persist here would clobber them with
+              // undefined, breaking the dirty check on the next sync.
               const existing = await this.db.getMeta(current!).catch(() => undefined);
               await this.db
                 .putMeta({
                   symbol: current!,
                   ...meta,
                   lastModified: Date.now(),
-                  activeSessionId: existing?.activeSessionId,
                   activeClientUpdatedAt: existing?.activeClientUpdatedAt,
                   activeSyncedAt: existing?.activeSyncedAt,
                 })

@@ -37,6 +37,7 @@ describe('SessionSyncEffects', () => {
     drawings: [],
     trading: defaultTradingData(),
     sessions: [],
+    activeSessionId: null,
   };
 
   function setupTestBed() {

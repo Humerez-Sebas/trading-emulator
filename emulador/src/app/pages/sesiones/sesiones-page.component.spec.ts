@@ -17,6 +17,7 @@ import { authFeature } from '../../state/auth/auth.reducer';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { workspaceMeta, savedSession, closed } from '../../testing/fixtures';
 import { defaultTradingData, SessionFolder, TradingData } from '../../state/trading/trading.models';
+import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { DialogService } from '../../components/ui/dialog.service';
 import { SessionService } from '../../services/session.service';
 import { SessionSyncService } from '../../services/session-sync.service';
@@ -691,13 +692,18 @@ describe('SesionesPageComponent', () => {
     expect(dispatch).toHaveBeenCalledWith(TradingActions.setSessionName({ name: 'Nuevo' }));
   });
 
-  it('rename current-asset archived → renameSession', async () => {
+  it('rename current-asset archived → renameSession (with clientUpdatedAt)', async () => {
     create({ currentAsset: 'XAUUSD' });
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
     await component.rename(card({ symbol: 'XAUUSD', id: 's1' }));
     expect(dispatch).toHaveBeenCalledWith(
-      TradingActions.renameSession({ id: 's1', name: 'Nuevo' }),
+      expect.objectContaining({
+        type: TradingActions.renameSession.type,
+        id: 's1',
+        name: 'Nuevo',
+        clientUpdatedAt: expect.any(Number),
+      }),
     );
   });
 
@@ -721,6 +727,63 @@ describe('SesionesPageComponent', () => {
     await settle();
     await component.rename(card({ symbol: 'XAUUSD', id: null }));
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('rename off-screen archived stamps clientUpdatedAt + flushes when authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await component.rename(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(putMeta).toHaveBeenCalled();
+    const written = putMeta.mock.calls[0][0] as WorkspaceMeta;
+    const edited = written.sessions!.find((s) => s.id === 's1')!;
+    expect(edited.name).toBe('Nuevo');
+    expect(edited.clientUpdatedAt).toEqual(expect.any(Number));
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('rename off-screen archived does NOT flush when not authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'anonymous',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await component.rename(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(putMeta).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
+  it('rename off-screen archived local mutation survives a sync failure (local-first)', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+      sync: { flushDirty: vi.fn().mockRejectedValue(new Error('offline')) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await expect(component.rename(card({ symbol: 'EURUSD', id: 's1' }))).resolves.toBeUndefined();
+    expect(putMeta).toHaveBeenCalled();
   });
 
   // ---- remove ----
@@ -1147,13 +1210,56 @@ describe('SesionesPageComponent', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it('moveToFolder current-asset → setSessionFolder', async () => {
+  it('moveToFolder current-asset → setSessionFolder (with clientUpdatedAt)', async () => {
     create({ currentAsset: 'XAUUSD' });
     await settle();
     await component.moveToFolder(card({ symbol: 'XAUUSD', id: 's1', folderId: null }), 'f1');
     expect(dispatch).toHaveBeenCalledWith(
-      TradingActions.setSessionFolder({ id: 's1', folderId: 'f1' }),
+      expect.objectContaining({
+        type: TradingActions.setSessionFolder.type,
+        id: 's1',
+        folderId: 'f1',
+        clientUpdatedAt: expect.any(Number),
+      }),
     );
+  });
+
+  it('moveToFolder off-screen archived stamps clientUpdatedAt + flushes when authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+
+    await component.moveToFolder(card({ symbol: 'EURUSD', id: 's1', folderId: null }), 'f1');
+
+    expect(putMeta).toHaveBeenCalled();
+    const written = putMeta.mock.calls[0][0] as WorkspaceMeta;
+    const edited = written.sessions!.find((s) => s.id === 's1')!;
+    expect(edited.trading.folderId).toBe('f1');
+    expect(edited.clientUpdatedAt).toEqual(expect.any(Number));
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('moveToFolder off-screen archived does NOT flush when not authenticated', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'anonymous',
+      db: { getMeta, putMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+
+    await component.moveToFolder(card({ symbol: 'EURUSD', id: 's1', folderId: null }), 'f1');
+
+    expect(putMeta).toHaveBeenCalled();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
   });
 
   it('moveToFolder other-asset writes the meta directly', async () => {
@@ -1190,7 +1296,12 @@ describe('SesionesPageComponent', () => {
     const ev = { preventDefault: vi.fn() } as unknown as DragEvent;
     component.onGroupDrop({ key: 'f1', label: 'A', folderId: 'f1', cards: [] }, ev);
     expect(dispatch).toHaveBeenCalledWith(
-      TradingActions.setSessionFolder({ id: 's1', folderId: 'f1' }),
+      expect.objectContaining({
+        type: TradingActions.setSessionFolder.type,
+        id: 's1',
+        folderId: 'f1',
+        clientUpdatedAt: expect.any(Number),
+      }),
     );
     expect(component.dragging()).toBeNull();
   });

@@ -100,7 +100,8 @@ export const selectWorkspaceMetaSnapshot = createSelector(
   drawingsFeature.selectItems,
   selectTradingData,
   selectSavedSessions,
-  (files, activeTf, selectedTfs, currentTime, drawings, trading, sessions) => ({
+  tradingFeature.selectActiveSessionId,
+  (files, activeTf, selectedTfs, currentTime, drawings, trading, sessions, activeSessionId) => ({
     files,
     activeTf,
     selectedTfs: selectedTfs ?? undefined,
@@ -108,6 +109,9 @@ export const selectWorkspaceMetaSnapshot = createSelector(
     drawings,
     trading,
     sessions,
+    // stable active session id (= cloud row id once synced); carried so the
+    // meta snapshot round-trips it without persistMeta$ reading it back.
+    activeSessionId,
   }),
 );
 

@@ -136,6 +136,14 @@ export interface TradingState extends TradingData {
   summaryOpen: boolean;
   /** Archived sessions of the current workspace. */
   savedSessions: SavedSession[];
+  /**
+   * Stable identity of the ACTIVE session (= its cloud row id once synced).
+   * Carried through archive/switch/import transitions so an archived session
+   * keeps the same id its cloud row has (no duplicate on the next pull). Lives
+   * in state (not TradingData) — it is session identity, not persisted trading
+   * data; it round-trips via the meta snapshot (WorkspaceMeta.activeSessionId).
+   */
+  activeSessionId: string | null;
 }
 
 /** The persistable TradingData subset of a larger object (e.g. the state). */

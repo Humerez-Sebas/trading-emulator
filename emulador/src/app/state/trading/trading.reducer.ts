@@ -15,6 +15,7 @@ const initialState: TradingState = {
   ...defaultTradingData(),
   summaryOpen: false,
   savedSessions: [],
+  activeSessionId: null,
 };
 
 function newId(): string {
@@ -57,7 +58,10 @@ function archiveActive(state: TradingState, currentCursor: number): SavedSession
   return [
     ...state.savedSessions,
     {
-      id: newId(),
+      // Reuse the active session's stable id so the archived session keeps the
+      // same id its cloud row has (LWW dedupes by id → no duplicate on pull).
+      // Mint a fresh one only when there is no active id yet (legacy/new).
+      id: state.activeSessionId ?? newId(),
       // restored sessions keep their original name across archive cycles
       name:
         state.sessionName ??
@@ -229,6 +233,8 @@ export const tradingFeature = createFeature({
         riskPct: state.riskPct,
         summaryOpen: false,
         savedSessions: archiveActive(state, currentCursor),
+        // fresh blank session → fresh identity
+        activeSessionId: newId(),
       }),
     ),
     on(
@@ -244,7 +250,10 @@ export const tradingFeature = createFeature({
         ...target.trading,
         sessionName: target.name,
         summaryOpen: false,
+        // outgoing active is archived under its own id (archiveActive reuses
+        // state.activeSessionId); the restored session's id becomes active.
         savedSessions: archiveActive(state, currentCursor).filter((s) => s.id !== id),
+        activeSessionId: id,
       };
     }),
     on(
@@ -254,29 +263,39 @@ export const tradingFeature = createFeature({
         savedSessions: state.savedSessions.filter((s) => s.id !== id),
       }),
     ),
-    on(TradingActions.renameSession, (state, { id, name }): TradingState => {
+    on(TradingActions.renameSession, (state, { id, name, clientUpdatedAt }): TradingState => {
       const trimmed = name.trim();
       if (!trimmed) return state;
       return {
         ...state,
         savedSessions: state.savedSessions.map((s) =>
-          // the name also travels inside trading so it survives re-archiving
+          // the name also travels inside trading so it survives re-archiving;
+          // stamp clientUpdatedAt so the edit is pushed on the next flush
           s.id === id
-            ? { ...s, name: trimmed, trading: { ...s.trading, sessionName: trimmed } }
+            ? {
+                ...s,
+                name: trimmed,
+                trading: { ...s.trading, sessionName: trimmed },
+                clientUpdatedAt,
+              }
             : s,
         ),
       };
     }),
-    on(TradingActions.setSessionFolder, (state, { id, folderId }): TradingState => {
-      // id null = the active session; otherwise an archived one
-      if (id === null) return { ...state, folderId };
-      return {
-        ...state,
-        savedSessions: state.savedSessions.map((s) =>
-          s.id === id ? { ...s, trading: { ...s.trading, folderId } } : s,
-        ),
-      };
-    }),
+    on(
+      TradingActions.setSessionFolder,
+      (state, { id, folderId, clientUpdatedAt }): TradingState => {
+        // id null = the active session (no savedSession stamp; markActiveDirty
+        // handles the active path); otherwise an archived one — stamp its clock.
+        if (id === null) return { ...state, folderId };
+        return {
+          ...state,
+          savedSessions: state.savedSessions.map((s) =>
+            s.id === id ? { ...s, trading: { ...s.trading, folderId }, clientUpdatedAt } : s,
+          ),
+        };
+      },
+    ),
     on(
       TradingActions.restoreSession,
       (state, { trading }): TradingState => ({
@@ -287,6 +306,8 @@ export const tradingFeature = createFeature({
         ...trading,
         summaryOpen: state.summaryOpen,
         savedSessions: state.savedSessions,
+        // a `.session.json` import is a new live identity
+        activeSessionId: newId(),
       }),
     ),
     on(TradingActions.sessionImported, (state, { trades, currentCursor }): TradingState => {
@@ -301,7 +322,9 @@ export const tradingFeature = createFeature({
         riskPct: state.riskPct,
         sessionName: `Importada · ${shortDate(lastClose)}`,
         summaryOpen: true,
+        // outgoing active archived under its own id; the imported session is new
         savedSessions: archiveActive(state, currentCursor),
+        activeSessionId: newId(),
       };
     }),
     // asset switch: each asset has its own independent trading session
@@ -313,6 +336,8 @@ export const tradingFeature = createFeature({
         ...(workspace.trading ?? {}),
         summaryOpen: false,
         savedSessions: workspace.sessions ?? [],
+        // restore the synced active id, or assign a fresh one for a new symbol
+        activeSessionId: workspace.activeSessionId ?? newId(),
       }),
     ),
   ),

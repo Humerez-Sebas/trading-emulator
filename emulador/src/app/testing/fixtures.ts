@@ -78,7 +78,13 @@ export function closed(p: Partial<ClosedTrade> = {}): ClosedTrade {
 }
 
 export function tradingState(p: Partial<TradingState> = {}): TradingState {
-  return { ...defaultTradingData(), summaryOpen: false, savedSessions: [], ...p };
+  return {
+    ...defaultTradingData(),
+    summaryOpen: false,
+    savedSessions: [],
+    activeSessionId: null,
+    ...p,
+  };
 }
 
 export function savedSession(p: Partial<SavedSession> = {}): SavedSession {
