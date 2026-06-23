@@ -263,6 +263,18 @@ export const tradingFeature = createFeature({
         savedSessions: state.savedSessions.filter((s) => s.id !== id),
       }),
     ),
+    on(
+      TradingActions.deleteActiveSession,
+      (state): TradingState => ({
+        // reset the live session to a fresh empty one (NO archive); keep the
+        // user's balance/risk prefs + the archived sessions, fresh identity.
+        ...defaultTradingData(state.initialBalance),
+        riskPct: state.riskPct,
+        summaryOpen: false,
+        savedSessions: state.savedSessions,
+        activeSessionId: newId(),
+      }),
+    ),
     on(TradingActions.renameSession, (state, { id, name, clientUpdatedAt }): TradingState => {
       const trimmed = name.trim();
       if (!trimmed) return state;

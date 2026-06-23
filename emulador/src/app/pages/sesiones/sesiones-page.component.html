@@ -550,11 +550,9 @@
         }
       </button>
     }
-    @if (!card.active) {
-      <div class="ui-menu-sep"></div>
-      <button class="ui-menu-item ui-menu-item--danger" (click)="remove(card)">
-        <app-trash-icon /> Eliminar
-      </button>
-    }
+    <div class="ui-menu-sep"></div>
+    <button class="ui-menu-item ui-menu-item--danger" (click)="remove(card)">
+      <app-trash-icon /> Eliminar
+    </button>
   </ui-menu>
 </ng-template>

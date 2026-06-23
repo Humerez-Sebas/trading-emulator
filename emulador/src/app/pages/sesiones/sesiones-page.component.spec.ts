@@ -831,6 +831,58 @@ describe('SesionesPageComponent', () => {
     expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
   });
 
+  it('remove ACTIVE off-screen session resets the workspace + propagates cloud delete when synced', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-active',
+      activeSyncedAt: 123,
+      trading: { ...defaultTradingData(), history: [{ profit: 5 } as never] },
+    });
+    const getMeta = vi.fn().mockResolvedValue(meta);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { getMeta, putMeta, addPendingDelete, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'EURUSD', id: null, active: true }));
+
+    const written = putMeta.mock.calls.at(-1)![0] as {
+      trading: TradingData;
+      activeSessionId?: string;
+      activeSyncedAt?: number;
+    };
+    expect(written.trading.history).toEqual([]);
+    expect(written.activeSessionId).not.toBe('cloud-active');
+    expect(written.activeSyncedAt).toBeUndefined();
+    expect(addPendingDelete).toHaveBeenCalledWith({ entity: 'session', id: 'cloud-active' });
+    expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
+  });
+
+  it('remove ACTIVE current-asset session dispatches deleteActiveSession', async () => {
+    const meta = workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'a1' });
+    create({
+      currentAsset: 'XAUUSD',
+      authStatus: 'authenticated',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(meta),
+        putMeta: vi.fn().mockResolvedValue(undefined),
+        addPendingDelete: vi.fn().mockResolvedValue(undefined),
+        listMetas: vi.fn().mockResolvedValue([]),
+      },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'XAUUSD', id: null, active: true }));
+
+    expect(dispatch).toHaveBeenCalledWith(TradingActions.deleteActiveSession());
+  });
+
   it('remove off-screen card does NOT touch sync when not authenticated', async () => {
     const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
     const getMeta = vi.fn().mockResolvedValue(meta);

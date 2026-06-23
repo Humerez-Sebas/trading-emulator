@@ -882,7 +882,6 @@ export class SesionesPageComponent {
   }
 
   async remove(card: SessionCard): Promise<void> {
-    if (card.id === null) return;
     const confirmed = await this.dialogs.deleteSession({
       name: card.name,
       symbol: card.symbol,
@@ -893,6 +892,33 @@ export class SesionesPageComponent {
       equity: card.equity,
     });
     if (!confirmed) return;
+    // Active "Sesión en curso" (no archived id): reset the workspace to a fresh
+    // empty session and propagate the cloud delete if it had been synced.
+    if (card.id === null) {
+      const meta = await this.db.getMeta(card.symbol);
+      const oldId = meta?.activeSessionId;
+      const wasSynced = meta?.activeSyncedAt != null;
+      if (card.symbol === this.currentAsset()) {
+        this.store.dispatch(TradingActions.deleteActiveSession());
+      } else if (meta) {
+        meta.trading = defaultTradingData(meta.trading?.initialBalance);
+        meta.activeSessionId = newId();
+        meta.activeClientUpdatedAt = undefined;
+        meta.activeSyncedAt = undefined;
+        await this.db.putMeta(meta);
+        await this.reload();
+      }
+      if (this.authStatus() === 'authenticated' && oldId && wasSynced) {
+        try {
+          await this.db.addPendingDelete({ entity: 'session', id: oldId });
+          await this.sync.flushPendingDeletes();
+        } catch {
+          // local-first: the cloud delete is retried on the next flush/pull.
+        }
+      }
+      this.flash('Sesión en curso eliminada.');
+      return;
+    }
     if (card.symbol === this.currentAsset()) {
       this.store.dispatch(TradingActions.deleteSession({ id: card.id }));
     } else {

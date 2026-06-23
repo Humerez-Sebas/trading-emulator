@@ -619,6 +619,36 @@ describe('trading reducer: deleteSession', () => {
   });
 });
 
+describe('trading reducer: deleteActiveSession', () => {
+  it('resets trading to a fresh session, keeps saved sessions + initialBalance, mints a new activeSessionId', () => {
+    const saved = {
+      id: 's1',
+      name: 'archivada',
+      createdAt: 1,
+      currentTime: 0,
+      trading: defaultTradingData(),
+    };
+    const s = state({
+      activeSessionId: 'old-active',
+      sessionName: 'Mi plan',
+      history: [closed({ profit: 500 })],
+      balance: 10500,
+      initialBalance: 10000,
+      riskPct: 3,
+      savedSessions: [saved],
+    });
+    const next = reducer(s, TradingActions.deleteActiveSession());
+    expect(next.history).toEqual([]);
+    expect(next.sessionName).toBeNull();
+    expect(next.balance).toBe(10000);
+    expect(next.initialBalance).toBe(10000);
+    expect(next.riskPct).toBe(3);
+    expect(next.savedSessions).toHaveLength(1);
+    expect(next.activeSessionId).toBeTruthy();
+    expect(next.activeSessionId).not.toBe('old-active');
+  });
+});
+
 describe('trading reducer: sessionImported', () => {
   it('sets history, adjusts balance, sessionEnded+summaryOpen true, name Importada·date', () => {
     const trades = [
