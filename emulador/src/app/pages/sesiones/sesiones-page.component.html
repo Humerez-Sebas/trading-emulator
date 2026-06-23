@@ -38,22 +38,15 @@
         </svg>
         Nueva carpeta
       </button>
-      @if (isR2) {
-        <label appButton variant="subtle">
-          Importar sesión (.session.json)
-          <input
-            type="file"
-            accept=".json,.session.json,application/json"
-            (change)="onImportSessionJson($event)"
-            hidden
-          />
-        </label>
-      } @else {
-        <label appButton variant="subtle">
-          Importar sesión (.csv)
-          <input type="file" accept=".csv" (change)="onImportSession($event)" hidden />
-        </label>
-      }
+      <label appButton variant="subtle">
+        Importar sesión (.session.json)
+        <input
+          type="file"
+          accept=".json,.session.json,application/json"
+          (change)="onImportSessionJson($event)"
+          hidden
+        />
+      </label>
       <a appButton variant="primary" routerLink="/sesiones/crear">Nueva sesión</a>
     </div>
   </header>
