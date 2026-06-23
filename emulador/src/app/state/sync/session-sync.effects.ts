@@ -14,6 +14,7 @@ import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { DialogService } from '../../components/ui/dialog.service';
 import { TradingActions } from '../trading/trading.actions';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
 
@@ -34,21 +35,50 @@ export class SessionSyncEffects {
   private store = inject(Store);
   private sync = inject(SessionSyncService);
   private db = inject(WorkspaceDbService);
+  private dialogs = inject(DialogService);
 
   /**
-   * On login (fresh sign-in or a resolved session that turns out to be
-   * authenticated) — pull + merge the cloud state. Guest/anonymous/offline
-   * never reach here: `sessionResolved` is filtered to a non-null user, and
-   * `authSuccess` is always an authenticated result.
+   * App-start with an already-authenticated session (`sessionResolved` with a
+   * non-null user) — pull + merge the cloud state. The explicit sign-in path
+   * (`authSuccess`) goes through `adoptOnLogin$` instead (which also pulls), so
+   * the pull isn't run twice. Guest/anonymous/offline never reach either.
    */
   login$ = createEffect(
     () =>
       this.actions$.pipe(
-        ofType(AuthActions.authSuccess, AuthActions.sessionResolved),
-        filter((action) =>
-          action.type === AuthActions.sessionResolved.type ? action.user != null : true,
-        ),
+        ofType(AuthActions.sessionResolved),
+        filter((action) => action.user != null),
         exhaustMap(() => from(this.sync.pullAndMerge()).pipe(catchError(() => EMPTY))),
+      ),
+    { dispatch: false },
+  );
+
+  /**
+   * Explicit sign-in: if the user has local guest sessions never pushed from
+   * this device, offer to adopt them into the account ("¿Guardar tus N
+   * sesiones locales en tu cuenta?"). On confirm, stamp them dirty so the
+   * subsequent pull's flush uploads them; either way, pull + merge.
+   */
+  adoptOnLogin$ = createEffect(
+    () =>
+      this.actions$.pipe(
+        ofType(AuthActions.authSuccess),
+        exhaustMap(() =>
+          from(
+            (async () => {
+              const n = await this.sync.countAdoptableSessions();
+              if (n > 0) {
+                const ok = await this.dialogs.confirm({
+                  title: 'Guardar sesiones locales',
+                  message: `Tienes ${n} sesión(es) local(es). ¿Guardarlas en tu cuenta?`,
+                  confirmLabel: 'Guardar',
+                });
+                if (ok) await this.sync.markAllAdoptableDirty();
+              }
+              await this.sync.pullAndMerge();
+            })(),
+          ).pipe(catchError(() => EMPTY)),
+        ),
       ),
     { dispatch: false },
   );

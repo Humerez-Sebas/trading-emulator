@@ -9,6 +9,7 @@ import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { DialogService } from '../../components/ui/dialog.service';
 import { TradingActions } from '../trading/trading.actions';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
@@ -23,7 +24,10 @@ describe('SessionSyncEffects', () => {
     flushDirty: ReturnType<typeof vi.fn>;
     flushPendingDeletes: ReturnType<typeof vi.fn>;
     markActiveDirty: ReturnType<typeof vi.fn>;
+    countAdoptableSessions: ReturnType<typeof vi.fn>;
+    markAllAdoptableDirty: ReturnType<typeof vi.fn>;
   };
+  let dialogs: { confirm: ReturnType<typeof vi.fn> };
   let effects: SessionSyncEffects;
 
   const SYMBOL = 'XAUUSD';
@@ -47,7 +51,10 @@ describe('SessionSyncEffects', () => {
       flushDirty: vi.fn().mockResolvedValue(undefined),
       flushPendingDeletes: vi.fn().mockResolvedValue(undefined),
       markActiveDirty: vi.fn().mockResolvedValue(undefined),
+      countAdoptableSessions: vi.fn().mockResolvedValue(0),
+      markAllAdoptableDirty: vi.fn().mockResolvedValue(undefined),
     };
+    dialogs = { confirm: vi.fn().mockResolvedValue(false) };
     TestBed.configureTestingModule({
       providers: [
         SessionSyncEffects,
@@ -55,6 +62,7 @@ describe('SessionSyncEffects', () => {
         provideMockStore(),
         { provide: WorkspaceDbService, useValue: db },
         { provide: SessionSyncService, useValue: sync },
+        { provide: DialogService, useValue: dialogs },
       ],
     });
     store = TestBed.inject(MockStore);
@@ -77,7 +85,7 @@ describe('SessionSyncEffects', () => {
   // ─── login$ ───────────────────────────────────────────────────────────────
 
   describe('login$', () => {
-    it('authSuccess → pullAndMerge called once', async () => {
+    it('authSuccess does NOT trigger login$ (adoptOnLogin$ owns the sign-in pull)', async () => {
       setupTestBed();
       const sub = effects.login$.subscribe();
 
@@ -86,7 +94,7 @@ describe('SessionSyncEffects', () => {
       await Promise.resolve();
 
       sub.unsubscribe();
-      expect(sync.pullAndMerge).toHaveBeenCalledTimes(1);
+      expect(sync.pullAndMerge).not.toHaveBeenCalled();
     });
 
     it('sessionResolved with a user → pullAndMerge called', async () => {
@@ -132,13 +140,55 @@ describe('SessionSyncEffects', () => {
 
       await expect(
         (async () => {
-          actions$.next(AuthActions.authSuccess({ user: mockUser, returnUrl: null }));
+          actions$.next(AuthActions.sessionResolved({ user: mockUser, offline: false }));
           await Promise.resolve();
           await Promise.resolve();
         })(),
       ).resolves.toBeUndefined();
 
       sub.unsubscribe();
+      expect(sync.pullAndMerge).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── adoptOnLogin$ ────────────────────────────────────────────────────────
+
+  describe('adoptOnLogin$', () => {
+    async function fireAuthSuccess() {
+      const sub = effects.adoptOnLogin$.subscribe();
+      actions$.next(AuthActions.authSuccess({ user: mockUser, returnUrl: null }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      sub.unsubscribe();
+    }
+
+    it('no adoptable sessions → no dialog, still pulls', async () => {
+      setupTestBed();
+      sync.countAdoptableSessions.mockResolvedValue(0);
+      await fireAuthSuccess();
+      expect(dialogs.confirm).not.toHaveBeenCalled();
+      expect(sync.markAllAdoptableDirty).not.toHaveBeenCalled();
+      expect(sync.pullAndMerge).toHaveBeenCalledTimes(1);
+    });
+
+    it('adoptable sessions + confirm → marks them dirty then pulls', async () => {
+      setupTestBed();
+      sync.countAdoptableSessions.mockResolvedValue(2);
+      dialogs.confirm.mockResolvedValue(true);
+      await fireAuthSuccess();
+      expect(dialogs.confirm).toHaveBeenCalledTimes(1);
+      expect(sync.markAllAdoptableDirty).toHaveBeenCalledTimes(1);
+      expect(sync.pullAndMerge).toHaveBeenCalledTimes(1);
+    });
+
+    it('adoptable sessions + decline → does NOT adopt, still pulls', async () => {
+      setupTestBed();
+      sync.countAdoptableSessions.mockResolvedValue(2);
+      dialogs.confirm.mockResolvedValue(false);
+      await fireAuthSuccess();
+      expect(dialogs.confirm).toHaveBeenCalledTimes(1);
+      expect(sync.markAllAdoptableDirty).not.toHaveBeenCalled();
       expect(sync.pullAndMerge).toHaveBeenCalledTimes(1);
     });
   });

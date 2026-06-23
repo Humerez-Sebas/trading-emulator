@@ -805,3 +805,65 @@ describe('SessionSyncService.markActiveDirty', () => {
     expect(await db.getMeta('NOPE')).toBeUndefined();
   });
 });
+
+describe('SessionSyncService.countAdoptableSessions / markAllAdoptableDirty', () => {
+  let db: WorkspaceDbService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  async function seed(): Promise<void> {
+    // adoptable active: real (has a position) + never synced (no activeSyncedAt)
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'eur-active',
+        trading: { ...defaultTradingData(), positions: [position()] },
+      }),
+    );
+    // active already synced (NOT adoptable) + a mix of archived sessions
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'XAUUSD',
+        activeSessionId: 'xau-active',
+        activeSyncedAt: 999,
+        trading: { ...defaultTradingData(), positions: [position()] },
+        sessions: [
+          savedSession({
+            id: 's-adopt',
+            trading: { ...defaultTradingData(), positions: [position()] },
+          }),
+          savedSession({
+            id: 's-synced',
+            syncedAt: 5,
+            trading: { ...defaultTradingData(), positions: [position()] },
+          }),
+          savedSession({ id: 's-empty', trading: defaultTradingData() }),
+        ],
+      }),
+    );
+  }
+
+  it('counts only real, never-synced sessions (active + archived)', async () => {
+    const service = makeService({}, db);
+    await seed();
+    // eur-active (real, unsynced) + s-adopt (real, unsynced) = 2
+    expect(await service.countAdoptableSessions()).toBe(2);
+  });
+
+  it('markAllAdoptableDirty stamps clientUpdatedAt on the adoptable ones only', async () => {
+    const service = makeService({}, db);
+    await seed();
+    await service.markAllAdoptableDirty();
+
+    const eur = await db.getMeta('EURUSD');
+    const xau = await db.getMeta('XAUUSD');
+    expect(eur?.activeClientUpdatedAt).toBeGreaterThan(0); // eur-active adopted
+    expect(xau?.activeClientUpdatedAt).toBeUndefined(); // xau-active was synced → untouched
+    const byId = (id: string) => xau?.sessions?.find((s) => s.id === id);
+    expect(byId('s-adopt')?.clientUpdatedAt).toBeGreaterThan(0);
+    expect(byId('s-synced')?.clientUpdatedAt).toBeUndefined();
+    expect(byId('s-empty')?.clientUpdatedAt).toBeUndefined();
+  });
+});
