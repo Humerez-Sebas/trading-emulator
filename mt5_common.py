@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Logica MT5 compartida entre el helper local (`datasource_api.py`) y el
-harvester del backend (`backend/harvester.py`). Solo funciona en Windows con
-la terminal MetaTrader 5 instalada y abierta (la libreria habla con el
-proceso de la terminal).
+Logica MT5 compartida usada por el helper local (`datasource_api.py`) y por
+el pipeline (`pipeline/parquet_builder.py`). Solo funciona en Windows con la
+terminal MetaTrader 5 instalada y abierta (la libreria habla con el proceso
+de la terminal).
 """
 from datetime import datetime, timedelta
 

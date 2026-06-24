@@ -2,8 +2,8 @@
 """
 Pipeline M1 -> Parquet (componente de la arquitectura offline v2).
 
-COEXISTE con backend/harvester.py (que postea JSON al backend FastAPI); este
-modulo genera archivos Parquet locales para subir despues a Cloudflare R2.
+Este modulo (`pipeline/parquet_builder.py`) genera archivos Parquet locales
+para subir despues a Cloudflare R2.
 
 Flujo:
   1. Llama a mt5_common.copiar_rango_troceado para obtener velas M1 desde MT5.

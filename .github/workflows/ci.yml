@@ -69,7 +69,7 @@ jobs:
         run: npm audit --audit-level=high || true
         continue-on-error: true
 
-  # Production deploy of the static offline frontend to Vercel.
+  # Production deploy of the static frontend to Vercel.
   # Runs ONLY on push to main (i.e. a merged PR) and ONLY after the checks
   # above pass, so production never deploys un-validated code. Vercel's
   # own auto-deploy for main is disabled in emulador/vercel.json to avoid a

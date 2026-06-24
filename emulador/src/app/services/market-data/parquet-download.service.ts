@@ -3,7 +3,7 @@ import { Inject, Injectable } from '@angular/core';
 import { environment } from '../../../environments/environment';
 import { MARKET_DATA_BASE_URL } from './market-data.config';
 
-/** Base prefix every Parquet object lives under (see `backend/r2_uploader.py`). */
+/** Base prefix every Parquet object lives under (see `pipeline/r2_uploader.py`). */
 const MARKET_DATA_PREFIX = 'market-data/v1';
 
 /**

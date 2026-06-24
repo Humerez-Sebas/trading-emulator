@@ -16,7 +16,7 @@ import { CANDLES_STORE, DB_NAME, type CandleRecord } from '../services/market-da
 
 /**
  * Converts a decoded Apache Arrow table (columns `time`, `open`, `high`,
- * `low`, `close` — matching `backend/parquet_builder.py`) into insert-shaped
+ * `low`, `close` — matching `pipeline/parquet_builder.py`) into insert-shaped
  * `CandleRecord`s tagged with `symbol`/`timeframe`. No `id` is set; the
  * `candles` store auto-increments it.
  *

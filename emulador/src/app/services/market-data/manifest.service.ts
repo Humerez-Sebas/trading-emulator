@@ -4,7 +4,7 @@ import { environment } from '../../../environments/environment';
 import { MARKET_DATA_BASE_URL } from './market-data.config';
 
 /**
- * One partition entry in the R2 `manifest.json` (see `backend/manifest.py`).
+ * One partition entry in the R2 `manifest.json` (see `pipeline/manifest.py`).
  * `size`/`etag`/`updatedAt` are used for cache invalidation in the datasets
  * store, so a downloaded partition is only re-ingested when its etag changes.
  */
@@ -32,7 +32,7 @@ export interface ManifestSymbol {
 }
 
 /**
- * Top-level `manifest.json` shape produced by `backend/manifest.py`:
+ * Top-level `manifest.json` shape produced by `pipeline/manifest.py`:
  * `{ version: 1, symbols: { XAUUSD: { m1: { "2024": {...} }, h1: { all: {...} } } } }`.
  */
 export interface Manifest {
