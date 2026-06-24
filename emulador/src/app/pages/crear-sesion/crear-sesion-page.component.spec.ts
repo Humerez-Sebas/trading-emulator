@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CrearSesionPageComponent } from './crear-sesion-page.component';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import { series } from '../../testing/fixtures';
-import { environment } from '../../../environments/environment';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import type { DatasetRecord } from '../../services/market-data-db';
@@ -54,8 +53,6 @@ function makeStorageManagerStub(datasets: DatasetRecord[] = [dataset('XAUUSD', '
 }
 
 describe('CrearSesionPageComponent (R2-only)', () => {
-  const originalDataSource = environment.dataSource;
-
   let store: MockStore;
   let dispatch: ReturnType<typeof vi.spyOn>;
   let routerStub: { navigateByUrl: ReturnType<typeof vi.fn> };
@@ -69,7 +66,6 @@ describe('CrearSesionPageComponent (R2-only)', () => {
       storageManager?: ReturnType<typeof makeStorageManagerStub>;
     } = {},
   ) {
-    environment.dataSource = 'r2';
     routerStub = { navigateByUrl: vi.fn().mockResolvedValue(undefined) };
 
     TestBed.configureTestingModule({
@@ -100,7 +96,6 @@ describe('CrearSesionPageComponent (R2-only)', () => {
   }
 
   afterEach(() => {
-    environment.dataSource = originalDataSource;
     TestBed.resetTestingModule();
   });
 
