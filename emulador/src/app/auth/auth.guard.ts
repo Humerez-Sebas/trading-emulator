@@ -7,10 +7,8 @@ import { authFeature } from '../state/auth/auth.reducer';
 /**
  * Waits for the startup session check, then:
  * - `authenticated` -> pass.
- * - `offline` (backend unreachable) -> pass too: the emulator must stay
- *   fully usable with local CSVs (V2.4 flow without backend).
- * - `guest` (deliberate no-account mode) -> pass too.
- * - `anonymous` -> redirect to /login keeping the intended URL.
+ * - anything else (`anonymous`) -> redirect to /login keeping the intended URL.
+ * Login is required: there is no guest/offline fallback.
  */
 export const authGuard: CanActivateFn = (_route, state) => {
   const store = inject(Store);
@@ -19,7 +17,7 @@ export const authGuard: CanActivateFn = (_route, state) => {
     filter((status) => status !== 'unknown'),
     take(1),
     map((status) =>
-      status === 'authenticated' || status === 'offline' || status === 'guest'
+      status === 'authenticated'
         ? true
         : router.createUrlTree(['/login'], { queryParams: { volver: state.url } }),
     ),

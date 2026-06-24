@@ -48,59 +48,6 @@ export class SessionSyncService {
     return id;
   }
 
-  /**
-   * Count of real sessions that have never been pushed from this device — the
-   * "guest work" a user is offered to adopt into their account on login.
-   * Active session (its clock on the meta) + each archived SavedSession.
-   */
-  async countAdoptableSessions(): Promise<number> {
-    const metas = await this.db.listMetas();
-    let n = 0;
-    for (const meta of metas) {
-      if (
-        meta.activeSessionId &&
-        meta.trading &&
-        isRealSession(meta.trading) &&
-        meta.activeSyncedAt == null
-      ) {
-        n++;
-      }
-      for (const s of meta.sessions ?? []) {
-        if (isRealSession(s.trading) && s.syncedAt == null) n++;
-      }
-    }
-    return n;
-  }
-
-  /**
-   * Stamp every adoptable session dirty (`clientUpdatedAt = now`) so the next
-   * `flushDirty` uploads it. Used when the user confirms adopting their local
-   * guest sessions after logging in.
-   */
-  async markAllAdoptableDirty(): Promise<void> {
-    const now = Date.now();
-    const metas = await this.db.listMetas();
-    for (const meta of metas) {
-      let changed = false;
-      if (
-        meta.activeSessionId &&
-        meta.trading &&
-        isRealSession(meta.trading) &&
-        meta.activeSyncedAt == null
-      ) {
-        meta.activeClientUpdatedAt = now;
-        changed = true;
-      }
-      for (const s of meta.sessions ?? []) {
-        if (isRealSession(s.trading) && s.syncedAt == null) {
-          s.clientUpdatedAt = now;
-          changed = true;
-        }
-      }
-      if (changed) await this.db.putMeta(meta);
-    }
-  }
-
   /** Lightweight session list for the Sessions UI — selects every column except `payload`. */
   async listSummaries(): Promise<SessionSummary[]> {
     const { data, error } = await this.client

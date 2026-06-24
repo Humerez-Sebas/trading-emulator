@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { provideMockActions } from '@ngrx/effects/testing';
 import { provideMockStore } from '@ngrx/store/testing';
 import { Subject, firstValueFrom } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthEffects } from './auth.effects';
 import { AuthActions } from './auth.actions';
@@ -44,10 +44,6 @@ describe('AuthEffects', () => {
     effects = TestBed.inject(AuthEffects);
   });
 
-  afterEach(() => {
-    localStorage.removeItem('emulador.guest');
-  });
-
   describe('init$', () => {
     it('dispatches checkSession on ROOT_EFFECTS_INIT', async () => {
       const p = firstValueFrom(effects.init$);
@@ -63,46 +59,25 @@ describe('AuthEffects', () => {
       const p = firstValueFrom(effects.check$);
       actions$.next(AuthActions.checkSession());
 
-      expect(await p).toEqual(AuthActions.sessionResolved({ user: mockUser, offline: false }));
+      expect(await p).toEqual(AuthActions.sessionResolved({ user: mockUser }));
     });
 
-    it('checkSession → anonymous when no session and no guest flag', async () => {
+    it('checkSession → anonymous when no session', async () => {
       auth.getUser.mockResolvedValue(null);
 
       const p = firstValueFrom(effects.check$);
       actions$.next(AuthActions.checkSession());
 
-      expect(await p).toEqual(AuthActions.sessionResolved({ user: null, offline: false }));
+      expect(await p).toEqual(AuthActions.sessionResolved({ user: null }));
     });
 
-    it('honors a persisted guest flag when there is no session', async () => {
-      localStorage.setItem('emulador.guest', '1');
-      auth.getUser.mockResolvedValue(null);
-
-      const p = firstValueFrom(effects.check$);
-      actions$.next(AuthActions.checkSession());
-
-      expect(await p).toEqual(AuthActions.continueAsGuest());
-    });
-
-    it('checkSession → offline when getUser throws', async () => {
+    it('checkSession → anonymous when getUser throws', async () => {
       auth.getUser.mockRejectedValue(new Error('boom'));
 
       const p = firstValueFrom(effects.check$);
       actions$.next(AuthActions.checkSession());
 
-      expect(await p).toEqual(AuthActions.sessionResolved({ user: null, offline: true }));
-    });
-  });
-
-  describe('persistGuest$', () => {
-    it('writes the guest flag to localStorage', async () => {
-      localStorage.removeItem('emulador.guest');
-      const sub = effects.persistGuest$.subscribe();
-      actions$.next(AuthActions.continueAsGuest());
-      await Promise.resolve();
-      expect(localStorage.getItem('emulador.guest')).toBe('1');
-      sub.unsubscribe();
+      expect(await p).toEqual(AuthActions.sessionResolved({ user: null }));
     });
   });
 

@@ -14,7 +14,6 @@ import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
-import { DialogService } from '../../components/ui/dialog.service';
 import { TradingActions } from '../trading/trading.actions';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
 
@@ -35,13 +34,11 @@ export class SessionSyncEffects {
   private store = inject(Store);
   private sync = inject(SessionSyncService);
   private db = inject(WorkspaceDbService);
-  private dialogs = inject(DialogService);
 
   /**
-   * App-start with an already-authenticated session (`sessionResolved` with a
-   * non-null user) — pull + merge the cloud state. The explicit sign-in path
-   * (`authSuccess`) goes through `adoptOnLogin$` instead (which also pulls), so
-   * the pull isn't run twice. Guest/anonymous/offline never reach either.
+   * App-start (or any) session resolution with a non-null user — pull + merge
+   * the cloud state. Anonymous never reaches this (login is required to use
+   * the app, so there's no guest work to adopt).
    */
   login$ = createEffect(
     () =>
@@ -49,36 +46,6 @@ export class SessionSyncEffects {
         ofType(AuthActions.sessionResolved),
         filter((action) => action.user != null),
         exhaustMap(() => from(this.sync.pullAndMerge()).pipe(catchError(() => EMPTY))),
-      ),
-    { dispatch: false },
-  );
-
-  /**
-   * Explicit sign-in: if the user has local guest sessions never pushed from
-   * this device, offer to adopt them into the account ("¿Guardar tus N
-   * sesiones locales en tu cuenta?"). On confirm, stamp them dirty so the
-   * subsequent pull's flush uploads them; either way, pull + merge.
-   */
-  adoptOnLogin$ = createEffect(
-    () =>
-      this.actions$.pipe(
-        ofType(AuthActions.authSuccess),
-        exhaustMap(() =>
-          from(
-            (async () => {
-              const n = await this.sync.countAdoptableSessions();
-              if (n > 0) {
-                const ok = await this.dialogs.confirm({
-                  title: 'Guardar sesiones locales',
-                  message: `Tienes ${n} sesión(es) local(es). ¿Guardarlas en tu cuenta?`,
-                  confirmLabel: 'Guardar',
-                });
-                if (ok) await this.sync.markAllAdoptableDirty();
-              }
-              await this.sync.pullAndMerge();
-            })(),
-          ).pipe(catchError(() => EMPTY)),
-        ),
       ),
     { dispatch: false },
   );

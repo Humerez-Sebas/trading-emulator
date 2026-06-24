@@ -41,20 +41,6 @@ describe('AuthPageComponent', () => {
     TestBed.resetTestingModule();
   });
 
-  it('offline() is true when status selector emits "offline"', () => {
-    create();
-    store.overrideSelector(authFeature.selectStatus, 'offline');
-    store.refreshState();
-    expect(component.offline()).toBe(true);
-  });
-
-  it('offline() is false when status is "authenticated"', () => {
-    create();
-    store.overrideSelector(authFeature.selectStatus, 'authenticated');
-    store.refreshState();
-    expect(component.offline()).toBe(false);
-  });
-
   it('valid() is false when email is not a valid address', () => {
     create();
     component.email.set('not-an-email');
@@ -108,13 +94,5 @@ describe('AuthPageComponent', () => {
         returnUrl: '/back',
       }),
     );
-  });
-
-  it('continueAsGuest dispatches the action and navigates home', () => {
-    create();
-    const dispatch = vi.spyOn(store, 'dispatch');
-    component.continueAsGuest();
-    expect(dispatch).toHaveBeenCalledWith(AuthActions.continueAsGuest());
-    expect(routerStub.navigateByUrl).toHaveBeenCalledWith('/');
   });
 });

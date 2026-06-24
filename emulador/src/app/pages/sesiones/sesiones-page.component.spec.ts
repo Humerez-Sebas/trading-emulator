@@ -119,7 +119,7 @@ describe('SesionesPageComponent', () => {
         flushDirty: ReturnType<typeof vi.fn>;
         flushPendingDeletes: ReturnType<typeof vi.fn>;
       }>;
-      authStatus?: 'unknown' | 'authenticated' | 'anonymous' | 'offline' | 'guest';
+      authStatus?: 'unknown' | 'authenticated' | 'anonymous';
     } = {},
   ) {
     dbStub = workspaceDbStub();
