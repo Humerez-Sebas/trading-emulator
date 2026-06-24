@@ -1,0 +1,4 @@
+# Lint + format config used locally and by CI (`ruff check` / `ruff format`).
+# line-length 100 matches the existing code style (keeps formatting churn small).
+line-length = 100
+target-version = "py312"

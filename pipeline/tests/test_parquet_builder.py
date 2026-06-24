@@ -16,7 +16,7 @@ pd = pytest.importorskip("pandas")
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
 
-# parquet_builder vive como modulo plano en backend/
+# parquet_builder vive como modulo plano en pipeline/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import parquet_builder  # noqa: E402

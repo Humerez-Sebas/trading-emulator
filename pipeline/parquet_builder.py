@@ -163,7 +163,7 @@ def harvest_to_parquet(
     """
     import sys as _sys
 
-    # mt5_common vive en la raiz del proyecto (un nivel por encima de backend/).
+    # mt5_common vive en la raiz del proyecto (un nivel por encima de pipeline/).
     _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if _root not in _sys.path:
         _sys.path.insert(0, _root)
