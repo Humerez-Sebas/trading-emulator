@@ -36,14 +36,18 @@ export class SessionSyncEffects {
   private db = inject(WorkspaceDbService);
 
   /**
-   * App-start (or any) session resolution with a non-null user — pull + merge
-   * the cloud state. Anonymous never reaches this (login is required to use
-   * the app, so there's no guest work to adopt).
+   * Pulls + merges the cloud state on a non-null user, for BOTH:
+   *  - app-start session resolution (`sessionResolved`), and
+   *  - explicit form login (`authSuccess`).
+   * Without the latter, a user who logs in mid-session would get no cloud
+   * pull until the next full page reload re-ran `checkSession`. Anonymous
+   * never reaches this (login is required to use the app, so there's no
+   * guest work to adopt).
    */
   login$ = createEffect(
     () =>
       this.actions$.pipe(
-        ofType(AuthActions.sessionResolved),
+        ofType(AuthActions.sessionResolved, AuthActions.authSuccess),
         filter((action) => action.user != null),
         exhaustMap(() => from(this.sync.pullAndMerge()).pipe(catchError(() => EMPTY))),
       ),

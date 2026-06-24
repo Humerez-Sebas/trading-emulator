@@ -117,6 +117,30 @@ describe('SessionSyncEffects', () => {
       sub.unsubscribe();
       expect(sync.pullAndMerge).toHaveBeenCalledTimes(1);
     });
+
+    it('authSuccess (explicit login) with a user → pullAndMerge called', async () => {
+      setupTestBed();
+      const sub = effects.login$.subscribe();
+
+      actions$.next(AuthActions.authSuccess({ user: mockUser, returnUrl: '/dashboard' }));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      expect(sync.pullAndMerge).toHaveBeenCalledTimes(1);
+    });
+
+    it('authSuccess with user:null (anonymous) → pullAndMerge NOT called', async () => {
+      setupTestBed();
+      const sub = effects.login$.subscribe();
+
+      actions$.next(AuthActions.authSuccess({ user: null as never, returnUrl: null }));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      expect(sync.pullAndMerge).not.toHaveBeenCalled();
+    });
   });
 
   // ─── flushOnEdit$ ─────────────────────────────────────────────────────────
