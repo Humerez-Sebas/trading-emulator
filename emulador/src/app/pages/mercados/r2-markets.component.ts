@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DatasetRecord } from '../../services/market-data-db';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { BadgeDirective } from '../../components/ui/badge.directive';
@@ -85,6 +85,26 @@ export class R2MarketsComponent {
 
   constructor() {
     void this.load();
+
+    // The busy/progress state lives in the singleton service so it survives
+    // navigation. The COMPLETION side-effect must too: when a background batch
+    // finishes (busySymbol -> null) refresh the catalog, so navigating away and
+    // back mid-download doesn't leave stale "Descargar" rows.
+    let wasBusy = this.onboarding.busySymbol() !== null;
+    effect(() => {
+      const isBusy = this.onboarding.busySymbol() !== null;
+      if (wasBusy && !isBusy) void this.refreshDatasets();
+      wasBusy = isBusy;
+    });
+  }
+
+  /** Re-reads the downloaded datasets (best-effort; keeps the current list on error). */
+  private async refreshDatasets(): Promise<void> {
+    try {
+      this.datasets.set(await this.storage.listDatasets());
+    } catch {
+      /* keep the current list */
+    }
   }
 
   async load(): Promise<void> {
@@ -138,7 +158,7 @@ export class R2MarketsComponent {
     this.errorMsg.set('');
     try {
       await this.onboarding.runJobs(manifest, jobs);
-      this.datasets.set(await this.storage.listDatasets());
+      await this.refreshDatasets();
     } catch (e) {
       this.errorMsg.set((e as Error).message || 'La descarga falló. Vuelve a intentarlo.');
     }
