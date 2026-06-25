@@ -22,14 +22,14 @@ import type { DatasetRecord } from '../../services/market-data-db';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
-import { Candle, Timeframe } from '../../models';
+import { loadAnchorCandles } from '../../state/workspaces/load-anchor-candles';
+import { Timeframe } from '../../models';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import {
   DataOnboardingService,
   OnboardingJob,
 } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
-import { PendingCsv } from '../../state/workspaces/workspaces.actions';
 import { ClosedTrade, defaultTradingData, PendingOrder } from '../../state/trading/trading.models';
 import { Drawing } from '../../state/drawings/drawings.models';
 import {
@@ -675,16 +675,11 @@ export class SesionesPageComponent {
     const plan = restorePlan(session);
     // selectedTfs are anchors (M1/H1/D1) — a subset of Timeframe — so read each
     // anchor's stored candles and hand them to the workspace as PendingCsv.
-    const pending: PendingCsv[] = [];
-    for (const tf of plan.selectedTfs) {
-      const timeframe = tf as Timeframe;
-      const candles: Candle[] = await this.repo.getCandles(plan.symbol, timeframe);
-      pending.push({
-        tf: timeframe,
-        candles,
-        fileName: `${plan.symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
-      });
-    }
+    const pending = await loadAnchorCandles(
+      this.repo,
+      plan.symbol,
+      plan.selectedTfs as Timeframe[],
+    );
 
     // Reconstruct the persistable trading slice from the session. Balance follows
     // the realized convention used across the reducer: initialBalance + Σ profits.
@@ -760,13 +755,7 @@ export class SesionesPageComponent {
       ) as Timeframe[];
 
       try {
-        const pending = await Promise.all(
-          tfs.map(async (tf) => ({
-            tf,
-            candles: await this.repo.getCandles(card.symbol, tf),
-            fileName: `${card.symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
-          })),
-        );
+        const pending = await loadAnchorCandles(this.repo, card.symbol, tfs);
 
         this.store.dispatch(
           WorkspacesActions.switchAsset({

@@ -2,7 +2,8 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Store } from '@ngrx/store';
 import { Timeframe } from '../../models';
-import { PendingCsv, WorkspacesActions } from '../../state/workspaces/workspaces.actions';
+import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
+import { loadAnchorCandles } from '../../state/workspaces/load-anchor-candles';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { DatePickerComponent } from '../../components/ui/date-picker.component';
 import { MarketDataRepository } from '../../domain/market-data.repository';
@@ -174,15 +175,7 @@ export class CrearSesionPageComponent {
     this.r2Loading.set(true);
     this.r2Error.set('');
     try {
-      const pending: PendingCsv[] = [];
-      for (const tf of tfs) {
-        const candles = await this.repo.getCandles(symbol, tf);
-        pending.push({
-          tf,
-          candles,
-          fileName: `${symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
-        });
-      }
+      const pending = await loadAnchorCandles(this.repo, symbol, tfs);
       this.store.dispatch(
         WorkspacesActions.switchAsset({
           symbol,
