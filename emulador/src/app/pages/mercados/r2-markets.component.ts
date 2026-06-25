@@ -8,7 +8,6 @@ import { ManifestService, Manifest } from '../../services/market-data/manifest.s
 import {
   DataOnboardingService,
   OnboardingJob,
-  OnboardingProgress,
 } from '../../services/market-data/data-onboarding.service';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import { formatBytes } from '../storage-manager/storage-manager.logic';

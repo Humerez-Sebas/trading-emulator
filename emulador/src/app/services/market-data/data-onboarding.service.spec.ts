@@ -219,7 +219,7 @@ describe('DataOnboardingService.runJobs (batch with progress)', () => {
   it('exposes busySymbol and progress signals during execution', async () => {
     const db = dbStub();
     // Worker that doesn't immediately resolve so we can check intermediate state
-    let resolveWorker: (val?: any) => void;
+    let resolveWorker: ((val?: any) => void) | undefined = undefined;
     const slowWorker = new FakeWorker();
     slowWorker.postMessage = () => {
       queueMicrotask(() => {
