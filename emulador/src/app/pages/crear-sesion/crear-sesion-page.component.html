@@ -3,7 +3,7 @@
     <h1>Nueva sesión de backtesting</h1>
     <p class="steps" aria-live="polite">Paso {{ step() }} de 3</p>
     <div class="bar" aria-hidden="true">
-      <span class="fill" [style.width.%]="(step() / 3) * 100"></span>
+      <span class="fill" [style.--fill]="step() / 3"></span>
     </div>
   </header>
 

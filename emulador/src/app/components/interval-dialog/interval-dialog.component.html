@@ -32,7 +32,7 @@
           }
           @if (downloading()) {
             <div class="progress-bar">
-              <div class="progress-fill" [style.width.%]="progressPct()"></div>
+              <div class="progress-fill" [style.--fill]="progressPct() / 100"></div>
             </div>
             @if (progress(); as p) {
               <small>{{ p.index }} / {{ p.total }}</small>

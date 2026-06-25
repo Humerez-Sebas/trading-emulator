@@ -26,7 +26,7 @@
 
       @if (downloading()) {
         <div class="progress" role="progressbar" aria-label="Descargando datasets">
-          <span class="bar" [style.width.%]="pct()"></span>
+          <span class="bar" [style.--fill]="pct() / 100"></span>
         </div>
         <small class="muted">Descargando… {{ pct() }}%</small>
       }

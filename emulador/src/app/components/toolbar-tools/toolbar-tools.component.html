@@ -2,8 +2,11 @@
   class="tool"
   [class.active]="activeTool() === 'rect'"
   (click)="pick('rect')"
-  title="Rectángulo (marcar zonas)"
-  aria-label="Dibujar rectángulo"
+  appTooltip="Rectángulo"
+  tooltipShortcut="Alt+R"
+  [tooltipPosition]="vertical() ? 'right' : 'top'"
+  aria-keyshortcuts="Alt+R"
+  aria-label="Dibujar rectángulo (marcar zonas)"
 >
   <svg
     width="16"
@@ -22,8 +25,11 @@
   class="tool"
   [class.active]="activeTool() === 'line'"
   (click)="pick('line')"
-  title="Línea (Shift = recta horizontal/vertical)"
-  aria-label="Dibujar línea"
+  appTooltip="Tendencia"
+  tooltipShortcut="Alt+T"
+  [tooltipPosition]="vertical() ? 'right' : 'top'"
+  aria-keyshortcuts="Alt+T"
+  aria-label="Dibujar línea de tendencia (mantén Shift para recta horizontal/vertical)"
 >
   <svg
     width="16"
@@ -44,8 +50,11 @@
   class="tool"
   [class.active]="activeTool() === 'fib'"
   (click)="pick('fib')"
-  title="Fibonacci retracement"
-  aria-label="Dibujar fibonacci"
+  appTooltip="Fibonacci"
+  tooltipShortcut="Alt+F"
+  [tooltipPosition]="vertical() ? 'right' : 'top'"
+  aria-keyshortcuts="Alt+F"
+  aria-label="Dibujar fibonacci retracement"
 >
   <svg
     width="16"
@@ -66,8 +75,11 @@
   class="tool"
   [class.active]="activeTool() === 'ruler'"
   (click)="pick('ruler')"
-  title="Regla (medir velas, puntos y %)"
-  aria-label="Medir distancia"
+  appTooltip="Regla"
+  tooltipShortcut="Alt+M"
+  [tooltipPosition]="vertical() ? 'right' : 'top'"
+  aria-keyshortcuts="Alt+M"
+  aria-label="Medir distancia (velas, puntos y %)"
 >
   <svg
     width="16"
@@ -97,10 +109,9 @@
     [attr.aria-pressed]="boxesVisible()"
     (click)="toggleBoxes()"
     (contextmenu)="onEyeContextMenu($event)"
-    title="{{
-      boxesVisible() ? 'Ocultar' : 'Mostrar'
-    }} las cajas de trade (click derecho: por trade)"
-    aria-label="Mostrar u ocultar las cajas de trade"
+    [appTooltip]="(boxesVisible() ? 'Ocultar' : 'Mostrar') + ' cajas de trade'"
+    [tooltipPosition]="vertical() ? 'right' : 'top'"
+    aria-label="Mostrar u ocultar las cajas de trade (click derecho: por trade)"
   >
     @if (boxesVisible()) {
       <svg
@@ -138,7 +149,8 @@
     (click)="toggleMenu()"
     aria-haspopup="menu"
     [attr.aria-expanded]="menuOpen()"
-    title="Cajas por trade"
+    appTooltip="Cajas por trade"
+    [tooltipPosition]="vertical() ? 'right' : 'top'"
     aria-label="Abrir lista de cajas por trade"
   >
     <svg
@@ -225,8 +237,11 @@
   class="tool danger"
   [disabled]="!selectedId()"
   (click)="deleteSelected()"
-  title="Eliminar dibujo seleccionado (Supr)"
-  aria-label="Eliminar seleccionado"
+  appTooltip="Eliminar selección"
+  tooltipShortcut="Supr"
+  [tooltipPosition]="vertical() ? 'right' : 'top'"
+  aria-keyshortcuts="Delete"
+  aria-label="Eliminar dibujo seleccionado"
 >
   <svg
     width="16"
@@ -246,8 +261,9 @@
   class="tool danger"
   [disabled]="!items().length"
   (click)="clearAll()"
-  title="Borrar todos los dibujos"
-  aria-label="Borrar todos"
+  appTooltip="Borrar todo"
+  [tooltipPosition]="vertical() ? 'right' : 'top'"
+  aria-label="Borrar todos los dibujos"
 >
   <svg
     width="16"

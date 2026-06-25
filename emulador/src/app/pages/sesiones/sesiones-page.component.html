@@ -249,11 +249,23 @@
               />
             </div>
 
-            @if (groupBy() === 'carpeta' && selectedKey() === 'all' && density() === 'card') {
+            @if (
+              groupBy() === 'carpeta' && selectedKey() === 'all' && density() === 'card' && rows().length
+            ) {
               <p class="dnd-hint">Arrastra una tarjeta sobre una carpeta para moverla.</p>
             }
 
-            @if (density() === 'row') {
+            @if (!rows().length) {
+              <ui-empty-state
+                [compact]="true"
+                title="Sin resultados"
+                [hint]="
+                  search()
+                    ? 'Ninguna sesión coincide con «' + search() + '».'
+                    : 'Esta carpeta no tiene sesiones todavía.'
+                "
+              />
+            } @else if (density() === 'row') {
               <!-- compact density: flat sorted list -->
               <div class="rows" role="table" aria-label="Sesiones">
                 <div class="row row-head" role="row">

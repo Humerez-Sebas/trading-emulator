@@ -21,14 +21,17 @@
 .bar {
   height: 4px;
   background: var(--surface-2);
-  border-radius: 2px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .bar .fill {
   display: block;
   height: 100%;
+  width: 100%;
   background: var(--accent);
-  transition: width 250ms ease;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  transition: transform 250ms var(--ease-out);
 }
 
 h2 {
