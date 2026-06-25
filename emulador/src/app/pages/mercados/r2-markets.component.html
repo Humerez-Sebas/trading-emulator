@@ -72,9 +72,7 @@
       @if (!catalog().length) {
         <ui-empty-state
           [title]="
-            query()
-              ? 'Sin resultados para «' + query() + '»'
-              : 'Todavía no hay activos disponibles'
+            query() ? 'Sin resultados para «' + query() + '»' : 'Todavía no hay activos disponibles'
           "
           [hint]="
             query()
@@ -91,8 +89,7 @@
               <div class="card-title">
                 <h3>{{ entry.symbol }}</h3>
                 <p class="cov-summary">
-                  {{ downloadedCount(entry) }} de {{ entry.partitions.length }} períodos
-                  descargados
+                  {{ downloadedCount(entry) }} de {{ entry.partitions.length }} períodos descargados
                 </p>
               </div>
               @if (hasPending(entry)) {
@@ -190,9 +187,9 @@
   <details class="tech-details">
     <summary>Detalles técnicos</summary>
     <p>
-      Los precios se guardan en este navegador en formato <strong>Parquet</strong> y se
-      descargan desde <strong>Cloudflare R2</strong>. Cada activo se divide por temporalidad
-      (M1 por año; H1 y D1 completas) según un manifiesto que se actualiza cada cierto tiempo.
+      Los precios se guardan en este navegador en formato <strong>Parquet</strong> y se descargan
+      desde <strong>Cloudflare R2</strong>. Cada activo se divide por temporalidad (M1 por año; H1 y
+      D1 completas) según un manifiesto que se actualiza cada cierto tiempo.
     </p>
   </details>
 </div>

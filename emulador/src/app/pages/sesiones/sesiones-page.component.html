@@ -250,7 +250,10 @@
             </div>
 
             @if (
-              groupBy() === 'carpeta' && selectedKey() === 'all' && density() === 'card' && rows().length
+              groupBy() === 'carpeta' &&
+              selectedKey() === 'all' &&
+              density() === 'card' &&
+              rows().length
             ) {
               <p class="dnd-hint">Arrastra una tarjeta sobre una carpeta para moverla.</p>
             }
