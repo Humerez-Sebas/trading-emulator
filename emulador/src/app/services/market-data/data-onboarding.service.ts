@@ -113,6 +113,24 @@ export class DataOnboardingService {
    * Rejects if the partition is missing from the manifest or the worker errors.
    */
   async runJob(manifest: Manifest, job: OnboardingJob, worker: IngestWorker): Promise<JobOutcome> {
+    const payload = await this.prepareJob(manifest, job);
+    if (!payload) return 'skipped';
+
+    if (payload.existing) {
+      await this.db.clearDatasetCandles(job.symbol, payload.timeframe);
+    }
+    await this.ingestOn(worker, payload.buffer, job.symbol, payload.timeframe);
+    await this.db.putDataset(payload.record);
+    return 'ingested';
+  }
+
+  /**
+   * Prepares a job by resolving its manifest entry, checking for an existing
+   * local dataset, and downloading the parquet bytes if needed.
+   * Returns `null` if the job should be skipped, otherwise a payload object
+   * with the buffer and dataset record details.
+   */
+  private async prepareJob(manifest: Manifest, job: OnboardingJob) {
     const { symbol, tf, year } = job;
     const entry = this.manifests.getEntry(manifest, symbol, tf, year);
     if (!entry) {
@@ -120,25 +138,18 @@ export class DataOnboardingService {
         `DataOnboardingService: partición ausente del manifest (${symbol}/${tf}/${year}).`,
       );
     }
+
     const timeframe = TF_MAP[tf];
     const id = DataOnboardingService.datasetId(symbol, timeframe, year);
 
     // 1) etag-skip: a current local copy needs no re-download.
     const existing = await this.db.getDataset(id);
     if (existing && existing.etag === entry.etag) {
-      return 'skipped';
-    }
-
-    // 2) re-ingest of a changed partition: clear stale candles to avoid dupes.
-    if (existing) {
-      await this.db.clearDatasetCandles(symbol, timeframe);
+      return null;
     }
 
     // 3) download the parquet bytes for this partition (`<year>.parquet`).
     const buffer = await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`);
-
-    // 4) hand off to the (batch-shared) worker and await its terminal message.
-    await this.ingestOn(worker, buffer, symbol, timeframe);
 
     // 5) record the dataset (size/etag/updatedAt straight from the manifest).
     const record: DatasetRecord = {
@@ -150,8 +161,13 @@ export class DataOnboardingService {
       etag: entry.etag,
       updatedAt: entry.updatedAt,
     };
-    await this.db.putDataset(record);
-    return 'ingested';
+
+    return {
+      buffer,
+      timeframe,
+      existing: !!existing,
+      record
+    };
   }
 
   /**
@@ -162,6 +178,9 @@ export class DataOnboardingService {
    * partitions — `parquet-wasm` caches its WASM init internally, so one
    * worker instance means one init instead of one per partition. The worker
    * is always terminated when the batch settles (success or failure).
+   * 
+   * This pipelines the network and CPU work by pre-fetching the next job's 
+   * ArrayBuffer while the worker ingests the current one.
    */
   async runJobs(
     manifest: Manifest,
@@ -177,9 +196,32 @@ export class DataOnboardingService {
     
     const worker = this.workerFactory();
     try {
+      // Start downloading the first job immediately
+      let nextDownload = this.prepareJob(manifest, jobs[0]);
+
       for (let i = 0; i < jobs.length; i++) {
         const job = jobs[i];
-        const status = await this.runJob(manifest, job, worker);
+        
+        // Await the download (or skip resolution) of the CURRENT job
+        const payload = await nextDownload;
+        
+        // Fire off the download for the NEXT job (if any) while we ingest the current one
+        if (i + 1 < jobs.length) {
+          nextDownload = this.prepareJob(manifest, jobs[i + 1]);
+        }
+        
+        let status: JobOutcome = 'skipped';
+        
+        if (payload) {
+          // We have a buffer, run ingestion
+          if (payload.existing) {
+            await this.db.clearDatasetCandles(symbol, payload.timeframe);
+          }
+          await this.ingestOn(worker, payload.buffer, symbol, payload.timeframe);
+          await this.db.putDataset(payload.record);
+          status = 'ingested';
+        }
+
         const p = { index: i + 1, total, job, status };
         this.progress.set(p);
         onProgress?.(p);
