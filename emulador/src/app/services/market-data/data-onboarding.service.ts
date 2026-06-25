@@ -168,7 +168,7 @@ export class DataOnboardingService {
       buffer,
       timeframe,
       existing: !!existing,
-      record
+      record,
     };
   }
 
@@ -180,8 +180,8 @@ export class DataOnboardingService {
    * partitions — `parquet-wasm` caches its WASM init internally, so one
    * worker instance means one init instead of one per partition. The worker
    * is always terminated when the batch settles (success or failure).
-   * 
-   * This pipelines the network and CPU work by pre-fetching the next job's 
+   *
+   * This pipelines the network and CPU work by pre-fetching the next job's
    * ArrayBuffer while the worker ingests the current one.
    */
   async runJobs(
@@ -192,10 +192,10 @@ export class DataOnboardingService {
     if (!jobs.length) return;
     const total = jobs.length;
     const symbol = jobs[0].symbol;
-    
+
     this._busySymbol.set(symbol);
     this._progress.set(null);
-    
+
     const worker = this.workerFactory();
     try {
       // Start downloading the first job immediately
@@ -203,18 +203,18 @@ export class DataOnboardingService {
 
       for (let i = 0; i < jobs.length; i++) {
         const job = jobs[i];
-        
+
         // Await the download (or skip resolution) of the CURRENT job
         const payload = await nextDownload;
-        
+
         // Fire off the download for the NEXT job (if any) while we ingest the current one
         if (i + 1 < jobs.length) {
           nextDownload = this.prepareJob(manifest, jobs[i + 1]);
           nextDownload.catch(() => undefined); // Prevent unhandled rejection events in the background
         }
-        
+
         let status: JobOutcome = 'skipped';
-        
+
         if (payload) {
           // We have a buffer, run ingestion
           if (payload.existing) {

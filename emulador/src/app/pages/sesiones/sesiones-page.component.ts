@@ -754,9 +754,11 @@ export class SesionesPageComponent {
       }
     } else {
       // NEW LOGIC: Fetch target workspace meta to get selectedTfs
-      const meta = this.metas().find(m => m.symbol === card.symbol);
-      const tfs = (meta?.selectedTfs?.length ? meta.selectedTfs : ['M1', 'H1', 'D1']) as Timeframe[];
-      
+      const meta = this.metas().find((m) => m.symbol === card.symbol);
+      const tfs = (
+        meta?.selectedTfs?.length ? meta.selectedTfs : ['M1', 'H1', 'D1']
+      ) as Timeframe[];
+
       try {
         const pending = await Promise.all(
           tfs.map(async (tf) => ({
@@ -775,7 +777,9 @@ export class SesionesPageComponent {
           }),
         );
       } catch (e) {
-        this.importError.set((e as Error).message || 'Error leyendo los datos locales de IndexedDB.');
+        this.importError.set(
+          (e as Error).message || 'Error leyendo los datos locales de IndexedDB.',
+        );
         return;
       }
     }

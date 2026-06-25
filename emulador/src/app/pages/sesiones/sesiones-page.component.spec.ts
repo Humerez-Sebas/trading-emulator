@@ -461,7 +461,11 @@ describe('SesionesPageComponent', () => {
     await settle();
     await component.open(card({ symbol: 'XAUUSD', id: 's1' }));
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: WorkspacesActions.switchAsset.type, symbol: 'XAUUSD', thenOpenSession: 's1' }),
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'XAUUSD',
+        thenOpenSession: 's1',
+      }),
     );
   });
 
@@ -495,7 +499,11 @@ describe('SesionesPageComponent', () => {
     expect(putMeta).toHaveBeenCalled();
     // once locally materialized, the existing other-asset open flow runs
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: WorkspacesActions.switchAsset.type, symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'XAUUSD',
+        thenOpenSession: 'cloud-1',
+      }),
     );
   });
 
@@ -632,7 +640,11 @@ describe('SesionesPageComponent', () => {
     expect(component.missing()).toHaveLength(0); // modal closed
     expect(putMeta).toHaveBeenCalled(); // materialized after download
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: WorkspacesActions.switchAsset.type, symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'XAUUSD',
+        thenOpenSession: 'cloud-1',
+      }),
     );
   });
 
@@ -679,7 +691,11 @@ describe('SesionesPageComponent', () => {
     expect(component.missing()).toHaveLength(0);
     expect(putMeta).toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: WorkspacesActions.switchAsset.type, symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'XAUUSD',
+        thenOpenSession: 'cloud-1',
+      }),
     );
   });
 
