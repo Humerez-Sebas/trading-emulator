@@ -753,9 +753,25 @@ export class SesionesPageComponent {
         }
       }
     } else {
+      // NEW LOGIC: Fetch target workspace meta to get selectedTfs
+      const meta = this.metas().find(m => m.symbol === card.symbol);
+      const tfs = (meta?.selectedTfs?.length ? meta.selectedTfs : ['M1', 'H1', 'D1']) as Timeframe[];
+      
+      const pending: PendingCsv[] = [];
+      for (const tf of tfs) {
+        const candles = await this.repo.getCandles(card.symbol, tf);
+        pending.push({
+          tf,
+          candles,
+          fileName: `${card.symbol.toLowerCase()}_${tf.toLowerCase()}.csv`
+        });
+      }
+
       this.store.dispatch(
         WorkspacesActions.switchAsset({
           symbol: card.symbol,
+          selectedTfs: tfs,
+          thenLoad: pending,
           thenOpenSession: card.id ?? undefined,
         }),
       );
