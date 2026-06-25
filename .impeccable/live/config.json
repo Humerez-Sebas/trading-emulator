@@ -1,8 +1,0 @@
-{
-  "files": [
-    "emulador/src/index.html"
-  ],
-  "insertBefore": "</head>",
-  "commentSyntax": "<!-- impecc-csp -->",
-  "cspChecked": true
-}
