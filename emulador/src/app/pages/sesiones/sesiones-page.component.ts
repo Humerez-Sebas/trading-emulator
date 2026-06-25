@@ -757,24 +757,27 @@ export class SesionesPageComponent {
       const meta = this.metas().find(m => m.symbol === card.symbol);
       const tfs = (meta?.selectedTfs?.length ? meta.selectedTfs : ['M1', 'H1', 'D1']) as Timeframe[];
       
-      const pending: PendingCsv[] = [];
-      for (const tf of tfs) {
-        const candles = await this.repo.getCandles(card.symbol, tf);
-        pending.push({
-          tf,
-          candles,
-          fileName: `${card.symbol.toLowerCase()}_${tf.toLowerCase()}.csv`
-        });
-      }
+      try {
+        const pending = await Promise.all(
+          tfs.map(async (tf) => ({
+            tf,
+            candles: await this.repo.getCandles(card.symbol, tf),
+            fileName: `${card.symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
+          })),
+        );
 
-      this.store.dispatch(
-        WorkspacesActions.switchAsset({
-          symbol: card.symbol,
-          selectedTfs: tfs,
-          thenLoad: pending,
-          thenOpenSession: card.id ?? undefined,
-        }),
-      );
+        this.store.dispatch(
+          WorkspacesActions.switchAsset({
+            symbol: card.symbol,
+            selectedTfs: tfs,
+            thenLoad: pending,
+            thenOpenSession: card.id ?? undefined,
+          }),
+        );
+      } catch (e) {
+        this.importError.set((e as Error).message || 'Error leyendo los datos locales de IndexedDB.');
+        return;
+      }
     }
     void this.router.navigateByUrl('/');
   }

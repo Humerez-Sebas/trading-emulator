@@ -88,8 +88,10 @@ export const PARQUET_WORKER_FACTORY = new InjectionToken<WorkerFactory>('PARQUET
  */
 @Injectable({ providedIn: 'root' })
 export class DataOnboardingService {
-  busySymbol = signal<string | null>(null);
-  progress = signal<OnboardingProgress | null>(null);
+  private _busySymbol = signal<string | null>(null);
+  public busySymbol = this._busySymbol.asReadonly();
+  private _progress = signal<OnboardingProgress | null>(null);
+  public progress = this._progress.asReadonly();
 
   constructor(
     private readonly db: WorkspaceDbService = inject(WorkspaceDbService),
@@ -191,8 +193,8 @@ export class DataOnboardingService {
     const total = jobs.length;
     const symbol = jobs[0].symbol;
     
-    this.busySymbol.set(symbol);
-    this.progress.set(null);
+    this._busySymbol.set(symbol);
+    this._progress.set(null);
     
     const worker = this.workerFactory();
     try {
@@ -224,13 +226,13 @@ export class DataOnboardingService {
         }
 
         const p = { index: i + 1, total, job, status };
-        this.progress.set(p);
+        this._progress.set(p);
         onProgress?.(p);
       }
     } finally {
       worker.terminate();
-      this.busySymbol.set(null);
-      this.progress.set(null);
+      this._busySymbol.set(null);
+      this._progress.set(null);
     }
   }
 

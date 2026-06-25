@@ -138,7 +138,7 @@ export class R2MarketsComponent {
     if (!manifest || !jobs.length || this.busySymbol()) return;
     this.errorMsg.set('');
     try {
-      await this.onboarding.runJobs(manifest, jobs, (p) => this.progress.set(p));
+      await this.onboarding.runJobs(manifest, jobs);
       this.datasets.set(await this.storage.listDatasets());
     } catch (e) {
       this.errorMsg.set((e as Error).message || 'La descarga falló. Vuelve a intentarlo.');
