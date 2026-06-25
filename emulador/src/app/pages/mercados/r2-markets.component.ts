@@ -71,10 +71,10 @@ export class R2MarketsComponent {
   totalLabel = computed(() => formatBytes(this.storage.totalBytes(this.datasets())));
 
   /** Symbol currently downloading (disables its actions), or null. */
-  busySymbol = signal<string | null>(null);
+  busySymbol = this.onboarding.busySymbol;
   /** Id of the dataset currently being deleted, or null. */
   deletingId = signal<string | null>(null);
-  progress = signal<OnboardingProgress | null>(null);
+  progress = this.onboarding.progress;
 
   progressPct = computed(() => {
     const p = this.progress();
@@ -136,17 +136,13 @@ export class R2MarketsComponent {
   private async runJobs(symbol: string, jobs: OnboardingJob[]): Promise<void> {
     const manifest = this.manifest();
     if (!manifest || !jobs.length || this.busySymbol()) return;
-    this.busySymbol.set(symbol);
     this.errorMsg.set('');
-    this.progress.set(null);
     try {
       await this.onboarding.runJobs(manifest, jobs, (p) => this.progress.set(p));
       this.datasets.set(await this.storage.listDatasets());
     } catch (e) {
       this.errorMsg.set((e as Error).message || 'La descarga falló. Vuelve a intentarlo.');
     }
-    this.busySymbol.set(null);
-    this.progress.set(null);
   }
 
   /** Delete a downloaded partition (its row + candles) behind a confirm. */

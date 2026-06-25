@@ -1,5 +1,5 @@
 /* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
-import { inject, Inject, Injectable, InjectionToken } from '@angular/core';
+import { inject, Inject, Injectable, InjectionToken, signal } from '@angular/core';
 import { Timeframe } from '../../models';
 import { DatasetRecord } from '../market-data-db';
 import { WorkspaceDbService } from '../workspace-db.service';
@@ -88,6 +88,9 @@ export const PARQUET_WORKER_FACTORY = new InjectionToken<WorkerFactory>('PARQUET
  */
 @Injectable({ providedIn: 'root' })
 export class DataOnboardingService {
+  busySymbol = signal<string | null>(null);
+  progress = signal<OnboardingProgress | null>(null);
+
   constructor(
     private readonly db: WorkspaceDbService = inject(WorkspaceDbService),
     private readonly downloads: ParquetDownloadService = inject(ParquetDownloadService),
@@ -165,16 +168,26 @@ export class DataOnboardingService {
     jobs: OnboardingJob[],
     onProgress?: (progress: OnboardingProgress) => void,
   ): Promise<void> {
+    if (!jobs.length) return;
     const total = jobs.length;
+    const symbol = jobs[0].symbol;
+    
+    this.busySymbol.set(symbol);
+    this.progress.set(null);
+    
     const worker = this.workerFactory();
     try {
       for (let i = 0; i < jobs.length; i++) {
         const job = jobs[i];
         const status = await this.runJob(manifest, job, worker);
-        onProgress?.({ index: i + 1, total, job, status });
+        const p = { index: i + 1, total, job, status };
+        this.progress.set(p);
+        onProgress?.(p);
       }
     } finally {
       worker.terminate();
+      this.busySymbol.set(null);
+      this.progress.set(null);
     }
   }
 

@@ -216,6 +216,48 @@ describe('DataOnboardingService.runJob', () => {
 });
 
 describe('DataOnboardingService.runJobs (batch with progress)', () => {
+  it('exposes busySymbol and progress signals during execution', async () => {
+    const db = dbStub();
+    // Worker that doesn't immediately resolve so we can check intermediate state
+    let resolveWorker: (val?: any) => void;
+    const slowWorker = new FakeWorker();
+    slowWorker.postMessage = () => {
+      queueMicrotask(() => {
+        // Pause worker execution
+        new Promise(r => resolveWorker = r).then(() => {
+          slowWorker.onmessage?.({ data: { type: 'done', inserted: 10 } } as MessageEvent);
+        });
+      });
+    };
+    const { svc } = makeService({ db, worker: slowWorker });
+    
+    expect(svc.busySymbol()).toBeNull();
+    expect(svc.progress()).toBeNull();
+
+    const promise = svc.runJobs(MANIFEST, [M1_JOB, H1_JOB]);
+    
+    // Wait for the download to finish and worker to be invoked
+    // which takes a couple of microtasks due to Promises.
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+      if (resolveWorker) break;
+    }
+    
+    expect(svc.busySymbol()).toBe('XAUUSD');
+    // First job hasn't finished yet, progress is tracked via the callback logic or updated signals
+    
+    resolveWorker!(); // finish M1
+    resolveWorker = undefined as any;
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+      if (resolveWorker) break;
+    }
+    resolveWorker!(); // finish H1
+    
+    await promise;
+    expect(svc.busySymbol()).toBeNull();
+  });
+
   it('runs every job in order and reports per-job progress', async () => {
     const db = dbStub();
     const { svc } = makeService({ db });
