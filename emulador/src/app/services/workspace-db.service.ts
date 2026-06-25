@@ -2,7 +2,6 @@ import { Injectable } from '@angular/core';
 import { Candle, Timeframe } from '../models';
 import { SessionFolder } from '../state/trading/trading.models';
 import { AssetMeta, Workspace, WorkspaceMeta } from '../state/workspaces/workspaces.models';
-import { OfflineSymbol } from './offline-catalog';
 import {
   CANDLES_BY_SYMBOL_TF_TIME,
   CANDLES_STORE,
@@ -16,7 +15,6 @@ import {
   LEGACY_STORE,
   META_STORE,
   SERIES_STORE,
-  SYMBOLS_STORE,
   SYNC_STORE,
 } from './market-data-db';
 
@@ -93,10 +91,9 @@ export class WorkspaceDbService {
           if (!db.objectStoreNames.contains(FOLDERS_STORE)) {
             db.createObjectStore(FOLDERS_STORE, { keyPath: 'id' });
           }
-          // v4: offline symbol catalog (keyed by symbol)
-          if (!db.objectStoreNames.contains(SYMBOLS_STORE)) {
-            db.createObjectStore(SYMBOLS_STORE, { keyPath: 'symbol' });
-          }
+          // v4 used to create an offline symbol catalog store here. It was
+          // retired (Phase 3) without bumping DB_VERSION: existing DBs keep
+          // the orphan 'symbols' store harmlessly; fresh DBs never get one.
           // v5: R2/Parquet dataset manifest cache
           if (!db.objectStoreNames.contains(DATASETS_STORE)) {
             const datasets = db.createObjectStore(DATASETS_STORE, { keyPath: 'id' });
@@ -292,48 +289,6 @@ export class WorkspaceDbService {
     const db = await this.open();
     const tx = db.transaction(FOLDERS_STORE, 'readwrite');
     tx.objectStore(FOLDERS_STORE).delete(id);
-    return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  // ---- offline symbol catalog (v4) ----
-
-  /** Upserts a catalog entry (offline analog of a backend symbol). */
-  async putSymbol(sym: OfflineSymbol): Promise<void> {
-    const db = await this.open();
-    const tx = db.transaction(SYMBOLS_STORE, 'readwrite');
-    tx.objectStore(SYMBOLS_STORE).put(sym);
-    return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  async getSymbol(symbol: string): Promise<OfflineSymbol | undefined> {
-    const db = await this.open();
-    return this.request<OfflineSymbol | undefined>(
-      db.transaction(SYMBOLS_STORE, 'readonly').objectStore(SYMBOLS_STORE).get(symbol),
-    );
-  }
-
-  /** All catalog entries, sorted by symbol (offline Markets / wizard list). */
-  async listSymbols(): Promise<OfflineSymbol[]> {
-    const db = await this.open();
-    const all = await this.request<OfflineSymbol[]>(
-      db.transaction(SYMBOLS_STORE, 'readonly').objectStore(SYMBOLS_STORE).getAll(),
-    );
-    return all.sort((a, b) => a.symbol.localeCompare(b.symbol));
-  }
-
-  /** Removes a symbol everywhere: catalog entry, meta and all its series. */
-  async removeSymbol(symbol: string): Promise<void> {
-    const db = await this.open();
-    const tx = db.transaction([SYMBOLS_STORE, META_STORE, SERIES_STORE], 'readwrite');
-    tx.objectStore(SYMBOLS_STORE).delete(symbol);
-    tx.objectStore(META_STORE).delete(symbol);
-    tx.objectStore(SERIES_STORE).delete(IDBKeyRange.bound(`${symbol}|`, `${symbol}|￿`));
     return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);

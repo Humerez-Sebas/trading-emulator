@@ -3,7 +3,7 @@
  * `manifest.json`, exposing typed helpers used by the Data Wizard.
  *
  * `fetch` is mocked (no network); the manifest shape mirrors what
- * `backend/manifest.py` produces.
+ * `pipeline/manifest.py` produces.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ManifestService, Manifest } from './manifest.service';

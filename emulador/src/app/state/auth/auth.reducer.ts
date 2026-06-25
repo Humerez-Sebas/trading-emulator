@@ -6,11 +6,8 @@ import { AuthActions } from './auth.actions';
  * - `unknown`: still checking the session at startup.
  * - `authenticated`: a valid Supabase session.
  * - `anonymous`: no Supabase session -> guarded routes redirect to /login.
- * - `offline`: the auth check threw (rare, since the session is read locally) -> the app
- *   stays usable as guest.
- * - `guest`: deliberate no-account mode (static build or explicit choice).
  */
-export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous' | 'offline' | 'guest';
+export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous';
 
 export interface AuthState {
   status: AuthStatus;
@@ -33,10 +30,10 @@ export const authFeature = createFeature({
     initialState,
     on(
       AuthActions.sessionResolved,
-      (state, { user, offline }): AuthState => ({
+      (state, { user }): AuthState => ({
         ...state,
         user,
-        status: user ? 'authenticated' : offline ? 'offline' : 'anonymous',
+        status: user ? 'authenticated' : 'anonymous',
       }),
     ),
     on(AuthActions.login, (state): AuthState => ({ ...state, pending: true, error: null })),
@@ -57,16 +54,6 @@ export const authFeature = createFeature({
     on(
       AuthActions.loggedOut,
       (state): AuthState => ({ ...state, user: null, status: 'anonymous', pending: false }),
-    ),
-    on(
-      AuthActions.continueAsGuest,
-      (state): AuthState => ({
-        ...state,
-        user: null,
-        status: 'guest',
-        pending: false,
-        error: null,
-      }),
     ),
   ),
 });

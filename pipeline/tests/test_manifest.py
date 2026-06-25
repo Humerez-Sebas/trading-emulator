@@ -8,7 +8,7 @@ import os
 import sys
 from datetime import timezone
 
-# manifest.py vive como modulo plano en backend/
+# manifest.py vive como modulo plano en pipeline/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import manifest  # noqa: E402

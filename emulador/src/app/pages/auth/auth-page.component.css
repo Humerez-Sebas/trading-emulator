@@ -43,18 +43,6 @@ h1 {
   color: var(--text-muted);
 }
 
-.offline {
-  margin: 0;
-  padding: 10px 12px;
-  font-size: 12.5px;
-  border: 1px solid var(--warning);
-  border-radius: var(--radius);
-  color: var(--warning);
-}
-.offline a {
-  color: var(--accent);
-}
-
 .field {
   display: flex;
   flex-direction: column;
@@ -105,33 +93,4 @@ h1 {
   to {
     transform: rotate(360deg);
   }
-}
-
-.alt {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text-muted);
-  text-align: center;
-}
-.alt a {
-  color: var(--accent);
-  text-decoration: none;
-}
-.alt a:hover {
-  text-decoration: underline;
-}
-
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.divider::before,
-.divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
 }

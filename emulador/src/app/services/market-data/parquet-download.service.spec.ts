@@ -2,7 +2,7 @@
  * TDD specs for Task 6: ParquetDownloadService — fetches a single `.parquet`
  * file from the R2 bucket as an ArrayBuffer.
  *
- * The R2 key layout (see `backend/r2_uploader.py`) is
+ * The R2 key layout (see `pipeline/r2_uploader.py`) is
  * `market-data/v1/<SYMBOL>/<tf>/<file>.parquet`, served under the public base
  * URL. `fetch` is mocked; no network.
  */

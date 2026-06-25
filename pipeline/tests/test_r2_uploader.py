@@ -15,7 +15,7 @@ import pytest
 
 boto3 = pytest.importorskip("boto3")
 
-# r2_uploader y manifest viven como modulos planos en backend/
+# r2_uploader y manifest viven como modulos planos en pipeline/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import r2_uploader  # noqa: E402

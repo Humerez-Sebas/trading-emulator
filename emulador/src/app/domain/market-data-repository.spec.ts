@@ -2,15 +2,11 @@
  * TDD specs for Task 5: MarketDataRepository abstraction + factory.
  *
  * RED → GREEN cycle:
- *  1. pickMarketDataRepository — pure factory helper
+ *  1. provideMarketDataRepository — binds the R2/IndexedDB implementation
  *  2. IndexedDbMarketDataRepository — reads the `candles` store via compound index
- *  3. CsvMarketDataRepository — delegates to WorkspaceDbService.getWorkspace
  */
 import 'fake-indexeddb/auto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { WorkspaceDbService } from '../services/workspace-db.service';
-import { workspaceDbStub } from '../testing/workspace-db.stub';
-import { series } from '../testing/fixtures';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Candle } from '../models';
 import {
   DB_NAME,
@@ -20,9 +16,9 @@ import {
 } from '../services/market-data-db';
 
 // ---- imports under test (will fail until implemented) ----
-import { pickMarketDataRepository } from './market-data.repository';
+import { MarketDataRepository } from './market-data.repository';
 import { IndexedDbMarketDataRepository } from './indexed-db.repository';
-import { CsvMarketDataRepository } from './csv-legacy.repository';
+import { provideMarketDataRepository } from './market-data-repository.provider';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -83,21 +79,15 @@ async function seedCandlesDb(records: Omit<CandleRecord, 'id'>[]): Promise<IDBDa
 }
 
 // ---------------------------------------------------------------------------
-// 1. pickMarketDataRepository — factory helper
+// 1. provideMarketDataRepository — provider factory
 // ---------------------------------------------------------------------------
 
-describe('pickMarketDataRepository', () => {
-  const csv = new CsvMarketDataRepository({} as WorkspaceDbService);
-  const idb = new IndexedDbMarketDataRepository();
+describe('provideMarketDataRepository', () => {
+  it('binds MarketDataRepository to IndexedDbMarketDataRepository', () => {
+    const provider = provideMarketDataRepository();
 
-  it('returns the CSV implementation when dataSource is "csv"', () => {
-    const result = pickMarketDataRepository('csv', { idb, csv });
-    expect(result).toBe(csv);
-  });
-
-  it('returns the IndexedDb implementation when dataSource is "r2"', () => {
-    const result = pickMarketDataRepository('r2', { idb, csv });
-    expect(result).toBe(idb);
+    expect(provider.provide).toBe(MarketDataRepository);
+    expect(provider.useClass).toBe(IndexedDbMarketDataRepository);
   });
 });
 
@@ -228,63 +218,5 @@ describe('IndexedDbMarketDataRepository.getCoverage', () => {
     expect(await repo.getCoverage('COVUSD', 'M1')).toEqual({ from: 1000, to: 3000 });
     expect(await repo.getCoverage('COVUSD', 'H1')).toEqual({ from: 500, to: 500 }); // single candle
     expect(await repo.getCoverage('COVUSD', 'D1')).toBeNull(); // no rows
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 3. CsvMarketDataRepository
-// ---------------------------------------------------------------------------
-
-describe('CsvMarketDataRepository.getCandles', () => {
-  let stub: ReturnType<typeof workspaceDbStub>;
-
-  beforeEach(() => {
-    stub = workspaceDbStub();
-  });
-
-  it('returns series[tf] from the workspace when it exists', async () => {
-    const candles = series(5, 0, 60);
-    stub.getWorkspace!.mockResolvedValue({
-      symbol: 'XAUUSD',
-      series: { M1: candles },
-      files: {},
-      activeTf: null,
-      currentTime: 0,
-      drawings: [],
-      sessions: [],
-      trading: {} as never,
-      lastModified: 1,
-    });
-
-    const repo = new CsvMarketDataRepository(stub as unknown as WorkspaceDbService);
-    const result = await repo.getCandles('XAUUSD', 'M1');
-    expect(result).toEqual(candles);
-    expect(stub.getWorkspace).toHaveBeenCalledWith('XAUUSD');
-  });
-
-  it('returns empty array when the timeframe is not present in the series', async () => {
-    stub.getWorkspace!.mockResolvedValue({
-      symbol: 'XAUUSD',
-      series: {},
-      files: {},
-      activeTf: null,
-      currentTime: 0,
-      drawings: [],
-      sessions: [],
-      trading: {} as never,
-      lastModified: 1,
-    });
-
-    const repo = new CsvMarketDataRepository(stub as unknown as WorkspaceDbService);
-    const result = await repo.getCandles('XAUUSD', 'H1');
-    expect(result).toEqual([]);
-  });
-
-  it('returns empty array when the workspace is not found', async () => {
-    stub.getWorkspace!.mockResolvedValue(undefined);
-
-    const repo = new CsvMarketDataRepository(stub as unknown as WorkspaceDbService);
-    const result = await repo.getCandles('NOPE', 'M1');
-    expect(result).toEqual([]);
   });
 });

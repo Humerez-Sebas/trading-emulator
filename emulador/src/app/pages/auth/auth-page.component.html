@@ -18,12 +18,6 @@
     <h1 id="auth-title">Iniciar sesión</h1>
     <p class="sub">Entra para acceder a los mercados y tus sesiones.</p>
 
-    @if (offline()) {
-      <p class="offline" role="status">
-        El servidor no está disponible. Puedes seguir usando el emulador sin cuenta como invitado.
-      </p>
-    }
-
     <label class="field">
       <span>Correo</span>
       <input
@@ -68,27 +62,5 @@
         Entrar
       }
     </button>
-
-    @if (guestModeEnabled) {
-      <div class="divider"><span>o</span></div>
-      <button appButton variant="ghost" [block]="true" type="button" (click)="continueAsGuest()">
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-          <circle cx="12" cy="7" r="4"></circle>
-        </svg>
-        Continuar como invitado
-      </button>
-      <p class="alt">Sin cuenta · tus CSV se guardan solo en este navegador.</p>
-    }
   </form>
 </div>

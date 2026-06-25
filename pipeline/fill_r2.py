@@ -13,10 +13,10 @@ un archivo .env primero (utiL cuando se ejecuta desde un git worktree, donde el
 .env de la raiz del repo no esta presente).
 
 Uso::
-    py backend/fill_r2.py --symbols US30,NAS100,SP500,XAUUSD --desde 2024-01-01 \
+    py pipeline/fill_r2.py --symbols US30,NAS100,SP500,XAUUSD --desde 2024-01-01 \
         --env C:/ruta/al/.env --out-dir C:/tmp/parquet_out
 
-    py backend/fill_r2.py ... --skip-upload   # solo genera Parquet, sin subir
+    py pipeline/fill_r2.py ... --skip-upload   # solo genera Parquet, sin subir
 """
 
 from __future__ import annotations
@@ -27,12 +27,24 @@ import os
 import sys
 from datetime import datetime, timezone
 
-# backend/ en el path para importar los modulos hermanos.
+# pipeline/ en el path para importar los modulos hermanos.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import parquet_builder  # noqa: E402
 import r2_uploader  # noqa: E402
-from harvester import load_dotenv  # noqa: E402  (reutiliza el cargador .env minimo)
+
+
+def load_dotenv(path: str) -> None:
+    """Minimal .env loader (no extra dependency). Does not override the env."""
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip())
 
 
 def main() -> None:

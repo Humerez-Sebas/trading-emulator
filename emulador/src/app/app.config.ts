@@ -1,12 +1,11 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideHttpClient } from '@angular/common/http';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideStore } from '@ngrx/store';
 import { provideEffects } from '@ngrx/effects';
 import { provideMarketDataRepository } from './domain/market-data-repository.provider';
 
 import { routes } from './app.routes';
-import { authInterceptor } from './auth/auth.interceptor';
 import { marketFeature } from './state/market/market.reducer';
 import { replayFeature } from './state/replay/replay.reducer';
 import { settingsFeature } from './state/settings/settings.reducer';
@@ -14,21 +13,19 @@ import { drawingsFeature } from './state/drawings/drawings.reducer';
 import { workspacesFeature } from './state/workspaces/workspaces.reducer';
 import { tradingFeature } from './state/trading/trading.reducer';
 import { authFeature } from './state/auth/auth.reducer';
-import { userSymbolsFeature } from './state/user-symbols/user-symbols.reducer';
 import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
 import { WorkspacesEffects } from './state/workspaces/workspaces.effects';
 import { TradingEffects } from './state/trading/trading.effects';
 import { AuthEffects } from './state/auth/auth.effects';
-import { UserSymbolsEffects } from './state/user-symbols/user-symbols.effects';
 import { SessionSyncEffects } from './state/sync/session-sync.effects';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideMarketDataRepository(),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideHttpClient(),
     provideRouter(routes, withComponentInputBinding()),
     provideStore({
       [marketFeature.name]: marketFeature.reducer,
@@ -38,7 +35,6 @@ export const appConfig: ApplicationConfig = {
       [workspacesFeature.name]: workspacesFeature.reducer,
       [tradingFeature.name]: tradingFeature.reducer,
       [authFeature.name]: authFeature.reducer,
-      [userSymbolsFeature.name]: userSymbolsFeature.reducer,
     }),
     provideEffects(
       MarketEffects,
@@ -47,7 +43,6 @@ export const appConfig: ApplicationConfig = {
       WorkspacesEffects,
       TradingEffects,
       AuthEffects,
-      UserSymbolsEffects,
       SessionSyncEffects,
     ),
   ],

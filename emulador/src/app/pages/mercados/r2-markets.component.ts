@@ -33,8 +33,7 @@ function toUpperTf(tf: 'm1' | 'h1' | 'd1'): string {
  * a downloaded one. It manages data ONLY — starting a session lives in New
  * Session, so no `switchAsset` is dispatched here.
  *
- * Rendered exclusively when `environment.dataSource === 'r2'`; the csv/backend
- * Markets branch is untouched (gated in the parent template).
+ * R2/Parquet is the only data source now; this is the sole Markets page.
  */
 @Component({
   selector: 'app-r2-markets',

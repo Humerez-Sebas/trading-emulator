@@ -12,20 +12,15 @@ const user = { id: 'u1', email: 'alice@example.com' };
 
 describe('auth reducer: sessionResolved', () => {
   it('user present → status authenticated', () => {
-    const next = reducer(initial(), AuthActions.sessionResolved({ user, offline: false }));
+    const next = reducer(initial(), AuthActions.sessionResolved({ user }));
     expect(next.status).toBe('authenticated');
     expect(next.user).toEqual(user);
   });
 
-  it('user null + offline → status offline', () => {
-    const next = reducer(initial(), AuthActions.sessionResolved({ user: null, offline: true }));
-    expect(next.status).toBe('offline');
-    expect(next.user).toBeNull();
-  });
-
-  it('user null + !offline → status anonymous', () => {
-    const next = reducer(initial(), AuthActions.sessionResolved({ user: null, offline: false }));
+  it('user null → status anonymous', () => {
+    const next = reducer(initial(), AuthActions.sessionResolved({ user: null }));
     expect(next.status).toBe('anonymous');
+    expect(next.user).toBeNull();
   });
 });
 
@@ -72,16 +67,6 @@ describe('auth reducer: loggedOut', () => {
     const next = reducer(authed, AuthActions.loggedOut());
     expect(next.user).toBeNull();
     expect(next.status).toBe('anonymous');
-    expect(next.pending).toBe(false);
-  });
-});
-
-describe('auth reducer: continueAsGuest', () => {
-  it('sets status guest and clears user', () => {
-    const s = { ...initial(), user, status: 'anonymous' as const };
-    const next = reducer(s, AuthActions.continueAsGuest());
-    expect(next.status).toBe('guest');
-    expect(next.user).toBeNull();
     expect(next.pending).toBe(false);
   });
 });

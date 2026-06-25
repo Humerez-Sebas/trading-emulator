@@ -5,7 +5,6 @@ import { from, of } from 'rxjs';
 import { catchError, exhaustMap, map, tap } from 'rxjs/operators';
 import { SupabaseAuthService } from '../../auth/supabase-auth.service';
 import { AuthActions } from './auth.actions';
-import { environment } from '../../../environments/environment';
 
 /** User-facing message (Spanish) from a Supabase/auth error. */
 function describeError(e: unknown): string {
@@ -14,16 +13,6 @@ function describeError(e: unknown): string {
   if (/network|fetch/i.test(msg)) return 'No se pudo conectar con el servidor';
   if (/email not confirmed/i.test(msg)) return 'Tu cuenta aún no está confirmada';
   return 'Algo salió mal, inténtalo de nuevo';
-}
-
-const GUEST_KEY = 'emulador.guest';
-
-function guestPersisted(): boolean {
-  try {
-    return localStorage.getItem(GUEST_KEY) === '1';
-  } catch {
-    return false;
-  }
 }
 
 @Injectable()
@@ -42,35 +31,13 @@ export class AuthEffects {
   check$ = createEffect(() =>
     this.actions$.pipe(
       ofType(AuthActions.checkSession),
-      exhaustMap(() => {
-        if (environment.offlineOnly) return of(AuthActions.continueAsGuest());
-        return from(this.auth.getUser()).pipe(
-          map((user) =>
-            user
-              ? AuthActions.sessionResolved({ user, offline: false })
-              : guestPersisted()
-                ? AuthActions.continueAsGuest()
-                : AuthActions.sessionResolved({ user: null, offline: false }),
-          ),
-          catchError(() => of(AuthActions.sessionResolved({ user: null, offline: true }))),
-        );
-      }),
-    ),
-  );
-
-  persistGuest$ = createEffect(
-    () =>
-      this.actions$.pipe(
-        ofType(AuthActions.continueAsGuest),
-        tap(() => {
-          try {
-            localStorage.setItem(GUEST_KEY, '1');
-          } catch {
-            /* storage unavailable: ignore */
-          }
-        }),
+      exhaustMap(() =>
+        from(this.auth.getUser()).pipe(
+          map((user) => AuthActions.sessionResolved({ user })),
+          catchError(() => of(AuthActions.sessionResolved({ user: null }))),
+        ),
       ),
-    { dispatch: false },
+    ),
   );
 
   login$ = createEffect(() =>
@@ -111,11 +78,6 @@ export class AuthEffects {
       this.actions$.pipe(
         ofType(AuthActions.loggedOut),
         tap(() => {
-          try {
-            localStorage.removeItem(GUEST_KEY);
-          } catch {
-            /* ignore */
-          }
           this.router.navigateByUrl('/login');
         }),
       ),

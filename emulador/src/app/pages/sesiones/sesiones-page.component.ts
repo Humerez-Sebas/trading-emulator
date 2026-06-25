@@ -22,9 +22,7 @@ import type { DatasetRecord } from '../../services/market-data-db';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
-import { isSessionCsv, parseSessionCsv } from '../../state/trading/session-csv';
-import { Candle, Timeframe, symbolFromFileName } from '../../models';
-import { environment } from '../../../environments/environment';
+import { Candle, Timeframe } from '../../models';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import {
   DataOnboardingService,
@@ -218,9 +216,6 @@ export class SesionesPageComponent {
   private onboarding = inject(DataOnboardingService);
   private manifests = inject(ManifestService);
   private sync = inject(SessionSyncService);
-
-  /** R2 deployment uses `.session.json` import; CSV keeps the legacy path. */
-  isR2 = environment.dataSource === 'r2';
 
   private authStatus = this.store.selectSignal(authFeature.selectStatus);
 
@@ -568,44 +563,6 @@ export class SesionesPageComponent {
       .join(' ');
   }
 
-  // ---- session CSV import ----
-
-  /** Imports a session CSV exported from the summary into its workspace. */
-  async onImportSession(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    if (!input.files?.length) return;
-    this.importError.set('');
-    this.importInfo.set('');
-    for (const file of Array.from(input.files)) {
-      try {
-        const text = await file.text();
-        if (!isSessionCsv(text)) {
-          this.importError.set(`${file.name}: no parece un CSV de sesión del emulador.`);
-          continue;
-        }
-        const trades = parseSessionCsv(text);
-        if (!trades.length) {
-          this.importError.set(`${file.name}: sin trades reconocibles.`);
-          continue;
-        }
-        const symbol = symbolFromFileName(file.name);
-        if (symbol === this.currentAsset()) {
-          this.store.dispatch(
-            TradingActions.sessionImported({ trades, currentCursor: this.currentTime() }),
-          );
-          const lastClose = trades.reduce((m, t) => Math.max(m, t.closeTime), 0);
-          if (lastClose > 0) this.store.dispatch(ReplayActions.goToTime({ time: lastClose }));
-        } else {
-          this.store.dispatch(WorkspacesActions.switchAsset({ symbol, thenImport: { trades } }));
-        }
-        this.importInfo.set(`Sesión importada en ${symbol} (${trades.length} trades).`);
-      } catch (e) {
-        this.importError.set((e as Error).message);
-      }
-    }
-    input.value = '';
-  }
-
   // ---- .session.json import (R2: version gate + missing-dataset download + restore) ----
 
   /** What to do once the missing-dataset modal's download completes (open = modal open). */
@@ -621,8 +578,7 @@ export class SesionesPageComponent {
 
   /**
    * Imports a `.session.json`: version-gates it, prompts to download any missing
-   * datasets, then restores the full live session and opens the chart. Only the
-   * R2 deployment uses this; `dataSource==='csv'` keeps {@link onImportSession}.
+   * datasets, then restores the full live session and opens the chart.
    */
   async onImportSessionJson(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;

@@ -2,22 +2,14 @@
   <header class="head">
     <h1>Nueva sesión de backtesting</h1>
     <p class="steps" aria-live="polite">Paso {{ step() }} de 3</p>
-    @if (isR2 || source() !== 'csv') {
-      <div class="bar" aria-hidden="true">
-        <span class="fill" [style.width.%]="(step() / 3) * 100"></span>
-      </div>
-    }
+    <div class="bar" aria-hidden="true">
+      <span class="fill" [style.width.%]="(step() / 3) * 100"></span>
+    </div>
   </header>
 
   @switch (state()) {
     @case ('loading') {
       <p class="status" role="status">Cargando activos…</p>
-    }
-    @case ('error') {
-      <div class="empty">
-        <p>No se pudo conectar con el servidor.</p>
-        <p class="hint">Levanta el backend con <code>docker compose up</code> y recarga.</p>
-      </div>
     }
     @case ('ok') {
       @switch (step()) {
@@ -25,192 +17,54 @@
           <section aria-labelledby="step1-title">
             <h2 id="step1-title">Elige el activo</h2>
 
-            @if (isR2) {
-              <!-- rama R2: solo activos ya descargados localmente -->
-              @if (r2Error()) {
-                <p class="csv-error" role="alert">{{ r2Error() }}</p>
-              }
-              @if (!r2Assets().length) {
-                <div class="empty">
-                  <p>Todavía no descargaste ningún activo.</p>
-                  <p class="hint">
-                    Ve a <strong>Mercados</strong> y descarga al menos una temporalidad (M1, H1 o
-                    D1) antes de crear una sesión.
-                  </p>
-                </div>
-              } @else {
-                <div class="assets" role="radiogroup" aria-label="Activo de la sesión">
-                  @for (a of r2Assets(); track a.symbol) {
-                    <button
-                      class="asset"
-                      role="radio"
-                      [attr.aria-checked]="r2Symbol() === a.symbol"
-                      [class.picked]="r2Symbol() === a.symbol"
-                      [disabled]="r2Loading()"
-                      (click)="pickR2Asset(a)"
-                    >
-                      <span class="name">{{ a.symbol }}</span>
-                      <span class="tfs">{{ a.tfs.join(', ') }}</span>
-                    </button>
-                  }
-                </div>
-              }
+            @if (r2Error()) {
+              <p class="csv-error" role="alert">{{ r2Error() }}</p>
+            }
+            @if (!r2Assets().length) {
+              <div class="empty">
+                <p>Todavía no descargaste ningún activo.</p>
+                <p class="hint">
+                  Ve a <strong>Mercados</strong> y descarga al menos una temporalidad (M1, H1 o D1)
+                  antes de crear una sesión.
+                </p>
+              </div>
             } @else {
-              @if (!csvOnly()) {
-                <ui-segmented
-                  ariaLabel="Origen de los datos"
-                  [options]="[
-                    { value: 'backend', label: 'Catálogo' },
-                    { value: 'csv', label: 'Subir CSV' },
-                  ]"
-                  [value]="source()"
-                  (valueChange)="source.set($any($event))"
-                />
-              }
-
-              @if (source() === 'csv') {
-                <!-- símbolos ya subidos (catálogo offline) -->
-                @if (catalog().length) {
-                  <h2>Tus activos</h2>
-                  <div class="assets">
-                    @for (s of catalog(); track s.symbol) {
-                      <button class="asset" type="button" (click)="pickCatalogSymbol(s)">
-                        <span class="name">{{ s.symbol }}</span>
-                        <span class="desc">{{ s.descripcion || s.categoria }}</span>
-                        <span class="tfs">{{ s.coverage.length }} temporalidad(es)</span>
-                      </button>
-                    }
-                  </div>
-                  <h2>O sube nuevos CSV</h2>
-                }
-
-                <!-- dropzone -->
-                <label
-                  class="dropzone"
-                  [class.dragover]="dragOver()"
-                  (dragover)="onDragOver($event)"
-                  (dragleave)="dragOver.set(false)"
-                  (drop)="onDrop($event)"
-                >
-                  <svg
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
+              <div class="assets" role="radiogroup" aria-label="Activo de la sesión">
+                @for (a of r2Assets(); track a.symbol) {
+                  <button
+                    class="asset"
+                    role="radio"
+                    [attr.aria-checked]="r2Symbol() === a.symbol"
+                    [class.picked]="r2Symbol() === a.symbol"
+                    [disabled]="r2Loading()"
+                    (click)="pickR2Asset(a)"
                   >
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                  </svg>
-                  <span class="dz-title">Arrastra tus CSV o haz clic para elegir</span>
-                  <span class="dz-help"
-                    >Mismo activo, una temporalidad por archivo (p. ej.
-                    <code>xauusd_h4.csv</code>).</span
-                  >
-                  <input type="file" accept=".csv" multiple (change)="onCsvFiles($event)" hidden />
-                </label>
-
-                @if (csvError()) {
-                  <p class="csv-error" role="alert">
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                    >
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="8" x2="12" y2="12"></line>
-                      <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                    </svg>
-                    {{ csvError() }}
-                  </p>
+                    <span class="name">{{ a.symbol }}</span>
+                    <span class="tfs">{{ a.tfs.join(', ') }}</span>
+                  </button>
                 }
-
-                @if (parsedSymbol() && !csvError()) {
-                  <div class="review">
-                    <span class="name">{{ parsedSymbol() }}</span>
-                    <span class="tf-chips">
-                      @for (c of coverage(); track c.tf) {
-                        <span appBadge>{{ c.tf }}</span>
-                      }
-                    </span>
-                  </div>
-                }
-              } @else {
-                <!-- rama backend existente -->
-                @if (!symbols().length) {
-                  <div class="empty">
-                    <p>Ningún activo tiene velas en la base de datos.</p>
-                    <p class="hint">
-                      Ejecuta el harvester con MT5 abierto:
-                      <code>py backend/harvester.py --symbols US30,XAUUSD --tfs M5,H1</code>.
-                    </p>
-                  </div>
-                } @else {
-                  <div class="assets" role="radiogroup" aria-label="Activo de la sesión">
-                    @for (s of symbols(); track s.name) {
-                      <button
-                        class="asset"
-                        role="radio"
-                        [attr.aria-checked]="selected()?.name === s.name"
-                        [class.picked]="selected()?.name === s.name"
-                        (click)="pickSymbol(s)"
-                      >
-                        <span class="name">{{ s.name }}</span>
-                        <span class="desc">{{ s.descripcion || s.categoria }}</span>
-                        <span class="tfs">{{ s.cobertura.length }} TFs disponibles</span>
-                      </button>
-                    }
-                  </div>
-                }
-              }
+              </div>
             }
           </section>
         }
         @case (2) {
           <section aria-labelledby="step2-title">
-            <h2 id="step2-title">
-              {{ isR2 ? r2Symbol() : selected()?.name }} — temporalidades y fecha de inicio
-            </h2>
+            <h2 id="step2-title">{{ r2Symbol() }} — temporalidades y fecha de inicio</h2>
             <p class="help">
               El gráfico abrirá en la fecha elegida con el histórico previo detrás.
             </p>
 
             <fieldset class="tf-set">
               <legend>Temporalidades</legend>
-              @if (isR2) {
-                @for (tf of r2Tfs(); track tf) {
-                  <label class="tf-row">
-                    <input
-                      type="checkbox"
-                      [checked]="selectedTfs().has(tf)"
-                      (change)="toggleTf(tf)"
-                    />
-                    <span class="tf">{{ tf }}</span>
-                  </label>
-                }
-              } @else {
-                @for (c of coverage(); track c.tf) {
-                  <label class="tf-row">
-                    <input
-                      type="checkbox"
-                      [checked]="selectedTfs().has(c.tf)"
-                      (change)="toggleTf(c.tf)"
-                    />
-                    <span class="tf">{{ c.tf }}</span>
-                    <span class="range">{{ rangeLabel(c) }}</span>
-                  </label>
-                }
+              @for (tf of r2Tfs(); track tf) {
+                <label class="tf-row">
+                  <input
+                    type="checkbox"
+                    [checked]="selectedTfs().has(tf)"
+                    (change)="toggleTf(tf)"
+                  />
+                  <span class="tf">{{ tf }}</span>
+                </label>
               }
             </fieldset>
 
@@ -270,11 +124,11 @@
             <dl class="summary">
               <div>
                 <dt>Activo</dt>
-                <dd>{{ isR2 ? r2Symbol() : selected()?.name }}</dd>
+                <dd>{{ r2Symbol() }}</dd>
               </div>
               <div>
                 <dt>Temporalidades</dt>
-                <dd>{{ (isR2 ? r2Tfs() : chosenTfs()).join(', ') }}</dd>
+                <dd>{{ r2Tfs().join(', ') }}</dd>
               </div>
               <div>
                 <dt>Inicio del replay</dt>
@@ -287,29 +141,13 @@
               <div>
                 <dt>Histórico</dt>
                 <dd>
-                  {{
-                    isR2
-                      ? 'Se usa lo ya descargado en este navegador (pasado scrolleable + futuro para avanzar)'
-                      : 'Se descarga TODO el disponible (pasado scrolleable + futuro para avanzar)'
-                  }}
+                  Se usa lo ya descargado en este navegador (pasado scrolleable + futuro para
+                  avanzar)
                 </dd>
               </div>
             </dl>
 
-            @if (!isR2 && source() !== 'csv') {
-              @if (downloading()) {
-                <div class="progress" role="status">
-                  <p>Descargando {{ progress()?.tf }}… {{ progressPct() }}%</p>
-                  <div class="bar big">
-                    <span class="fill" [style.width.%]="progressPct()"></span>
-                  </div>
-                </div>
-              }
-              @if (downloadError()) {
-                <p class="invalid" role="alert">{{ downloadError() }}</p>
-              }
-            }
-            @if (isR2 && r2Error()) {
+            @if (r2Error()) {
               <p class="csv-error" role="alert">{{ r2Error() }}</p>
             }
           </section>
@@ -317,41 +155,19 @@
       }
 
       <footer class="actions">
-        <button
-          appButton
-          variant="ghost"
-          (click)="back()"
-          [disabled]="step() === 1 || downloading()"
-        >
-          Atrás
-        </button>
+        <button appButton variant="ghost" (click)="back()" [disabled]="step() === 1">Atrás</button>
         @if (step() < 3) {
           <button
             appButton
             variant="primary"
             (click)="next()"
-            [disabled]="
-              (step() === 1 && !(isR2 ? r2Symbol() : selected())) || (step() === 2 && !step2Valid())
-            "
+            [disabled]="(step() === 1 && !r2Symbol()) || (step() === 2 && !step2Valid())"
           >
             Siguiente
           </button>
         } @else {
-          <button
-            appButton
-            variant="primary"
-            (click)="isR2 ? confirmR2() : source() === 'csv' ? confirmCsv() : confirm()"
-            [disabled]="isR2 ? r2Loading() : downloading()"
-          >
-            {{
-              isR2
-                ? r2Loading()
-                  ? 'Cargando…'
-                  : 'Crear sesión'
-                : downloading()
-                  ? 'Descargando…'
-                  : 'Crear sesión'
-            }}
+          <button appButton variant="primary" (click)="confirmR2()" [disabled]="r2Loading()">
+            {{ r2Loading() ? 'Cargando…' : 'Crear sesión' }}
           </button>
         }
       </footer>

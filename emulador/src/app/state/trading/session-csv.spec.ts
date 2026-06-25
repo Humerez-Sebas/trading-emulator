@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSessionCsv, isSessionCsv, parseSessionCsv } from './session-csv';
+import { buildSessionCsv } from './session-csv';
 import { ClosedTrade } from './trading.models';
 
 function trade(partial: Partial<ClosedTrade>): ClosedTrade {
@@ -24,15 +24,13 @@ function trade(partial: Partial<ClosedTrade>): ClosedTrade {
   };
 }
 
-describe('isSessionCsv', () => {
-  it('detects session exports and rejects candle CSVs', () => {
-    expect(isSessionCsv('bar_time,evento,p1,p2,detalle\n')).toBe(true);
-    expect(isSessionCsv('time,open,high,low,close\n')).toBe(false);
+describe('buildSessionCsv', () => {
+  it('emits the bar_time,evento,p1,p2,detalle header', () => {
+    const csv = buildSessionCsv([]);
+    expect(csv).toBe('bar_time,evento,p1,p2,detalle\n');
   });
-});
 
-describe('buildSessionCsv -> parseSessionCsv round-trip', () => {
-  it('preserves the trade fields', () => {
+  it('emits one ORDEN_COLOCADA row and one CIERRE_* row per trade, ordered chronologically', () => {
     const original = [
       trade({}),
       trade({
@@ -52,70 +50,26 @@ describe('buildSessionCsv -> parseSessionCsv round-trip', () => {
         closeTime: 1768503600,
       }),
     ];
-    const parsed = parseSessionCsv(buildSessionCsv(original));
-    expect(parsed).toHaveLength(2);
-    const [a, b] = parsed;
-    expect(a.side).toBe('buy');
-    expect(a.origin).toBe('limit');
-    expect(a.entryPrice).toBeCloseTo(4588);
-    expect(a.exitPrice).toBeCloseTo(4600);
-    expect(a.sl).toBeCloseTo(4578);
-    expect(a.tp).toBeCloseTo(4600);
-    expect(a.lots).toBeCloseTo(0.1);
-    expect(a.outcome).toBe('tp');
-    expect(a.profit).toBeCloseTo(120);
-    expect(a.rMultiple).toBeCloseTo(1.2);
-    expect(a.riskUsd).toBeCloseTo(100);
-    expect(a.ambiguous).toBe(false);
-    // times survive the "YYYY-MM-DD HH:mm" round-trip (minute precision)
-    expect(Math.abs(a.openTime - 1768489200)).toBeLessThan(60);
+    const lines = buildSessionCsv(original).trim().split('\n');
+    expect(lines).toHaveLength(5); // header + 2 opens + 2 closes
 
-    expect(b.side).toBe('sell');
-    expect(b.origin).toBe('market');
-    expect(b.tp).toBeNull();
-    expect(b.outcome).toBe('sl');
-    expect(b.profit).toBeCloseTo(-90);
-    expect(b.ambiguous).toBe(true);
+    expect(lines[0]).toBe('bar_time,evento,p1,p2,detalle');
+    expect(lines[1]).toBe(
+      '2026-01-15 15:00,ORDEN_COLOCADA,4588.00,4578.00,BUY_LIMIT lotes=0.10 tp=4600.00 id=t1',
+    );
+    expect(lines[2]).toBe('2026-01-15 16:00,CIERRE_TP,4600.00,120.00,r=1.20 id=t1');
+    expect(lines[3]).toBe(
+      '2026-01-15 18:00,ORDEN_COLOCADA,4700.00,4715.00,SELL_MARKET lotes=0.06 id=t2',
+    );
+    expect(lines[4]).toBe('2026-01-15 19:00,CIERRE_SL,4715.00,-90.00,r=-1.00 ambiguo id=t2');
   });
 
-  it('pairs overlapping trades correctly via the id token', () => {
-    // t1 opens first but closes LAST: FIFO would mismatch, ids must not
-    const original = [
-      trade({ id: 'aaa', openTime: 1768489200, closeTime: 1768500000, profit: 120 }),
-      trade({
-        id: 'bbb',
-        openTime: 1768492800,
-        closeTime: 1768496400,
-        outcome: 'sl',
-        profit: -60,
-      }),
-    ];
-    const parsed = parseSessionCsv(buildSessionCsv(original));
-    const byId = new Map(parsed.map((t) => [t.id, t]));
-    expect(byId.get('aaa')?.outcome).toBe('tp');
-    expect(byId.get('aaa')?.profit).toBeCloseTo(120);
-    expect(byId.get('bbb')?.outcome).toBe('sl');
-    expect(byId.get('bbb')?.profit).toBeCloseTo(-60);
-  });
-
-  it('falls back to FIFO pairing for legacy CSVs without id', () => {
-    const csv = [
-      'bar_time,evento,p1,p2,detalle',
-      '2026-01-15 15:00,ORDEN_COLOCADA,4588.00,4578.00,BUY_LIMIT lotes=0.10 tp=4600.00',
-      '2026-01-15 16:00,CIERRE_TP,4600.00,120.00,r=1.20',
-    ].join('\n');
-    const parsed = parseSessionCsv(csv);
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0].outcome).toBe('tp');
-    expect(parsed[0].lots).toBeCloseTo(0.1);
-  });
-
-  it('ignores unknown events (eventos_python.csv style rows)', () => {
-    const csv = [
-      'bar_time,evento,p1,p2,detalle',
-      '2026-01-02 03:00,NUEVO_TECHO,4354.32,0.02,',
-      '2026-01-02 04:00,QUIEBRE,4354.32,0.00,O=4348.11',
-    ].join('\n');
-    expect(parseSessionCsv(csv)).toHaveLength(0);
+  it('maps each outcome to its CIERRE_* event name', () => {
+    const outcomes: ClosedTrade['outcome'][] = ['tp', 'sl', 'manual', 'session-end'];
+    const events = outcomes.map((outcome) => {
+      const csv = buildSessionCsv([trade({ outcome })]);
+      return csv.trim().split('\n')[2].split(',')[1];
+    });
+    expect(events).toEqual(['CIERRE_TP', 'CIERRE_SL', 'CIERRE_MANUAL', 'CIERRE_FIN_SESION']);
   });
 });

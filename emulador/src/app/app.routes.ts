@@ -5,8 +5,8 @@ import { r2OnboardingGuard } from './components/data-wizard/data-wizard.guard';
 export const routes: Routes = [
   {
     path: '',
-    // r2OnboardingGuard is a no-op for the default csv data source; for r2 it
-    // sends a first-time user (no datasets yet) to /mercados (the R2 data hub).
+    // r2OnboardingGuard sends a first-time user (no datasets yet) to
+    // /mercados (the R2 data hub) so they can pick a symbol before trading.
     canActivate: [authGuard, r2OnboardingGuard],
     loadComponent: () =>
       import('./pages/emulador/emulador-page.component').then((m) => m.EmuladorPageComponent),

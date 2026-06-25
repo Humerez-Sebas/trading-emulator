@@ -8,7 +8,6 @@ import {
   defaultTradingData,
 } from '../state/trading/trading.models';
 import { Workspace, WorkspaceMeta } from '../state/workspaces/workspaces.models';
-import { BackendSymbol, TfCoverage } from '../services/backend-api.service';
 
 // ---- candles ----
 export function candle(time: number, open = 100, high = 101, low = 99, close = 100): Candle {
@@ -128,21 +127,5 @@ export function workspaceMeta(p: Partial<WorkspaceMeta> = {}): WorkspaceMeta {
     activeSessionId: p.activeSessionId,
     activeClientUpdatedAt: p.activeClientUpdatedAt,
     activeSyncedAt: p.activeSyncedAt,
-  };
-}
-
-// ---- backend symbols (mercados / crear-sesion) ----
-export function tfCoverage(p: Partial<TfCoverage> = {}): TfCoverage {
-  return { tf: 'H1', desde: 1_700_000_000, hasta: 1_710_000_000, velas: 1000, ...p };
-}
-
-export function backendSymbol(p: Partial<BackendSymbol> = {}): BackendSymbol {
-  return {
-    name: 'XAUUSD',
-    descripcion: 'Oro',
-    categoria: 'Metales',
-    digits: 2,
-    cobertura: [tfCoverage()],
-    ...p,
   };
 }
