@@ -117,13 +117,20 @@ export class DataOnboardingService {
   async runJob(manifest: Manifest, job: OnboardingJob, worker: IngestWorker): Promise<JobOutcome> {
     const payload = await this.prepareJob(manifest, job);
     if (!payload) return 'skipped';
-
-    if (payload.existing) {
-      await this.db.clearDatasetCandles(job.symbol, payload.timeframe);
-    }
-    await this.ingestOn(worker, payload.buffer, job.symbol, payload.timeframe);
-    await this.db.putDataset(payload.record);
+    await this.processPayload(payload, worker);
     return 'ingested';
+  }
+
+  /** Clears stale candles (on re-ingest), runs the worker, records the dataset. */
+  private async processPayload(
+    payload: NonNullable<Awaited<ReturnType<DataOnboardingService['prepareJob']>>>,
+    worker: IngestWorker,
+  ): Promise<void> {
+    if (payload.existing) {
+      await this.db.clearDatasetCandles(payload.record.symbol, payload.timeframe);
+    }
+    await this.ingestOn(worker, payload.buffer, payload.record.symbol, payload.timeframe);
+    await this.db.putDataset(payload.record);
   }
 
   /**
@@ -220,12 +227,7 @@ export class DataOnboardingService {
         let status: JobOutcome = 'skipped';
 
         if (payload) {
-          // We have a buffer, run ingestion
-          if (payload.existing) {
-            await this.db.clearDatasetCandles(symbol, payload.timeframe);
-          }
-          await this.ingestOn(worker, payload.buffer, symbol, payload.timeframe);
-          await this.db.putDataset(payload.record);
+          await this.processPayload(payload, worker);
           status = 'ingested';
         }
 
@@ -252,17 +254,19 @@ export class DataOnboardingService {
     timeframe: Timeframe,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      const settle = (done: () => void): void => {
+        worker.onmessage = null;
+        worker.onerror = null;
+        done();
+      };
       worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
         const msg = ev.data;
-        if (msg.type === 'done') {
-          resolve();
-        } else if (msg.type === 'error') {
-          reject(new Error(msg.message));
-        }
+        if (msg.type === 'done') settle(resolve);
+        else if (msg.type === 'error') settle(() => reject(new Error(msg.message)));
         // 'progress' messages are ignored here (wizard shows per-job progress).
       };
       worker.onerror = (err: unknown) => {
-        reject(err instanceof Error ? err : new Error(String(err)));
+        settle(() => reject(err instanceof Error ? err : new Error(String(err))));
       };
       worker.postMessage({ buffer, symbol, timeframe });
     });

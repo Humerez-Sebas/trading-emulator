@@ -213,6 +213,14 @@ describe('DataOnboardingService.runJob', () => {
     await svc.runJob(MANIFEST, M1_JOB, worker as never);
     expect(worker.terminated).toBe(false);
   });
+
+  it('clears the worker message/error handlers after a job settles', async () => {
+    const db = dbStub();
+    const { svc, worker } = makeService({ db });
+    await svc.runJob(MANIFEST, M1_JOB, worker as never);
+    expect(worker.onmessage).toBeNull();
+    expect(worker.onerror).toBeNull();
+  });
 });
 
 describe('DataOnboardingService.runJobs (batch with progress)', () => {
