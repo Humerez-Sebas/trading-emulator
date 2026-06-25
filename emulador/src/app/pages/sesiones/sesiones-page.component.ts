@@ -627,6 +627,7 @@ export class SesionesPageComponent {
     try {
       const manifest = await this.manifests.fetchManifest();
       const jobs = missing.map((d) => this.jobForDataset(d));
+      // NOTE: runJobs no-ops if another batch is already in flight (service guard); a resolved promise here does not guarantee THIS caller's datasets finished. Follow-up: re-check missing() after this resolves.
       await this.onboarding.runJobs(manifest, jobs, (p) =>
         this.downloadProgress.set(Math.round((p.index / p.total) * 100)),
       );

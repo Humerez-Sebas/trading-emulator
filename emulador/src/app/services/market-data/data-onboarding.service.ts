@@ -164,6 +164,7 @@ export class DataOnboardingService {
     }
 
     // 3) download the parquet bytes for this partition (`<year>.parquet`).
+    // Conditional arity (see ParquetDownloadService): pass the signal only when present so strict-arity download mocks keep matching.
     const buffer = signal
       ? await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`, signal)
       : await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`);

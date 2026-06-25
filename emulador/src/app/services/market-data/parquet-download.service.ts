@@ -45,6 +45,7 @@ export class ParquetDownloadService {
       );
     }
     const url = `${this.baseUrl}/${MARKET_DATA_PREFIX}/${symbol}/${tf}/${file}`;
+    // Conditional arity: omit the 4th arg when there's no signal so strict-arity test mocks (toHaveBeenCalledWith 3 args) still match; fetch(url, {signal: undefined}) is otherwise equivalent.
     const res = signal ? await fetch(url, { signal }) : await fetch(url);
     if (!res.ok) {
       throw new Error(
