@@ -70,4 +70,18 @@ describe('ParquetDownloadService.downloadParquet', () => {
       /marketDataBaseUrl|URL/i,
     );
   });
+
+  it('forwards the AbortSignal to fetch', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      } as Response),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const svc = new ParquetDownloadService('https://r2.example');
+    const controller = new AbortController();
+    await svc.downloadParquet('US30', 'd1', 'all.parquet', controller.signal);
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), { signal: controller.signal });
+  });
 });

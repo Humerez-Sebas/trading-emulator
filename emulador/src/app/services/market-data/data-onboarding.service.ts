@@ -93,6 +93,12 @@ export class DataOnboardingService {
   private _progress = signal<OnboardingProgress | null>(null);
   public progress = this._progress.asReadonly();
 
+  /** Aborts the downloads of the active batch (if any). */
+  private activeAbort: AbortController | null = null;
+  cancel(): void {
+    this.activeAbort?.abort();
+  }
+
   constructor(
     private readonly db: WorkspaceDbService = inject(WorkspaceDbService),
     private readonly downloads: ParquetDownloadService = inject(ParquetDownloadService),
@@ -139,7 +145,7 @@ export class DataOnboardingService {
    * Returns `null` if the job should be skipped, otherwise a payload object
    * with the buffer and dataset record details.
    */
-  private async prepareJob(manifest: Manifest, job: OnboardingJob) {
+  private async prepareJob(manifest: Manifest, job: OnboardingJob, signal?: AbortSignal) {
     const { symbol, tf, year } = job;
     const entry = this.manifests.getEntry(manifest, symbol, tf, year);
     if (!entry) {
@@ -158,7 +164,9 @@ export class DataOnboardingService {
     }
 
     // 3) download the parquet bytes for this partition (`<year>.parquet`).
-    const buffer = await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`);
+    const buffer = signal
+      ? await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`, signal)
+      : await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`);
 
     // 5) record the dataset (size/etag/updatedAt straight from the manifest).
     const record: DatasetRecord = {
@@ -207,10 +215,12 @@ export class DataOnboardingService {
     this._busySymbol.set(symbol);
     this._progress.set(null);
 
+    const controller = new AbortController();
+    this.activeAbort = controller;
     const worker = this.workerFactory();
     try {
       // Start downloading the first job immediately
-      let nextDownload = this.prepareJob(manifest, jobs[0]);
+      let nextDownload = this.prepareJob(manifest, jobs[0], controller.signal);
 
       for (let i = 0; i < jobs.length; i++) {
         const job = jobs[i];
@@ -220,7 +230,7 @@ export class DataOnboardingService {
 
         // Fire off the download for the NEXT job (if any) while we ingest the current one
         if (i + 1 < jobs.length) {
-          nextDownload = this.prepareJob(manifest, jobs[i + 1]);
+          nextDownload = this.prepareJob(manifest, jobs[i + 1], controller.signal);
           nextDownload.catch(() => undefined); // Prevent unhandled rejection events in the background
         }
 
@@ -236,6 +246,8 @@ export class DataOnboardingService {
         onProgress?.(p);
       }
     } finally {
+      controller.abort(); // kill any prefetch still in flight
+      this.activeAbort = null;
       worker.terminate();
       this._busySymbol.set(null);
       this._progress.set(null);

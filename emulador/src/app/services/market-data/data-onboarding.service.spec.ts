@@ -300,7 +300,7 @@ describe('DataOnboardingService.runJobs (batch with progress)', () => {
     // H1 skipped (etag match), M1 ingested
     expect(progress.map((p) => p.status)).toEqual(['skipped', 'ingested']);
     expect(download).toHaveBeenCalledTimes(1);
-    expect(download).toHaveBeenCalledWith('XAUUSD', 'm1', '2024.parquet');
+    expect(download).toHaveBeenCalledWith('XAUUSD', 'm1', '2024.parquet', expect.anything());
   });
 
   it('reuses ONE worker across the whole batch and terminates it exactly once at the end', async () => {
@@ -358,5 +358,20 @@ describe('DataOnboardingService.runJobs (batch with progress)', () => {
     release!();
     await first;
     expect(svc.busySymbol()).toBeNull();
+  });
+
+  it('aborts the shared download signal when the batch settles (kills in-flight prefetch)', async () => {
+    const db = dbStub();
+    const signals: (AbortSignal | undefined)[] = [];
+    const download = vi.fn((_s: string, _tf: string, _f: string, signal?: AbortSignal) => {
+      signals.push(signal);
+      return Promise.resolve(new Uint8Array([1, 2, 3]).buffer);
+    });
+    // Worker errors on the first ingest -> the batch rejects.
+    const worker = new FakeWorker({ response: 'error', errorMessage: 'boom' });
+    const { svc } = makeService({ db, download, worker });
+
+    await expect(svc.runJobs(MANIFEST, [M1_JOB, H1_JOB])).rejects.toThrow(/boom/);
+    expect(signals.some((s) => s?.aborted)).toBe(true);
   });
 });
