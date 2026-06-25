@@ -190,6 +190,10 @@ export class DataOnboardingService {
     onProgress?: (progress: OnboardingProgress) => void,
   ): Promise<void> {
     if (!jobs.length) return;
+    // Reentrancy guard: this singleton owns the busy state, so a second batch
+    // dispatched while one is in flight (any of the 3 callers) is a no-op
+    // instead of corrupting _busySymbol/_progress and spawning a 2nd worker.
+    if (this._busySymbol()) return;
     const total = jobs.length;
     const symbol = jobs[0].symbol;
 

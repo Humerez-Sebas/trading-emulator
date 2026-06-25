@@ -321,4 +321,34 @@ describe('DataOnboardingService.runJobs (batch with progress)', () => {
     // (c) the worker is terminated exactly once, after the batch finishes.
     expect(worker.terminated).toBe(true);
   });
+
+  it('is a no-op when a batch is already in flight (reentrancy guard)', async () => {
+    const db = dbStub();
+    // A worker we can hold open so the first batch stays mid-flight.
+    let release: (() => void) | undefined;
+    const held = new FakeWorker();
+    held.postMessage = () => {
+      queueMicrotask(() => {
+        new Promise<void>((r) => (release = r)).then(() =>
+          held.onmessage?.({ data: { type: 'done', inserted: 1 } } as MessageEvent),
+        );
+      });
+    };
+    const { svc, factory } = makeService({ db, worker: held });
+
+    const first = svc.runJobs(MANIFEST, [M1_JOB]);
+    // let it become busy (and let the held worker's postMessage actually fire,
+    // so `release` is assigned before we try to call it below)
+    for (let i = 0; i < 10 && !release; i++) await Promise.resolve();
+    expect(svc.busySymbol()).toBe('XAUUSD');
+
+    // a concurrent call must NOT spawn a second worker or change state
+    await svc.runJobs(MANIFEST, [H1_JOB]);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(svc.busySymbol()).toBe('XAUUSD');
+
+    release!();
+    await first;
+    expect(svc.busySymbol()).toBeNull();
+  });
 });
