@@ -208,6 +208,7 @@ export class DataOnboardingService {
         // Fire off the download for the NEXT job (if any) while we ingest the current one
         if (i + 1 < jobs.length) {
           nextDownload = this.prepareJob(manifest, jobs[i + 1]);
+          nextDownload.catch(() => {}); // Prevent unhandled rejection events in the background
         }
         
         let status: JobOutcome = 'skipped';
