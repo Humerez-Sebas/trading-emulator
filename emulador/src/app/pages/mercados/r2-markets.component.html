@@ -3,7 +3,7 @@
     <div>
       <h1>Mercados</h1>
       <p class="sub">
-        Datos de mercado (R2 / Parquet): descarga y administra particiones por símbolo.
+        Descarga el histórico de precios de cada activo para practicar sin conexión.
       </p>
     </div>
     @if (state() === 'ok' && datasetCount()) {
@@ -45,10 +45,10 @@
 
   @switch (state()) {
     @case ('loading') {
-      <p class="status" role="status">Cargando catálogo de datos…</p>
+      <p class="status" role="status">Cargando activos…</p>
     }
     @case ('error') {
-      <ui-empty-state title="No se pudo cargar el catálogo" [hint]="errorMsg()" [boxed]="true">
+      <ui-empty-state title="No se pudieron cargar los activos" [hint]="errorMsg()" [boxed]="true">
         <svg
           icon
           width="28"
@@ -72,14 +72,12 @@
       @if (!catalog().length) {
         <ui-empty-state
           [title]="
-            query()
-              ? 'Sin resultados para «' + query() + '»'
-              : 'El catálogo no tiene activos todavía'
+            query() ? 'Sin resultados para «' + query() + '»' : 'Todavía no hay activos disponibles'
           "
           [hint]="
             query()
-              ? 'Prueba con el nombre del símbolo, p. ej. «XAUUSD» o «US30».'
-              : 'El manifiesto de R2 no contiene ningún símbolo. Sube datos al bucket y recarga.'
+              ? 'Prueba con el nombre del activo, p. ej. «XAUUSD» o «US30».'
+              : 'Aún no se publicó ningún activo para descargar. Recarga la página más tarde.'
           "
           [boxed]="true"
         />
@@ -91,8 +89,7 @@
               <div class="card-title">
                 <h3>{{ entry.symbol }}</h3>
                 <p class="cov-summary">
-                  {{ downloadedCount(entry) }} / {{ entry.partitions.length }} particiones
-                  descargadas
+                  {{ downloadedCount(entry) }} de {{ entry.partitions.length }} períodos descargados
                 </p>
               </div>
               @if (hasPending(entry)) {
@@ -112,12 +109,12 @@
               <div class="progress" role="status">
                 <p>Descargando… {{ p.index }} / {{ p.total }} ({{ progressPct() }}%)</p>
                 <div class="bar">
-                  <span class="fill" [style.width.%]="progressPct()"></span>
+                  <span class="fill" [style.--fill]="progressPct() / 100"></span>
                 </div>
               </div>
             }
 
-            <ul class="parts" aria-label="Particiones disponibles">
+            <ul class="parts" aria-label="Históricos disponibles">
               @for (p of entry.partitions; track p.tf + '|' + p.partition) {
                 <li class="part" [class.is-downloaded]="p.downloaded">
                   <span class="part-tf">{{ p.tf.toUpperCase() }}</span>
@@ -186,4 +183,13 @@
       </div>
     }
   }
+
+  <details class="tech-details">
+    <summary>Detalles técnicos</summary>
+    <p>
+      Los precios se guardan en este navegador en formato <strong>Parquet</strong> y se descargan
+      desde <strong>Cloudflare R2</strong>. Cada activo se divide por temporalidad (M1 por año; H1 y
+      D1 completas) según un manifiesto que se actualiza cada cierto tiempo.
+    </p>
+  </details>
 </div>

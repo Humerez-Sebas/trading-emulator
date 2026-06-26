@@ -39,7 +39,7 @@
 
 .progress {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border);
   overflow: hidden;
   margin-top: var(--space-1);
@@ -47,8 +47,11 @@
 .progress .bar {
   display: block;
   height: 100%;
+  width: 100%;
   background: var(--accent, var(--text));
-  transition: width var(--duration-base) var(--ease-out);
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  transition: transform var(--duration-base) var(--ease-out);
 }
 
 .muted {

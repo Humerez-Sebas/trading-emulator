@@ -33,14 +33,20 @@ export class ParquetDownloadService {
    * @param file   Parquet filename including extension (e.g. `2024.parquet`,
    *               `all.parquet`).
    */
-  async downloadParquet(symbol: string, tf: string, file: string): Promise<ArrayBuffer> {
+  async downloadParquet(
+    symbol: string,
+    tf: string,
+    file: string,
+    signal?: AbortSignal,
+  ): Promise<ArrayBuffer> {
     if (!this.baseUrl) {
       throw new Error(
         'ParquetDownloadService: marketDataBaseUrl no configurado (define environment.marketDataBaseUrl para la fuente R2).',
       );
     }
     const url = `${this.baseUrl}/${MARKET_DATA_PREFIX}/${symbol}/${tf}/${file}`;
-    const res = await fetch(url);
+    // Conditional arity: omit the 4th arg when there's no signal so strict-arity test mocks (toHaveBeenCalledWith 3 args) still match; fetch(url, {signal: undefined}) is otherwise equivalent.
+    const res = signal ? await fetch(url, { signal }) : await fetch(url);
     if (!res.ok) {
       throw new Error(
         `ParquetDownloadService: no se pudo descargar el parquet ${symbol}/${tf}/${file} (HTTP ${res.status}).`,

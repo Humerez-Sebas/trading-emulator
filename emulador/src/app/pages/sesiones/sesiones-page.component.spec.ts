@@ -440,7 +440,7 @@ describe('SesionesPageComponent', () => {
   it('open: current asset + archived → switchSession + goToTime, navigates', async () => {
     create({ currentAsset: 'XAUUSD' });
     await settle();
-    component.open(card({ symbol: 'XAUUSD', id: 's1', cursor: 500 }));
+    await component.open(card({ symbol: 'XAUUSD', id: 's1', cursor: 500 }));
     expect(dispatch).toHaveBeenCalledWith(
       TradingActions.switchSession({ id: 's1', currentCursor: 0 }),
     );
@@ -451,7 +451,7 @@ describe('SesionesPageComponent', () => {
   it('open: current asset + active card just navigates', async () => {
     create({ currentAsset: 'XAUUSD' });
     await settle();
-    component.open(card({ symbol: 'XAUUSD', id: null }));
+    await component.open(card({ symbol: 'XAUUSD', id: null }));
     expect(dispatch).not.toHaveBeenCalled();
     expect(routerStub.navigateByUrl).toHaveBeenCalledWith('/');
   });
@@ -459,9 +459,13 @@ describe('SesionesPageComponent', () => {
   it('open: other asset → switchAsset({thenOpenSession})', async () => {
     create({ currentAsset: 'US30' });
     await settle();
-    component.open(card({ symbol: 'XAUUSD', id: 's1' }));
+    await component.open(card({ symbol: 'XAUUSD', id: 's1' }));
     expect(dispatch).toHaveBeenCalledWith(
-      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 's1' }),
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'XAUUSD',
+        thenOpenSession: 's1',
+      }),
     );
   });
 
@@ -495,7 +499,11 @@ describe('SesionesPageComponent', () => {
     expect(putMeta).toHaveBeenCalled();
     // once locally materialized, the existing other-asset open flow runs
     expect(dispatch).toHaveBeenCalledWith(
-      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'XAUUSD',
+        thenOpenSession: 'cloud-1',
+      }),
     );
   });
 
@@ -632,7 +640,11 @@ describe('SesionesPageComponent', () => {
     expect(component.missing()).toHaveLength(0); // modal closed
     expect(putMeta).toHaveBeenCalled(); // materialized after download
     expect(dispatch).toHaveBeenCalledWith(
-      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'XAUUSD',
+        thenOpenSession: 'cloud-1',
+      }),
     );
   });
 
@@ -679,7 +691,11 @@ describe('SesionesPageComponent', () => {
     expect(component.missing()).toHaveLength(0);
     expect(putMeta).toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalledWith(
-      WorkspacesActions.switchAsset({ symbol: 'XAUUSD', thenOpenSession: 'cloud-1' }),
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'XAUUSD',
+        thenOpenSession: 'cloud-1',
+      }),
     );
   });
 

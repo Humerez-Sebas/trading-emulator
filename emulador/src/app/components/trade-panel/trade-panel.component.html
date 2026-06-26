@@ -125,7 +125,7 @@
     <section class="list">
       <h4>Posiciones ({{ view().positions.length }})</h4>
       @for (p of view().positions; track p.id) {
-        <div class="item">
+        <div class="item" animate.enter="item-enter" animate.leave="item-leave">
           <div class="item-head">
             <span class="badge" [class.buy]="p.side === 'buy'" [class.sell]="p.side === 'sell'">
               {{ sideLabel(p.side) }} {{ p.lots | number: '1.2-2' }}
@@ -185,7 +185,7 @@
     <section class="list">
       <h4>Órdenes pendientes ({{ view().orders.length }})</h4>
       @for (o of view().orders; track o.id) {
-        <div class="item">
+        <div class="item" animate.enter="item-enter" animate.leave="item-leave">
           <div class="item-head">
             <span class="badge" [class.buy]="o.side === 'buy'" [class.sell]="o.side === 'sell'">
               {{ sideLabel(o.side) }} {{ typeLabel(o.type) }} {{ o.lots | number: '1.2-2' }}
@@ -238,6 +238,33 @@
         </div>
       }
     </section>
+  }
+
+  @if (!view().positions.length && !view().orders.length) {
+    <ui-empty-state
+      [compact]="true"
+      title="No hay posiciones activas"
+      hint="Usa el formulario de arriba para abrir tu primera operación."
+    >
+      <svg
+        icon
+        viewBox="0 0 24 24"
+        width="30"
+        height="30"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+        aria-hidden="true"
+      >
+        <path d="M8 4v3" />
+        <rect x="6" y="7" width="4" height="8" rx="1" />
+        <path d="M8 15v4" />
+        <path d="M16 3v4" />
+        <rect x="14" y="7" width="4" height="6" rx="1" />
+        <path d="M16 13v6" />
+      </svg>
+    </ui-empty-state>
   }
 
   <footer class="foot">

@@ -15,6 +15,19 @@
   font-size: var(--text-sm);
 }
 
+/* Tabular figures everywhere a live number can change (balance, equity,
+   price, lots, risk, PnL), so digits keep a fixed width and the layout stays
+   rock-steady as values tick — DESIGN.md "The Tabular Rule". */
+.account .row strong,
+.market-price,
+.sizing,
+.badge,
+.pnl,
+.edit-row .entry,
+input {
+  font-variant-numeric: tabular-nums;
+}
+
 .head {
   padding: var(--space-3);
   border-bottom: 1px solid var(--border);
@@ -254,4 +267,39 @@ button:focus-visible {
 }
 .foot > * {
   flex: 1;
+}
+
+/* Position / order rows ease in and out so the list never jumps when a trade
+   opens or closes (Angular native animate.enter / animate.leave). */
+.item-enter {
+  animation: trade-item-in var(--duration-fast) var(--ease-out);
+}
+.item-leave {
+  animation: trade-item-out var(--duration-fast) var(--ease-out);
+}
+@keyframes trade-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes trade-item-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .item-enter,
+  .item-leave {
+    animation: none;
+  }
 }

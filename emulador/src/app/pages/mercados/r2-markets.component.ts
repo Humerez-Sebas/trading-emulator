@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DatasetRecord } from '../../services/market-data-db';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { BadgeDirective } from '../../components/ui/badge.directive';
@@ -8,7 +8,6 @@ import { ManifestService, Manifest } from '../../services/market-data/manifest.s
 import {
   DataOnboardingService,
   OnboardingJob,
-  OnboardingProgress,
 } from '../../services/market-data/data-onboarding.service';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import { formatBytes } from '../storage-manager/storage-manager.logic';
@@ -71,10 +70,10 @@ export class R2MarketsComponent {
   totalLabel = computed(() => formatBytes(this.storage.totalBytes(this.datasets())));
 
   /** Symbol currently downloading (disables its actions), or null. */
-  busySymbol = signal<string | null>(null);
+  busySymbol = this.onboarding.busySymbol;
   /** Id of the dataset currently being deleted, or null. */
   deletingId = signal<string | null>(null);
-  progress = signal<OnboardingProgress | null>(null);
+  progress = this.onboarding.progress;
 
   progressPct = computed(() => {
     const p = this.progress();
@@ -86,6 +85,26 @@ export class R2MarketsComponent {
 
   constructor() {
     void this.load();
+
+    // The busy/progress state lives in the singleton service so it survives
+    // navigation. The COMPLETION side-effect must too: when a background batch
+    // finishes (busySymbol -> null) refresh the catalog, so navigating away and
+    // back mid-download doesn't leave stale "Descargar" rows.
+    let wasBusy = this.onboarding.busySymbol() !== null;
+    effect(() => {
+      const isBusy = this.onboarding.busySymbol() !== null;
+      if (wasBusy && !isBusy) void this.refreshDatasets();
+      wasBusy = isBusy;
+    });
+  }
+
+  /** Re-reads the downloaded datasets (best-effort; keeps the current list on error). */
+  private async refreshDatasets(): Promise<void> {
+    try {
+      this.datasets.set(await this.storage.listDatasets());
+    } catch {
+      /* keep the current list */
+    }
   }
 
   async load(): Promise<void> {
@@ -136,17 +155,13 @@ export class R2MarketsComponent {
   private async runJobs(symbol: string, jobs: OnboardingJob[]): Promise<void> {
     const manifest = this.manifest();
     if (!manifest || !jobs.length || this.busySymbol()) return;
-    this.busySymbol.set(symbol);
     this.errorMsg.set('');
-    this.progress.set(null);
     try {
-      await this.onboarding.runJobs(manifest, jobs, (p) => this.progress.set(p));
-      this.datasets.set(await this.storage.listDatasets());
+      await this.onboarding.runJobs(manifest, jobs);
+      await this.refreshDatasets();
     } catch (e) {
       this.errorMsg.set((e as Error).message || 'La descarga falló. Vuelve a intentarlo.');
     }
-    this.busySymbol.set(null);
-    this.progress.set(null);
   }
 
   /** Delete a downloaded partition (its row + candles) behind a confirm. */

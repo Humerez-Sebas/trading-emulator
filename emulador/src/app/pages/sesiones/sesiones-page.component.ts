@@ -22,14 +22,14 @@ import type { DatasetRecord } from '../../services/market-data-db';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
-import { Candle, Timeframe } from '../../models';
+import { loadAnchorCandles } from '../../state/workspaces/load-anchor-candles';
+import { Timeframe } from '../../models';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import {
   DataOnboardingService,
   OnboardingJob,
 } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
-import { PendingCsv } from '../../state/workspaces/workspaces.actions';
 import { ClosedTrade, defaultTradingData, PendingOrder } from '../../state/trading/trading.models';
 import { Drawing } from '../../state/drawings/drawings.models';
 import {
@@ -627,6 +627,7 @@ export class SesionesPageComponent {
     try {
       const manifest = await this.manifests.fetchManifest();
       const jobs = missing.map((d) => this.jobForDataset(d));
+      // NOTE: runJobs no-ops if another batch is already in flight (service guard); a resolved promise here does not guarantee THIS caller's datasets finished. Follow-up: re-check missing() after this resolves.
       await this.onboarding.runJobs(manifest, jobs, (p) =>
         this.downloadProgress.set(Math.round((p.index / p.total) * 100)),
       );
@@ -675,16 +676,11 @@ export class SesionesPageComponent {
     const plan = restorePlan(session);
     // selectedTfs are anchors (M1/H1/D1) — a subset of Timeframe — so read each
     // anchor's stored candles and hand them to the workspace as PendingCsv.
-    const pending: PendingCsv[] = [];
-    for (const tf of plan.selectedTfs) {
-      const timeframe = tf as Timeframe;
-      const candles: Candle[] = await this.repo.getCandles(plan.symbol, timeframe);
-      pending.push({
-        tf: timeframe,
-        candles,
-        fileName: `${plan.symbol.toLowerCase()}_${tf.toLowerCase()}.csv`,
-      });
-    }
+    const pending = await loadAnchorCandles(
+      this.repo,
+      plan.symbol,
+      plan.selectedTfs as Timeframe[],
+    );
 
     // Reconstruct the persistable trading slice from the session. Balance follows
     // the realized convention used across the reducer: initialBalance + Σ profits.
@@ -753,12 +749,29 @@ export class SesionesPageComponent {
         }
       }
     } else {
-      this.store.dispatch(
-        WorkspacesActions.switchAsset({
-          symbol: card.symbol,
-          thenOpenSession: card.id ?? undefined,
-        }),
-      );
+      // NEW LOGIC: Fetch target workspace meta to get selectedTfs
+      const meta = this.metas().find((m) => m.symbol === card.symbol);
+      const tfs = (
+        meta?.selectedTfs?.length ? meta.selectedTfs : ['M1', 'H1', 'D1']
+      ) as Timeframe[];
+
+      try {
+        const pending = await loadAnchorCandles(this.repo, card.symbol, tfs);
+
+        this.store.dispatch(
+          WorkspacesActions.switchAsset({
+            symbol: card.symbol,
+            selectedTfs: tfs,
+            thenLoad: pending,
+            thenOpenSession: card.id ?? undefined,
+          }),
+        );
+      } catch (e) {
+        this.importError.set(
+          (e as Error).message || 'Error leyendo los datos locales de IndexedDB.',
+        );
+        return;
+      }
     }
     void this.router.navigateByUrl('/');
   }

@@ -59,6 +59,9 @@
 }
 .progress-fill {
   height: 100%;
+  width: 100%;
   background: var(--accent);
-  transition: width var(--duration-fast) var(--ease-out);
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  transition: transform var(--duration-fast) var(--ease-out);
 }

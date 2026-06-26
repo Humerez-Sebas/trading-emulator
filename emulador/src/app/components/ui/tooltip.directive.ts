@@ -23,6 +23,11 @@ type TooltipPos = 'top' | 'bottom' | 'left' | 'right';
 export class TooltipDirective implements OnDestroy {
   /** Tooltip text (empty disables it). */
   appTooltip = input('');
+  /**
+   * Optional keyboard shortcut shown as elegant <kbd> chips after the label,
+   * e.g. "Alt+T" → "Alt" "T". Tokens are split on "+".
+   */
+  tooltipShortcut = input('');
   tooltipPosition = input<TooltipPos>('top');
   tooltipDelay = input(400);
 
@@ -53,7 +58,29 @@ export class TooltipDirective implements OnDestroy {
     const tip = document.createElement('div');
     tip.className = 'ui-tooltip';
     tip.setAttribute('role', 'tooltip');
-    tip.textContent = text;
+
+    const shortcut = this.tooltipShortcut().trim();
+    if (shortcut) {
+      tip.classList.add('ui-tooltip--with-kbd');
+      const label = document.createElement('span');
+      label.textContent = text;
+      tip.appendChild(label);
+      const keys = document.createElement('span');
+      keys.className = 'ui-kbd-group';
+      for (const key of shortcut
+        .split('+')
+        .map((k) => k.trim())
+        .filter(Boolean)) {
+        const kbd = document.createElement('kbd');
+        kbd.className = 'ui-kbd';
+        kbd.textContent = key;
+        keys.appendChild(kbd);
+      }
+      tip.appendChild(keys);
+    } else {
+      tip.textContent = text;
+    }
+
     document.body.appendChild(tip);
     this.tip = tip;
 

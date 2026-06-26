@@ -213,9 +213,59 @@ describe('DataOnboardingService.runJob', () => {
     await svc.runJob(MANIFEST, M1_JOB, worker as never);
     expect(worker.terminated).toBe(false);
   });
+
+  it('clears the worker message/error handlers after a job settles', async () => {
+    const db = dbStub();
+    const { svc, worker } = makeService({ db });
+    await svc.runJob(MANIFEST, M1_JOB, worker as never);
+    expect(worker.onmessage).toBeNull();
+    expect(worker.onerror).toBeNull();
+  });
 });
 
 describe('DataOnboardingService.runJobs (batch with progress)', () => {
+  it('exposes busySymbol and progress signals during execution', async () => {
+    const db = dbStub();
+    // Worker that doesn't immediately resolve so we can check intermediate state
+    let resolveWorker: ((val?: any) => void) | undefined = undefined;
+    const slowWorker = new FakeWorker();
+    slowWorker.postMessage = () => {
+      queueMicrotask(() => {
+        // Pause worker execution
+        new Promise((r) => (resolveWorker = r)).then(() => {
+          slowWorker.onmessage?.({ data: { type: 'done', inserted: 10 } } as MessageEvent);
+        });
+      });
+    };
+    const { svc } = makeService({ db, worker: slowWorker });
+
+    expect(svc.busySymbol()).toBeNull();
+    expect(svc.progress()).toBeNull();
+
+    const promise = svc.runJobs(MANIFEST, [M1_JOB, H1_JOB]);
+
+    // Wait for the download to finish and worker to be invoked
+    // which takes a couple of microtasks due to Promises.
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+      if (resolveWorker) break;
+    }
+
+    expect(svc.busySymbol()).toBe('XAUUSD');
+    // First job hasn't finished yet, progress is tracked via the callback logic or updated signals
+
+    resolveWorker!(); // finish M1
+    resolveWorker = undefined as any;
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+      if (resolveWorker) break;
+    }
+    resolveWorker!(); // finish H1
+
+    await promise;
+    expect(svc.busySymbol()).toBeNull();
+  });
+
   it('runs every job in order and reports per-job progress', async () => {
     const db = dbStub();
     const { svc } = makeService({ db });
@@ -250,7 +300,7 @@ describe('DataOnboardingService.runJobs (batch with progress)', () => {
     // H1 skipped (etag match), M1 ingested
     expect(progress.map((p) => p.status)).toEqual(['skipped', 'ingested']);
     expect(download).toHaveBeenCalledTimes(1);
-    expect(download).toHaveBeenCalledWith('XAUUSD', 'm1', '2024.parquet');
+    expect(download).toHaveBeenCalledWith('XAUUSD', 'm1', '2024.parquet', expect.anything());
   });
 
   it('reuses ONE worker across the whole batch and terminates it exactly once at the end', async () => {
@@ -278,5 +328,50 @@ describe('DataOnboardingService.runJobs (batch with progress)', () => {
     expect(worker.posted.map((p) => p.timeframe)).toEqual(['M1', 'D1']);
     // (c) the worker is terminated exactly once, after the batch finishes.
     expect(worker.terminated).toBe(true);
+  });
+
+  it('is a no-op when a batch is already in flight (reentrancy guard)', async () => {
+    const db = dbStub();
+    // A worker we can hold open so the first batch stays mid-flight.
+    let release: (() => void) | undefined;
+    const held = new FakeWorker();
+    held.postMessage = () => {
+      queueMicrotask(() => {
+        new Promise<void>((r) => (release = r)).then(() =>
+          held.onmessage?.({ data: { type: 'done', inserted: 1 } } as MessageEvent),
+        );
+      });
+    };
+    const { svc, factory } = makeService({ db, worker: held });
+
+    const first = svc.runJobs(MANIFEST, [M1_JOB]);
+    // let it become busy (and let the held worker's postMessage actually fire,
+    // so `release` is assigned before we try to call it below)
+    for (let i = 0; i < 10 && !release; i++) await Promise.resolve();
+    expect(svc.busySymbol()).toBe('XAUUSD');
+
+    // a concurrent call must NOT spawn a second worker or change state
+    await svc.runJobs(MANIFEST, [H1_JOB]);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(svc.busySymbol()).toBe('XAUUSD');
+
+    release!();
+    await first;
+    expect(svc.busySymbol()).toBeNull();
+  });
+
+  it('aborts the shared download signal when the batch settles (kills in-flight prefetch)', async () => {
+    const db = dbStub();
+    const signals: (AbortSignal | undefined)[] = [];
+    const download = vi.fn((_s: string, _tf: string, _f: string, signal?: AbortSignal) => {
+      signals.push(signal);
+      return Promise.resolve(new Uint8Array([1, 2, 3]).buffer);
+    });
+    // Worker errors on the first ingest -> the batch rejects.
+    const worker = new FakeWorker({ response: 'error', errorMessage: 'boom' });
+    const { svc } = makeService({ db, download, worker });
+
+    await expect(svc.runJobs(MANIFEST, [M1_JOB, H1_JOB])).rejects.toThrow(/boom/);
+    expect(signals.some((s) => s?.aborted)).toBe(true);
   });
 });

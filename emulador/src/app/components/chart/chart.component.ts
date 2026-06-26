@@ -268,7 +268,7 @@ function hexToRgba(hex: string, alpha: number): string {
         padding: 14px;
         background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: calc(var(--radius) * 2);
+        border-radius: var(--radius-md);
         box-shadow: var(--shadow);
       }
       .date-dialog h4 {
@@ -502,12 +502,23 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   };
 
   ngAfterViewInit(): void {
+    // Initial canvas colors come straight from the DESIGN.md tokens.
+    // lightweight-charts paints to <canvas> and can't resolve CSS var(), so we
+    // read the computed token values once here. applyColors() (store-driven)
+    // takes over on the first selectChartStyle emission for theme/user overrides.
+    const tokens = getComputedStyle(document.documentElement);
+    const token = (name: string, fallback: string): string =>
+      tokens.getPropertyValue(name).trim() || fallback;
+
     this.chart = createChart(this.container.nativeElement, {
       autoSize: true,
-      layout: { background: { color: '#131722' }, textColor: '#787B86' },
+      layout: {
+        background: { color: token('--bg', '#000000') },
+        textColor: token('--text-muted', '#787b86'),
+      },
       grid: {
-        vertLines: { color: '#1E222D' },
-        horzLines: { color: '#1E222D' },
+        vertLines: { color: token('--surface-2', '#181818') },
+        horzLines: { color: token('--surface-2', '#181818') },
       },
       timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 8 },
       crosshair: { mode: 0 },

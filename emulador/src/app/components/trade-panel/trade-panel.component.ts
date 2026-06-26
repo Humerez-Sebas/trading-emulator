@@ -10,6 +10,7 @@ import { ButtonDirective } from '../ui/button.directive';
 import { IconButtonDirective } from '../ui/icon-button.directive';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
+import { EmptyStateComponent } from '../ui/empty-state.component';
 
 /**
  * Manual order entry panel: side, type, entry/SL/TP prices, % risk with
@@ -25,6 +26,7 @@ import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
     IconButtonDirective,
     TooltipDirective,
     DropdownComponent,
+    EmptyStateComponent,
   ],
   templateUrl: './trade-panel.component.html',
   styleUrl: './trade-panel.component.css',

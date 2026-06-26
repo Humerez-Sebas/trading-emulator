@@ -1,5 +1,5 @@
 /* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
-import { inject, Inject, Injectable, InjectionToken } from '@angular/core';
+import { inject, Inject, Injectable, InjectionToken, signal } from '@angular/core';
 import { Timeframe } from '../../models';
 import { DatasetRecord } from '../market-data-db';
 import { WorkspaceDbService } from '../workspace-db.service';
@@ -88,6 +88,17 @@ export const PARQUET_WORKER_FACTORY = new InjectionToken<WorkerFactory>('PARQUET
  */
 @Injectable({ providedIn: 'root' })
 export class DataOnboardingService {
+  private _busySymbol = signal<string | null>(null);
+  public busySymbol = this._busySymbol.asReadonly();
+  private _progress = signal<OnboardingProgress | null>(null);
+  public progress = this._progress.asReadonly();
+
+  /** Aborts the downloads of the active batch (if any). */
+  private activeAbort: AbortController | null = null;
+  cancel(): void {
+    this.activeAbort?.abort();
+  }
+
   constructor(
     private readonly db: WorkspaceDbService = inject(WorkspaceDbService),
     private readonly downloads: ParquetDownloadService = inject(ParquetDownloadService),
@@ -110,6 +121,31 @@ export class DataOnboardingService {
    * Rejects if the partition is missing from the manifest or the worker errors.
    */
   async runJob(manifest: Manifest, job: OnboardingJob, worker: IngestWorker): Promise<JobOutcome> {
+    const payload = await this.prepareJob(manifest, job);
+    if (!payload) return 'skipped';
+    await this.processPayload(payload, worker);
+    return 'ingested';
+  }
+
+  /** Clears stale candles (on re-ingest), runs the worker, records the dataset. */
+  private async processPayload(
+    payload: NonNullable<Awaited<ReturnType<DataOnboardingService['prepareJob']>>>,
+    worker: IngestWorker,
+  ): Promise<void> {
+    if (payload.existing) {
+      await this.db.clearDatasetCandles(payload.record.symbol, payload.timeframe);
+    }
+    await this.ingestOn(worker, payload.buffer, payload.record.symbol, payload.timeframe);
+    await this.db.putDataset(payload.record);
+  }
+
+  /**
+   * Prepares a job by resolving its manifest entry, checking for an existing
+   * local dataset, and downloading the parquet bytes if needed.
+   * Returns `null` if the job should be skipped, otherwise a payload object
+   * with the buffer and dataset record details.
+   */
+  private async prepareJob(manifest: Manifest, job: OnboardingJob, signal?: AbortSignal) {
     const { symbol, tf, year } = job;
     const entry = this.manifests.getEntry(manifest, symbol, tf, year);
     if (!entry) {
@@ -117,25 +153,21 @@ export class DataOnboardingService {
         `DataOnboardingService: partición ausente del manifest (${symbol}/${tf}/${year}).`,
       );
     }
+
     const timeframe = TF_MAP[tf];
     const id = DataOnboardingService.datasetId(symbol, timeframe, year);
 
     // 1) etag-skip: a current local copy needs no re-download.
     const existing = await this.db.getDataset(id);
     if (existing && existing.etag === entry.etag) {
-      return 'skipped';
-    }
-
-    // 2) re-ingest of a changed partition: clear stale candles to avoid dupes.
-    if (existing) {
-      await this.db.clearDatasetCandles(symbol, timeframe);
+      return null;
     }
 
     // 3) download the parquet bytes for this partition (`<year>.parquet`).
-    const buffer = await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`);
-
-    // 4) hand off to the (batch-shared) worker and await its terminal message.
-    await this.ingestOn(worker, buffer, symbol, timeframe);
+    // Conditional arity (see ParquetDownloadService): pass the signal only when present so strict-arity download mocks keep matching.
+    const buffer = signal
+      ? await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`, signal)
+      : await this.downloads.downloadParquet(symbol, tf, `${year}.parquet`);
 
     // 5) record the dataset (size/etag/updatedAt straight from the manifest).
     const record: DatasetRecord = {
@@ -147,8 +179,13 @@ export class DataOnboardingService {
       etag: entry.etag,
       updatedAt: entry.updatedAt,
     };
-    await this.db.putDataset(record);
-    return 'ingested';
+
+    return {
+      buffer,
+      timeframe,
+      existing: !!existing,
+      record,
+    };
   }
 
   /**
@@ -159,22 +196,62 @@ export class DataOnboardingService {
    * partitions — `parquet-wasm` caches its WASM init internally, so one
    * worker instance means one init instead of one per partition. The worker
    * is always terminated when the batch settles (success or failure).
+   *
+   * This pipelines the network and CPU work by pre-fetching the next job's
+   * ArrayBuffer while the worker ingests the current one.
    */
   async runJobs(
     manifest: Manifest,
     jobs: OnboardingJob[],
     onProgress?: (progress: OnboardingProgress) => void,
   ): Promise<void> {
+    if (!jobs.length) return;
+    // Reentrancy guard: this singleton owns the busy state, so a second batch
+    // dispatched while one is in flight (any of the 3 callers) is a no-op
+    // instead of corrupting _busySymbol/_progress and spawning a 2nd worker.
+    if (this._busySymbol()) return;
     const total = jobs.length;
+    const symbol = jobs[0].symbol;
+
+    this._busySymbol.set(symbol);
+    this._progress.set(null);
+
+    const controller = new AbortController();
+    this.activeAbort = controller;
     const worker = this.workerFactory();
     try {
+      // Start downloading the first job immediately
+      let nextDownload = this.prepareJob(manifest, jobs[0], controller.signal);
+
       for (let i = 0; i < jobs.length; i++) {
         const job = jobs[i];
-        const status = await this.runJob(manifest, job, worker);
-        onProgress?.({ index: i + 1, total, job, status });
+
+        // Await the download (or skip resolution) of the CURRENT job
+        const payload = await nextDownload;
+
+        // Fire off the download for the NEXT job (if any) while we ingest the current one
+        if (i + 1 < jobs.length) {
+          nextDownload = this.prepareJob(manifest, jobs[i + 1], controller.signal);
+          nextDownload.catch(() => undefined); // Prevent unhandled rejection events in the background
+        }
+
+        let status: JobOutcome = 'skipped';
+
+        if (payload) {
+          await this.processPayload(payload, worker);
+          status = 'ingested';
+        }
+
+        const p = { index: i + 1, total, job, status };
+        this._progress.set(p);
+        onProgress?.(p);
       }
     } finally {
+      controller.abort(); // kill any prefetch still in flight
+      this.activeAbort = null;
       worker.terminate();
+      this._busySymbol.set(null);
+      this._progress.set(null);
     }
   }
 
@@ -190,17 +267,19 @@ export class DataOnboardingService {
     timeframe: Timeframe,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      const settle = (done: () => void): void => {
+        worker.onmessage = null;
+        worker.onerror = null;
+        done();
+      };
       worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
         const msg = ev.data;
-        if (msg.type === 'done') {
-          resolve();
-        } else if (msg.type === 'error') {
-          reject(new Error(msg.message));
-        }
+        if (msg.type === 'done') settle(resolve);
+        else if (msg.type === 'error') settle(() => reject(new Error(msg.message)));
         // 'progress' messages are ignored here (wizard shows per-job progress).
       };
       worker.onerror = (err: unknown) => {
-        reject(err instanceof Error ? err : new Error(String(err)));
+        settle(() => reject(err instanceof Error ? err : new Error(String(err))));
       };
       worker.postMessage({ buffer, symbol, timeframe });
     });

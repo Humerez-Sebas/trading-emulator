@@ -149,14 +149,17 @@ h1 {
 .bar {
   height: 6px;
   background: var(--surface-2);
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .bar .fill {
   display: block;
   height: 100%;
+  width: 100%;
   background: var(--accent);
-  transition: width 250ms ease;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  transition: transform 250ms var(--ease-out);
 }
 
 .parts {
@@ -212,4 +215,51 @@ h1 {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+/* Discreet technical disclosure: keeps infra jargon out of the way for
+   first-timers, but reachable for power users who want the details. */
+.tech-details {
+  margin-top: 28px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.tech-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.tech-details > summary::-webkit-details-marker {
+  display: none;
+}
+.tech-details > summary::before {
+  content: '▸';
+  font-size: 10px;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.tech-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.tech-details > summary:hover {
+  color: var(--text);
+}
+.tech-details > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tech-details p {
+  margin: 6px 0 0;
+  max-width: 60ch;
+  line-height: 1.6;
+}
+.tech-details strong {
+  color: var(--text);
+  font-weight: 600;
 }

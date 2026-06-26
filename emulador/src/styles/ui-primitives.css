@@ -259,6 +259,34 @@
 .ui-tooltip.is-visible {
   opacity: 1;
 }
+/* tooltip carrying a keyboard shortcut: label + <kbd> chips on one row */
+.ui-tooltip--with-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ui-kbd-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ui-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  padding: 0 var(--space-1);
+  /* flat "keycap": a thicker bottom border instead of a drop shadow */
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.6;
+}
 
 /* ---- Menu items (projected into ui-menu) ---- */
 .ui-menu-item {

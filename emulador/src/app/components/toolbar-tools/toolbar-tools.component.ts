@@ -10,6 +10,7 @@ import {
   selectTradeBoxesVisible,
   selectUtcOffset,
 } from '../../state/selectors';
+import { TooltipDirective } from '../ui';
 
 /**
  * The single source of truth for the drawing/trade tool buttons, shared by
@@ -21,6 +22,7 @@ import {
 @Component({
   selector: 'app-toolbar-tools',
   standalone: true,
+  imports: [TooltipDirective],
   templateUrl: './toolbar-tools.component.html',
   styleUrl: './toolbar-tools.component.css',
   host: { '[class.vertical]': 'vertical()' },

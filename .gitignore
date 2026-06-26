@@ -32,5 +32,8 @@ datos/
 Thumbs.db
 .idea/
 
-# --- Claude / tooling local state ---
+# --- Claude / agent tooling local state (not app code) ---
 .claude/
+.agents/
+.impeccable/
+skills-lock.json
