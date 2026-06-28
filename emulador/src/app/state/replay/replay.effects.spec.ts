@@ -172,6 +172,57 @@ describe('ReplayEffects', () => {
       );
       expect(result[2]).toEqual(ReplayActions.goToTime({ time: c[4].time }));
     });
+
+    it('clampa `to` al fin de los datos cuando jumpSize excede el rango', async () => {
+      const c = series(6, 0, 3600); // idx 0..5
+      store.overrideSelector(selectFillContext, {
+        candles: c,
+        idx: 2,
+        tfSeconds: 3600,
+        lower: null,
+        contractSize: 1,
+        trading: { orders: [], positions: [], sessionEnd: null, sessionEnded: false } as any,
+      });
+      store.overrideSelector(replayFeature.selectJumpSize, 10); // to = min(12, 5) = 5
+      store.refreshState();
+
+      const out = firstValueFrom(effects.jumpForward$.pipe(take(3), toArray()));
+      actions$.next(ReplayActions.jumpForward());
+      const result = await out;
+
+      expect(result[0]).toEqual(
+        TradingActions.processCandle({ candle: c[3], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[1]).toEqual(
+        TradingActions.processCandle({ candle: c[4], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[2]).toEqual(ReplayActions.goToTime({ time: c[5].time }));
+    });
+
+    it('clampa `to` para no pasar un fin de sesión programado', async () => {
+      const c = series(6, 0, 3600); // times 0,3600,7200,10800,14400,18000
+      store.overrideSelector(selectFillContext, {
+        candles: c,
+        idx: 1,
+        tfSeconds: 3600,
+        lower: null,
+        contractSize: 1,
+        // sessionEnd = c[3].time (10800): el clamp debe aterrizar exactamente en c[3]
+        trading: { orders: [], positions: [], sessionEnd: c[3].time, sessionEnded: false } as any,
+      });
+      store.overrideSelector(replayFeature.selectJumpSize, 4); // to=5 → clamp baja a 3
+      store.refreshState();
+
+      const out = firstValueFrom(effects.jumpForward$.pipe(take(2), toArray()));
+      actions$.next(ReplayActions.jumpForward());
+      const result = await out;
+
+      // intermedia c[2] procesada, luego goToTime aterriza en c[3] (== sessionEnd)
+      expect(result[0]).toEqual(
+        TradingActions.processCandle({ candle: c[2], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[1]).toEqual(ReplayActions.goToTime({ time: c[3].time }));
+    });
   });
 
   describe('jumpBack$', () => {
