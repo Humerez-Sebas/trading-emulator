@@ -53,11 +53,13 @@ export const replayFeature = createFeature({
       ReplayActions.setReplayResolution,
       (state, { minutes }): ReplayState => ({ ...state, resolutionMinutes: minutes }),
     ),
-    on(MarketActions.changeTimeframe, (state, { tf }): ReplayState =>
-      clampResolution(state, TIMEFRAME_SECONDS[tf]),
+    on(
+      MarketActions.changeTimeframe,
+      (state, { tf }): ReplayState => clampResolution(state, TIMEFRAME_SECONDS[tf]),
     ),
-    on(MarketActions.changeCustomTimeframe, (state, { minutes }): ReplayState =>
-      clampResolution(state, minutes * 60),
+    on(
+      MarketActions.changeCustomTimeframe,
+      (state, { minutes }): ReplayState => clampResolution(state, minutes * 60),
     ),
     // asset switch: restore the replay cursor of the incoming workspace
     on(

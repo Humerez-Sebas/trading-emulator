@@ -278,7 +278,8 @@ describe('selectProgress', () => {
 
 // ---- selectFormingCandle ----
 describe('selectFormingCandle', () => {
-  const res = [ // velas M30 dentro de la H1 09:00-10:00
+  const res = [
+    // velas M30 dentro de la H1 09:00-10:00
     { time: 9 * 3600, open: 10, high: 12, low: 9, close: 11 },
     { time: 9 * 3600 + 1800, open: 11, high: 15, low: 8, close: 14 },
   ];

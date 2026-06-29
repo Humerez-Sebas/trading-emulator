@@ -6,7 +6,11 @@ import { drawingsFeature } from './drawings/drawings.reducer';
 import { workspacesFeature } from './workspaces/workspaces.reducer';
 import { tradingFeature } from './trading/trading.reducer';
 import { Candle, derivePointSize, TIMEFRAME_ORDER, TIMEFRAME_SECONDS, Timeframe } from '../models';
-import { pickBaseSeriesTf, loadedTfForMinutes, formatIntervalShort } from './market/custom-timeframe';
+import {
+  pickBaseSeriesTf,
+  loadedTfForMinutes,
+  formatIntervalShort,
+} from './market/custom-timeframe';
 import { Drawing } from './drawings/drawings.models';
 import {
   contractSizeFor,
