@@ -50,4 +50,25 @@ describe('PlaybackControllerComponent', () => {
     fixture.componentInstance.step();
     expect(spy).toHaveBeenCalledWith(ReplayActions.advanceCandle());
   });
+
+  it('onScrub pausa el auto-play y luego teletransporta el cursor', () => {
+    store.overrideSelector(selectDataRange, { from: 1000, to: 2000 });
+    store.refreshState();
+    const spy = vi.spyOn(store, 'dispatch');
+    fixture.componentInstance.onScrub(0.5);
+    expect(spy).toHaveBeenCalledWith(ReplayActions.pause());
+    expect(spy).toHaveBeenCalledWith(ReplayActions.seekTo({ time: 1500 }));
+  });
+
+  it('ngOnDestroy detiene el auto-repeat', () => {
+    vi.useFakeTimers();
+    const c = fixture.componentInstance;
+    const spy = vi.spyOn(store, 'dispatch');
+    c.startRepeat('fwd'); // dispara una vez de inmediato
+    expect(spy).toHaveBeenCalledTimes(1);
+    c.ngOnDestroy(); // limpia el intervalo
+    vi.advanceTimersByTime(300); // habría disparado ~3 veces más sin la limpieza
+    expect(spy).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
 });

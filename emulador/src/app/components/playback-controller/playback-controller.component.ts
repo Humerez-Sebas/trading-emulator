@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, OnDestroy, computed, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Store } from '@ngrx/store';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -23,7 +23,7 @@ const JUMP_SIZES = [5, 10, 50];
   templateUrl: './playback-controller.component.html',
   styleUrl: './playback-controller.component.css',
 })
-export class PlaybackControllerComponent {
+export class PlaybackControllerComponent implements OnDestroy {
   private store = inject(Store);
   private repeatTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -97,11 +97,20 @@ export class PlaybackControllerComponent {
     }
   }
 
-  /** Scrubber drag → seekTo the corresponding time (teleport, no fills). */
+  /**
+   * Scrubber drag → seekTo the corresponding time (teleport, no fills). Grabbing
+   * the timeline pauses auto-play first, so the cursor doesn't fight the thumb.
+   */
   onScrub(fraction: number): void {
     const r = this.range();
     if (!r) return;
+    this.store.dispatch(ReplayActions.pause());
     const time = Math.round(r.from + fraction * (r.to - r.from));
     this.store.dispatch(ReplayActions.seekTo({ time }));
+  }
+
+  /** Clear the auto-repeat interval if the HUD is torn down mid-hold. */
+  ngOnDestroy(): void {
+    this.stopRepeat();
   }
 }
