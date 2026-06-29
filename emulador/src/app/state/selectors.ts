@@ -20,7 +20,11 @@ import {
   SavedSession,
   TradingData,
 } from './trading/trading.models';
-import { computeSessionStats, sliceRange } from './trading/fill-engine';
+import {
+  computeSessionStats,
+  firstIndexAtOrAfter,
+  lastIndexAtOrBefore,
+} from './trading/fill-engine';
 
 export const selectActiveTf = marketFeature.selectActiveTf;
 export const selectSeries = marketFeature.selectSeries;
@@ -170,21 +174,7 @@ export const selectActiveCandles = createSelector(
 export const selectVisibleIndex = createSelector(
   selectActiveCandles,
   selectCurrentTime,
-  (candles, t): number => {
-    if (!candles.length || t <= 0) return -1;
-    // binary search of the last time <= t
-    let lo = 0,
-      hi = candles.length - 1,
-      ans = -1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (candles[mid].time <= t) {
-        ans = mid;
-        lo = mid + 1;
-      } else hi = mid - 1;
-    }
-    return ans;
-  },
+  (candles, t): number => (!candles.length || t <= 0 ? -1 : lastIndexAtOrBefore(candles, t)),
 );
 
 /** Date range available in the active TF (for the start-time picker). */
@@ -523,20 +513,23 @@ export const selectFormingCandle = createSelector(
   (resSeries, activeSeconds, cursor, minutes): Candle | null => {
     if (minutes == null || !resSeries || activeSeconds <= 0 || cursor <= 0) return null;
     const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
-    const inBucket = sliceRange(resSeries, bucketStart, cursor + 1); // [bucketStart, cursor]
-    if (!inBucket.length) return null;
-    let high = inBucket[0].high;
-    let low = inBucket[0].low;
-    for (const c of inBucket) {
-      if (c.high > high) high = c.high;
-      if (c.low < low) low = c.low;
+    // Aggregate the bucket's revealed candles [bucketStart, cursor] directly over
+    // their indices — no intermediate slice array (avoids GC churn at fast autoplay).
+    const lo = firstIndexAtOrAfter(resSeries, bucketStart);
+    const hi = lastIndexAtOrBefore(resSeries, cursor);
+    if (hi < lo) return null;
+    let high = resSeries[lo].high;
+    let low = resSeries[lo].low;
+    for (let i = lo + 1; i <= hi; i++) {
+      if (resSeries[i].high > high) high = resSeries[i].high;
+      if (resSeries[i].low < low) low = resSeries[i].low;
     }
     return {
       time: bucketStart,
-      open: inBucket[0].open,
+      open: resSeries[lo].open,
       high,
       low,
-      close: inBucket[inBucket.length - 1].close,
+      close: resSeries[hi].close,
     };
   },
 );
@@ -582,20 +575,7 @@ export const selectReplaySeries = createSelector(
 export const selectReplayIndex = createSelector(
   selectReplaySeries,
   selectCurrentTime,
-  (candles, t): number => {
-    if (!candles.length || t <= 0) return -1;
-    let lo = 0,
-      hi = candles.length - 1,
-      ans = -1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (candles[mid].time <= t) {
-        ans = mid;
-        lo = mid + 1;
-      } else hi = mid - 1;
-    }
-    return ans;
-  },
+  (candles, t): number => (!candles.length || t <= 0 ? -1 : lastIndexAtOrBefore(candles, t)),
 );
 
 /** Candle duration (seconds) the replay advances by: resolution or display TF. */

@@ -50,10 +50,10 @@ describe('PlaybackControllerComponent', () => {
     expect(spy).toHaveBeenCalledWith(ReplayActions.setJumpSize({ size: 50 }));
   });
 
-  it('+1 despacha advanceCandle', () => {
+  it('+1 despacha advanceDisplay (Display Navigation)', () => {
     const spy = vi.spyOn(store, 'dispatch');
     fixture.componentInstance.step();
-    expect(spy).toHaveBeenCalledWith(ReplayActions.advanceCandle());
+    expect(spy).toHaveBeenCalledWith(ReplayActions.advanceDisplay());
   });
 
   it('ngOnDestroy detiene el auto-repeat', () => {

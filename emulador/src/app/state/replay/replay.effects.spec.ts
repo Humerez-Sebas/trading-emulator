@@ -8,11 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReplayEffects } from './replay.effects';
 import { ReplayActions } from './replay.actions';
 import {
+  selectActiveCandles,
+  selectCurrentTime,
   selectFillContext,
   selectMsPerCandle,
   selectPlaying,
   selectReplayIndex,
   selectReplaySeries,
+  selectVisibleIndex,
 } from '../selectors';
 import { replayFeature } from './replay.reducer';
 import { TradingActions } from '../trading/trading.actions';
@@ -86,10 +89,24 @@ describe('ReplayEffects', () => {
     });
   });
 
-  describe('stepBack$', () => {
-    it('emits goToTime with the previous candle time when idx >= 1', async () => {
-      store.overrideSelector(selectReplaySeries, candles);
-      store.overrideSelector(selectReplayIndex, 2); // prev = candles[1].time = 3600
+  describe('stepBack$ (Display Navigation)', () => {
+    // display H1 candles: times 0, 3600, 7200, 10800, 14400
+    it('snaps to the current display-bucket start when the cursor is mid-bucket', async () => {
+      store.overrideSelector(selectActiveCandles, candles);
+      store.overrideSelector(selectVisibleIndex, 2); // bucket start = candles[2].time = 7200
+      store.overrideSelector(selectCurrentTime, 7200 + 1800); // mid-bucket
+      store.refreshState();
+
+      const p = firstValueFrom(effects.stepBack$);
+      actions$.next(ReplayActions.stepBack());
+
+      expect(await p).toEqual(ReplayActions.goToTime({ time: 7200 }));
+    });
+
+    it('snaps to the previous display candle when the cursor is already on a boundary', async () => {
+      store.overrideSelector(selectActiveCandles, candles);
+      store.overrideSelector(selectVisibleIndex, 2);
+      store.overrideSelector(selectCurrentTime, 7200); // exactly on the boundary
       store.refreshState();
 
       const p = firstValueFrom(effects.stepBack$);
@@ -98,31 +115,89 @@ describe('ReplayEffects', () => {
       expect(await p).toEqual(ReplayActions.goToTime({ time: 3600 }));
     });
 
-    it('does not emit when idx < 1 (filters the action)', async () => {
-      store.overrideSelector(selectReplaySeries, candles);
-      store.overrideSelector(selectReplayIndex, 0);
+    it('does not emit at the first display candle (cannot go back)', async () => {
+      store.overrideSelector(selectActiveCandles, candles);
+      store.overrideSelector(selectVisibleIndex, 0);
+      store.overrideSelector(selectCurrentTime, candles[0].time); // 0
       store.refreshState();
 
-      // Collect up to 1 emission; the filtered stepBack should not produce one
-      // so we send a passing stepBack (idx=1) after to prove the stream still works
       const results: any[] = [];
-      const sub = effects.stepBack$.pipe(take(1)).subscribe((a) => results.push(a));
+      const sub = effects.stepBack$.subscribe((a) => results.push(a));
+      actions$.next(ReplayActions.stepBack());
 
-      actions$.next(ReplayActions.stepBack()); // idx=0 → filtered
-
-      // No emission yet
-      expect(results.length).toBe(0);
-
-      // Now send an action that WILL pass (override idx to 1 first)
-      store.overrideSelector(selectReplayIndex, 1);
-      store.refreshState();
-      actions$.next(ReplayActions.stepBack()); // idx=1 → emits candles[0].time = 0
-
-      // Wait a microtask
       await Promise.resolve();
-      expect(results.length).toBe(1);
-      expect(results[0]).toEqual(ReplayActions.goToTime({ time: 0 }));
+      expect(results).toHaveLength(0);
       sub.unsubscribe();
+    });
+  });
+
+  describe('advanceDisplay$ (Display Navigation)', () => {
+    it('full-candle mode: advances exactly one display candle', async () => {
+      const c = series(5, 0, 3600); // display === resolution
+      store.overrideSelector(selectFillContext, {
+        candles: c,
+        idx: 1,
+        tfSeconds: 3600,
+        lower: null,
+        contractSize: 1,
+        trading: { sessionEnd: null } as any,
+      });
+      store.overrideSelector(selectActiveCandles, c);
+      store.overrideSelector(selectVisibleIndex, 1);
+      store.refreshState();
+
+      const out = firstValueFrom(effects.advanceDisplay$.pipe(take(1), toArray()));
+      actions$.next(ReplayActions.advanceDisplay());
+      expect(await out).toEqual([ReplayActions.goToTime({ time: c[2].time })]);
+    });
+
+    it('resolution mode: snaps to the next display candle, processing every crossed resolution candle', async () => {
+      // display H1: 0, 3600 ; resolution M5 (300s): 0,300,...,3600 (idx 0..12)
+      const display = series(2, 0, 3600);
+      const res = series(13, 0, 300);
+      store.overrideSelector(selectFillContext, {
+        candles: res,
+        idx: 7, // cursor at res[7] = 2100 (35 min into the hour)
+        tfSeconds: 300,
+        lower: null,
+        contractSize: 1,
+        trading: { sessionEnd: null } as any,
+      });
+      store.overrideSelector(selectActiveCandles, display);
+      store.overrideSelector(selectVisibleIndex, 0); // display bucket 0 (0..3600)
+      store.refreshState();
+
+      const out = firstValueFrom(effects.advanceDisplay$.pipe(take(5), toArray()));
+      actions$.next(ReplayActions.advanceDisplay());
+      const result = await out;
+
+      // intermediate res candles 8..11 processed, then goToTime lands on 3600 (res[12])
+      expect(result[0]).toEqual(
+        TradingActions.processCandle({ candle: res[8], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[3]).toEqual(
+        TradingActions.processCandle({ candle: res[11], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[4]).toEqual(ReplayActions.goToTime({ time: 3600 }));
+    });
+
+    it('emits endOfData at the last display candle', async () => {
+      const c = series(3, 0, 3600);
+      store.overrideSelector(selectFillContext, {
+        candles: c,
+        idx: 2,
+        tfSeconds: 3600,
+        lower: null,
+        contractSize: 1,
+        trading: { sessionEnd: null } as any,
+      });
+      store.overrideSelector(selectActiveCandles, c);
+      store.overrideSelector(selectVisibleIndex, 2); // last display candle
+      store.refreshState();
+
+      const p = firstValueFrom(effects.advanceDisplay$);
+      actions$.next(ReplayActions.advanceDisplay());
+      expect(await p).toEqual(ReplayActions.endOfData());
     });
   });
 

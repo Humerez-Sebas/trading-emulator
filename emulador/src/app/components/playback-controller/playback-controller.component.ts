@@ -49,6 +49,8 @@ export class PlaybackControllerComponent implements OnDestroy {
     { value: '500', label: '2 velas/s' },
     { value: '250', label: '4 velas/s' },
     { value: '100', label: '10 velas/s' },
+    { value: '50', label: '20 velas/s' },
+    { value: '25', label: '40 velas/s' },
   ];
 
   resolutionOptions = computed<DropdownOption[]>(() => [
@@ -73,9 +75,11 @@ export class PlaybackControllerComponent implements OnDestroy {
   pause(): void {
     this.store.dispatch(ReplayActions.pause());
   }
+  /** `+1` button: Display Navigation — snap to the next display candle (fills simulated). */
   step(): void {
-    this.store.dispatch(ReplayActions.advanceCandle());
+    this.store.dispatch(ReplayActions.advanceDisplay());
   }
+  /** `-1` button: Display Navigation back — snap to the display grid (no fills). */
   stepBack(): void {
     this.store.dispatch(ReplayActions.stepBack());
   }

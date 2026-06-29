@@ -5,8 +5,14 @@ export const ReplayActions = createActionGroup({
   events: {
     /** Places the replay cursor at a timestamp (unix seconds). */
     'Go To Time': props<{ time: number }>(),
+    /** Advances one replay-resolution candle (autoplay tick). */
     'Advance Candle': emptyProps(),
-    /** Moves the cursor one candle back (review; fills never re-run). */
+    /**
+     * Display Navigation: snaps the cursor to the next DISPLAY-TF candle,
+     * processing fills for every replay-resolution candle crossed on the way.
+     */
+    'Advance Display': emptyProps(),
+    /** Display Navigation back: snaps the cursor to the display-TF grid (no fills). */
     'Step Back': emptyProps(),
     Play: emptyProps(),
     Pause: emptyProps(),

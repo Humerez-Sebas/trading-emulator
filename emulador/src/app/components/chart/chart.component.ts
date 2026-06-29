@@ -657,7 +657,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.pushDrawings();
       this.applyTradeMarkers();
     }
-    if (idx >= 0 && candles.length > 1) {
+    // Initialize spacing/precision whenever enough candle data exists — even when
+    // idx === -1 (resolution mode hides the forming bucket), so overlay primitives
+    // (drawings, trade boxes) get valid values from the first frame.
+    if (candles.length > 1) {
       this.barSpacing = candles[1].time - candles[0].time;
       this.pointSize = derivePointSize(candles);
     }
@@ -690,7 +693,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.renderedIdx++;
       const c = candles[this.renderedIdx];
       this.series.update({ ...c, time: (c.time + shift) as UTCTimestamp });
-      this.renderedTimes.push(c.time);
+      // A forming bucket may already have recorded this time (applyForming); keep
+      // renderedTimes free of duplicates so overlay coordinate lookups stay correct.
+      if (!this.renderedTimes.includes(c.time)) this.renderedTimes.push(c.time);
     }
     // live trade boxes grow with the last rendered candle
     this.pushTradeBoxes();
