@@ -9,6 +9,7 @@ import {
   selectCurrentAsset,
   selectCurrentTime,
   selectCustomTf,
+  selectProgress,
   selectSessionTfs,
   selectTfLastTimes,
   selectUtcOffset,
@@ -35,6 +36,8 @@ export class ControlsComponent {
   assets = this.store.selectSignal(selectAssets);
   currentAsset = this.store.selectSignal(selectCurrentAsset);
   utcOffset = this.store.selectSignal(selectUtcOffset);
+  /** Candle progress (shown / total) shown on the right of the context bar. */
+  progress = this.store.selectSignal(selectProgress);
 
   private currentTime = this.store.selectSignal(selectCurrentTime);
 

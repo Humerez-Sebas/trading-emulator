@@ -14,6 +14,31 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   z-index: 30;
 }
+/* Once dragged, position is driven by inline left/top (px from the chart area). */
+.hud.positioned {
+  bottom: auto;
+  right: auto;
+  transform: none;
+}
+.grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 30px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted, #787b86);
+  cursor: grab;
+}
+.grip:active {
+  cursor: grabbing;
+}
+.grip:focus-visible {
+  outline: 2px solid var(--accent, #2962ff);
+  outline-offset: 2px;
+}
 .scrub-row {
   display: flex;
 }
@@ -71,10 +96,6 @@
 .clock {
   color: var(--warning, #f0b90b);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.progress {
-  color: var(--text-muted, #787b86);
   font-variant-numeric: tabular-nums;
   margin-left: auto;
 }

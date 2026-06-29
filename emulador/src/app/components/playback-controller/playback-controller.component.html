@@ -1,4 +1,4 @@
-<div class="hud">
+<div class="hud" [class.positioned]="pos()" [style.left.px]="pos()?.x" [style.top.px]="pos()?.y">
   <div class="scrub-row">
     <input
       class="scrub"
@@ -12,6 +12,24 @@
     />
   </div>
   <div class="ctl-row">
+    <button
+      class="grip"
+      (mousedown)="startDrag($event)"
+      appTooltip="Arrastrar el panel"
+      aria-label="Mover el panel de reproducción"
+    >
+      <svg width="12" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="8" cy="5" r="1.6"></circle>
+        <circle cx="16" cy="5" r="1.6"></circle>
+        <circle cx="8" cy="12" r="1.6"></circle>
+        <circle cx="16" cy="12" r="1.6"></circle>
+        <circle cx="8" cy="19" r="1.6"></circle>
+        <circle cx="16" cy="19" r="1.6"></circle>
+      </svg>
+    </button>
+
+    <div class="sep"></div>
+
     <div class="grp" role="group" aria-label="Transporte">
       <button
         class="btn"
@@ -70,9 +88,6 @@
 
     @if (clockMs(); as ms) {
       <span class="clock">{{ ms | date: 'dd MMM HH:mm' : 'UTC' }}</span>
-    }
-    @if (progress(); as p) {
-      <span class="progress">{{ p.shown }} / {{ p.total }}</span>
     }
   </div>
 </div>

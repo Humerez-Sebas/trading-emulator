@@ -9,7 +9,6 @@ import {
   selectDataRange,
   selectMsPerCandle,
   selectPlaying,
-  selectProgress,
   selectUtcOffset,
 } from '../../state/selectors';
 
@@ -23,13 +22,13 @@ describe('PlaybackControllerComponent', () => {
       providers: [provideMockStore()],
     });
     store = TestBed.inject(MockStore);
+    localStorage.clear(); // isolate the persisted HUD position between tests
     // The component reads selectors that derive from selectActiveCandles /
     // selectSeries (market feature state), which is undefined under a bare
     // mock store. Override every selector the component consumes so the
     // MockStore short-circuits the throwing projector chain.
     store.overrideSelector(selectPlaying, false);
     store.overrideSelector(selectMsPerCandle, 500);
-    store.overrideSelector(selectProgress, { shown: 0, total: 0 });
     store.overrideSelector(replayFeature.selectJumpSize, 10);
     store.overrideSelector(selectCurrentTime, 0);
     store.overrideSelector(selectUtcOffset, 0);
@@ -70,5 +69,25 @@ describe('PlaybackControllerComponent', () => {
     vi.advanceTimersByTime(300); // habría disparado ~3 veces más sin la limpieza
     expect(spy).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+
+  it('pos por defecto es null (HUD centrado) sin posición guardada', () => {
+    localStorage.clear();
+    const f = TestBed.createComponent(PlaybackControllerComponent);
+    expect(f.componentInstance.pos()).toBeNull();
+  });
+
+  it('carga la posición arrastrada desde localStorage', () => {
+    localStorage.setItem('emulador.playbackPos', JSON.stringify({ x: 200, y: 100 }));
+    const f = TestBed.createComponent(PlaybackControllerComponent);
+    expect(f.componentInstance.pos()).toEqual({ x: 200, y: 100 });
+  });
+
+  it('persiste la posición en localStorage al soltar el arrastre', () => {
+    const c = fixture.componentInstance;
+    c.pos.set({ x: 120, y: 64 });
+    c.startDrag(new MouseEvent('mousedown', { clientX: 0, clientY: 0 }));
+    window.dispatchEvent(new MouseEvent('mouseup'));
+    expect(JSON.parse(localStorage.getItem('emulador.playbackPos')!)).toEqual({ x: 120, y: 64 });
   });
 });

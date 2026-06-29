@@ -29,4 +29,8 @@
       </span>
     }
   </div>
+
+  @if (progress(); as p) {
+    <span class="progress">{{ p.shown }} / {{ p.total }} velas</span>
+  }
 </div>
