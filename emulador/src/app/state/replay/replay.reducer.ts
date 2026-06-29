@@ -11,12 +11,14 @@ export interface ReplayState {
   currentTime: number;
   playing: boolean;
   msPerCandle: number;
+  jumpSize: number;
 }
 
 const initialState: ReplayState = {
   currentTime: 0,
   playing: false,
   msPerCandle: 500,
+  jumpSize: 10,
 };
 
 export const replayFeature = createFeature({
@@ -31,6 +33,8 @@ export const replayFeature = createFeature({
       ReplayActions.changeSpeed,
       (state, { msPerCandle }): ReplayState => ({ ...state, msPerCandle }),
     ),
+    on(ReplayActions.setJumpSize, (state, { size }): ReplayState => ({ ...state, jumpSize: size })),
+    on(ReplayActions.seekTo, (state, { time }): ReplayState => ({ ...state, currentTime: time })),
     // asset switch: restore the replay cursor of the incoming workspace
     on(
       WorkspacesActions.workspaceRestored,

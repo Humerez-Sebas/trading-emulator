@@ -2,15 +2,11 @@
   class="bar"
   role="toolbar"
   aria-label="Barra flotante de herramientas"
-  [style.left.px]="pos().x"
-  [style.top.px]="pos().y"
+  appDraggable=".handle"
+  dragStorageKey="emulador.toolbarPos"
+  [defaultPosition]="{ x: 16, y: 12 }"
 >
-  <button
-    class="handle"
-    (mousedown)="startDrag($event)"
-    title="Arrastrar la barra"
-    aria-label="Mover barra de herramientas"
-  >
+  <button class="handle" title="Arrastrar la barra" aria-label="Mover barra de herramientas">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
       <circle cx="8" cy="5" r="1.6"></circle>
       <circle cx="16" cy="5" r="1.6"></circle>

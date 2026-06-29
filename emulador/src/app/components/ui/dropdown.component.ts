@@ -62,6 +62,7 @@ let ddSeq = 0;
       <div
         #list
         class="dd-list"
+        [class.dd-list--up]="dropUp()"
         role="listbox"
         tabindex="-1"
         [attr.aria-activedescendant]="activeId()"
@@ -162,6 +163,12 @@ let ddSeq = 0;
         box-shadow: var(--elevation-2);
         animation: dd-in var(--duration-fast) var(--ease-out);
       }
+      /* Flip above the trigger when there isn't room below (e.g. the bottom-
+         anchored playback HUD), so the list never spills past the viewport. */
+      .dd-list--up {
+        top: auto;
+        bottom: calc(100% + 4px);
+      }
       .dd-list:focus {
         outline: none;
       }
@@ -208,6 +215,8 @@ export class DropdownComponent {
   valueChange = output<string>();
 
   open = signal(false);
+  /** True when the list opens above the trigger (insufficient room below). */
+  dropUp = signal(false);
   activeIndex = signal(0);
   private readonly id = ddSeq++;
 
@@ -230,8 +239,20 @@ export class DropdownComponent {
   private openMenu(): void {
     const idx = this.options().findIndex((o) => o.value === this.value());
     this.activeIndex.set(idx >= 0 ? idx : 0);
+    this.dropUp.set(this.shouldDropUp());
     this.open.set(true);
-    queueMicrotask(() => this.list()?.nativeElement.focus());
+    // preventScroll: focusing an off-screen list must not scroll the page/chart.
+    queueMicrotask(() => this.list()?.nativeElement.focus({ preventScroll: true }));
+  }
+
+  /** Open upward when the list wouldn't fit below the trigger within the viewport. */
+  private shouldDropUp(): boolean {
+    const el = this.trigger()?.nativeElement;
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const estimated = Math.min(this.options().length * 40 + 12, 280) + 8;
+    return spaceBelow < estimated && rect.top > spaceBelow;
   }
 
   close(): void {

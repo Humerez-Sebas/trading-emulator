@@ -8,6 +8,8 @@ import { SessionSummaryComponent } from '../../components/session-summary/sessio
 import { FloatingToolbarComponent } from '../../components/floating-toolbar/floating-toolbar.component';
 import { CsvStartDialogComponent } from '../../components/csv-start-dialog/csv-start-dialog.component';
 import { IntervalDialogComponent } from '../../components/interval-dialog/interval-dialog.component';
+import { PlaybackControllerComponent } from '../../components/playback-controller/playback-controller.component';
+import { FloatingPnlComponent } from '../../components/floating-pnl/floating-pnl.component';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { settingsFeature } from '../../state/settings/settings.reducer';
 
@@ -23,6 +25,8 @@ import { settingsFeature } from '../../state/settings/settings.reducer';
     FloatingToolbarComponent,
     CsvStartDialogComponent,
     IntervalDialogComponent,
+    PlaybackControllerComponent,
+    FloatingPnlComponent,
   ],
   template: `
     <div class="layout">
@@ -31,6 +35,8 @@ import { settingsFeature } from '../../state/settings/settings.reducer';
         <app-drawing-toolbar></app-drawing-toolbar>
         <main class="chart-area">
           <app-chart></app-chart>
+          <app-floating-pnl></app-floating-pnl>
+          <app-playback-controller></app-playback-controller>
           @if (floatingToolbar()) {
             <app-floating-toolbar></app-floating-toolbar>
           }

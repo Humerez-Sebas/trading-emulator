@@ -52,3 +52,23 @@ describe('replay reducer: workspaceRestored', () => {
     expect(next.playing).toBe(false);
   });
 });
+
+describe('replay reducer — navegación', () => {
+  const init = initial();
+
+  it('jumpSize por defecto es 10', () => {
+    expect(init.jumpSize).toBe(10);
+  });
+
+  it('setJumpSize actualiza jumpSize', () => {
+    const next = reducer(init, ReplayActions.setJumpSize({ size: 50 }));
+    expect(next.jumpSize).toBe(50);
+  });
+
+  it('seekTo mueve el cursor sin tocar playing', () => {
+    const playing = reducer(init, ReplayActions.play());
+    const next = reducer(playing, ReplayActions.seekTo({ time: 12345 }));
+    expect(next.currentTime).toBe(12345);
+    expect(next.playing).toBe(true);
+  });
+});

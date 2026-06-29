@@ -30,47 +30,7 @@
     }
   </div>
 
-  <div class="replay-group" role="group" aria-label="Replay">
-    <button class="ctl-btn" (click)="stepBack()" appTooltip="Retroceder una vela">−1</button>
-    <button class="ctl-btn" (click)="step()" appTooltip="Avanzar una vela">+1</button>
-    @if (playing()) {
-      <button class="ctl-btn" (click)="pause()" appTooltip="Pausar" aria-label="Pausar">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-          <rect x="5" y="4" width="5" height="16" rx="1"></rect>
-          <rect x="14" y="4" width="5" height="16" rx="1"></rect>
-        </svg>
-      </button>
-    } @else {
-      <button class="ctl-btn" (click)="play()" appTooltip="Reproducir" aria-label="Reproducir">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-          <polygon points="6,4 20,12 6,20"></polygon>
-        </svg>
-      </button>
-    }
-    <ui-dropdown
-      ariaLabel="Velocidad"
-      [options]="speedOptions"
-      [value]="msPerCandle() + ''"
-      (valueChange)="setSpeed($event)"
-    />
-  </div>
-
   @if (progress(); as p) {
     <span class="progress">{{ p.shown }} / {{ p.total }} velas</span>
-  }
-
-  @if (clockMs(); as ms) {
-    <span class="clock">{{ ms | date: 'dd MMM yyyy HH:mm' : 'UTC' }}</span>
-  }
-
-  @if (floatingPnl() !== null) {
-    <span
-      class="floating-pnl"
-      [class.up]="floatingPnl()! >= 0"
-      [class.down]="floatingPnl()! < 0"
-      title="P/L flotante de las posiciones abiertas"
-    >
-      P/L {{ floatingPnl() | number: '1.2-2' }} $
-    </span>
   }
 </div>

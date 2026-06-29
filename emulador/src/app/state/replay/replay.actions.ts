@@ -13,5 +13,13 @@ export const ReplayActions = createActionGroup({
     'Change Speed': props<{ msPerCandle: number }>(),
     /** The data of the active TF ran out. */
     'End Of Data': emptyProps(),
+    /** Sets the multi-candle jump size (5 / 10 / 50). */
+    'Set Jump Size': props<{ size: number }>(),
+    /** Advances `jumpSize` candles, processing fills for each crossed candle. */
+    'Jump Forward': emptyProps(),
+    /** Moves `jumpSize` candles back (review; no new fills). */
+    'Jump Back': emptyProps(),
+    /** Teleports the cursor (scrubber). NOT a fill-processing advance. */
+    'Seek To': props<{ time: number }>(),
   },
 });

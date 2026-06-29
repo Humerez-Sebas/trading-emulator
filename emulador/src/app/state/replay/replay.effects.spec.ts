@@ -9,10 +9,13 @@ import { ReplayEffects } from './replay.effects';
 import { ReplayActions } from './replay.actions';
 import {
   selectActiveCandles,
+  selectFillContext,
   selectMsPerCandle,
   selectPlaying,
   selectVisibleIndex,
 } from '../selectors';
+import { replayFeature } from './replay.reducer';
+import { TradingActions } from '../trading/trading.actions';
 import { series } from '../../testing/fixtures';
 
 describe('ReplayEffects', () => {
@@ -139,6 +142,106 @@ describe('ReplayEffects', () => {
       expect(results.length).toBe(0);
 
       sub.unsubscribe();
+    });
+  });
+
+  describe('jumpForward$', () => {
+    it('procesa las velas intermedias y aterriza con goToTime en la vela objetivo', async () => {
+      const c = series(6, 0, 3600); // idx 0..5
+      store.overrideSelector(selectFillContext, {
+        candles: c,
+        idx: 1,
+        tfSeconds: 3600,
+        lower: null,
+        contractSize: 1,
+        trading: { orders: [], positions: [], sessionEnd: null, sessionEnded: false } as any,
+      });
+      store.overrideSelector(replayFeature.selectJumpSize, 3); // to = 4
+      store.refreshState();
+
+      const out = firstValueFrom(effects.jumpForward$.pipe(take(3), toArray()));
+      actions$.next(ReplayActions.jumpForward());
+      const result = await out;
+
+      // velas intermedias 2 y 3 procesadas, luego goToTime a candles[4]
+      expect(result[0]).toEqual(
+        TradingActions.processCandle({ candle: c[2], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[1]).toEqual(
+        TradingActions.processCandle({ candle: c[3], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[2]).toEqual(ReplayActions.goToTime({ time: c[4].time }));
+    });
+
+    it('clampa `to` al fin de los datos cuando jumpSize excede el rango', async () => {
+      const c = series(6, 0, 3600); // idx 0..5
+      store.overrideSelector(selectFillContext, {
+        candles: c,
+        idx: 2,
+        tfSeconds: 3600,
+        lower: null,
+        contractSize: 1,
+        trading: { orders: [], positions: [], sessionEnd: null, sessionEnded: false } as any,
+      });
+      store.overrideSelector(replayFeature.selectJumpSize, 10); // to = min(12, 5) = 5
+      store.refreshState();
+
+      const out = firstValueFrom(effects.jumpForward$.pipe(take(3), toArray()));
+      actions$.next(ReplayActions.jumpForward());
+      const result = await out;
+
+      expect(result[0]).toEqual(
+        TradingActions.processCandle({ candle: c[3], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[1]).toEqual(
+        TradingActions.processCandle({ candle: c[4], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[2]).toEqual(ReplayActions.goToTime({ time: c[5].time }));
+    });
+
+    it('clampa `to` para no pasar un fin de sesión programado', async () => {
+      const c = series(6, 0, 3600); // times 0,3600,7200,10800,14400,18000
+      store.overrideSelector(selectFillContext, {
+        candles: c,
+        idx: 1,
+        tfSeconds: 3600,
+        lower: null,
+        contractSize: 1,
+        // sessionEnd = c[3].time (10800): el clamp debe aterrizar exactamente en c[3]
+        trading: { orders: [], positions: [], sessionEnd: c[3].time, sessionEnded: false } as any,
+      });
+      store.overrideSelector(replayFeature.selectJumpSize, 4); // to=5 → clamp baja a 3
+      store.refreshState();
+
+      const out = firstValueFrom(effects.jumpForward$.pipe(take(2), toArray()));
+      actions$.next(ReplayActions.jumpForward());
+      const result = await out;
+
+      // intermedia c[2] procesada, luego goToTime aterriza en c[3] (== sessionEnd)
+      expect(result[0]).toEqual(
+        TradingActions.processCandle({ candle: c[2], subCandles: null, contractSize: 1 }),
+      );
+      expect(result[1]).toEqual(ReplayActions.goToTime({ time: c[3].time }));
+    });
+  });
+
+  describe('jumpBack$', () => {
+    it('emite goToTime jumpSize velas atrás (clamp a 0)', async () => {
+      const c = series(6, 0, 3600);
+      store.overrideSelector(selectFillContext, {
+        candles: c,
+        idx: 2,
+        tfSeconds: 3600,
+        lower: null,
+        contractSize: 1,
+        trading: { orders: [], positions: [], sessionEnd: null, sessionEnded: false } as any,
+      });
+      store.overrideSelector(replayFeature.selectJumpSize, 10); // max(0, 2-10)=0
+      store.refreshState();
+
+      const p = firstValueFrom(effects.jumpBack$);
+      actions$.next(ReplayActions.jumpBack());
+      expect(await p).toEqual(ReplayActions.goToTime({ time: c[0].time }));
     });
   });
 });
