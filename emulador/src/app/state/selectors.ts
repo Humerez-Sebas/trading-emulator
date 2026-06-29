@@ -16,7 +16,7 @@ import {
   SavedSession,
   TradingData,
 } from './trading/trading.models';
-import { computeSessionStats } from './trading/fill-engine';
+import { computeSessionStats, sliceRange } from './trading/fill-engine';
 
 export const selectActiveTf = marketFeature.selectActiveTf;
 export const selectSeries = marketFeature.selectSeries;
@@ -221,14 +221,6 @@ export const selectActiveTfLabel = createSelector(
   selectActiveTf,
   selectCustomTf,
   (tf, customTf): string | null => (customTf != null ? `M${customTf}` : tf),
-);
-
-export const selectChartView = createSelector(
-  selectActiveTfLabel,
-  selectActiveCandles,
-  selectVisibleIndex,
-  selectUtcOffset,
-  (tf, candles, idx, utcOffset) => ({ tf, candles, idx, utcOffset }),
 );
 
 // ============ trading ============
@@ -515,6 +507,56 @@ export const selectResolutionProgress = createSelector(
     if (minutes == null || activeSeconds <= 0 || cursor <= 0) return null;
     const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
     return { cursorTime: cursor, bucketEndTime: bucketStart + activeSeconds };
+  },
+);
+
+/** Partial display-TF candle aggregated from resolution candles revealed in the current bucket. */
+export const selectFormingCandle = createSelector(
+  selectResolutionSeries,
+  selectActiveTfSeconds,
+  selectCurrentTime,
+  selectResolutionMinutes,
+  (resSeries, activeSeconds, cursor, minutes): Candle | null => {
+    if (minutes == null || !resSeries || activeSeconds <= 0 || cursor <= 0) return null;
+    const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
+    const inBucket = sliceRange(resSeries, bucketStart, cursor + 1); // [bucketStart, cursor]
+    if (!inBucket.length) return null;
+    let high = inBucket[0].high;
+    let low = inBucket[0].low;
+    for (const c of inBucket) {
+      if (c.high > high) high = c.high;
+      if (c.low < low) low = c.low;
+    }
+    return {
+      time: bucketStart,
+      open: inBucket[0].open,
+      high,
+      low,
+      close: inBucket[inBucket.length - 1].close,
+    };
+  },
+);
+
+/**
+ * Single, CONSISTENT view for the chart. Important: the component must
+ * subscribe to this composed selector (one emission per state change) and
+ * not combine loose selectors with combineLatest, which produces interim
+ * emissions with a new TF + old candles/index.
+ */
+export const selectChartView = createSelector(
+  selectActiveTfLabel,
+  selectActiveCandles,
+  selectVisibleIndex,
+  selectUtcOffset,
+  selectResolutionMinutes,
+  selectFormingCandle,
+  (tf, candles, idx, utcOffset, minutes, forming) => {
+    // Resolution mode: hide the (future-complete) bucket candle and paint the
+    // forming bar instead; complete candles run up to bucketIdx-1.
+    if (minutes != null && forming != null && idx >= 0) {
+      return { tf, candles, idx: idx - 1, utcOffset, forming };
+    }
+    return { tf, candles, idx, utcOffset, forming: null };
   },
 );
 

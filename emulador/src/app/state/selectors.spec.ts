@@ -12,6 +12,7 @@ import {
   selectFillContext,
   selectFloatingPnl,
   selectActiveTfShortfall,
+  selectFormingCandle,
   selectLoadedTfs,
   selectPointSize,
   selectProgress,
@@ -273,11 +274,35 @@ describe('selectProgress', () => {
   });
 });
 
+// ---- selectFormingCandle ----
+describe('selectFormingCandle', () => {
+  const res = [ // velas M30 dentro de la H1 09:00-10:00
+    { time: 9 * 3600, open: 10, high: 12, low: 9, close: 11 },
+    { time: 9 * 3600 + 1800, open: 11, high: 15, low: 8, close: 14 },
+  ];
+
+  it('agrega las velas de resolución reveladas hasta el cursor', () => {
+    const cursor = 9 * 3600 + 1800; // ambas M30 reveladas
+    const out = selectFormingCandle.projector(res, 3600, cursor, 30);
+    expect(out).toEqual({ time: 9 * 3600, open: 10, high: 15, low: 8, close: 14 });
+  });
+
+  it('solo la primera M30 cuando el cursor está a mitad de hora', () => {
+    const cursor = 9 * 3600; // solo la primera revelada
+    const out = selectFormingCandle.projector(res, 3600, cursor, 30);
+    expect(out).toEqual({ time: 9 * 3600, open: 10, high: 12, low: 9, close: 11 });
+  });
+
+  it('null en vela completa', () => {
+    expect(selectFormingCandle.projector(res, 3600, 9 * 3600, null)).toBeNull();
+  });
+});
+
 // ---- selectChartView ----
 describe('selectChartView', () => {
   it('bundles tf/candles/idx/utcOffset', () => {
     const candles = series(3);
-    const result = selectChartView.projector('H1', candles, 2, -4);
+    const result = selectChartView.projector('H1', candles, 2, -4, null, null);
     expect(result.tf).toBe('H1');
     expect(result.candles).toBe(candles);
     expect(result.idx).toBe(2);
