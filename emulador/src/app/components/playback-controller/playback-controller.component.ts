@@ -4,9 +4,12 @@ import { Store } from '@ngrx/store';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { replayFeature } from '../../state/replay/replay.reducer';
 import {
+  selectAvailableResolutions,
   selectCurrentTime,
   selectMsPerCandle,
   selectPlaying,
+  selectResolutionMinutes,
+  selectResolutionProgress,
   selectUtcOffset,
 } from '../../state/selectors';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
@@ -32,6 +35,10 @@ export class PlaybackControllerComponent implements OnDestroy {
   private currentTime = this.store.selectSignal(selectCurrentTime);
   private utcOffset = this.store.selectSignal(selectUtcOffset);
 
+  availableResolutions = this.store.selectSignal(selectAvailableResolutions);
+  resolutionMinutes = this.store.selectSignal(selectResolutionMinutes);
+  private resProgress = this.store.selectSignal(selectResolutionProgress);
+
   clockMs = computed(() => {
     const t = this.currentTime();
     return t > 0 ? (t + this.utcOffset() * 3600) * 1000 : null;
@@ -43,6 +50,22 @@ export class PlaybackControllerComponent implements OnDestroy {
     { value: '250', label: '4 velas/s' },
     { value: '100', label: '10 velas/s' },
   ];
+
+  resolutionOptions = computed<DropdownOption[]>(() => [
+    { value: 'full', label: 'Vela completa' },
+    ...this.availableResolutions().map((r) => ({ value: String(r.minutes), label: r.label })),
+  ]);
+  resolutionValue = computed(() => {
+    const m = this.resolutionMinutes();
+    return m == null ? 'full' : String(m);
+  });
+  /** "09:37 / 10:00" range readout, in the display time zone. */
+  resolutionRangeMs = computed(() => {
+    const p = this.resProgress();
+    if (!p) return null;
+    const shift = this.utcOffset() * 3600;
+    return { cursor: (p.cursorTime + shift) * 1000, end: (p.bucketEndTime + shift) * 1000 };
+  });
 
   play(): void {
     this.store.dispatch(ReplayActions.play());
@@ -64,6 +87,9 @@ export class PlaybackControllerComponent implements OnDestroy {
   }
   setSpeed(v: string): void {
     this.store.dispatch(ReplayActions.changeSpeed({ msPerCandle: +v }));
+  }
+  setResolution(v: string): void {
+    this.store.dispatch(ReplayActions.setReplayResolution({ minutes: v === 'full' ? null : +v }));
   }
 
   cycleJumpSize(): void {

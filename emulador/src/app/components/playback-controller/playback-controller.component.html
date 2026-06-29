@@ -71,6 +71,21 @@
       (valueChange)="setSpeed($event)"
     />
 
+    @if (availableResolutions().length) {
+      <div class="sep"></div>
+      <ui-dropdown
+        ariaLabel="Resolución del replay"
+        [options]="resolutionOptions()"
+        [value]="resolutionValue()"
+        (valueChange)="setResolution($event)"
+      />
+      @if (resolutionRangeMs(); as r) {
+        <span class="res-range">
+          {{ r.cursor | date: 'HH:mm' : 'UTC' }} / {{ r.end | date: 'HH:mm' : 'UTC' }}
+        </span>
+      }
+    }
+
     <div class="sep"></div>
 
     @if (clockMs(); as ms) {

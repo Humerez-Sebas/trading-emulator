@@ -91,3 +91,8 @@
   font-variant-numeric: tabular-nums;
   margin-left: auto;
 }
+.res-range {
+  color: var(--accent, #2962ff);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

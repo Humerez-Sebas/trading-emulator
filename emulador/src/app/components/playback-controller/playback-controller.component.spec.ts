@@ -5,10 +5,13 @@ import { PlaybackControllerComponent } from './playback-controller.component';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { replayFeature } from '../../state/replay/replay.reducer';
 import {
+  selectAvailableResolutions,
   selectCurrentTime,
   selectDataRange,
   selectMsPerCandle,
   selectPlaying,
+  selectResolutionMinutes,
+  selectResolutionProgress,
   selectUtcOffset,
 } from '../../state/selectors';
 
@@ -33,6 +36,9 @@ describe('PlaybackControllerComponent', () => {
     store.overrideSelector(selectCurrentTime, 0);
     store.overrideSelector(selectUtcOffset, 0);
     store.overrideSelector(selectDataRange, null);
+    store.overrideSelector(selectAvailableResolutions, []);
+    store.overrideSelector(selectResolutionMinutes, null);
+    store.overrideSelector(selectResolutionProgress, null);
     fixture = TestBed.createComponent(PlaybackControllerComponent);
     fixture.detectChanges();
   });
@@ -60,5 +66,13 @@ describe('PlaybackControllerComponent', () => {
     vi.advanceTimersByTime(300); // habría disparado ~3 veces más sin la limpieza
     expect(spy).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+
+  it('setResolution despacha setReplayResolution (full → null)', () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    fixture.componentInstance.setResolution('full');
+    expect(spy).toHaveBeenCalledWith(ReplayActions.setReplayResolution({ minutes: null }));
+    fixture.componentInstance.setResolution('5');
+    expect(spy).toHaveBeenCalledWith(ReplayActions.setReplayResolution({ minutes: 5 }));
   });
 });
