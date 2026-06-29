@@ -24,6 +24,10 @@ export interface MarketState {
   customTf: number | null;
   /** Generated candles for the active custom timeframe (empty until generated). */
   customSeries: Candle[];
+  /** Generated candles for the replay resolution requested via `ReplayActions.setReplayResolution`. */
+  resolutionSeries: Candle[];
+  /** Minutes `resolutionSeries` was generated for, or null. Used to detect staleness. */
+  resolutionFor: number | null;
 }
 
 const initialState: MarketState = {
@@ -33,6 +37,8 @@ const initialState: MarketState = {
   selectedTfs: null,
   customTf: null,
   customSeries: [],
+  resolutionSeries: [],
+  resolutionFor: null,
 };
 
 export const marketFeature = createFeature({
@@ -65,6 +71,14 @@ export const marketFeature = createFeature({
       (state, { minutes, candles }): MarketState =>
         state.customTf === minutes ? { ...state, customSeries: candles } : state,
     ),
+    on(
+      MarketActions.replayResolutionGenerated,
+      (state, { minutes, candles }): MarketState => ({
+        ...state,
+        resolutionSeries: candles,
+        resolutionFor: minutes,
+      }),
+    ),
     // asset switch: replace the whole market state with the restored workspace
     on(
       WorkspacesActions.workspaceRestored,
@@ -75,6 +89,8 @@ export const marketFeature = createFeature({
         selectedTfs: workspace.selectedTfs ?? null,
         customTf: null,
         customSeries: [],
+        resolutionSeries: [],
+        resolutionFor: null,
       }),
     ),
   ),

@@ -10,5 +10,6 @@ export const MarketActions = createActionGroup({
     // aggregates the loaded anchors and replies with `customTimeframeGenerated`.
     'Change Custom Timeframe': props<{ minutes: number }>(),
     'Custom Timeframe Generated': props<{ minutes: number; candles: Candle[] }>(),
+    'Replay Resolution Generated': props<{ minutes: number | null; candles: Candle[] }>(),
   },
 });
