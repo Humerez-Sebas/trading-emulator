@@ -56,16 +56,11 @@ describe('PlaybackControllerComponent', () => {
     expect(spy).toHaveBeenCalledWith(ReplayActions.advanceDisplay());
   });
 
-  it('ngOnDestroy detiene el auto-repeat', () => {
-    vi.useFakeTimers();
-    const c = fixture.componentInstance;
+  it('-1 despacha stepBack una sola vez (sin auto-repeat)', () => {
     const spy = vi.spyOn(store, 'dispatch');
-    c.startRepeat('fwd'); // dispara una vez de inmediato
+    fixture.componentInstance.stepBack();
     expect(spy).toHaveBeenCalledTimes(1);
-    c.ngOnDestroy(); // limpia el intervalo
-    vi.advanceTimersByTime(300); // habría disparado ~3 veces más sin la limpieza
-    expect(spy).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
+    expect(spy).toHaveBeenCalledWith(ReplayActions.stepBack());
   });
 
   it('setResolution despacha setReplayResolution (full → null)', () => {

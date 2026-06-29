@@ -1,4 +1,4 @@
-import { Component, OnDestroy, computed, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Store } from '@ngrx/store';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -25,9 +25,8 @@ const JUMP_SIZES = [5, 10, 50];
   templateUrl: './playback-controller.component.html',
   styleUrl: './playback-controller.component.css',
 })
-export class PlaybackControllerComponent implements OnDestroy {
+export class PlaybackControllerComponent {
   private store = inject(Store);
-  private repeatTimer: ReturnType<typeof setInterval> | null = null;
 
   playing = this.store.selectSignal(selectPlaying);
   msPerCandle = this.store.selectSignal(selectMsPerCandle);
@@ -100,24 +99,5 @@ export class PlaybackControllerComponent implements OnDestroy {
     const i = JUMP_SIZES.indexOf(this.jumpSize());
     const size = JUMP_SIZES[(i + 1) % JUMP_SIZES.length];
     this.store.dispatch(ReplayActions.setJumpSize({ size }));
-  }
-
-  /** Hold-to-repeat: fire once, then repeat every 90ms while held. */
-  startRepeat(dir: 'fwd' | 'back'): void {
-    const fire = dir === 'fwd' ? () => this.step() : () => this.stepBack();
-    fire();
-    this.stopRepeat();
-    this.repeatTimer = setInterval(fire, 90);
-  }
-  stopRepeat(): void {
-    if (this.repeatTimer) {
-      clearInterval(this.repeatTimer);
-      this.repeatTimer = null;
-    }
-  }
-
-  /** Clear the auto-repeat interval on teardown. */
-  ngOnDestroy(): void {
-    this.stopRepeat();
   }
 }

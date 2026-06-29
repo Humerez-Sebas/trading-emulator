@@ -18,15 +18,7 @@
     <div class="sep"></div>
 
     <div class="grp" role="group" aria-label="Transporte">
-      <button
-        class="btn"
-        appTooltip="Retroceder una vela"
-        (pointerdown)="startRepeat('back')"
-        (pointerup)="stopRepeat()"
-        (pointerleave)="stopRepeat()"
-      >
-        −1
-      </button>
+      <button class="btn" appTooltip="Retroceder una vela" (click)="stepBack()">−1</button>
       @if (playing()) {
         <button class="btn play" (click)="pause()" aria-label="Pausar">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -41,15 +33,7 @@
           </svg>
         </button>
       }
-      <button
-        class="btn"
-        appTooltip="Avanzar una vela"
-        (pointerdown)="startRepeat('fwd')"
-        (pointerup)="stopRepeat()"
-        (pointerleave)="stopRepeat()"
-      >
-        +1
-      </button>
+      <button class="btn" appTooltip="Avanzar una vela" (click)="step()">+1</button>
     </div>
 
     <div class="sep"></div>
