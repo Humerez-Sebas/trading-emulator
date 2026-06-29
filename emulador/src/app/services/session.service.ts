@@ -52,6 +52,8 @@ export interface SessionFileV1 {
     /** Active timeframe in MINUTES (e.g. 60 = H1, 45 = custom M45). */
     currentTimeframe: number;
     playbackSpeed: number;
+    /** Replay resolution in MINUTES; null/absent = full candle (v1 backward-compatible). */
+    replayResolution?: number | null;
   };
   trading: {
     trades: unknown[];
@@ -76,6 +78,7 @@ export interface SessionSnapshot {
   replayTime: number;
   currentTimeframe: number;
   playbackSpeed: number;
+  replayResolution: number | null;
   trades: unknown[];
   pendingOrders: unknown[];
   drawings: unknown[];
@@ -146,6 +149,7 @@ export function buildSessionFile(s: SessionSnapshot): SessionFileV1 {
       replayTime: s.replayTime,
       currentTimeframe: s.currentTimeframe,
       playbackSpeed: s.playbackSpeed,
+      replayResolution: s.replayResolution,
     },
     trading: { trades: s.trades, pendingOrders: s.pendingOrders },
     annotations: { drawings: s.drawings, notes: s.notes },
@@ -172,6 +176,7 @@ export interface StateSnapshotInput {
   /** Active custom interval in minutes, or null when a standard TF is active. */
   customTfMinutes: number | null;
   playbackSpeed: number;
+  replayResolutionMinutes: number | null;
   trades: unknown[];
   pendingOrders: unknown[];
   drawings: unknown[];
@@ -197,6 +202,7 @@ export function snapshotFromState(input: StateSnapshotInput): SessionSnapshot {
     replayTime: input.replayTimeSec * 1000,
     currentTimeframe,
     playbackSpeed: input.playbackSpeed,
+    replayResolution: input.replayResolutionMinutes,
     trades: input.trades,
     pendingOrders: input.pendingOrders,
     drawings: input.drawings,
@@ -228,6 +234,7 @@ export interface RestorePlan {
   endRangeSec: number;
   currentTimeframeMinutes: number;
   playbackSpeed: number;
+  replayResolutionMinutes: number | null;
   trades: unknown[];
   pendingOrders: unknown[];
   drawings: unknown[];
@@ -250,6 +257,7 @@ export function restorePlan(file: SessionFileV1): RestorePlan {
     endRangeSec: Math.round(file.context.endRange / 1000),
     currentTimeframeMinutes: file.state.currentTimeframe,
     playbackSpeed: file.state.playbackSpeed,
+    replayResolutionMinutes: file.state.replayResolution ?? null,
     trades: file.trading.trades,
     pendingOrders: file.trading.pendingOrders,
     drawings: file.annotations.drawings,

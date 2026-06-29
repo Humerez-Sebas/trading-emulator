@@ -27,6 +27,7 @@ function snapshot(p: Partial<SessionSnapshot> = {}): SessionSnapshot {
     replayTime: 1705000000000,
     currentTimeframe: 60,
     playbackSpeed: 1.5,
+    replayResolution: null,
     trades: [{ id: 't1' }],
     pendingOrders: [{ id: 'o1' }],
     drawings: [{ id: 'd1' }],
@@ -84,6 +85,26 @@ describe('buildRequiredDatasets', () => {
 });
 
 describe('buildSessionFile', () => {
+  it('incluye replayResolution', () => {
+    const file = buildSessionFile({
+      symbol: 'XAUUSD',
+      initialBalance: 1000,
+      startRange: 0,
+      endRange: 1000,
+      replayTime: 500,
+      currentTimeframe: 60,
+      playbackSpeed: 500,
+      trades: [],
+      pendingOrders: [],
+      drawings: [],
+      notes: [],
+      anchorTimeframes: ['H1'],
+      years: [],
+      replayResolution: 5,
+    } as any);
+    expect(file.state.replayResolution).toBe(5);
+  });
+
   it('produces a spec-shaped v1 file with no candle data', () => {
     const file = buildSessionFile(snapshot());
     expect(file.version).toBe(SESSION_VERSION);
@@ -100,6 +121,7 @@ describe('buildSessionFile', () => {
       replayTime: 1705000000000,
       currentTimeframe: 60,
       playbackSpeed: 1.5,
+      replayResolution: null,
     });
     expect(file.trading).toEqual({ trades: [{ id: 't1' }], pendingOrders: [{ id: 'o1' }] });
     // no candles anywhere in the serialized file
@@ -156,6 +178,7 @@ describe('snapshotFromState', () => {
       activeTf: 'H1',
       customTfMinutes: null,
       playbackSpeed: 1.5,
+      replayResolutionMinutes: null,
       trades: [{ id: 't1' }],
       pendingOrders: [{ id: 'o1' }],
       drawings: [{ id: 'd1' }],
@@ -205,6 +228,26 @@ describe('snapshotFromState', () => {
 });
 
 describe('restorePlan', () => {
+  it('default a null cuando falta el campo (v1 legacy)', () => {
+    const file = buildSessionFile({
+      symbol: 'XAUUSD',
+      initialBalance: 1000,
+      startRange: 0,
+      endRange: 1000,
+      replayTime: 500,
+      currentTimeframe: 60,
+      playbackSpeed: 500,
+      trades: [],
+      pendingOrders: [],
+      drawings: [],
+      notes: [],
+      anchorTimeframes: ['H1'],
+      years: [],
+    } as any);
+    delete (file.state as any).replayResolution;
+    expect(restorePlan(file).replayResolutionMinutes).toBeNull();
+  });
+
   it('converts ms back to seconds and surfaces minutes/trading/annotations as-is', () => {
     const file = buildSessionFile({
       symbol: 'XAUUSD',
@@ -214,6 +257,7 @@ describe('restorePlan', () => {
       replayTime: 1_700_000_000_000,
       currentTimeframe: 60,
       playbackSpeed: 1.5,
+      replayResolution: null,
       trades: [{ id: 't1' }],
       pendingOrders: [{ id: 'o1' }],
       drawings: [{ id: 'd1' }],
@@ -247,6 +291,7 @@ describe('restorePlan', () => {
       replayTime: 0,
       currentTimeframe: 60,
       playbackSpeed: 1,
+      replayResolution: null,
       trades: [],
       pendingOrders: [],
       drawings: [],
@@ -274,6 +319,7 @@ describe('snapshotFromState -> buildSessionFile -> parseSessionText -> restorePl
         activeTf: 'H1',
         customTfMinutes: null,
         playbackSpeed: 1.5,
+        replayResolutionMinutes: null,
         trades: [{ id: 't1' }],
         pendingOrders: [{ id: 'o1' }],
         drawings: [{ id: 'd1' }],
@@ -319,6 +365,7 @@ describe('snapshotFromState -> buildSessionFile -> parseSessionText -> restorePl
         activeTf: null,
         customTfMinutes: 45,
         playbackSpeed: 1,
+        replayResolutionMinutes: null,
         trades: [],
         pendingOrders: [],
         drawings: [],

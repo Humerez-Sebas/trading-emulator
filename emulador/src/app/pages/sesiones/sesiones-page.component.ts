@@ -38,6 +38,7 @@ import {
   selectDataRange,
   selectLoadedTfs,
   selectMsPerCandle,
+  selectResolutionMinutes,
   selectSavedSessions,
   selectTradingData,
 } from '../../state/selectors';
@@ -260,6 +261,7 @@ export class SesionesPageComponent {
   private liveActiveTf = this.store.selectSignal(marketFeature.selectActiveTf);
   private liveCustomTf = this.store.selectSignal(marketFeature.selectCustomTf);
   private livePlaybackSpeed = this.store.selectSignal(selectMsPerCandle);
+  private liveReplayResolution = this.store.selectSignal(selectResolutionMinutes);
   private liveDrawings = this.store.selectSignal(drawingsFeature.selectItems);
   private liveLoadedTfs = this.store.selectSignal(selectLoadedTfs);
 
@@ -712,6 +714,7 @@ export class SesionesPageComponent {
           drawings: plan.drawings as Drawing[],
           intervalMinutes: plan.currentTimeframeMinutes,
           playbackSpeed: plan.playbackSpeed,
+          replayResolution: plan.replayResolutionMinutes,
         },
       }),
     );
@@ -994,6 +997,7 @@ export class SesionesPageComponent {
         activeTf: this.liveActiveTf(),
         customTfMinutes: this.liveCustomTf(),
         playbackSpeed: this.livePlaybackSpeed(),
+        replayResolutionMinutes: this.liveReplayResolution(),
         trades: this.liveTrading().history,
         pendingOrders: this.liveTrading().orders,
         drawings: this.liveDrawings(),
@@ -1037,6 +1041,7 @@ export class SesionesPageComponent {
       activeTf: null,
       customTfMinutes: null,
       playbackSpeed: 1,
+      replayResolutionMinutes: null,
       trades: trading.history,
       pendingOrders: trading.orders,
       drawings: [],

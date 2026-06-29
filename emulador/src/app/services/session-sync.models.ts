@@ -33,6 +33,8 @@ export interface SessionPayloadV1 {
   activeTf: Timeframe | null;
   customTfMinutes: number | null;
   playbackSpeed: number;
+  /** Replay resolution in MINUTES; null/absent = full candle. */
+  replayResolution?: number | null;
   drawings: Drawing[];
   notes: unknown[];
   selectedTfs: Timeframe[];
@@ -48,6 +50,7 @@ export interface PayloadInput {
   activeTf: Timeframe | null;
   customTfMinutes: number | null;
   playbackSpeed: number;
+  replayResolution?: number | null;
   drawings: Drawing[];
   notes: unknown[];
   selectedTfs: Timeframe[];
@@ -62,6 +65,7 @@ export interface SessionView {
   activeTf: Timeframe | null;
   customTfMinutes: number | null;
   playbackSpeed: number;
+  replayResolution?: number | null;
   drawings: Drawing[];
   notes: unknown[];
   selectedTfs: Timeframe[];

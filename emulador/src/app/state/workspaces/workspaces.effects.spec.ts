@@ -213,13 +213,19 @@ describe('WorkspacesEffects', () => {
         { id: 'd1', kind: 'line' as const, p1: { time: 0, price: 1 }, p2: { time: 1, price: 2 } },
       ];
 
-      const p = effects.switch$.pipe(take(6), toArray()).toPromise();
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
       actions$.next(
         WorkspacesActions.switchAsset({
           symbol: SYMBOL,
           selectedTfs: ['H1'],
           thenLoad: [csvH1],
-          thenRestore: { trading, drawings, intervalMinutes: 60, playbackSpeed: 250 },
+          thenRestore: {
+            trading,
+            drawings,
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+          },
           thenGoTo: 1234,
         }),
       );
@@ -234,7 +240,8 @@ describe('WorkspacesEffects', () => {
         DrawingsActions.restoreDrawings({ drawings }),
         MarketActions.changeTimeframe({ tf: 'H1' }),
         ReplayActions.changeSpeed({ msPerCandle: 250 }),
-        // thenGoTo(1234) follows as a 7th action (not taken here)
+        ReplayActions.setReplayResolution({ minutes: 5 }),
+        // thenGoTo(1234) follows as an 8th action (not taken here)
       ]);
     });
 
@@ -245,13 +252,19 @@ describe('WorkspacesEffects', () => {
       const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
       const trading = defaultTradingData();
 
-      const p = effects.switch$.pipe(take(5), toArray()).toPromise();
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
       actions$.next(
         WorkspacesActions.switchAsset({
           symbol: SYMBOL,
           selectedTfs: ['H1'],
           thenLoad: [csvH1],
-          thenRestore: { trading, drawings: [], intervalMinutes: 45, playbackSpeed: 100 },
+          thenRestore: {
+            trading,
+            drawings: [],
+            intervalMinutes: 45,
+            playbackSpeed: 100,
+            replayResolution: null,
+          },
         }),
       );
 
@@ -264,6 +277,8 @@ describe('WorkspacesEffects', () => {
         TradingActions.restoreSession({ trading }),
         DrawingsActions.restoreDrawings({ drawings: [] }),
         MarketActions.changeCustomTimeframe({ minutes: 45 }),
+        ReplayActions.changeSpeed({ msPerCandle: 100 }),
+        ReplayActions.setReplayResolution({ minutes: null }),
       ]);
     });
 

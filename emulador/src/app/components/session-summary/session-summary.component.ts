@@ -13,6 +13,7 @@ import {
   selectCurrentTime,
   selectLoadedTfs,
   selectMsPerCandle,
+  selectResolutionMinutes,
   selectSessionStats,
   selectTradingData,
 } from '../../state/selectors';
@@ -62,6 +63,7 @@ export class SessionSummaryComponent {
   private activeTf = this.store.selectSignal(marketFeature.selectActiveTf);
   private customTf = this.store.selectSignal(marketFeature.selectCustomTf);
   private playbackSpeed = this.store.selectSignal(selectMsPerCandle);
+  private replayResolution = this.store.selectSignal(selectResolutionMinutes);
   private tradingData = this.store.selectSignal(selectTradingData);
   private drawings = this.store.selectSignal(drawingsFeature.selectItems);
   private loadedTfs = this.store.selectSignal(selectLoadedTfs);
@@ -117,6 +119,7 @@ export class SessionSummaryComponent {
       activeTf: this.activeTf(),
       customTfMinutes: this.customTf(),
       playbackSpeed: this.playbackSpeed(),
+      replayResolutionMinutes: this.replayResolution(),
       trades: this.tradingData().history,
       pendingOrders: this.tradingData().orders,
       drawings: this.drawings(),

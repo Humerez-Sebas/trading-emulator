@@ -211,6 +211,7 @@ export class WorkspacesEffects {
           : MarketActions.changeCustomTimeframe({ minutes: thenRestore.intervalMinutes }),
       );
       actions.push(ReplayActions.changeSpeed({ msPerCandle: thenRestore.playbackSpeed }));
+      actions.push(ReplayActions.setReplayResolution({ minutes: thenRestore.replayResolution }));
     }
     // 4) then import a session CSV into the freshly restored workspace
     if (thenImport?.trades.length) {
