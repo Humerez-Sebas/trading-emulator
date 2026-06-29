@@ -21,5 +21,7 @@ export const ReplayActions = createActionGroup({
     'Jump Back': emptyProps(),
     /** Teleports the cursor (scrubber). NOT a fill-processing advance. */
     'Seek To': props<{ time: number }>(),
+    /** Sets the replay resolution in minutes (null = full display-TF candle). */
+    'Set Replay Resolution': props<{ minutes: number | null }>(),
   },
 });
