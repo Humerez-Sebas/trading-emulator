@@ -5,11 +5,11 @@ import { interval, EMPTY } from 'rxjs';
 import { filter, map, mergeMap, switchMap, withLatestFrom } from 'rxjs/operators';
 import { ReplayActions } from './replay.actions';
 import {
-  selectActiveCandles,
   selectFillContext,
   selectMsPerCandle,
   selectPlaying,
-  selectVisibleIndex,
+  selectReplayIndex,
+  selectReplaySeries,
 } from '../selectors';
 import { replayFeature } from './replay.reducer';
 import { TradingActions } from '../trading/trading.actions';
@@ -27,7 +27,7 @@ export class ReplayEffects {
   advance$ = createEffect(() =>
     this.actions$.pipe(
       ofType(ReplayActions.advanceCandle),
-      withLatestFrom(this.store.select(selectActiveCandles), this.store.select(selectVisibleIndex)),
+      withLatestFrom(this.store.select(selectReplaySeries), this.store.select(selectReplayIndex)),
       map(([, candles, idx]) => {
         const next = idx + 1;
         if (next >= candles.length) return ReplayActions.endOfData();
@@ -44,7 +44,7 @@ export class ReplayEffects {
   stepBack$ = createEffect(() =>
     this.actions$.pipe(
       ofType(ReplayActions.stepBack),
-      withLatestFrom(this.store.select(selectActiveCandles), this.store.select(selectVisibleIndex)),
+      withLatestFrom(this.store.select(selectReplaySeries), this.store.select(selectReplayIndex)),
       filter(([, , idx]) => idx >= 1),
       map(([, candles, idx]) => ReplayActions.goToTime({ time: candles[idx - 1].time })),
     ),
@@ -87,8 +87,8 @@ export class ReplayEffects {
     this.actions$.pipe(
       ofType(ReplayActions.jumpBack),
       withLatestFrom(
-        this.store.select(selectActiveCandles),
-        this.store.select(selectVisibleIndex),
+        this.store.select(selectReplaySeries),
+        this.store.select(selectReplayIndex),
         this.store.select(replayFeature.selectJumpSize),
       ),
       filter(([, , idx]) => idx >= 1),

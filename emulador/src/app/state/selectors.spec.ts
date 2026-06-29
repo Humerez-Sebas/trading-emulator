@@ -16,6 +16,8 @@ import {
   selectLoadedTfs,
   selectPointSize,
   selectProgress,
+  selectReplayIndex,
+  selectReplaySeries,
   selectResolutionProgress,
   selectSessionStats,
   selectSessionTfs,
@@ -522,6 +524,26 @@ describe('selectSessionStats', () => {
     const stats = selectSessionStats.projector([], 10000);
     expect(stats).toBeDefined();
     expect(stats.totalTrades).toBe(0);
+  });
+});
+
+// ---- selectReplaySeries / selectReplayIndex ----
+describe('selectReplaySeries / selectReplayIndex', () => {
+  const active = [{ time: 0, open: 1, high: 1, low: 1, close: 1 }];
+  const resolution = [
+    { time: 0, open: 1, high: 1, low: 1, close: 1 },
+    { time: 300, open: 1, high: 1, low: 1, close: 1 },
+  ];
+
+  it('usa la serie activa en vela completa', () => {
+    expect(selectReplaySeries.projector(active, null)).toBe(active);
+  });
+  it('usa la serie de resolución cuando está activa', () => {
+    expect(selectReplaySeries.projector(active, resolution)).toBe(resolution);
+  });
+  it('índice del último candle de resolución <= cursor', () => {
+    expect(selectReplayIndex.projector(resolution, 300)).toBe(1);
+    expect(selectReplayIndex.projector(resolution, 299)).toBe(0);
   });
 });
 

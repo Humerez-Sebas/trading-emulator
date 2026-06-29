@@ -8,11 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReplayEffects } from './replay.effects';
 import { ReplayActions } from './replay.actions';
 import {
-  selectActiveCandles,
   selectFillContext,
   selectMsPerCandle,
   selectPlaying,
-  selectVisibleIndex,
+  selectReplayIndex,
+  selectReplaySeries,
 } from '../selectors';
 import { replayFeature } from './replay.reducer';
 import { TradingActions } from '../trading/trading.actions';
@@ -40,8 +40,8 @@ describe('ReplayEffects', () => {
 
   describe('advance$', () => {
     it('emits goToTime with the next candle time when idx+1 < length', async () => {
-      store.overrideSelector(selectActiveCandles, candles);
-      store.overrideSelector(selectVisibleIndex, 1); // next = candles[2].time = 7200
+      store.overrideSelector(selectReplaySeries, candles);
+      store.overrideSelector(selectReplayIndex, 1); // next = candles[2].time = 7200
       store.refreshState();
 
       const p = firstValueFrom(effects.advance$);
@@ -51,8 +51,8 @@ describe('ReplayEffects', () => {
     });
 
     it('emits endOfData when idx+1 >= candles.length', async () => {
-      store.overrideSelector(selectActiveCandles, candles);
-      store.overrideSelector(selectVisibleIndex, 4); // idx 4 is the last
+      store.overrideSelector(selectReplaySeries, candles);
+      store.overrideSelector(selectReplayIndex, 4); // idx 4 is the last
       store.refreshState();
 
       const p = firstValueFrom(effects.advance$);
@@ -62,8 +62,8 @@ describe('ReplayEffects', () => {
     });
 
     it('emits endOfData when candles are empty', async () => {
-      store.overrideSelector(selectActiveCandles, []);
-      store.overrideSelector(selectVisibleIndex, -1);
+      store.overrideSelector(selectReplaySeries, []);
+      store.overrideSelector(selectReplayIndex, -1);
       store.refreshState();
 
       const p = firstValueFrom(effects.advance$);
@@ -73,10 +73,23 @@ describe('ReplayEffects', () => {
     });
   });
 
+  describe('advance$ en modo resolución', () => {
+    it('avanza a la próxima vela de resolución', async () => {
+      const res = series(4, 0, 300); // M5: 0,300,600,900
+      store.overrideSelector(selectReplaySeries, res);
+      store.overrideSelector(selectReplayIndex, 1); // next = 600
+      store.refreshState();
+
+      const p = firstValueFrom(effects.advance$);
+      actions$.next(ReplayActions.advanceCandle());
+      expect(await p).toEqual(ReplayActions.goToTime({ time: 600 }));
+    });
+  });
+
   describe('stepBack$', () => {
     it('emits goToTime with the previous candle time when idx >= 1', async () => {
-      store.overrideSelector(selectActiveCandles, candles);
-      store.overrideSelector(selectVisibleIndex, 2); // prev = candles[1].time = 3600
+      store.overrideSelector(selectReplaySeries, candles);
+      store.overrideSelector(selectReplayIndex, 2); // prev = candles[1].time = 3600
       store.refreshState();
 
       const p = firstValueFrom(effects.stepBack$);
@@ -86,8 +99,8 @@ describe('ReplayEffects', () => {
     });
 
     it('does not emit when idx < 1 (filters the action)', async () => {
-      store.overrideSelector(selectActiveCandles, candles);
-      store.overrideSelector(selectVisibleIndex, 0);
+      store.overrideSelector(selectReplaySeries, candles);
+      store.overrideSelector(selectReplayIndex, 0);
       store.refreshState();
 
       // Collect up to 1 emission; the filtered stepBack should not produce one
@@ -101,7 +114,7 @@ describe('ReplayEffects', () => {
       expect(results.length).toBe(0);
 
       // Now send an action that WILL pass (override idx to 1 first)
-      store.overrideSelector(selectVisibleIndex, 1);
+      store.overrideSelector(selectReplayIndex, 1);
       store.refreshState();
       actions$.next(ReplayActions.stepBack()); // idx=1 → emits candles[0].time = 0
 
@@ -228,14 +241,8 @@ describe('ReplayEffects', () => {
   describe('jumpBack$', () => {
     it('emite goToTime jumpSize velas atrás (clamp a 0)', async () => {
       const c = series(6, 0, 3600);
-      store.overrideSelector(selectFillContext, {
-        candles: c,
-        idx: 2,
-        tfSeconds: 3600,
-        lower: null,
-        contractSize: 1,
-        trading: { orders: [], positions: [], sessionEnd: null, sessionEnded: false } as any,
-      });
+      store.overrideSelector(selectReplaySeries, c);
+      store.overrideSelector(selectReplayIndex, 2);
       store.overrideSelector(replayFeature.selectJumpSize, 10); // max(0, 2-10)=0
       store.refreshState();
 

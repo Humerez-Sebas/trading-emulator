@@ -567,16 +567,59 @@ export const selectLowerSeries = createSelector(
   (series, activeSeconds): Candle[] | null => lowerSeriesForSeconds(series, activeSeconds),
 );
 
+/** The series the replay cursor traverses: the resolution series when active, else the display series. */
+export const selectReplaySeries = createSelector(
+  selectActiveCandles,
+  selectResolutionSeries,
+  (active, resolution): Candle[] => resolution ?? active,
+);
+
+/** Index of the last replay-series candle whose time <= cursor. */
+export const selectReplayIndex = createSelector(
+  selectReplaySeries,
+  selectCurrentTime,
+  (candles, t): number => {
+    if (!candles.length || t <= 0) return -1;
+    let lo = 0,
+      hi = candles.length - 1,
+      ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (candles[mid].time <= t) {
+        ans = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    return ans;
+  },
+);
+
+/** Candle duration (seconds) the replay advances by: resolution or display TF. */
+export const selectReplayTfSeconds = createSelector(
+  selectActiveTfSeconds,
+  selectResolutionMinutes,
+  (activeSeconds, minutes): number => (minutes != null ? minutes * 60 : activeSeconds),
+);
+
+/** Finest loaded series strictly below the replay candle duration (SL/TP tiebreak). */
+export const selectReplayLowerSeries = createSelector(
+  selectSeries,
+  selectReplayTfSeconds,
+  (series, seconds): Candle[] | null => lowerSeriesForSeconds(series, seconds),
+);
+
 /**
  * Context the fill effect needs to evaluate a freshly revealed candle. Exposes
  * the active candle DURATION and the finer "lower" series directly (instead of
- * a Timeframe string), so fills work for custom timeframes too.
+ * a Timeframe string), so fills work for custom timeframes too. Derived from
+ * the replay-aware selectors so fills evaluate over the resolution series when
+ * active (identical to the display series in full-candle mode).
  */
 export const selectFillContext = createSelector(
-  selectActiveCandles,
-  selectVisibleIndex,
-  selectActiveTfSeconds,
-  selectLowerSeries,
+  selectReplaySeries,
+  selectReplayIndex,
+  selectReplayTfSeconds,
+  selectReplayLowerSeries,
   selectContractSize,
   tradingFeature.selectTradingState,
   (candles, idx, tfSeconds, lower, contractSize, trading) => ({
