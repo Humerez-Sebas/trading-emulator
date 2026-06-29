@@ -1,0 +1,78 @@
+<div class="hud">
+  <div class="scrub-row">
+    <input
+      class="scrub"
+      type="range"
+      min="0"
+      max="1"
+      step="0.001"
+      [value]="scrubFraction()"
+      aria-label="Línea de tiempo de la sesión"
+      (input)="onScrub(+$any($event.target).value)"
+    />
+  </div>
+  <div class="ctl-row">
+    <div class="grp" role="group" aria-label="Transporte">
+      <button
+        class="btn"
+        appTooltip="Retroceder una vela"
+        (pointerdown)="startRepeat('back')"
+        (pointerup)="stopRepeat()"
+        (pointerleave)="stopRepeat()"
+      >
+        −1
+      </button>
+      @if (playing()) {
+        <button class="btn play" (click)="pause()" aria-label="Pausar">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="5" y="4" width="5" height="16" rx="1"></rect>
+            <rect x="14" y="4" width="5" height="16" rx="1"></rect>
+          </svg>
+        </button>
+      } @else {
+        <button class="btn play" (click)="play()" aria-label="Reproducir">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="6,4 20,12 6,20"></polygon>
+          </svg>
+        </button>
+      }
+      <button
+        class="btn"
+        appTooltip="Avanzar una vela"
+        (pointerdown)="startRepeat('fwd')"
+        (pointerup)="stopRepeat()"
+        (pointerleave)="stopRepeat()"
+      >
+        +1
+      </button>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="grp" role="group" aria-label="Saltos">
+      <button class="btn" appTooltip="Saltar atrás" (click)="jumpBack()">«</button>
+      <button class="chip" appTooltip="Tamaño de salto" (click)="cycleJumpSize()">
+        ×{{ jumpSize() }}
+      </button>
+      <button class="btn" appTooltip="Saltar adelante" (click)="jumpForward()">»</button>
+    </div>
+
+    <div class="sep"></div>
+
+    <ui-dropdown
+      ariaLabel="Velocidad"
+      [options]="speedOptions"
+      [value]="msPerCandle() + ''"
+      (valueChange)="setSpeed($event)"
+    />
+
+    <div class="sep"></div>
+
+    @if (clockMs(); as ms) {
+      <span class="clock">{{ ms | date: 'dd MMM HH:mm' : 'UTC' }}</span>
+    }
+    @if (progress(); as p) {
+      <span class="progress">{{ p.shown }} / {{ p.total }}</span>
+    }
+  </div>
+</div>

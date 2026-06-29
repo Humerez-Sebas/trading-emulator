@@ -1,0 +1,80 @@
+.hud {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(520px, 90%);
+  padding: 8px 12px;
+  background: var(--surface-2, #181818);
+  border: 1px solid var(--border-strong, #333);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  z-index: 30;
+}
+.scrub-row {
+  display: flex;
+}
+.scrub {
+  width: 100%;
+  accent-color: var(--accent, #2962ff);
+  cursor: pointer;
+}
+.ctl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.grp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn,
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 30px;
+  padding: 0 9px;
+  background: var(--surface-3, #1f1f1f);
+  border: 1px solid var(--border-strong, #333);
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text, #d1d4dc);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.btn:hover,
+.chip:hover {
+  border-color: var(--border-strong, #555);
+}
+.btn.play {
+  background: var(--accent, #2962ff);
+  border-color: var(--accent, #2962ff);
+  color: #fff;
+  min-width: 36px;
+}
+.btn:focus-visible,
+.chip:focus-visible {
+  outline: 2px solid var(--accent, #2962ff);
+  outline-offset: 2px;
+}
+.sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border-strong, #333);
+}
+.clock {
+  color: var(--warning, #f0b90b);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.progress {
+  color: var(--text-muted, #787b86);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
