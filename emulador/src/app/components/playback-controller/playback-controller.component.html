@@ -1,20 +1,7 @@
-<div class="hud" [class.positioned]="pos()" [style.left.px]="pos()?.x" [style.top.px]="pos()?.y">
-  <div class="scrub-row">
-    <input
-      class="scrub"
-      type="range"
-      min="0"
-      max="1"
-      step="0.001"
-      [value]="scrubFraction()"
-      aria-label="Línea de tiempo de la sesión"
-      (input)="onScrub(+$any($event.target).value)"
-    />
-  </div>
+<div class="hud" appDraggable=".grip" dragStorageKey="emulador.playbackPos">
   <div class="ctl-row">
     <button
       class="grip"
-      (mousedown)="startDrag($event)"
       appTooltip="Arrastrar el panel"
       aria-label="Mover el panel de reproducción"
     >

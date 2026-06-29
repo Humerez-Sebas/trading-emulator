@@ -39,14 +39,6 @@
   outline: 2px solid var(--accent, #2962ff);
   outline-offset: 2px;
 }
-.scrub-row {
-  display: flex;
-}
-.scrub {
-  width: 100%;
-  accent-color: var(--accent, #2962ff);
-  cursor: pointer;
-}
 .ctl-row {
   display: flex;
   align-items: center;

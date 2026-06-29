@@ -50,15 +50,6 @@ describe('PlaybackControllerComponent', () => {
     expect(spy).toHaveBeenCalledWith(ReplayActions.advanceCandle());
   });
 
-  it('onScrub pausa el auto-play y luego teletransporta el cursor', () => {
-    store.overrideSelector(selectDataRange, { from: 1000, to: 2000 });
-    store.refreshState();
-    const spy = vi.spyOn(store, 'dispatch');
-    fixture.componentInstance.onScrub(0.5);
-    expect(spy).toHaveBeenCalledWith(ReplayActions.pause());
-    expect(spy).toHaveBeenCalledWith(ReplayActions.seekTo({ time: 1500 }));
-  });
-
   it('ngOnDestroy detiene el auto-repeat', () => {
     vi.useFakeTimers();
     const c = fixture.componentInstance;
@@ -69,25 +60,5 @@ describe('PlaybackControllerComponent', () => {
     vi.advanceTimersByTime(300); // habría disparado ~3 veces más sin la limpieza
     expect(spy).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
-  });
-
-  it('pos por defecto es null (HUD centrado) sin posición guardada', () => {
-    localStorage.clear();
-    const f = TestBed.createComponent(PlaybackControllerComponent);
-    expect(f.componentInstance.pos()).toBeNull();
-  });
-
-  it('carga la posición arrastrada desde localStorage', () => {
-    localStorage.setItem('emulador.playbackPos', JSON.stringify({ x: 200, y: 100 }));
-    const f = TestBed.createComponent(PlaybackControllerComponent);
-    expect(f.componentInstance.pos()).toEqual({ x: 200, y: 100 });
-  });
-
-  it('persiste la posición en localStorage al soltar el arrastre', () => {
-    const c = fixture.componentInstance;
-    c.pos.set({ x: 120, y: 64 });
-    c.startDrag(new MouseEvent('mousedown', { clientX: 0, clientY: 0 }));
-    window.dispatchEvent(new MouseEvent('mouseup'));
-    expect(JSON.parse(localStorage.getItem('emulador.playbackPos')!)).toEqual({ x: 120, y: 64 });
   });
 });
