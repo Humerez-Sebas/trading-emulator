@@ -6,6 +6,7 @@ import { drawingsFeature } from './drawings/drawings.reducer';
 import { workspacesFeature } from './workspaces/workspaces.reducer';
 import { tradingFeature } from './trading/trading.reducer';
 import { Candle, derivePointSize, TIMEFRAME_ORDER, TIMEFRAME_SECONDS, Timeframe } from '../models';
+import { pickBaseSeriesTf, loadedTfForMinutes, formatIntervalShort } from './market/custom-timeframe';
 import { Drawing } from './drawings/drawings.models';
 import {
   contractSizeFor,
@@ -468,6 +469,53 @@ export const selectActiveTfSeconds = createSelector(
   selectActiveTf,
   selectCustomTf,
   (tf, customTf): number => (customTf != null ? customTf * 60 : tf ? TIMEFRAME_SECONDS[tf] : 0),
+);
+
+export const selectResolutionMinutes = replayFeature.selectResolutionMinutes;
+
+/** The replay-resolution candles: a loaded series at R, else the generated one, else null. */
+export const selectResolutionSeries = createSelector(
+  selectSeries,
+  marketFeature.selectResolutionSeries,
+  marketFeature.selectResolutionFor,
+  selectResolutionMinutes,
+  (series, generated, generatedFor, minutes): Candle[] | null => {
+    if (minutes == null) return null;
+    const loaded = loadedTfForMinutes(minutes, Object.keys(series) as Timeframe[]);
+    if (loaded && series[loaded]?.length) return series[loaded]!;
+    return generatedFor === minutes && generated.length ? generated : null;
+  },
+);
+
+/** Standard TFs that divide the display TF, are finer, and can be generated from loaded data. */
+export const selectAvailableResolutions = createSelector(
+  selectSeries,
+  selectActiveTfSeconds,
+  (series, activeSeconds): { minutes: number; label: string }[] => {
+    if (activeSeconds <= 0) return [];
+    const out: { minutes: number; label: string }[] = [];
+    for (const tf of TIMEFRAME_ORDER) {
+      const secs = TIMEFRAME_SECONDS[tf];
+      if (secs >= activeSeconds) break;
+      const minutes = secs / 60;
+      if (activeSeconds % secs === 0 && pickBaseSeriesTf(series, minutes)) {
+        out.push({ minutes, label: formatIntervalShort(minutes) });
+      }
+    }
+    return out;
+  },
+);
+
+/** Cursor time + current display-bucket end, for the "HH:mm / HH:mm" readout. */
+export const selectResolutionProgress = createSelector(
+  selectActiveTfSeconds,
+  selectCurrentTime,
+  selectResolutionMinutes,
+  (activeSeconds, cursor, minutes): { cursorTime: number; bucketEndTime: number } | null => {
+    if (minutes == null || activeSeconds <= 0 || cursor <= 0) return null;
+    const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
+    return { cursorTime: cursor, bucketEndTime: bucketStart + activeSeconds };
+  },
 );
 
 /** Finest loaded series strictly below the active candle duration (SL/TP order). */

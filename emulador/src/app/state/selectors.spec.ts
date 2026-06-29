@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   lowerSeriesForSeconds,
   selectActiveCandles,
+  selectAvailableResolutions,
   selectChartStyle,
   selectChartView,
   selectClosedTradeBoxes,
@@ -14,6 +15,7 @@ import {
   selectLoadedTfs,
   selectPointSize,
   selectProgress,
+  selectResolutionProgress,
   selectSessionStats,
   selectSessionTfs,
   selectTfLastTimes,
@@ -551,5 +553,35 @@ describe('lowerSeriesForSeconds', () => {
 
   it('returns null when series is empty', () => {
     expect(lowerSeriesForSeconds({}, 14400)).toBeNull(); // H4 = 14400s
+  });
+});
+
+// ---- selectAvailableResolutions ----
+describe('selectAvailableResolutions', () => {
+  it('lista divisores válidos del TF mostrado con datos (H1 con M1)', () => {
+    const series = { M1: [{ time: 0, open: 1, high: 1, low: 1, close: 1 }] };
+    const out = selectAvailableResolutions.projector(series, 3600); // H1
+    const mins = out.map((r) => r.minutes);
+    expect(mins).toEqual([1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30]);
+    expect(out.find((r) => r.minutes === 5)!.label).toBe('M5');
+  });
+
+  it('vacío cuando no hay serie base para generar', () => {
+    const series = { H1: [{ time: 0, open: 1, high: 1, low: 1, close: 1 }] };
+    expect(selectAvailableResolutions.projector(series, 3600)).toEqual([]); // sin M-data < H1
+  });
+});
+
+// ---- selectResolutionProgress ----
+describe('selectResolutionProgress', () => {
+  it('devuelve el cursor y el fin del bucket actual del TF mostrado', () => {
+    // cursor 09:37 dentro de la H1 09:00-10:00 → bucketEnd 10:00
+    const cursor = 9 * 3600 + 37 * 60;
+    const out = selectResolutionProgress.projector(3600, cursor, 5);
+    expect(out).toEqual({ cursorTime: cursor, bucketEndTime: 10 * 3600 });
+  });
+
+  it('null en vela completa', () => {
+    expect(selectResolutionProgress.projector(3600, 1000, null)).toBeNull();
   });
 });
