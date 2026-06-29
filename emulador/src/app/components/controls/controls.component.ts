@@ -1,9 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
-import { DatePipe, DecimalPipe } from '@angular/common';
 import { Store } from '@ngrx/store';
 import { Timeframe } from '../../models';
 import { MarketActions } from '../../state/market/market.actions';
-import { ReplayActions } from '../../state/replay/replay.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import {
   selectActiveTf,
@@ -11,10 +9,6 @@ import {
   selectCurrentAsset,
   selectCurrentTime,
   selectCustomTf,
-  selectFloatingPnl,
-  selectMsPerCandle,
-  selectPlaying,
-  selectProgress,
   selectSessionTfs,
   selectTfLastTimes,
   selectUtcOffset,
@@ -26,7 +20,7 @@ import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 @Component({
   selector: 'app-controls',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, TooltipDirective, DropdownComponent],
+  imports: [TooltipDirective, DropdownComponent],
   templateUrl: './controls.component.html',
   styleUrl: './controls.component.css',
 })
@@ -40,31 +34,10 @@ export class ControlsComponent {
   customTf = this.store.selectSignal(selectCustomTf);
   assets = this.store.selectSignal(selectAssets);
   currentAsset = this.store.selectSignal(selectCurrentAsset);
-  playing = this.store.selectSignal(selectPlaying);
-  msPerCandle = this.store.selectSignal(selectMsPerCandle);
-  progress = this.store.selectSignal(selectProgress);
   utcOffset = this.store.selectSignal(selectUtcOffset);
-  floatingPnl = this.store.selectSignal(selectFloatingPnl);
 
   private currentTime = this.store.selectSignal(selectCurrentTime);
 
-  /** Clock in the chosen time zone (the data stays in UTC). */
-  clockMs = computed(() => {
-    const t = this.currentTime();
-    return t > 0 ? (t + this.utcOffset() * 3600) * 1000 : null;
-  });
-
-  readonly speeds = [
-    { ms: 1000, label: '1 vela/s' },
-    { ms: 500, label: '2 velas/s' },
-    { ms: 250, label: '4 velas/s' },
-    { ms: 100, label: '10 velas/s' },
-  ];
-
-  readonly speedOptions: DropdownOption[] = this.speeds.map((s) => ({
-    value: String(s.ms),
-    label: s.label,
-  }));
   assetOptions = computed<DropdownOption[]>(() =>
     this.assets().map((a) => ({ value: a.symbol, label: a.symbol })),
   );
@@ -105,25 +78,5 @@ export class ControlsComponent {
       timeZone: 'UTC',
     });
     return `Solo hay datos hasta ${when} en esta temporalidad`;
-  }
-
-  step(): void {
-    this.store.dispatch(ReplayActions.advanceCandle());
-  }
-
-  stepBack(): void {
-    this.store.dispatch(ReplayActions.stepBack());
-  }
-
-  play(): void {
-    this.store.dispatch(ReplayActions.play());
-  }
-
-  pause(): void {
-    this.store.dispatch(ReplayActions.pause());
-  }
-
-  setSpeed(value: string): void {
-    this.store.dispatch(ReplayActions.changeSpeed({ msPerCandle: +value }));
   }
 }
