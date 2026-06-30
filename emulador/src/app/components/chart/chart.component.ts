@@ -638,6 +638,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       downColor: c.downColor,
       wickUpColor: c.wickUp,
       wickDownColor: c.wickDown,
+      borderVisible: true,
+      borderUpColor: c.borderUpColor,
+      borderDownColor: c.borderDownColor,
     });
     this.pushDrawings();
     // trade overlay uses the theme's up/down colors
