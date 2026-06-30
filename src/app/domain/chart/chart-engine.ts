@@ -1,11 +1,13 @@
-import { createChart, IChartApi, ISeriesApi, CandlestickSeries } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData } from 'lightweight-charts';
 import { RenderModel } from './render-model';
 
 export class ChartEngine {
   private chart: IChartApi;
   private mainSeries: ISeriesApi<"Candlestick">;
+  private container: HTMLElement;
   
   constructor(container: HTMLElement) {
+    this.container = container;
     this.chart = createChart(container, {
       width: container.clientWidth,
       height: container.clientHeight,
@@ -34,8 +36,8 @@ export class ChartEngine {
     });
     
     // 2. Update data efficiently
-    if (model.candles.length > 0) {
-      this.mainSeries.setData(model.candles as any);
+    if (model.candles?.length > 0) {
+      this.mainSeries.setData(model.candles as unknown as CandlestickData[]);
     }
   }
   
@@ -45,9 +47,8 @@ export class ChartEngine {
   }
   
   private onResize = () => {
-    if (this.chart && this.chart.timeScale()) {
-      // Container size should be handled externally or via ResizeObserver, 
-      // but for simplicity in RFC 001 we bind to window.
+    if (this.chart && this.container) {
+      this.chart.resize(this.container.clientWidth, this.container.clientHeight);
     }
   };
 }
