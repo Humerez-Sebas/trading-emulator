@@ -13,8 +13,6 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 import {
-  CandlestickSeries,
-  createChart,
   createSeriesMarkers,
   IChartApi,
   IPriceLine,
@@ -63,7 +61,7 @@ import {
   Position,
 } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { RenderModel } from '../../domain/chart/render-model';
+import { ChartConfig } from '../../domain/chart/render-model';
 
 /** A horizontal trade level rendered as a price line on the chart. */
 interface TradeLine {
@@ -106,15 +104,6 @@ interface PlacingState {
   /** Fixed once the user clicks; null while still following the mouse. */
   sl: number | null;
   stage: 'sl' | 'tp';
-}
-
-/** '#RRGGBB' + alpha (0..1) -> 'rgba(...)'. */
-function hexToRgba(hex: string, alpha: number): string {
-  const v = hex.replace('#', '');
-  const r = parseInt(v.slice(0, 2), 16);
-  const g = parseInt(v.slice(2, 4), 16);
-  const b = parseInt(v.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 @Component({
@@ -344,7 +333,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private chart?: IChartApi;
   private series?: ISeriesApi<'Candlestick'>;
   private engine?: ChartEngine;
-  private lastConfig?: any;
+  private lastConfig?: ChartConfig;
   private drawingsPrimitive = new DrawingsPrimitive();
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private tradeBoxesPrimitive = new TradeBoxesPrimitive();
@@ -511,17 +500,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   };
 
   ngAfterViewInit(): void {
-    // Initial canvas colors come straight from the DESIGN.md tokens.
-    // lightweight-charts paints to <canvas> and can't resolve CSS var(), so we
-    // read the computed token values once here. applyColors() (store-driven)
-    // takes over on the first selectChartStyle emission for theme/user overrides.
-    const tokens = getComputedStyle(document.documentElement);
-    const token = (name: string, fallback: string): string =>
-      tokens.getPropertyValue(name).trim() || fallback;
-
+    // ChartEngine owns lightweight-charts init (initial canvas colors are its
+    // hardcoded defaults). applyColors() (store-driven) takes over on the first
+    // selectChartStyle emission for theme / user overrides.
     this.engine = new ChartEngine(this.container.nativeElement);
     this.chart = this.engine.chartApi;
-    this.series = this.engine.seriesApi as any;
+    this.series = this.engine.seriesApi;
     
     this.series!.attachPrimitive(this.tradeBoxesPrimitive);
     this.series!.attachPrimitive(this.drawingsPrimitive);
@@ -1501,6 +1485,6 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     el.removeEventListener('contextmenu', this.onContextMenu);
     el.removeEventListener('auxclick', this.onAuxClick);
     window.removeEventListener('mouseup', this.onMouseUp);
-    this.chart?.remove();
+    this.engine?.destroy();
   }
 }

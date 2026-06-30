@@ -8,29 +8,28 @@ export class ChartEngine {
 
   private chart: IChartApi;
   private mainSeries: ISeriesApi<"Candlestick">;
-  private container: HTMLElement;
-  
+
   constructor(container: HTMLElement) {
-    this.container = container;
+    // autoSize uses lightweight-charts' internal ResizeObserver on the container,
+    // so the chart tracks panel/dock/splitter resizes — not just window resizes.
     this.chart = createChart(container, {
-      width: container.clientWidth,
-      height: container.clientHeight,
+      autoSize: true,
       layout: { background: { color: '#000000' }, textColor: '#ffffff' },
       grid: { vertLines: { visible: false }, horzLines: { visible: false } },
       crosshair: { mode: CrosshairMode.Normal },
       timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 8 },
     });
-    
+
+    // No priceFormat on purpose: lightweight-charts auto-detects precision from
+    // the data, matching pre-extraction behaviour. Per-instrument precision is a
+    // future RenderModel concern, not RFC-001 scope.
     this.mainSeries = this.chart.addSeries(CandlestickSeries, {
       upColor: '#26a69a',
       downColor: '#ef5350',
       borderVisible: false,
       wickUpColor: '#26a69a',
       wickDownColor: '#ef5350',
-      priceFormat: { type: 'price', precision: 5, minMove: 0.00001 },
     });
-    
-    window.addEventListener('resize', this.onResize);
   }
   
   public render(model: Partial<RenderModel>): void {
@@ -86,13 +85,6 @@ export class ChartEngine {
   }
   
   public destroy(): void {
-    window.removeEventListener('resize', this.onResize);
     this.chart.remove();
   }
-  
-  private onResize = () => {
-    if (this.chart && this.container) {
-      this.chart.resize(this.container.clientWidth, this.container.clientHeight);
-    }
-  };
 }
