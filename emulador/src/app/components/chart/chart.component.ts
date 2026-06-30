@@ -62,6 +62,8 @@ import {
   PendingType,
   Position,
 } from '../../state/trading/trading.models';
+import { ChartEngine } from '../../domain/chart/chart-engine';
+import { RenderModel } from '../../domain/chart/render-model';
 
 /** A horizontal trade level rendered as a price line on the chart. */
 interface TradeLine {
@@ -341,6 +343,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   private chart?: IChartApi;
   private series?: ISeriesApi<'Candlestick'>;
+  private engine?: ChartEngine;
+  private lastConfig?: any;
   private drawingsPrimitive = new DrawingsPrimitive();
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private tradeBoxesPrimitive = new TradeBoxesPrimitive();
@@ -515,27 +519,15 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const token = (name: string, fallback: string): string =>
       tokens.getPropertyValue(name).trim() || fallback;
 
-    this.chart = createChart(this.container.nativeElement, {
-      autoSize: true,
-      layout: {
-        background: { color: token('--bg', '#000000') },
-        textColor: token('--text-muted', '#787b86'),
-      },
-      grid: {
-        vertLines: { color: token('--surface-2', '#181818') },
-        horzLines: { color: token('--surface-2', '#181818') },
-      },
-      timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 8 },
-      crosshair: { mode: 0 },
-    });
-    this.series = this.chart.addSeries(CandlestickSeries, {
-      borderVisible: false,
-    });
-    this.series.attachPrimitive(this.tradeBoxesPrimitive);
-    this.series.attachPrimitive(this.drawingsPrimitive);
-    this.series.attachPrimitive(this.tradeButtonsPrimitive);
-    this.series.attachPrimitive(this.countdownPrimitive);
-    this.seriesMarkers = createSeriesMarkers(this.series, []);
+    this.engine = new ChartEngine(this.container.nativeElement);
+    this.chart = this.engine.chartApi;
+    this.series = this.engine.seriesApi as any;
+    
+    this.series!.attachPrimitive(this.tradeBoxesPrimitive);
+    this.series!.attachPrimitive(this.drawingsPrimitive);
+    this.series!.attachPrimitive(this.tradeButtonsPrimitive);
+    this.series!.attachPrimitive(this.countdownPrimitive);
+    this.seriesMarkers = createSeriesMarkers(this.series!, []);
 
     // chart colors + grid controls (theme / user customization)
     this.store
@@ -627,6 +619,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.slZone = c.slZone;
     this.boxFillAlpha = boxOpacity.fill;
     this.boxBorderAlpha = boxOpacity.border;
+    this.lastConfig = { colors: c };
+    if (this.engine) {
+      this.engine.render({ config: this.lastConfig, candles: [] });
+    }
     const gridColor = hexToRgba(c.grid, gridOpacity);
     const gridLine = { color: gridColor, visible: gridVisible };
     this.chart?.applyOptions({
@@ -758,7 +754,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const slice = idx >= 0 ? this.renderedCandles.slice(winStart, idx + 1) : [];
     this.winStart = winStart;
     this.renderedTimes = slice.map((c) => c.time);
-    this.series.setData(slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp })));
+    const mapped = slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp }));
+    if (this.engine && this.lastConfig) {
+      this.engine.render({ config: this.lastConfig, candles: mapped });
+    } else {
+      this.series.setData(mapped);
+    }
   }
 
   /**

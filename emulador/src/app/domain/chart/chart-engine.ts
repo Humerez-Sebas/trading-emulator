@@ -2,6 +2,9 @@ import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData 
 import { RenderModel } from './render-model';
 
 export class ChartEngine {
+  public get chartApi(): IChartApi { return this.chart; }
+  public get seriesApi(): ISeriesApi<"Candlestick"> { return this.mainSeries; }
+
   private chart: IChartApi;
   private mainSeries: ISeriesApi<"Candlestick">;
   private container: HTMLElement;
