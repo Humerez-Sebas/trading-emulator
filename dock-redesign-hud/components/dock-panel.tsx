@@ -1119,7 +1119,16 @@ export function DockPanel() {
               </div>
 
               {/* Interactive Vector Candle Canvas */}
-              <div className="relative rounded-xl border border-white/[0.04] bg-[#121417] p-6 flex justify-around items-center h-[180px] shadow-[inset_0_1px_rgba(255,255,255,0.02)]">
+              <div
+                className="relative rounded-xl border border-white/[0.04] p-6 flex justify-around items-center h-[180px] shadow-[inset_0_1px_rgba(255,255,255,0.02)]"
+                style={{
+                  backgroundColor: "#2a2d33",
+                  backgroundImage:
+                    "linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,0.04) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.04) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.04) 75%)",
+                  backgroundSize: "12px 12px",
+                  backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0",
+                }}
+              >
                 {/* 1. Bullish Candle (Vela Alcista) */}
                 <div className="flex flex-col items-center group/candle relative">
                   <span className="text-[10px] text-zinc-500 font-semibold mb-2">Alcista</span>
@@ -1131,8 +1140,11 @@ export function DockPanel() {
                       onMouseLeave={() => setHoveredPart(null)}
                       className="absolute w-[2px] h-[85px] hover:w-[4px] rounded transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] z-10"
                       style={{
-                        backgroundColor: hoveredPart === "wickUp" ? "#4dffd2" : colors.wickUp,
-                        boxShadow: hoveredPart === "wickUp" ? `0 0 8px ${colors.wickUp}` : "none",
+                        backgroundColor: colors.wickUp,
+                        boxShadow:
+                          hoveredPart === "wickUp"
+                            ? "0 0 6px rgba(255,255,255,0.85)"
+                            : "none",
                       }}
                       title="Editar Mecha Alcista"
                     />
@@ -1150,10 +1162,11 @@ export function DockPanel() {
                           : hoveredPart === "upColor"
                           ? `1.5px solid #ffffff`
                           : `1.5px solid ${colors.borderUpColor}`,
-                        boxShadow: hoveredPart === "upColor"
-                          ? `0 0 12px ${colors.upColor}`
-                          : "none",
-                        filter: hoveredPart === "upColor" ? "brightness(1.15)" : "none",
+                        boxShadow:
+                          hoveredPart === "upColor"
+                            ? "0 0 12px rgba(255,255,255,0.6)"
+                            : "none",
+                        filter: hoveredPart === "upColor" ? "brightness(1.18)" : "none",
                       }}
                       title="Editar Cuerpo Alcista"
                     />
@@ -1187,8 +1200,11 @@ export function DockPanel() {
                       onMouseLeave={() => setHoveredPart(null)}
                       className="absolute w-[2px] h-[85px] hover:w-[4px] rounded transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] z-10"
                       style={{
-                        backgroundColor: hoveredPart === "wickDown" ? "#ff8a88" : colors.wickDown,
-                        boxShadow: hoveredPart === "wickDown" ? `0 0 8px ${colors.wickDown}` : "none",
+                        backgroundColor: colors.wickDown,
+                        boxShadow:
+                          hoveredPart === "wickDown"
+                            ? "0 0 6px rgba(255,255,255,0.85)"
+                            : "none",
                       }}
                       title="Editar Mecha Bajista"
                     />
@@ -1206,10 +1222,11 @@ export function DockPanel() {
                           : hoveredPart === "downColor"
                           ? `1.5px solid #ffffff`
                           : `1.5px solid ${colors.borderDownColor}`,
-                        boxShadow: hoveredPart === "downColor"
-                          ? `0 0 12px ${colors.downColor}`
-                          : "none",
-                        filter: hoveredPart === "downColor" ? "brightness(1.15)" : "none",
+                        boxShadow:
+                          hoveredPart === "downColor"
+                            ? "0 0 12px rgba(255,255,255,0.6)"
+                            : "none",
+                        filter: hoveredPart === "downColor" ? "brightness(1.18)" : "none",
                       }}
                       title="Editar Cuerpo Bajista"
                     />

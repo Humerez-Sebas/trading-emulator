@@ -15,17 +15,6 @@ export interface ColorPartEditEvent {
   template: `
     <div class="interactive-canvas">
       <svg viewBox="0 0 200 140" width="100%" height="100%" class="svg-canvas">
-        <defs>
-          <filter id="glow-up" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="2.5" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
-          <filter id="glow-down" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="2.5" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
-        </defs>
-
         <!-- Labels -->
         <text x="60" y="24" class="candle-label">Alcista</text>
         <text x="140" y="24" class="candle-label">Bajista</text>
@@ -37,9 +26,9 @@ export interface ColorPartEditEvent {
           y1="36"
           x2="60"
           y2="120"
-          [attr.stroke]="hoveredPart() === 'wickUp' ? '#4dffd2' : wickUp()"
+          [attr.stroke]="wickUp()"
           [attr.stroke-width]="hoveredPart() === 'wickUp' ? 4 : 2"
-          [attr.filter]="hoveredPart() === 'wickUp' ? 'url(#glow-up)' : null"
+          [style.filter]="hoveredPart() === 'wickUp' ? hoverGlow : null"
           class="interactive-element wick"
           tabindex="0"
           role="button"
@@ -65,11 +54,7 @@ export interface ColorPartEditEvent {
           [attr.fill]="upColor()"
           [attr.stroke]="bodyStrokeColor('up')"
           [attr.stroke-width]="bodyStrokeWidth('up')"
-          [style.filter]="
-            hoveredPart() === 'upColor'
-              ? 'brightness(1.15) drop-shadow(0 0 6px ' + upColor() + ')'
-              : null
-          "
+          [style.filter]="hoveredPart() === 'upColor' ? hoverBodyFilter : null"
           class="interactive-element body"
           tabindex="0"
           role="button"
@@ -136,9 +121,9 @@ export interface ColorPartEditEvent {
           y1="36"
           x2="140"
           y2="120"
-          [attr.stroke]="hoveredPart() === 'wickDown' ? '#ff8a88' : wickDown()"
+          [attr.stroke]="wickDown()"
           [attr.stroke-width]="hoveredPart() === 'wickDown' ? 4 : 2"
-          [attr.filter]="hoveredPart() === 'wickDown' ? 'url(#glow-down)' : null"
+          [style.filter]="hoveredPart() === 'wickDown' ? hoverGlow : null"
           class="interactive-element wick"
           tabindex="0"
           role="button"
@@ -164,11 +149,7 @@ export interface ColorPartEditEvent {
           [attr.fill]="downColor()"
           [attr.stroke]="bodyStrokeColor('down')"
           [attr.stroke-width]="bodyStrokeWidth('down')"
-          [style.filter]="
-            hoveredPart() === 'downColor'
-              ? 'brightness(1.15) drop-shadow(0 0 6px ' + downColor() + ')'
-              : null
-          "
+          [style.filter]="hoveredPart() === 'downColor' ? hoverBodyFilter : null"
           class="interactive-element body"
           tabindex="0"
           role="button"
@@ -236,7 +217,21 @@ export interface ColorPartEditEvent {
       height: 180px;
       border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, 0.04);
-      background-color: #121417;
+      /* Mid-gray base + faint checker pattern so candles of any chosen color
+         (including pure black or pure white) stay visible. Mirrors the
+         transparency-grid pattern color pickers use. */
+      background-color: #2a2d33;
+      background-image:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%);
+      background-size: 12px 12px;
+      background-position:
+        0 0,
+        0 6px,
+        6px -6px,
+        -6px 0;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -287,6 +282,17 @@ export class InteractiveCandlesComponent {
   editPart = output<ColorPartEditEvent>();
 
   hoveredPart = signal<string | null>(null);
+
+  /**
+   * Hover-state filters use a neutral white halo + brightness boost so the
+   * feedback is visible regardless of the candle color the user picked.
+   * Previously the wick swapped to a hardcoded mint/pink (causing a red
+   * flash on dark candles) and the body drop-shadow inherited the body
+   * color (invisible on black candles). Keeping the user's chosen color
+   * and overlaying a neutral glow respects their palette.
+   */
+  readonly hoverGlow = 'drop-shadow(0 0 5px rgba(255, 255, 255, 0.85))';
+  readonly hoverBodyFilter = 'brightness(1.18) drop-shadow(0 0 6px rgba(255, 255, 255, 0.6))';
 
   setHover(part: string | null): void {
     this.hoveredPart.set(part);
