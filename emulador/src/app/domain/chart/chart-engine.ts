@@ -18,7 +18,7 @@ export class ChartEngine {
       layout: { background: { color: '#000000' }, textColor: '#ffffff' },
       grid: { vertLines: { visible: false }, horzLines: { visible: false } },
       crosshair: { mode: CrosshairMode.Normal },
-      timeScale: { timeVisible: true, secondsVisible: false },
+      timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 8 },
     });
     
     this.mainSeries = this.chart.addSeries(CandlestickSeries, {
