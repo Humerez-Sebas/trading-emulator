@@ -13,8 +13,6 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 import {
-  CandlestickSeries,
-  createChart,
   createSeriesMarkers,
   IChartApi,
   IPriceLine,
@@ -62,6 +60,8 @@ import {
   PendingType,
   Position,
 } from '../../state/trading/trading.models';
+import { ChartEngine } from '../../domain/chart/chart-engine';
+import { ChartConfig } from '../../domain/chart/render-model';
 
 /** A horizontal trade level rendered as a price line on the chart. */
 interface TradeLine {
@@ -104,15 +104,6 @@ interface PlacingState {
   /** Fixed once the user clicks; null while still following the mouse. */
   sl: number | null;
   stage: 'sl' | 'tp';
-}
-
-/** '#RRGGBB' + alpha (0..1) -> 'rgba(...)'. */
-function hexToRgba(hex: string, alpha: number): string {
-  const v = hex.replace('#', '');
-  const r = parseInt(v.slice(0, 2), 16);
-  const g = parseInt(v.slice(2, 4), 16);
-  const b = parseInt(v.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 @Component({
@@ -341,6 +332,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   private chart?: IChartApi;
   private series?: ISeriesApi<'Candlestick'>;
+  private engine?: ChartEngine;
+  private lastConfig?: ChartConfig;
   private drawingsPrimitive = new DrawingsPrimitive();
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private tradeBoxesPrimitive = new TradeBoxesPrimitive();
@@ -507,35 +500,18 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   };
 
   ngAfterViewInit(): void {
-    // Initial canvas colors come straight from the DESIGN.md tokens.
-    // lightweight-charts paints to <canvas> and can't resolve CSS var(), so we
-    // read the computed token values once here. applyColors() (store-driven)
-    // takes over on the first selectChartStyle emission for theme/user overrides.
-    const tokens = getComputedStyle(document.documentElement);
-    const token = (name: string, fallback: string): string =>
-      tokens.getPropertyValue(name).trim() || fallback;
-
-    this.chart = createChart(this.container.nativeElement, {
-      autoSize: true,
-      layout: {
-        background: { color: token('--bg', '#000000') },
-        textColor: token('--text-muted', '#787b86'),
-      },
-      grid: {
-        vertLines: { color: token('--surface-2', '#181818') },
-        horzLines: { color: token('--surface-2', '#181818') },
-      },
-      timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 8 },
-      crosshair: { mode: 0 },
-    });
-    this.series = this.chart.addSeries(CandlestickSeries, {
-      borderVisible: false,
-    });
-    this.series.attachPrimitive(this.tradeBoxesPrimitive);
-    this.series.attachPrimitive(this.drawingsPrimitive);
-    this.series.attachPrimitive(this.tradeButtonsPrimitive);
-    this.series.attachPrimitive(this.countdownPrimitive);
-    this.seriesMarkers = createSeriesMarkers(this.series, []);
+    // ChartEngine owns lightweight-charts init (initial canvas colors are its
+    // hardcoded defaults). applyColors() (store-driven) takes over on the first
+    // selectChartStyle emission for theme / user overrides.
+    this.engine = new ChartEngine(this.container.nativeElement);
+    this.chart = this.engine.chartApi;
+    this.series = this.engine.seriesApi;
+    
+    this.series!.attachPrimitive(this.tradeBoxesPrimitive);
+    this.series!.attachPrimitive(this.drawingsPrimitive);
+    this.series!.attachPrimitive(this.tradeButtonsPrimitive);
+    this.series!.attachPrimitive(this.countdownPrimitive);
+    this.seriesMarkers = createSeriesMarkers(this.series!, []);
 
     // chart colors + grid controls (theme / user customization)
     this.store
@@ -608,7 +584,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    */
   private resetView(): void {
     if (!this.chart || !this.series) return;
-    this.series.priceScale().applyOptions({ autoScale: true });
+    this.engine?.resetPriceScale();
     this.chart.timeScale().scrollToRealTime();
   }
 
@@ -627,21 +603,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.slZone = c.slZone;
     this.boxFillAlpha = boxOpacity.fill;
     this.boxBorderAlpha = boxOpacity.border;
-    const gridColor = hexToRgba(c.grid, gridOpacity);
-    const gridLine = { color: gridColor, visible: gridVisible };
-    this.chart?.applyOptions({
-      layout: { background: { color: c.background }, textColor: c.text },
-      grid: { vertLines: gridLine, horzLines: gridLine },
-    });
-    this.series?.applyOptions({
-      upColor: c.upColor,
-      downColor: c.downColor,
-      wickUpColor: c.wickUp,
-      wickDownColor: c.wickDown,
-      borderVisible: true,
-      borderUpColor: c.borderUpColor,
-      borderDownColor: c.borderDownColor,
-    });
+    this.lastConfig = { colors: c, gridVisible, gridOpacity };
+    if (this.engine) {
+      this.engine.render({ config: this.lastConfig });
+    }
     this.pushDrawings();
     // trade overlay uses the theme's up/down colors
     this.rebuildTradeLines();
@@ -758,7 +723,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const slice = idx >= 0 ? this.renderedCandles.slice(winStart, idx + 1) : [];
     this.winStart = winStart;
     this.renderedTimes = slice.map((c) => c.time);
-    this.series.setData(slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp })));
+    const mapped = slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp }));
+    if (this.engine) {
+      this.engine.render({ candles: mapped });
+    }
   }
 
   /**
@@ -1387,7 +1355,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       const tradeLine = this.hitTestTradeLine(y);
       if (tradeLine) {
         this.lineDrag = { id: tradeLine.id, target: tradeLine.target, field: tradeLine.field };
-        this.chart.applyOptions({ handleScroll: false, handleScale: false });
+        this.engine?.setInteractivity(false);
         e.preventDefault();
         return;
       }
@@ -1399,7 +1367,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
           target: edge.status === 'pending' ? 'order' : 'position',
           field: edge.field,
         };
-        this.chart.applyOptions({ handleScroll: false, handleScale: false });
+        this.engine?.setInteractivity(false);
         e.preventDefault();
         return;
       }
@@ -1419,7 +1387,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ id })));
     this.drag = { id, mode, startX: x, startY: y, x1, y1, x2, y2 };
     // freeze chart panning/zooming while dragging an object
-    this.chart.applyOptions({ handleScroll: false, handleScale: false });
+    this.engine?.setInteractivity(false);
     e.preventDefault();
   }
 
@@ -1482,7 +1450,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.lineDrag = null;
     this.zone.run(() => this.dragInfo.set(null));
     // restore chart panning/zooming
-    this.chart?.applyOptions({ handleScroll: true, handleScale: true });
+    this.engine?.setInteractivity(true);
   }
 
   /** Removes the ephemeral middle-click measurement from the chart. */
@@ -1517,6 +1485,6 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     el.removeEventListener('contextmenu', this.onContextMenu);
     el.removeEventListener('auxclick', this.onAuxClick);
     window.removeEventListener('mouseup', this.onMouseUp);
-    this.chart?.remove();
+    this.engine?.destroy();
   }
 }
