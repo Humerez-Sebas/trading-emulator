@@ -1,84 +1,77 @@
-import { Component, computed, inject } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { Component, ElementRef, computed, inject, signal } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { replayFeature } from '../../state/replay/replay.reducer';
 import {
   selectAvailableResolutions,
-  selectCurrentTime,
   selectMsPerCandle,
   selectPlaying,
   selectResolutionMinutes,
-  selectResolutionProgress,
-  selectUtcOffset,
 } from '../../state/selectors';
-import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DraggableDirective } from '../ui/draggable.directive';
 
-const JUMP_SIZES = [5, 10, 50];
+/** Replay speeds offered, in candles per second. */
+const SPEED_OPTIONS = [1, 2, 5, 10, 25, 50] as const;
+/** Jump amounts offered (in replay-resolution candles). */
+const JUMP_OPTIONS = [1, 2, 3, 4, 5, 10, 20, 50] as const;
 
+/**
+ * Floating, glassmorphism playback HUD. Display Navigation (`-1`/`+1`), play,
+ * speed, multi-candle jumps and the replay resolution (sub-TF) live here. No
+ * clock — the cursor time reads off the chart crosshair and the replay price
+ * line instead.
+ */
 @Component({
   selector: 'app-playback-controller',
   standalone: true,
-  imports: [DatePipe, DropdownComponent, TooltipDirective, DraggableDirective],
+  imports: [TooltipDirective, DraggableDirective],
   templateUrl: './playback-controller.component.html',
   styleUrl: './playback-controller.component.css',
+  host: { '(document:click)': 'onDocClick($event)' },
 })
 export class PlaybackControllerComponent {
   private store = inject(Store);
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   playing = this.store.selectSignal(selectPlaying);
-  msPerCandle = this.store.selectSignal(selectMsPerCandle);
+  private msPerCandle = this.store.selectSignal(selectMsPerCandle);
   jumpSize = this.store.selectSignal(replayFeature.selectJumpSize);
-  private currentTime = this.store.selectSignal(selectCurrentTime);
-  private utcOffset = this.store.selectSignal(selectUtcOffset);
-
   availableResolutions = this.store.selectSignal(selectAvailableResolutions);
-  resolutionMinutes = this.store.selectSignal(selectResolutionMinutes);
-  private resProgress = this.store.selectSignal(selectResolutionProgress);
+  private resolutionMinutes = this.store.selectSignal(selectResolutionMinutes);
 
-  clockMs = computed(() => {
-    const t = this.currentTime();
-    return t > 0 ? (t + this.utcOffset() * 3600) * 1000 : null;
-  });
+  readonly speedOptions = SPEED_OPTIONS;
+  readonly jumpOptions = JUMP_OPTIONS;
 
-  readonly speedOptions: DropdownOption[] = [
-    { value: '1000', label: '1 vela/s' },
-    { value: '500', label: '2 velas/s' },
-    { value: '250', label: '4 velas/s' },
-    { value: '100', label: '10 velas/s' },
-    { value: '50', label: '20 velas/s' },
-    { value: '25', label: '40 velas/s' },
-  ];
+  /** One open menu at a time: 'speed' | 'jump' | 'res' | null. */
+  openMenu = signal<'speed' | 'jump' | 'res' | null>(null);
 
-  resolutionOptions = computed<DropdownOption[]>(() => [
-    { value: 'full', label: 'Vela completa' },
-    ...this.availableResolutions().map((r) => ({ value: String(r.minutes), label: r.label })),
-  ]);
-  resolutionValue = computed(() => {
+  /** Current speed in candles per second (derived from msPerCandle). */
+  speedVps = computed(() => Math.round(1000 / this.msPerCandle()));
+
+  /** Active resolution label: "Gráfico" (main TF) or the sub-TF tag ("M5"…). */
+  resolutionLabel = computed(() => {
     const m = this.resolutionMinutes();
-    return m == null ? 'full' : String(m);
-  });
-  /** "09:37 / 10:00" range readout, in the display time zone. */
-  resolutionRangeMs = computed(() => {
-    const p = this.resProgress();
-    if (!p) return null;
-    const shift = this.utcOffset() * 3600;
-    return { cursor: (p.cursorTime + shift) * 1000, end: (p.bucketEndTime + shift) * 1000 };
+    if (m == null) return 'Gráfico';
+    return this.availableResolutions().find((r) => r.minutes === m)?.label ?? `M${m}`;
   });
 
+  isResolutionActive(minutes: number | null): boolean {
+    return this.resolutionMinutes() === minutes;
+  }
+
+  // ---- transport ----
   play(): void {
     this.store.dispatch(ReplayActions.play());
   }
   pause(): void {
     this.store.dispatch(ReplayActions.pause());
   }
-  /** `+1` button: Display Navigation — snap to the next display candle (fills simulated). */
+  /** `+1`: Display Navigation — snap to the next display candle (fills simulated). */
   step(): void {
     this.store.dispatch(ReplayActions.advanceDisplay());
   }
-  /** `-1` button: Display Navigation back — snap to the display grid (no fills). */
+  /** `-1`: Display Navigation back — snap to the display grid (no fills). */
   stepBack(): void {
     this.store.dispatch(ReplayActions.stepBack());
   }
@@ -88,16 +81,32 @@ export class PlaybackControllerComponent {
   jumpBack(): void {
     this.store.dispatch(ReplayActions.jumpBack());
   }
-  setSpeed(v: string): void {
-    this.store.dispatch(ReplayActions.changeSpeed({ msPerCandle: +v }));
+
+  // ---- selectors ----
+  toggleMenu(menu: 'speed' | 'jump' | 'res'): void {
+    this.openMenu.update((m) => (m === menu ? null : menu));
   }
-  setResolution(v: string): void {
-    this.store.dispatch(ReplayActions.setReplayResolution({ minutes: v === 'full' ? null : +v }));
+  closeMenus(): void {
+    this.openMenu.set(null);
+  }
+  /** Close any open menu when clicking outside the HUD. */
+  onDocClick(event: MouseEvent): void {
+    if (this.openMenu() && !this.host.nativeElement.contains(event.target as Node)) {
+      this.closeMenus();
+    }
   }
 
-  cycleJumpSize(): void {
-    const i = JUMP_SIZES.indexOf(this.jumpSize());
-    const size = JUMP_SIZES[(i + 1) % JUMP_SIZES.length];
+  setSpeed(vps: number): void {
+    this.store.dispatch(ReplayActions.changeSpeed({ msPerCandle: Math.round(1000 / vps) }));
+    this.closeMenus();
+  }
+  setJump(size: number): void {
     this.store.dispatch(ReplayActions.setJumpSize({ size }));
+    this.closeMenus();
+  }
+  /** `null` → main display TF ("Gráfico"); a number → that sub-TF in minutes. */
+  setResolution(minutes: number | null): void {
+    this.store.dispatch(ReplayActions.setReplayResolution({ minutes }));
+    this.closeMenus();
   }
 }

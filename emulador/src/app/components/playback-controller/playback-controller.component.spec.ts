@@ -43,11 +43,16 @@ describe('PlaybackControllerComponent', () => {
     fixture.detectChanges();
   });
 
-  it('renderiza y cicla el tamaño de salto 10 → 50 → 5', () => {
+  it('setJump despacha setJumpSize con el valor elegido del grid', () => {
     const spy = vi.spyOn(store, 'dispatch');
-    const c = fixture.componentInstance;
-    c.cycleJumpSize();
-    expect(spy).toHaveBeenCalledWith(ReplayActions.setJumpSize({ size: 50 }));
+    fixture.componentInstance.setJump(20);
+    expect(spy).toHaveBeenCalledWith(ReplayActions.setJumpSize({ size: 20 }));
+  });
+
+  it('setSpeed convierte velas/s a msPerCandle', () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    fixture.componentInstance.setSpeed(10); // 10 v/s → 100 ms
+    expect(spy).toHaveBeenCalledWith(ReplayActions.changeSpeed({ msPerCandle: 100 }));
   });
 
   it('+1 despacha advanceDisplay (Display Navigation)', () => {
@@ -63,11 +68,11 @@ describe('PlaybackControllerComponent', () => {
     expect(spy).toHaveBeenCalledWith(ReplayActions.stepBack());
   });
 
-  it('setResolution despacha setReplayResolution (full → null)', () => {
+  it('setResolution despacha setReplayResolution (Gráfico → null, sub-TF → minutos)', () => {
     const spy = vi.spyOn(store, 'dispatch');
-    fixture.componentInstance.setResolution('full');
+    fixture.componentInstance.setResolution(null);
     expect(spy).toHaveBeenCalledWith(ReplayActions.setReplayResolution({ minutes: null }));
-    fixture.componentInstance.setResolution('5');
+    fixture.componentInstance.setResolution(5);
     expect(spy).toHaveBeenCalledWith(ReplayActions.setReplayResolution({ minutes: 5 }));
   });
 });

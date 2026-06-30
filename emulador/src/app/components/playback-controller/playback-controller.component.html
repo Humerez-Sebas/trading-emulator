@@ -1,79 +1,177 @@
-<div class="hud" appDraggable=".grip" dragStorageKey="emulador.playbackPos">
-  <div class="ctl-row">
+<div
+  class="hud"
+  role="toolbar"
+  aria-label="Controlador de reproducción"
+  appDraggable=".grip"
+  dragStorageKey="emulador.playbackPos"
+>
+  <!-- 1. Drag handle -->
+  <button class="grip" appTooltip="Arrastrar el panel" aria-label="Mover el panel de reproducción">
+    <svg width="14" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="9" cy="5" r="1.5"></circle>
+      <circle cx="15" cy="5" r="1.5"></circle>
+      <circle cx="9" cy="12" r="1.5"></circle>
+      <circle cx="15" cy="12" r="1.5"></circle>
+      <circle cx="9" cy="19" r="1.5"></circle>
+      <circle cx="15" cy="19" r="1.5"></circle>
+    </svg>
+  </button>
+
+  <!-- 2. Playback: [-1] [Play/Pause] [+1] -->
+  <div class="grp" role="group" aria-label="Transporte">
     <button
-      class="grip"
-      appTooltip="Arrastrar el panel"
-      aria-label="Mover el panel de reproducción"
+      class="seg"
+      appTooltip="Retroceder una vela"
+      aria-label="Vela anterior"
+      (click)="stepBack()"
     >
-      <svg width="12" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <circle cx="8" cy="5" r="1.6"></circle>
-        <circle cx="16" cy="5" r="1.6"></circle>
-        <circle cx="8" cy="12" r="1.6"></circle>
-        <circle cx="16" cy="12" r="1.6"></circle>
-        <circle cx="8" cy="19" r="1.6"></circle>
-        <circle cx="16" cy="19" r="1.6"></circle>
-      </svg>
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg>
+      <span class="seg-n">1</span>
     </button>
 
-    <div class="sep"></div>
-
-    <div class="grp" role="group" aria-label="Transporte">
-      <button class="btn" appTooltip="Retroceder una vela" (click)="stepBack()">−1</button>
-      @if (playing()) {
-        <button class="btn play" (click)="pause()" aria-label="Pausar">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="5" y="4" width="5" height="16" rx="1"></rect>
-            <rect x="14" y="4" width="5" height="16" rx="1"></rect>
-          </svg>
-        </button>
-      } @else {
-        <button class="btn play" (click)="play()" aria-label="Reproducir">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="6,4 20,12 6,20"></polygon>
-          </svg>
-        </button>
-      }
-      <button class="btn" appTooltip="Avanzar una vela" (click)="step()">+1</button>
-    </div>
-
-    <div class="sep"></div>
-
-    <div class="grp" role="group" aria-label="Saltos">
-      <button class="btn" appTooltip="Saltar atrás" (click)="jumpBack()">«</button>
-      <button class="chip" appTooltip="Tamaño de salto" (click)="cycleJumpSize()">
-        ×{{ jumpSize() }}
+    @if (playing()) {
+      <button class="play" aria-label="Pausar" (click)="pause()">
+        <svg class="ic" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+          <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+          <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+        </svg>
       </button>
-      <button class="btn" appTooltip="Saltar adelante" (click)="jumpForward()">»</button>
-    </div>
-
-    <div class="sep"></div>
-
-    <ui-dropdown
-      ariaLabel="Velocidad"
-      [options]="speedOptions"
-      [value]="msPerCandle() + ''"
-      (valueChange)="setSpeed($event)"
-    />
-
-    @if (availableResolutions().length) {
-      <div class="sep"></div>
-      <ui-dropdown
-        ariaLabel="Resolución del replay"
-        [options]="resolutionOptions()"
-        [value]="resolutionValue()"
-        (valueChange)="setResolution($event)"
-      />
-      @if (resolutionRangeMs(); as r) {
-        <span class="res-range">
-          {{ r.cursor | date: 'HH:mm' : 'UTC' }} / {{ r.end | date: 'HH:mm' : 'UTC' }}
-        </span>
-      }
+    } @else {
+      <button class="play" aria-label="Reproducir" (click)="play()">
+        <svg class="ic" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+          <polygon points="7,4 20,12 7,20"></polygon>
+        </svg>
+      </button>
     }
 
-    <div class="sep"></div>
+    <button class="seg" appTooltip="Avanzar una vela" aria-label="Vela siguiente" (click)="step()">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 12h14" />
+        <path d="M12 5v14" />
+      </svg>
+      <span class="seg-n">1</span>
+    </button>
+  </div>
 
-    @if (clockMs(); as ms) {
-      <span class="clock">{{ ms | date: 'dd MMM HH:mm' : 'UTC' }}</span>
+  <!-- Speed selector -->
+  <div class="menu">
+    <button
+      class="trigger"
+      aria-label="Velocidad de reproducción"
+      [attr.aria-expanded]="openMenu() === 'speed'"
+      (click)="toggleMenu('speed')"
+    >
+      <svg class="ic accent" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 14l4-4" />
+        <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+      </svg>
+      <span class="trig-n">{{ speedVps() }}</span>
+      <span class="trig-u">v/s</span>
+      <svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+    </button>
+    @if (openMenu() === 'speed') {
+      <div class="pop pop-list" role="listbox">
+        @for (s of speedOptions; track s) {
+          <button
+            class="pop-item"
+            role="option"
+            [class.sel]="s === speedVps()"
+            [attr.aria-selected]="s === speedVps()"
+            (click)="setSpeed(s)"
+          >
+            <span class="mono">{{ s }}</span
+            ><span class="trig-u">v/s</span>
+          </button>
+        }
+      </div>
+    }
+  </div>
+
+  <span class="divider" aria-hidden="true"></span>
+
+  <!-- 3. Jumps: [<] [JumpIcon N] [>] -->
+  <div class="grp" role="group" aria-label="Saltos">
+    <button class="seg" appTooltip="Saltar atrás" aria-label="Saltar atrás" (click)="jumpBack()">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+    </button>
+
+    <div class="menu">
+      <button
+        class="trigger"
+        aria-label="Tamaño de salto"
+        [attr.aria-expanded]="openMenu() === 'jump'"
+        (click)="toggleMenu('jump')"
+      >
+        <svg class="ic accent" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 19h18" opacity="0.35" />
+          <path d="M4 16c1.4-4 3-4 4.4 0" />
+          <path d="M10.5 16c1.6-5.4 3.4-5.4 5 0" />
+          <path d="M19.5 12.5 21 16l-3 1" />
+        </svg>
+        <span class="trig-n">{{ jumpSize() }}</span>
+      </button>
+      @if (openMenu() === 'jump') {
+        <div class="pop pop-grid">
+          @for (j of jumpOptions; track j) {
+            <button
+              class="jump-cell"
+              [class.sel]="j === jumpSize()"
+              [attr.aria-pressed]="j === jumpSize()"
+              (click)="setJump(j)"
+            >
+              {{ j }}
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    <button
+      class="seg"
+      appTooltip="Saltar adelante"
+      aria-label="Saltar adelante"
+      (click)="jumpForward()"
+    >
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+    </button>
+  </div>
+
+  <span class="divider" aria-hidden="true"></span>
+
+  <!-- 4. Resolution (sub-TF) selector -->
+  <div class="menu">
+    <button
+      class="trigger trigger-res"
+      aria-label="Resolución del replay"
+      [attr.aria-expanded]="openMenu() === 'res'"
+      (click)="toggleMenu('res')"
+    >
+      <span class="trig-n">{{ resolutionLabel() }}</span>
+      <svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+    </button>
+    @if (openMenu() === 'res') {
+      <div class="pop pop-list" role="listbox">
+        <button
+          class="pop-item"
+          role="option"
+          [class.sel]="isResolutionActive(null)"
+          [attr.aria-selected]="isResolutionActive(null)"
+          (click)="setResolution(null)"
+        >
+          <span class="mono">Gráfico</span><span class="trig-u">TF</span>
+        </button>
+        @for (r of availableResolutions(); track r.minutes) {
+          <button
+            class="pop-item"
+            role="option"
+            [class.sel]="isResolutionActive(r.minutes)"
+            [attr.aria-selected]="isResolutionActive(r.minutes)"
+            (click)="setResolution(r.minutes)"
+          >
+            <span class="mono">{{ r.label }}</span>
+          </button>
+        }
+      </div>
     }
   </div>
 </div>
