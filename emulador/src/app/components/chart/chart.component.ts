@@ -53,6 +53,7 @@ import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawing
 import { DrawingsPrimitive } from './drawings-primitive';
 import { TradeButtonsPrimitive } from './trade-buttons-primitive';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
+import { CountdownPrimitive } from './countdown-primitive';
 import { TradingActions } from '../../state/trading/trading.actions';
 import {
   lotsForRisk,
@@ -343,6 +344,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private drawingsPrimitive = new DrawingsPrimitive();
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private tradeBoxesPrimitive = new TradeBoxesPrimitive();
+  /** Candle-close countdown tag on the price axis (TradingView-style). */
+  private countdownPrimitive = new CountdownPrimitive();
   private seriesMarkers?: ISeriesMarkersPluginApi<Time>;
 
   // --- trade overlay state ---
@@ -531,6 +534,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.series.attachPrimitive(this.tradeBoxesPrimitive);
     this.series.attachPrimitive(this.drawingsPrimitive);
     this.series.attachPrimitive(this.tradeButtonsPrimitive);
+    this.series.attachPrimitive(this.countdownPrimitive);
     this.seriesMarkers = createSeriesMarkers(this.series, []);
 
     // chart colors + grid controls (theme / user customization)
@@ -545,8 +549,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.store
       .select(selectChartView)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ tf, candles, idx, utcOffset, forming }) =>
-        this.render(tf, candles, idx, utcOffset, forming),
+      .subscribe(({ tf, candles, idx, utcOffset, forming, countdown }) =>
+        this.render(tf, candles, idx, utcOffset, forming, countdown),
       );
 
     // warn (don't silently teleport) when the active TF's coverage is shorter
@@ -649,6 +653,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     idx: number,
     utcOffset: number,
     forming: Candle | null,
+    countdown: string | null,
   ): void {
     if (!this.series) return;
     const shift = utcOffset * 3600;
@@ -685,6 +690,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.pushDrawings();
       this.pushTradeBoxes();
       this.applyForming(forming, shift);
+      this.updateCountdown(forming, candles, idx, countdown);
       return;
     }
 
@@ -700,6 +706,35 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // live trade boxes grow with the last rendered candle
     this.pushTradeBoxes();
     this.applyForming(forming, shift);
+    this.updateCountdown(forming, candles, idx, countdown);
+  }
+
+  /**
+   * Feeds the price-axis countdown tag: anchored to the live price (forming
+   * close in sub-TF mode, else the last revealed candle's close). Cleared when
+   * there's no countdown or no valid price.
+   */
+  private updateCountdown(
+    forming: Candle | null,
+    candles: Candle[],
+    idx: number,
+    label: string | null,
+  ): void {
+    const price = forming
+      ? forming.close
+      : idx >= 0 && idx < candles.length
+        ? candles[idx].close
+        : null;
+    if (!label || price === null) {
+      this.countdownPrimitive.setSource(null);
+      return;
+    }
+    this.countdownPrimitive.setSource({
+      price,
+      text: label,
+      backColor: '#363a45',
+      textColor: '#ffffff',
+    });
   }
 
   /** Paints/updates the live "forming" bar (resolution mode). */

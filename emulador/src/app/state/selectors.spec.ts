@@ -7,9 +7,11 @@ import {
   lowerSeriesForSeconds,
   selectActiveCandles,
   selectAvailableResolutions,
+  selectCandleCountdown,
   selectChartStyle,
   selectChartView,
   selectClosedTradeBoxes,
+  formatCountdown,
   selectContractSize,
   selectCurrentReplayCandle,
   selectDataRange,
@@ -305,15 +307,49 @@ describe('selectFormingCandle', () => {
   });
 });
 
+// ---- formatCountdown ----
+describe('formatCountdown', () => {
+  it('formats MM:SS under an hour', () => {
+    expect(formatCountdown(6 * 60 + 58)).toBe('06:58');
+    expect(formatCountdown(59)).toBe('00:59');
+  });
+  it('formats HH:MM:SS for an hour or more', () => {
+    expect(formatCountdown(3 * 3600 + 4 * 60 + 5)).toBe('03:04:05');
+    expect(formatCountdown(3600)).toBe('01:00:00');
+  });
+  it('clamps to 00:00 at or below zero', () => {
+    expect(formatCountdown(0)).toBe('00:00');
+    expect(formatCountdown(-10)).toBe('00:00');
+  });
+});
+
+// ---- selectCandleCountdown ----
+describe('selectCandleCountdown', () => {
+  it('returns the time left until the active candle closes', () => {
+    // H1 (3600s) bucket 09:00-10:00, cursor at 09:37 → 23:00 left
+    const cursor = 9 * 3600 + 37 * 60;
+    expect(selectCandleCountdown.projector(3600, cursor)).toBe('23:00');
+  });
+  it('formats HH:MM:SS for a D1 candle', () => {
+    // D1 (86400s), cursor 1s past the day start → 23:59:59 left
+    expect(selectCandleCountdown.projector(86400, 86401)).toBe('23:59:59');
+  });
+  it('returns null before the replay starts or with no TF', () => {
+    expect(selectCandleCountdown.projector(3600, 0)).toBeNull();
+    expect(selectCandleCountdown.projector(0, 1000)).toBeNull();
+  });
+});
+
 // ---- selectChartView ----
 describe('selectChartView', () => {
-  it('bundles tf/candles/idx/utcOffset', () => {
+  it('bundles tf/candles/idx/utcOffset/countdown', () => {
     const candles = series(3);
-    const result = selectChartView.projector('H1', candles, 2, -4, null, null);
+    const result = selectChartView.projector('H1', candles, 2, -4, null, null, '12:00');
     expect(result.tf).toBe('H1');
     expect(result.candles).toBe(candles);
     expect(result.idx).toBe(2);
     expect(result.utcOffset).toBe(-4);
+    expect(result.countdown).toBe('12:00');
   });
 });
 

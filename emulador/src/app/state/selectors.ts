@@ -476,6 +476,31 @@ export const selectFormingCandle = createSelector(
   },
 );
 
+/** Formats a remaining-seconds duration as `MM:SS` (or `HH:MM:SS` past an hour). */
+export function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return '00:00';
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
+}
+
+/**
+ * Time left until the active DISPLAY-TF candle closes, formatted for the price
+ * axis countdown tag. `null` before the replay starts or with no active TF.
+ * In resolution mode it still counts down to the display candle's close.
+ */
+export const selectCandleCountdown = createSelector(
+  selectActiveTfSeconds,
+  selectCurrentTime,
+  (tfSeconds, currentTime): string | null => {
+    if (tfSeconds <= 0 || currentTime <= 0) return null;
+    const bucketStart = Math.floor(currentTime / tfSeconds) * tfSeconds;
+    return formatCountdown(bucketStart + tfSeconds - currentTime);
+  },
+);
+
 /**
  * Single, CONSISTENT view for the chart. Important: the component must
  * subscribe to this composed selector (one emission per state change) and
@@ -489,13 +514,14 @@ export const selectChartView = createSelector(
   selectUtcOffset,
   selectResolutionMinutes,
   selectFormingCandle,
-  (tf, candles, idx, utcOffset, minutes, forming) => {
+  selectCandleCountdown,
+  (tf, candles, idx, utcOffset, minutes, forming, countdown) => {
     // Resolution mode: hide the (future-complete) bucket candle and paint the
     // forming bar instead; complete candles run up to bucketIdx-1.
     if (minutes != null && forming != null && idx >= 0) {
-      return { tf, candles, idx: idx - 1, utcOffset, forming };
+      return { tf, candles, idx: idx - 1, utcOffset, forming, countdown };
     }
-    return { tf, candles, idx, utcOffset, forming: null };
+    return { tf, candles, idx, utcOffset, forming: null, countdown };
   },
 );
 
