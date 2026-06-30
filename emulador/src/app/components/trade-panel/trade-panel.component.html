@@ -1,7 +1,7 @@
 <aside class="panel">
   <header class="head">
     <h3>Operativa</h3>
-    <div class="account">
+    <div class="initial-balance-row">
       <label class="balance-edit">
         Balance inicial
         <input
@@ -12,17 +12,12 @@
           (change)="onBalance($event)"
         />
       </label>
-      <div class="row">
-        <span>Balance</span>
-        <strong>{{ view().balance | number: '1.2-2' }} $</strong>
-      </div>
-      <div class="row">
-        <span>Equidad</span>
-        <strong [class.up]="view().floating > 0" [class.down]="view().floating < 0"
-          >{{ view().equity | number: '1.2-2' }} $</strong
-        >
-      </div>
     </div>
+    <app-account-card
+      [balance]="view().balance"
+      [equity]="view().equity"
+      [hasActivePositions]="view().positions.length > 0"
+    />
   </header>
 
   <section class="order-form">
@@ -84,16 +79,14 @@
       </label>
     </div>
 
-    <label>
+    <div class="ofield">
       Riesgo (% del balance)
-      <input
-        type="number"
-        min="0.01"
-        step="0.25"
-        [value]="riskText()"
-        (input)="onInput('risk', $event)"
+      <app-risk-slider
+        [balance]="view().balance"
+        [value]="riskPct() ?? 1.0"
+        (valueChange)="onRiskChange($event)"
       />
-    </label>
+    </div>
 
     <div class="sizing">
       <div class="row">

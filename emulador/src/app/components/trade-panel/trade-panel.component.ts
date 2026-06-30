@@ -11,6 +11,8 @@ import { IconButtonDirective } from '../ui/icon-button.directive';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 import { EmptyStateComponent } from '../ui/empty-state.component';
+import { AccountCardComponent } from '../account-card.component';
+import { RiskSliderComponent } from '../risk-slider.component';
 
 /**
  * Manual order entry panel: side, type, entry/SL/TP prices, % risk with
@@ -27,6 +29,8 @@ import { EmptyStateComponent } from '../ui/empty-state.component';
     TooltipDirective,
     DropdownComponent,
     EmptyStateComponent,
+    AccountCardComponent,
+    RiskSliderComponent,
   ],
   templateUrl: './trade-panel.component.html',
   styleUrl: './trade-panel.component.css',
@@ -147,6 +151,11 @@ export class TradePanelComponent {
         this.store.dispatch(TradingActions.setRiskPct({ riskPct }));
       }
     }
+  }
+
+  onRiskChange(riskPct: number): void {
+    this.riskText.set(String(riskPct));
+    this.store.dispatch(TradingActions.setRiskPct({ riskPct }));
   }
 
   submit(): void {
