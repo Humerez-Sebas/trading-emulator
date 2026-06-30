@@ -1,17 +1,25 @@
+/* Floating glassmorphism playback pill. */
 .hud {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  bottom: 16px;
   transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(520px, 90%);
-  padding: 8px 12px;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--text, #d1d4dc);
   background: var(--surface-2, #181818);
-  border: 1px solid var(--border-strong, #333);
-  border-radius: var(--radius-md, 10px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--surface-2, #181818) 78%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, #fff 8%, transparent);
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.35),
+    inset 0 1px rgba(255, 255, 255, 0.04);
+  user-select: none;
   z-index: 30;
 }
 /* Once dragged, position is driven by inline left/top (px from the chart area). */
@@ -20,74 +28,252 @@
   right: auto;
   transform: none;
 }
+
 .grip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 30px;
+  width: 20px;
+  height: 28px;
   padding: 0;
   background: none;
   border: none;
+  border-radius: 6px;
   color: var(--text-muted, #787b86);
   cursor: grab;
+}
+.grip:hover {
+  color: var(--text, #d1d4dc);
 }
 .grip:active {
   cursor: grabbing;
 }
-.grip:focus-visible {
-  outline: 2px solid var(--accent, #2962ff);
-  outline-offset: 2px;
-}
-.ctl-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+
 .grp {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
-.btn,
-.chip {
+
+/* Segmented button (-1 / +1 / jump arrows). */
+.seg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
-  height: 30px;
-  padding: 0 9px;
-  background: var(--surface-3, #1f1f1f);
-  border: 1px solid var(--border-strong, #333);
-  border-radius: var(--radius-sm, 6px);
+  gap: 2px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  background: none;
+  border: none;
+  border-radius: 6px;
   color: var(--text, #d1d4dc);
   font: inherit;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast, 0.15s) ease,
+    transform 0.1s ease;
+}
+.seg:hover {
+  background: color-mix(in srgb, #fff 6%, transparent);
+}
+.seg:active {
+  transform: scale(0.94);
+}
+.seg-n {
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+/* Round play/pause button. */
+.play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: 0 2px;
+  background: var(--accent, #2962ff);
+  border: none;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent, #2962ff) 45%, transparent);
+  transition:
+    filter 0.2s ease,
+    transform 0.1s ease;
+}
+.play:hover {
+  filter: brightness(1.08);
+}
+.play:active {
+  transform: scale(0.95);
+}
+.play .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.ic {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ic.accent {
+  color: var(--accent, #2962ff);
+}
+
+/* Dropdown / popover triggers (speed, jump, resolution). */
+.menu {
+  position: relative;
+  display: inline-flex;
+}
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text, #d1d4dc);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--duration-fast, 0.15s) ease;
+}
+.trigger:hover {
+  background: color-mix(in srgb, #fff 6%, transparent);
+}
+.trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, #fff 8%, transparent);
+}
+.trig-n {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.trig-u {
+  font-size: 10px;
+  color: var(--text-muted, #787b86);
+}
+.caret {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--text-muted, #787b86);
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: color-mix(in srgb, #fff 10%, transparent);
+}
+
+/* Popover surface (opens above the bottom-anchored HUD). */
+.pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 95;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, #fff 10%, transparent);
+  background: var(--surface-3, #1f1f1f);
+  background: color-mix(in srgb, var(--surface-3, #1f1f1f) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  animation: pop-in var(--duration-fast, 0.15s) ease-out;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+}
+.pop-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 112px;
+  padding: 4px;
+}
+.pop-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text, #d1d4dc);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
-.btn:hover,
-.chip:hover {
-  border-color: var(--border-strong, #555);
+.pop-item:hover {
+  background: color-mix(in srgb, #fff 7%, transparent);
 }
-.btn.play {
-  background: var(--accent, #2962ff);
-  border-color: var(--accent, #2962ff);
-  color: #fff;
-  min-width: 36px;
+.pop-item.sel {
+  color: var(--accent, #2962ff);
 }
-.btn:focus-visible,
-.chip:focus-visible {
-  outline: 2px solid var(--accent, #2962ff);
-  outline-offset: 2px;
-}
-.sep {
-  width: 1px;
-  height: 22px;
-  background: var(--border-strong, #333);
-}
-.clock {
-  color: var(--warning, #f0b90b);
-  font-weight: 600;
+.mono {
   font-variant-numeric: tabular-nums;
-  margin-left: auto;
+}
+
+.pop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 8px;
+}
+.jump-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #fff 4%, transparent);
+  border: none;
+  color: var(--text, #d1d4dc);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    transform 0.1s ease;
+}
+.jump-cell:hover {
+  background: color-mix(in srgb, #fff 10%, transparent);
+}
+.jump-cell:active {
+  transform: scale(0.94);
+}
+.jump-cell.sel {
+  background: var(--accent, #2962ff);
+  color: #fff;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent, #2962ff) 40%, transparent);
+}
+
+.grip:focus-visible,
+.seg:focus-visible,
+.play:focus-visible,
+.trigger:focus-visible,
+.pop-item:focus-visible,
+.jump-cell:focus-visible {
+  outline: 2px solid var(--accent, #2962ff);
+  outline-offset: 1px;
 }

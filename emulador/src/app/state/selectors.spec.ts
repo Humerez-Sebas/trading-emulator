@@ -1,19 +1,30 @@
 import { describe, expect, it } from 'vitest';
+import { TestBed } from '@angular/core/testing';
+import { provideMockStore, MockStore } from '@ngrx/store/testing';
+import { firstValueFrom } from 'rxjs';
+import { tradingFeature } from './trading/trading.reducer';
 import {
   lowerSeriesForSeconds,
   selectActiveCandles,
+  selectAvailableResolutions,
+  selectCandleCountdown,
   selectChartStyle,
   selectChartView,
   selectClosedTradeBoxes,
+  formatCountdown,
   selectContractSize,
-  selectCurrentCandle,
+  selectCurrentReplayCandle,
   selectDataRange,
   selectFillContext,
   selectFloatingPnl,
   selectActiveTfShortfall,
+  selectFormingCandle,
   selectLoadedTfs,
   selectPointSize,
   selectProgress,
+  selectReplayIndex,
+  selectReplaySeries,
+  selectResolutionProgress,
   selectSessionStats,
   selectSessionTfs,
   selectTfLastTimes,
@@ -271,15 +282,74 @@ describe('selectProgress', () => {
   });
 });
 
+// ---- selectFormingCandle ----
+describe('selectFormingCandle', () => {
+  const res = [
+    // velas M30 dentro de la H1 09:00-10:00
+    { time: 9 * 3600, open: 10, high: 12, low: 9, close: 11 },
+    { time: 9 * 3600 + 1800, open: 11, high: 15, low: 8, close: 14 },
+  ];
+
+  it('agrega las velas de resolución reveladas hasta el cursor', () => {
+    const cursor = 9 * 3600 + 1800; // ambas M30 reveladas
+    const out = selectFormingCandle.projector(res, 3600, cursor, 30);
+    expect(out).toEqual({ time: 9 * 3600, open: 10, high: 15, low: 8, close: 14 });
+  });
+
+  it('solo la primera M30 cuando el cursor está a mitad de hora', () => {
+    const cursor = 9 * 3600; // solo la primera revelada
+    const out = selectFormingCandle.projector(res, 3600, cursor, 30);
+    expect(out).toEqual({ time: 9 * 3600, open: 10, high: 12, low: 9, close: 11 });
+  });
+
+  it('null en vela completa', () => {
+    expect(selectFormingCandle.projector(res, 3600, 9 * 3600, null)).toBeNull();
+  });
+});
+
+// ---- formatCountdown ----
+describe('formatCountdown', () => {
+  it('formats MM:SS under an hour', () => {
+    expect(formatCountdown(6 * 60 + 58)).toBe('06:58');
+    expect(formatCountdown(59)).toBe('00:59');
+  });
+  it('formats HH:MM:SS for an hour or more', () => {
+    expect(formatCountdown(3 * 3600 + 4 * 60 + 5)).toBe('03:04:05');
+    expect(formatCountdown(3600)).toBe('01:00:00');
+  });
+  it('clamps to 00:00 at or below zero', () => {
+    expect(formatCountdown(0)).toBe('00:00');
+    expect(formatCountdown(-10)).toBe('00:00');
+  });
+});
+
+// ---- selectCandleCountdown ----
+describe('selectCandleCountdown', () => {
+  it('returns the time left until the active candle closes', () => {
+    // H1 (3600s) bucket 09:00-10:00, cursor at 09:37 → 23:00 left
+    const cursor = 9 * 3600 + 37 * 60;
+    expect(selectCandleCountdown.projector(3600, cursor)).toBe('23:00');
+  });
+  it('formats HH:MM:SS for a D1 candle', () => {
+    // D1 (86400s), cursor 1s past the day start → 23:59:59 left
+    expect(selectCandleCountdown.projector(86400, 86401)).toBe('23:59:59');
+  });
+  it('returns null before the replay starts or with no TF', () => {
+    expect(selectCandleCountdown.projector(3600, 0)).toBeNull();
+    expect(selectCandleCountdown.projector(0, 1000)).toBeNull();
+  });
+});
+
 // ---- selectChartView ----
 describe('selectChartView', () => {
-  it('bundles tf/candles/idx/utcOffset', () => {
+  it('bundles tf/candles/idx/utcOffset/countdown', () => {
     const candles = series(3);
-    const result = selectChartView.projector('H1', candles, 2, -4);
+    const result = selectChartView.projector('H1', candles, 2, -4, null, null, '12:00');
     expect(result.tf).toBe('H1');
     expect(result.candles).toBe(candles);
     expect(result.idx).toBe(2);
     expect(result.utcOffset).toBe(-4);
+    expect(result.countdown).toBe('12:00');
   });
 });
 
@@ -298,15 +368,15 @@ describe('selectContractSize', () => {
   });
 });
 
-// ---- selectCurrentCandle ----
-describe('selectCurrentCandle', () => {
+// ---- selectCurrentReplayCandle ----
+describe('selectCurrentReplayCandle', () => {
   it('returns null when idx < 0', () => {
-    expect(selectCurrentCandle.projector(series(3), -1)).toBeNull();
+    expect(selectCurrentReplayCandle.projector(series(3), -1)).toBeNull();
   });
 
-  it('returns the candle at idx', () => {
+  it('returns the replay-series candle at idx (the live sub-TF candle in resolution mode)', () => {
     const candles = series(3, 0, 3600);
-    const c = selectCurrentCandle.projector(candles, 1);
+    const c = selectCurrentReplayCandle.projector(candles, 1);
     expect(c).toEqual(candles[1]);
   });
 });
@@ -405,6 +475,23 @@ describe('selectFloatingPnl', () => {
     const result = selectFloatingPnl.projector([pos], c, 100);
     expect(result).toBeCloseTo(200, 4);
   });
+
+  // Bug 4: in resolution mode the live price must come from the latest revealed
+  // sub-TF (replay) candle, NOT the display candle's (future) close.
+  it('prices off the replay-series candle (live sub-TF), not the display candle', async () => {
+    TestBed.configureTestingModule({ providers: [provideMockStore()] });
+    const store = TestBed.inject(MockStore);
+    store.overrideSelector(selectReplaySeries, [candle(0, 100, 105, 99, 105)]); // sub-TF close = 105
+    store.overrideSelector(selectReplayIndex, 0);
+    store.overrideSelector(tradingFeature.selectPositions, [
+      position({ side: 'buy', entryPrice: 100, lots: 0.1 }),
+    ]);
+    store.overrideSelector(selectContractSize, 100);
+    store.refreshState();
+    const pnl = await firstValueFrom(store.select(selectFloatingPnl));
+    // (105 - 100) * 0.1 * 100 = 50 → derived from the resolution candle's close
+    expect(pnl).toBeCloseTo(50, 6);
+  });
 });
 
 // ---- selectTradeBoxes ----
@@ -498,6 +585,26 @@ describe('selectSessionStats', () => {
   });
 });
 
+// ---- selectReplaySeries / selectReplayIndex ----
+describe('selectReplaySeries / selectReplayIndex', () => {
+  const active = [{ time: 0, open: 1, high: 1, low: 1, close: 1 }];
+  const resolution = [
+    { time: 0, open: 1, high: 1, low: 1, close: 1 },
+    { time: 300, open: 1, high: 1, low: 1, close: 1 },
+  ];
+
+  it('usa la serie activa en vela completa', () => {
+    expect(selectReplaySeries.projector(active, null)).toBe(active);
+  });
+  it('usa la serie de resolución cuando está activa', () => {
+    expect(selectReplaySeries.projector(active, resolution)).toBe(resolution);
+  });
+  it('índice del último candle de resolución <= cursor', () => {
+    expect(selectReplayIndex.projector(resolution, 300)).toBe(1);
+    expect(selectReplayIndex.projector(resolution, 299)).toBe(0);
+  });
+});
+
 // ---- selectFillContext ----
 describe('selectFillContext', () => {
   it('bundles candles/idx/tfSeconds/lower/contractSize/trading', () => {
@@ -551,5 +658,35 @@ describe('lowerSeriesForSeconds', () => {
 
   it('returns null when series is empty', () => {
     expect(lowerSeriesForSeconds({}, 14400)).toBeNull(); // H4 = 14400s
+  });
+});
+
+// ---- selectAvailableResolutions ----
+describe('selectAvailableResolutions', () => {
+  it('lista divisores válidos del TF mostrado con datos (H1 con M1)', () => {
+    const series = { M1: [{ time: 0, open: 1, high: 1, low: 1, close: 1 }] };
+    const out = selectAvailableResolutions.projector(series, 3600); // H1
+    const mins = out.map((r) => r.minutes);
+    expect(mins).toEqual([1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30]);
+    expect(out.find((r) => r.minutes === 5)!.label).toBe('M5');
+  });
+
+  it('vacío cuando no hay serie base para generar', () => {
+    const series = { H1: [{ time: 0, open: 1, high: 1, low: 1, close: 1 }] };
+    expect(selectAvailableResolutions.projector(series, 3600)).toEqual([]); // sin M-data < H1
+  });
+});
+
+// ---- selectResolutionProgress ----
+describe('selectResolutionProgress', () => {
+  it('devuelve el cursor y el fin del bucket actual del TF mostrado', () => {
+    // cursor 09:37 dentro de la H1 09:00-10:00 → bucketEnd 10:00
+    const cursor = 9 * 3600 + 37 * 60;
+    const out = selectResolutionProgress.projector(3600, cursor, 5);
+    expect(out).toEqual({ cursorTime: cursor, bucketEndTime: 10 * 3600 });
+  });
+
+  it('null en vela completa', () => {
+    expect(selectResolutionProgress.projector(3600, 1000, null)).toBeNull();
   });
 });

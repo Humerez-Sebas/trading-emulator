@@ -53,6 +53,7 @@ import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawing
 import { DrawingsPrimitive } from './drawings-primitive';
 import { TradeButtonsPrimitive } from './trade-buttons-primitive';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
+import { CountdownPrimitive } from './countdown-primitive';
 import { TradingActions } from '../../state/trading/trading.actions';
 import {
   lotsForRisk,
@@ -343,6 +344,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private drawingsPrimitive = new DrawingsPrimitive();
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private tradeBoxesPrimitive = new TradeBoxesPrimitive();
+  /** Candle-close countdown tag on the price axis (TradingView-style). */
+  private countdownPrimitive = new CountdownPrimitive();
   private seriesMarkers?: ISeriesMarkersPluginApi<Time>;
 
   // --- trade overlay state ---
@@ -431,6 +434,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private winStart = 0;
   /** UTC times (no shift) of the rendered window: anchor for time<->x mapping. */
   private renderedTimes: number[] = [];
+  /** UTC time (no shift) of the currently painted "forming" bar, if any. */
+  private renderedFormingTime: number | null = null;
   /** Reentrancy guard for the scroll-driven lazy prepend. */
   private loadingMore = false;
   /** nominal seconds/bar of the active TF (out-of-range overlay extrapolation) */
@@ -529,6 +534,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.series.attachPrimitive(this.tradeBoxesPrimitive);
     this.series.attachPrimitive(this.drawingsPrimitive);
     this.series.attachPrimitive(this.tradeButtonsPrimitive);
+    this.series.attachPrimitive(this.countdownPrimitive);
     this.seriesMarkers = createSeriesMarkers(this.series, []);
 
     // chart colors + grid controls (theme / user customization)
@@ -543,7 +549,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.store
       .select(selectChartView)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ tf, candles, idx, utcOffset }) => this.render(tf, candles, idx, utcOffset));
+      .subscribe(({ tf, candles, idx, utcOffset, forming, countdown }) =>
+        this.render(tf, candles, idx, utcOffset, forming, countdown),
+      );
 
     // warn (don't silently teleport) when the active TF's coverage is shorter
     // than the replay cursor — that TF was harvested less far than another
@@ -630,6 +638,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       downColor: c.downColor,
       wickUpColor: c.wickUp,
       wickDownColor: c.wickDown,
+      borderVisible: true,
+      borderUpColor: c.borderUpColor,
+      borderDownColor: c.borderDownColor,
     });
     this.pushDrawings();
     // trade overlay uses the theme's up/down colors
@@ -639,7 +650,14 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.pushTradeBoxes();
   }
 
-  private render(tf: string | null, candles: Candle[], idx: number, utcOffset: number): void {
+  private render(
+    tf: string | null,
+    candles: Candle[],
+    idx: number,
+    utcOffset: number,
+    forming: Candle | null,
+    countdown: string | null,
+  ): void {
     if (!this.series) return;
     const shift = utcOffset * 3600;
     if (shift !== this.shiftSecs) {
@@ -647,7 +665,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.pushDrawings();
       this.applyTradeMarkers();
     }
-    if (idx >= 0 && candles.length > 1) {
+    // Initialize spacing/precision whenever enough candle data exists — even when
+    // idx === -1 (resolution mode hides the forming bucket), so overlay primitives
+    // (drawings, trade boxes) get valid values from the first frame.
+    if (candles.length > 1) {
       this.barSpacing = candles[1].time - candles[0].time;
       this.pointSize = derivePointSize(candles);
     }
@@ -671,6 +692,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       if (this.renderedTimes.length) this.chart?.timeScale().scrollToRealTime();
       this.pushDrawings();
       this.pushTradeBoxes();
+      this.applyForming(forming, shift);
+      this.updateCountdown(forming, candles, idx, countdown);
       return;
     }
 
@@ -679,10 +702,53 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.renderedIdx++;
       const c = candles[this.renderedIdx];
       this.series.update({ ...c, time: (c.time + shift) as UTCTimestamp });
-      this.renderedTimes.push(c.time);
+      // A forming bucket may already have recorded this time (applyForming); keep
+      // renderedTimes free of duplicates so overlay coordinate lookups stay correct.
+      if (!this.renderedTimes.includes(c.time)) this.renderedTimes.push(c.time);
     }
     // live trade boxes grow with the last rendered candle
     this.pushTradeBoxes();
+    this.applyForming(forming, shift);
+    this.updateCountdown(forming, candles, idx, countdown);
+  }
+
+  /**
+   * Feeds the price-axis countdown tag: anchored to the live price (forming
+   * close in sub-TF mode, else the last revealed candle's close). Cleared when
+   * there's no countdown or no valid price.
+   */
+  private updateCountdown(
+    forming: Candle | null,
+    candles: Candle[],
+    idx: number,
+    label: string | null,
+  ): void {
+    const price = forming
+      ? forming.close
+      : idx >= 0 && idx < candles.length
+        ? candles[idx].close
+        : null;
+    if (!label || price === null) {
+      this.countdownPrimitive.setSource(null);
+      return;
+    }
+    this.countdownPrimitive.setSource({
+      price,
+      text: label,
+      backColor: '#363a45',
+      textColor: '#ffffff',
+    });
+  }
+
+  /** Paints/updates the live "forming" bar (resolution mode). */
+  private applyForming(forming: Candle | null, shift: number): void {
+    if (!this.series || !forming) {
+      this.renderedFormingTime = null;
+      return;
+    }
+    this.series.update({ ...forming, time: (forming.time + shift) as UTCTimestamp });
+    this.renderedFormingTime = forming.time;
+    this.renderedTimes = [...this.renderedTimes.filter((t) => t !== forming.time), forming.time];
   }
 
   /** Paints the window [winStart, idx] of `renderedCandles` and records its

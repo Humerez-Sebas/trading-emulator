@@ -152,4 +152,14 @@ describe('market reducer: custom timeframe', () => {
     expect(back.customTf).toBeNull();
     expect(back.activeTf).toBe('H1');
   });
+
+  it('replayResolutionGenerated guarda la serie y el for', () => {
+    const c = [{ time: 0, open: 1, high: 2, low: 0, close: 1 }];
+    const next = marketFeature.reducer(
+      marketFeature.reducer(undefined, { type: '@@init' } as any),
+      MarketActions.replayResolutionGenerated({ minutes: 5, candles: c }),
+    );
+    expect(next.resolutionSeries).toEqual(c);
+    expect(next.resolutionFor).toBe(5);
+  });
 });

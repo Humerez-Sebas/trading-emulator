@@ -1,6 +1,8 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { ReplayActions } from './replay.actions';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
+import { MarketActions } from '../market/market.actions';
+import { TIMEFRAME_SECONDS } from '../../models';
 
 export interface ReplayState {
   /**
@@ -12,6 +14,7 @@ export interface ReplayState {
   playing: boolean;
   msPerCandle: number;
   jumpSize: number;
+  resolutionMinutes: number | null;
 }
 
 const initialState: ReplayState = {
@@ -19,7 +22,18 @@ const initialState: ReplayState = {
   playing: false,
   msPerCandle: 500,
   jumpSize: 10,
+  resolutionMinutes: null,
 };
+
+/** Resets the resolution when it no longer divides the new display-TF seconds. */
+function clampResolution(state: ReplayState, displaySeconds: number): ReplayState {
+  const r = state.resolutionMinutes;
+  if (r === null) return state;
+  const rs = r * 60;
+  return rs < displaySeconds && displaySeconds % rs === 0
+    ? state
+    : { ...state, resolutionMinutes: null };
+}
 
 export const replayFeature = createFeature({
   name: 'replay',
@@ -35,6 +49,18 @@ export const replayFeature = createFeature({
     ),
     on(ReplayActions.setJumpSize, (state, { size }): ReplayState => ({ ...state, jumpSize: size })),
     on(ReplayActions.seekTo, (state, { time }): ReplayState => ({ ...state, currentTime: time })),
+    on(
+      ReplayActions.setReplayResolution,
+      (state, { minutes }): ReplayState => ({ ...state, resolutionMinutes: minutes }),
+    ),
+    on(
+      MarketActions.changeTimeframe,
+      (state, { tf }): ReplayState => clampResolution(state, TIMEFRAME_SECONDS[tf]),
+    ),
+    on(
+      MarketActions.changeCustomTimeframe,
+      (state, { minutes }): ReplayState => clampResolution(state, minutes * 60),
+    ),
     // asset switch: restore the replay cursor of the incoming workspace
     on(
       WorkspacesActions.workspaceRestored,
@@ -42,6 +68,7 @@ export const replayFeature = createFeature({
         ...state,
         currentTime: workspace.currentTime,
         playing: false,
+        resolutionMinutes: null,
       }),
     ),
   ),

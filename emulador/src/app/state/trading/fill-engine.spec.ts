@@ -3,6 +3,8 @@ import { Candle } from '../../models';
 import {
   closeSession,
   computeSessionStats,
+  firstIndexAtOrAfter,
+  lastIndexAtOrBefore,
   processCandle,
   sliceRange,
   TradingBook,
@@ -218,5 +220,33 @@ describe('sliceRange', () => {
     expect(sliceRange(candles, 60, 120)).toHaveLength(1);
     expect(sliceRange(candles, 0, 121)).toHaveLength(3);
     expect(sliceRange(candles, 130, 200)).toHaveLength(0);
+  });
+});
+
+describe('lastIndexAtOrBefore', () => {
+  const candles = [candle(0, 1, 1, 1, 1), candle(60, 1, 1, 1, 1), candle(120, 1, 1, 1, 1)];
+  it('finds the last candle whose time <= t', () => {
+    expect(lastIndexAtOrBefore(candles, 120)).toBe(2);
+    expect(lastIndexAtOrBefore(candles, 119)).toBe(1);
+    expect(lastIndexAtOrBefore(candles, 60)).toBe(1);
+    expect(lastIndexAtOrBefore(candles, 0)).toBe(0);
+  });
+  it('returns -1 when t is before the first candle, and on empty input', () => {
+    expect(lastIndexAtOrBefore(candles, -1)).toBe(-1);
+    expect(lastIndexAtOrBefore([], 100)).toBe(-1);
+  });
+});
+
+describe('firstIndexAtOrAfter', () => {
+  const candles = [candle(0, 1, 1, 1, 1), candle(60, 1, 1, 1, 1), candle(120, 1, 1, 1, 1)];
+  it('finds the first candle whose time >= t', () => {
+    expect(firstIndexAtOrAfter(candles, 0)).toBe(0);
+    expect(firstIndexAtOrAfter(candles, 1)).toBe(1);
+    expect(firstIndexAtOrAfter(candles, 60)).toBe(1);
+    expect(firstIndexAtOrAfter(candles, 120)).toBe(2);
+  });
+  it('returns candles.length when t is past the last candle', () => {
+    expect(firstIndexAtOrAfter(candles, 121)).toBe(3);
+    expect(firstIndexAtOrAfter([], 100)).toBe(0);
   });
 });

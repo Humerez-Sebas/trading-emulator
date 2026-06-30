@@ -5,10 +5,13 @@ import { PlaybackControllerComponent } from './playback-controller.component';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { replayFeature } from '../../state/replay/replay.reducer';
 import {
+  selectAvailableResolutions,
   selectCurrentTime,
   selectDataRange,
   selectMsPerCandle,
   selectPlaying,
+  selectResolutionMinutes,
+  selectResolutionProgress,
   selectUtcOffset,
 } from '../../state/selectors';
 
@@ -33,32 +36,43 @@ describe('PlaybackControllerComponent', () => {
     store.overrideSelector(selectCurrentTime, 0);
     store.overrideSelector(selectUtcOffset, 0);
     store.overrideSelector(selectDataRange, null);
+    store.overrideSelector(selectAvailableResolutions, []);
+    store.overrideSelector(selectResolutionMinutes, null);
+    store.overrideSelector(selectResolutionProgress, null);
     fixture = TestBed.createComponent(PlaybackControllerComponent);
     fixture.detectChanges();
   });
 
-  it('renderiza y cicla el tamaño de salto 10 → 50 → 5', () => {
+  it('setJump despacha setJumpSize con el valor elegido del grid', () => {
     const spy = vi.spyOn(store, 'dispatch');
-    const c = fixture.componentInstance;
-    c.cycleJumpSize();
-    expect(spy).toHaveBeenCalledWith(ReplayActions.setJumpSize({ size: 50 }));
+    fixture.componentInstance.setJump(20);
+    expect(spy).toHaveBeenCalledWith(ReplayActions.setJumpSize({ size: 20 }));
   });
 
-  it('+1 despacha advanceCandle', () => {
+  it('setSpeed convierte velas/s a msPerCandle', () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    fixture.componentInstance.setSpeed(10); // 10 v/s → 100 ms
+    expect(spy).toHaveBeenCalledWith(ReplayActions.changeSpeed({ msPerCandle: 100 }));
+  });
+
+  it('+1 despacha advanceDisplay (Display Navigation)', () => {
     const spy = vi.spyOn(store, 'dispatch');
     fixture.componentInstance.step();
-    expect(spy).toHaveBeenCalledWith(ReplayActions.advanceCandle());
+    expect(spy).toHaveBeenCalledWith(ReplayActions.advanceDisplay());
   });
 
-  it('ngOnDestroy detiene el auto-repeat', () => {
-    vi.useFakeTimers();
-    const c = fixture.componentInstance;
+  it('-1 despacha stepBack una sola vez (sin auto-repeat)', () => {
     const spy = vi.spyOn(store, 'dispatch');
-    c.startRepeat('fwd'); // dispara una vez de inmediato
+    fixture.componentInstance.stepBack();
     expect(spy).toHaveBeenCalledTimes(1);
-    c.ngOnDestroy(); // limpia el intervalo
-    vi.advanceTimersByTime(300); // habría disparado ~3 veces más sin la limpieza
-    expect(spy).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
+    expect(spy).toHaveBeenCalledWith(ReplayActions.stepBack());
+  });
+
+  it('setResolution despacha setReplayResolution (Gráfico → null, sub-TF → minutos)', () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    fixture.componentInstance.setResolution(null);
+    expect(spy).toHaveBeenCalledWith(ReplayActions.setReplayResolution({ minutes: null }));
+    fixture.componentInstance.setResolution(5);
+    expect(spy).toHaveBeenCalledWith(ReplayActions.setReplayResolution({ minutes: 5 }));
   });
 });

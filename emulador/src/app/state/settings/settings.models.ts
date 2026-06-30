@@ -5,6 +5,8 @@ export interface ChartColors {
   downColor: string;
   wickUp: string;
   wickDown: string;
+  borderUpColor: string;
+  borderDownColor: string;
   background: string;
   grid: string;
   text: string;
@@ -66,6 +68,8 @@ export const DARK_CHART_COLORS: ChartColors = {
   downColor: '#EF5350',
   wickUp: '#26A69A',
   wickDown: '#EF5350',
+  borderUpColor: '#000000',
+  borderDownColor: '#000000',
   background: '#000000',
   grid: '#1A1A1A',
   text: '#787B86',
@@ -78,6 +82,8 @@ export const LIGHT_CHART_COLORS: ChartColors = {
   downColor: '#F23645',
   wickUp: '#089981',
   wickDown: '#F23645',
+  borderUpColor: '#000000',
+  borderDownColor: '#000000',
   background: '#FFFFFF',
   grid: '#E0E3EB',
   text: '#787B86',
@@ -96,22 +102,50 @@ export const CHART_PRESETS: ChartPreset[] = [
   {
     id: 'tradingview',
     label: 'TradingView',
-    colors: { upColor: '#26A69A', downColor: '#EF5350', wickUp: '#26A69A', wickDown: '#EF5350' },
+    colors: {
+      upColor: '#26A69A',
+      downColor: '#EF5350',
+      wickUp: '#26A69A',
+      wickDown: '#EF5350',
+      borderUpColor: '#000000',
+      borderDownColor: '#000000',
+    },
   },
   {
     id: 'clasico',
     label: 'Clásico verde/rojo',
-    colors: { upColor: '#089981', downColor: '#F23645', wickUp: '#089981', wickDown: '#F23645' },
+    colors: {
+      upColor: '#089981',
+      downColor: '#F23645',
+      wickUp: '#089981',
+      wickDown: '#F23645',
+      borderUpColor: '#000000',
+      borderDownColor: '#000000',
+    },
   },
   {
     id: 'mt5',
     label: 'MT5',
-    colors: { upColor: '#00B746', downColor: '#FFFFFF', wickUp: '#00B746', wickDown: '#FFFFFF' },
+    colors: {
+      upColor: '#00B746',
+      downColor: '#FFFFFF',
+      wickUp: '#00B746',
+      wickDown: '#FFFFFF',
+      borderUpColor: '#000000',
+      borderDownColor: '#000000',
+    },
   },
   {
     id: 'mono',
     label: 'Monocromo',
-    colors: { upColor: '#D1D4DC', downColor: '#5D606B', wickUp: '#D1D4DC', wickDown: '#5D606B' },
+    colors: {
+      upColor: '#D1D4DC',
+      downColor: '#5D606B',
+      wickUp: '#D1D4DC',
+      wickDown: '#5D606B',
+      borderUpColor: '#000000',
+      borderDownColor: '#000000',
+    },
   },
   {
     // White chart with blue/black candles, like the user's TradingView setup.
@@ -123,6 +157,8 @@ export const CHART_PRESETS: ChartPreset[] = [
       downColor: '#0F0F0F',
       wickUp: '#2962FF',
       wickDown: '#0F0F0F',
+      borderUpColor: '#000000',
+      borderDownColor: '#000000',
       background: '#FFFFFF',
       grid: '#ECECEC',
       text: '#787B86',

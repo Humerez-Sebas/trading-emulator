@@ -3,17 +3,30 @@ import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { Action, Store } from '@ngrx/store';
 import { interval, EMPTY } from 'rxjs';
 import { filter, map, mergeMap, switchMap, withLatestFrom } from 'rxjs/operators';
+import { Candle } from '../../models';
 import { ReplayActions } from './replay.actions';
 import {
   selectActiveCandles,
+  selectCurrentTime,
   selectFillContext,
   selectMsPerCandle,
   selectPlaying,
+  selectReplayIndex,
+  selectReplaySeries,
   selectVisibleIndex,
 } from '../selectors';
 import { replayFeature } from './replay.reducer';
 import { TradingActions } from '../trading/trading.actions';
 import { sliceRange } from '../trading/fill-engine';
+
+/** The slice of {@link selectFillContext} the forward-fold needs. */
+interface ForwardFoldContext {
+  candles: Candle[];
+  idx: number;
+  tfSeconds: number;
+  lower: Candle[] | null;
+  contractSize: number;
+}
 
 @Injectable()
 export class ReplayEffects {
@@ -27,7 +40,7 @@ export class ReplayEffects {
   advance$ = createEffect(() =>
     this.actions$.pipe(
       ofType(ReplayActions.advanceCandle),
-      withLatestFrom(this.store.select(selectActiveCandles), this.store.select(selectVisibleIndex)),
+      withLatestFrom(this.store.select(selectReplaySeries), this.store.select(selectReplayIndex)),
       map(([, candles, idx]) => {
         const next = idx + 1;
         if (next >= candles.length) return ReplayActions.endOfData();
@@ -37,24 +50,67 @@ export class ReplayEffects {
   );
 
   /**
-   * Stepping back = moving the cursor to the previous candle. The fill
-   * engine never reprocesses (lastProcessedTime guard), so going back and
-   * forth does not duplicate fills.
+   * Display Navigation back (`-1`): snaps the cursor to the DISPLAY-TF grid.
+   * From mid-bucket it lands on the current bucket's start; from a bucket
+   * boundary it lands on the previous one. Cursor only — the fill engine's
+   * lastProcessedTime guard means the landing candle never re-runs fills.
    */
   stepBack$ = createEffect(() =>
     this.actions$.pipe(
       ofType(ReplayActions.stepBack),
-      withLatestFrom(this.store.select(selectActiveCandles), this.store.select(selectVisibleIndex)),
-      filter(([, , idx]) => idx >= 1),
-      map(([, candles, idx]) => ReplayActions.goToTime({ time: candles[idx - 1].time })),
+      withLatestFrom(
+        this.store.select(selectActiveCandles),
+        this.store.select(selectVisibleIndex),
+        this.store.select(selectCurrentTime),
+      ),
+      mergeMap(([, display, visIdx, cursor]): Action[] => {
+        if (visIdx < 0) return [];
+        const boundary = display[visIdx].time;
+        const target =
+          cursor > boundary ? boundary : visIdx >= 1 ? display[visIdx - 1].time : boundary;
+        return target < cursor ? [ReplayActions.goToTime({ time: target })] : [];
+      }),
     ),
   );
 
   /**
-   * Forward jump of `jumpSize` candles. Fills are evaluated for every crossed
-   * candle: a processCandle per intermediate candle, then a final goToTime whose
-   * processFills$ handles the landing candle. `to` is clamped to the data end and
-   * to a scheduled session end so the jump never overshoots either.
+   * Display Navigation (`+1`): snaps to the next DISPLAY-TF candle while the
+   * simulation stays fine-grained — fills are processed for every replay
+   * resolution candle crossed on the way (a processCandle per intermediate
+   * candle, then a goToTime whose processFills$ handles the landing candle).
+   * In full-candle mode this advances exactly one display candle. `to` is
+   * clamped to a scheduled session end so it never overshoots.
+   */
+  advanceDisplay$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(ReplayActions.advanceDisplay),
+      withLatestFrom(
+        this.store.select(selectFillContext),
+        this.store.select(selectActiveCandles),
+        this.store.select(selectVisibleIndex),
+        this.store.select(selectCurrentTime),
+      ),
+      mergeMap(([, ctx, display, visIdx, cursor]): Action[] => {
+        if (!display.length) return [];
+        const nextDisplayIdx = visIdx + 1; // visIdx === -1 → first display candle
+        if (nextDisplayIdx >= display.length) return [ReplayActions.endOfData()];
+        // Land on the next display-TF boundary TIME directly. Deriving it from a
+        // resolution index would freeze across a data gap (market-closed hours on
+        // indices like NASDAQ/US30): no resolution candle sits before the boundary,
+        // so the index resolves to the current one and nothing advances.
+        let target = display[nextDisplayIdx].time;
+        if (ctx.trading.sessionEnd !== null && target > ctx.trading.sessionEnd) {
+          target = ctx.trading.sessionEnd;
+        }
+        if (target <= cursor) return [];
+        return this.foldForwardFills(ctx, target);
+      }),
+    ),
+  );
+
+  /**
+   * Forward jump of `jumpSize` REPLAY-resolution candles. `to` is clamped to
+   * the data end and to a scheduled session end so the jump never overshoots.
    */
   jumpForward$ = createEffect(() =>
     this.actions$.pipe(
@@ -64,20 +120,13 @@ export class ReplayEffects {
         this.store.select(replayFeature.selectJumpSize),
       ),
       mergeMap(([, ctx, n]): Action[] => {
-        const { candles, idx, tfSeconds, lower, contractSize, trading } = ctx;
+        const { candles, idx, trading } = ctx;
         if (idx < 0 || idx + 1 >= candles.length) return [];
         let to = Math.min(idx + n, candles.length - 1);
         if (trading.sessionEnd !== null) {
           while (to > idx + 1 && candles[to].time > trading.sessionEnd) to--;
         }
-        const actions: Action[] = [];
-        for (let i = idx + 1; i < to; i++) {
-          const candle = candles[i];
-          const subCandles = lower ? sliceRange(lower, candle.time, candle.time + tfSeconds) : null;
-          actions.push(TradingActions.processCandle({ candle, subCandles, contractSize }));
-        }
-        actions.push(ReplayActions.goToTime({ time: candles[to].time }));
-        return actions;
+        return this.foldForwardFills(ctx, candles[to].time);
       }),
     ),
   );
@@ -87,8 +136,8 @@ export class ReplayEffects {
     this.actions$.pipe(
       ofType(ReplayActions.jumpBack),
       withLatestFrom(
-        this.store.select(selectActiveCandles),
-        this.store.select(selectVisibleIndex),
+        this.store.select(selectReplaySeries),
+        this.store.select(selectReplayIndex),
         this.store.select(replayFeature.selectJumpSize),
       ),
       filter(([, , idx]) => idx >= 1),
@@ -114,4 +163,22 @@ export class ReplayEffects {
         ),
       ),
   );
+
+  /**
+   * Processes fills for every replay-resolution candle strictly before
+   * `targetTime` (those after the cursor) and lands the cursor on `targetTime`
+   * (whose own candle's fills processFills$ runs). Time-based so it stays robust
+   * across data gaps. Shared by forward Display Navigation and the jump.
+   */
+  private foldForwardFills(ctx: ForwardFoldContext, targetTime: number): Action[] {
+    const { candles, idx, tfSeconds, lower, contractSize } = ctx;
+    const actions: Action[] = [];
+    for (let i = idx + 1; i < candles.length && candles[i].time < targetTime; i++) {
+      const candle = candles[i];
+      const subCandles = lower ? sliceRange(lower, candle.time, candle.time + tfSeconds) : null;
+      actions.push(TradingActions.processCandle({ candle, subCandles, contractSize }));
+    }
+    actions.push(ReplayActions.goToTime({ time: targetTime }));
+    return actions;
+  }
 }

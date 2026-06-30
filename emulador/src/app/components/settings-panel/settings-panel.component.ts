@@ -51,6 +51,8 @@ export class SettingsPanelComponent {
     { key: 'downColor', label: 'Vela bajista' },
     { key: 'wickUp', label: 'Mecha alcista' },
     { key: 'wickDown', label: 'Mecha bajista' },
+    { key: 'borderUpColor', label: 'Borde alcista' },
+    { key: 'borderDownColor', label: 'Borde bajista' },
     { key: 'background', label: 'Fondo' },
     { key: 'grid', label: 'Cuadrícula' },
     { key: 'text', label: 'Texto de escalas' },

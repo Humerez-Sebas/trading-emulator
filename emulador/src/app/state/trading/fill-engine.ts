@@ -249,6 +249,33 @@ export function sliceRange(candles: Candle[], from: number, to: number): Candle[
   return candles.slice(start, end);
 }
 
+/** Index of the last candle with time <= t, or -1. Binary search (sorted series). */
+export function lastIndexAtOrBefore(candles: Candle[], t: number): number {
+  let lo = 0,
+    hi = candles.length - 1,
+    ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (candles[mid].time <= t) {
+      ans = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return ans;
+}
+
+/** Index of the first candle with time >= t, or `candles.length`. Binary search. */
+export function firstIndexAtOrAfter(candles: Candle[], t: number): number {
+  let lo = 0,
+    hi = candles.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (candles[mid].time < t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 // ============ session statistics ============
 
 export interface SessionStats {

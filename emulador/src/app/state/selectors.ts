@@ -6,6 +6,11 @@ import { drawingsFeature } from './drawings/drawings.reducer';
 import { workspacesFeature } from './workspaces/workspaces.reducer';
 import { tradingFeature } from './trading/trading.reducer';
 import { Candle, derivePointSize, TIMEFRAME_ORDER, TIMEFRAME_SECONDS, Timeframe } from '../models';
+import {
+  pickBaseSeriesTf,
+  loadedTfForMinutes,
+  formatIntervalShort,
+} from './market/custom-timeframe';
 import { Drawing } from './drawings/drawings.models';
 import {
   contractSizeFor,
@@ -15,7 +20,11 @@ import {
   SavedSession,
   TradingData,
 } from './trading/trading.models';
-import { computeSessionStats } from './trading/fill-engine';
+import {
+  computeSessionStats,
+  firstIndexAtOrAfter,
+  lastIndexAtOrBefore,
+} from './trading/fill-engine';
 
 export const selectActiveTf = marketFeature.selectActiveTf;
 export const selectSeries = marketFeature.selectSeries;
@@ -165,21 +174,7 @@ export const selectActiveCandles = createSelector(
 export const selectVisibleIndex = createSelector(
   selectActiveCandles,
   selectCurrentTime,
-  (candles, t): number => {
-    if (!candles.length || t <= 0) return -1;
-    // binary search of the last time <= t
-    let lo = 0,
-      hi = candles.length - 1,
-      ans = -1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (candles[mid].time <= t) {
-        ans = mid;
-        lo = mid + 1;
-      } else hi = mid - 1;
-    }
-    return ans;
-  },
+  (candles, t): number => (!candles.length || t <= 0 ? -1 : lastIndexAtOrBefore(candles, t)),
 );
 
 /** Date range available in the active TF (for the start-time picker). */
@@ -222,14 +217,6 @@ export const selectActiveTfLabel = createSelector(
   (tf, customTf): string | null => (customTf != null ? `M${customTf}` : tf),
 );
 
-export const selectChartView = createSelector(
-  selectActiveTfLabel,
-  selectActiveCandles,
-  selectVisibleIndex,
-  selectUtcOffset,
-  (tf, candles, idx, utcOffset) => ({ tf, candles, idx, utcOffset }),
-);
-
 // ============ trading ============
 
 /** Contract size (units per lot) of the active asset. */
@@ -237,70 +224,12 @@ export const selectContractSize = createSelector(selectCurrentAsset, (symbol) =>
   contractSizeFor(symbol ?? ''),
 );
 
-/** Last candle revealed by the replay (null before the start). */
-export const selectCurrentCandle = createSelector(
-  selectActiveCandles,
-  selectVisibleIndex,
-  (candles, idx): Candle | null => (idx >= 0 ? candles[idx] : null),
-);
-
 /** Minimum price increment of the active series (for points display). */
 export const selectPointSize = createSelector(selectActiveCandles, (candles) =>
   candles.length ? derivePointSize(candles) : 0.01,
 );
 
-function floatingPnl(p: Position, price: number, contractSize: number): number {
-  const dir = p.side === 'buy' ? 1 : -1;
-  return (price - p.entryPrice) * dir * p.lots * contractSize;
-}
-
-/**
- * Everything the order panel needs, in ONE consistent emission: trading
- * state, current price, per-position floating P/L and equity.
- */
-export const selectTradePanelView = createSelector(
-  tradingFeature.selectTradingState,
-  selectCurrentCandle,
-  selectContractSize,
-  selectPointSize,
-  (t, candle, contractSize, pointSize) => {
-    const price = candle?.close ?? null;
-    const positions = t.positions.map((p) => ({
-      ...p,
-      pnl: price !== null ? floatingPnl(p, price, contractSize) : 0,
-    }));
-    const floating = positions.reduce((sum, p) => sum + p.pnl, 0);
-    return {
-      balance: t.balance,
-      initialBalance: t.initialBalance,
-      equity: t.balance + floating,
-      floating,
-      orders: t.orders,
-      positions,
-      history: t.history,
-      sessionEnded: t.sessionEnded,
-      summaryOpen: t.summaryOpen,
-      riskPct: t.riskPct,
-      price,
-      time: candle?.time ?? 0,
-      contractSize,
-      pointSize,
-    };
-  },
-);
-
 export const selectSessionEnd = tradingFeature.selectSessionEnd;
-
-/** Floating P/L of all open positions (null when there are none). */
-export const selectFloatingPnl = createSelector(
-  tradingFeature.selectPositions,
-  selectCurrentCandle,
-  selectContractSize,
-  (positions, candle, contractSize): number | null => {
-    if (!positions.length || !candle) return null;
-    return positions.reduce((sum, p) => sum + floatingPnl(p, candle.close, contractSize), 0);
-  },
-);
 
 /** Marker descriptor with semantic color (the chart maps it to the theme). */
 export interface TradeMarker {
@@ -470,6 +399,132 @@ export const selectActiveTfSeconds = createSelector(
   (tf, customTf): number => (customTf != null ? customTf * 60 : tf ? TIMEFRAME_SECONDS[tf] : 0),
 );
 
+export const selectResolutionMinutes = replayFeature.selectResolutionMinutes;
+
+/** The replay-resolution candles: a loaded series at R, else the generated one, else null. */
+export const selectResolutionSeries = createSelector(
+  selectSeries,
+  marketFeature.selectResolutionSeries,
+  marketFeature.selectResolutionFor,
+  selectResolutionMinutes,
+  (series, generated, generatedFor, minutes): Candle[] | null => {
+    if (minutes == null) return null;
+    const loaded = loadedTfForMinutes(minutes, Object.keys(series) as Timeframe[]);
+    if (loaded && series[loaded]?.length) return series[loaded]!;
+    return generatedFor === minutes && generated.length ? generated : null;
+  },
+);
+
+/** Standard TFs that divide the display TF, are finer, and can be generated from loaded data. */
+export const selectAvailableResolutions = createSelector(
+  selectSeries,
+  selectActiveTfSeconds,
+  (series, activeSeconds): { minutes: number; label: string }[] => {
+    if (activeSeconds <= 0) return [];
+    const out: { minutes: number; label: string }[] = [];
+    for (const tf of TIMEFRAME_ORDER) {
+      const secs = TIMEFRAME_SECONDS[tf];
+      if (secs >= activeSeconds) break;
+      const minutes = secs / 60;
+      if (activeSeconds % secs === 0 && pickBaseSeriesTf(series, minutes)) {
+        out.push({ minutes, label: formatIntervalShort(minutes) });
+      }
+    }
+    return out;
+  },
+);
+
+/** Cursor time + current display-bucket end, for the "HH:mm / HH:mm" readout. */
+export const selectResolutionProgress = createSelector(
+  selectActiveTfSeconds,
+  selectCurrentTime,
+  selectResolutionMinutes,
+  (activeSeconds, cursor, minutes): { cursorTime: number; bucketEndTime: number } | null => {
+    if (minutes == null || activeSeconds <= 0 || cursor <= 0) return null;
+    const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
+    return { cursorTime: cursor, bucketEndTime: bucketStart + activeSeconds };
+  },
+);
+
+/** Partial display-TF candle aggregated from resolution candles revealed in the current bucket. */
+export const selectFormingCandle = createSelector(
+  selectResolutionSeries,
+  selectActiveTfSeconds,
+  selectCurrentTime,
+  selectResolutionMinutes,
+  (resSeries, activeSeconds, cursor, minutes): Candle | null => {
+    if (minutes == null || !resSeries || activeSeconds <= 0 || cursor <= 0) return null;
+    const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
+    // Aggregate the bucket's revealed candles [bucketStart, cursor] directly over
+    // their indices — no intermediate slice array (avoids GC churn at fast autoplay).
+    const lo = firstIndexAtOrAfter(resSeries, bucketStart);
+    const hi = lastIndexAtOrBefore(resSeries, cursor);
+    if (hi < lo) return null;
+    let high = resSeries[lo].high;
+    let low = resSeries[lo].low;
+    for (let i = lo + 1; i <= hi; i++) {
+      if (resSeries[i].high > high) high = resSeries[i].high;
+      if (resSeries[i].low < low) low = resSeries[i].low;
+    }
+    return {
+      time: bucketStart,
+      open: resSeries[lo].open,
+      high,
+      low,
+      close: resSeries[hi].close,
+    };
+  },
+);
+
+/** Formats a remaining-seconds duration as `MM:SS` (or `HH:MM:SS` past an hour). */
+export function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return '00:00';
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
+}
+
+/**
+ * Time left until the active DISPLAY-TF candle closes, formatted for the price
+ * axis countdown tag. `null` before the replay starts or with no active TF.
+ * In resolution mode it still counts down to the display candle's close.
+ */
+export const selectCandleCountdown = createSelector(
+  selectActiveTfSeconds,
+  selectCurrentTime,
+  (tfSeconds, currentTime): string | null => {
+    if (tfSeconds <= 0 || currentTime <= 0) return null;
+    const bucketStart = Math.floor(currentTime / tfSeconds) * tfSeconds;
+    return formatCountdown(bucketStart + tfSeconds - currentTime);
+  },
+);
+
+/**
+ * Single, CONSISTENT view for the chart. Important: the component must
+ * subscribe to this composed selector (one emission per state change) and
+ * not combine loose selectors with combineLatest, which produces interim
+ * emissions with a new TF + old candles/index.
+ */
+export const selectChartView = createSelector(
+  selectActiveTfLabel,
+  selectActiveCandles,
+  selectVisibleIndex,
+  selectUtcOffset,
+  selectResolutionMinutes,
+  selectFormingCandle,
+  selectCandleCountdown,
+  (tf, candles, idx, utcOffset, minutes, forming, countdown) => {
+    // Resolution mode: hide the (future-complete) bucket candle and paint the
+    // forming bar instead; complete candles run up to bucketIdx-1.
+    if (minutes != null && forming != null && idx >= 0) {
+      return { tf, candles, idx: idx - 1, utcOffset, forming, countdown };
+    }
+    return { tf, candles, idx, utcOffset, forming: null, countdown };
+  },
+);
+
 /** Finest loaded series strictly below the active candle duration (SL/TP order). */
 export const selectLowerSeries = createSelector(
   selectSeries,
@@ -477,16 +532,46 @@ export const selectLowerSeries = createSelector(
   (series, activeSeconds): Candle[] | null => lowerSeriesForSeconds(series, activeSeconds),
 );
 
+/** The series the replay cursor traverses: the resolution series when active, else the display series. */
+export const selectReplaySeries = createSelector(
+  selectActiveCandles,
+  selectResolutionSeries,
+  (active, resolution): Candle[] => resolution ?? active,
+);
+
+/** Index of the last replay-series candle whose time <= cursor. */
+export const selectReplayIndex = createSelector(
+  selectReplaySeries,
+  selectCurrentTime,
+  (candles, t): number => (!candles.length || t <= 0 ? -1 : lastIndexAtOrBefore(candles, t)),
+);
+
+/** Candle duration (seconds) the replay advances by: resolution or display TF. */
+export const selectReplayTfSeconds = createSelector(
+  selectActiveTfSeconds,
+  selectResolutionMinutes,
+  (activeSeconds, minutes): number => (minutes != null ? minutes * 60 : activeSeconds),
+);
+
+/** Finest loaded series strictly below the replay candle duration (SL/TP tiebreak). */
+export const selectReplayLowerSeries = createSelector(
+  selectSeries,
+  selectReplayTfSeconds,
+  (series, seconds): Candle[] | null => lowerSeriesForSeconds(series, seconds),
+);
+
 /**
  * Context the fill effect needs to evaluate a freshly revealed candle. Exposes
  * the active candle DURATION and the finer "lower" series directly (instead of
- * a Timeframe string), so fills work for custom timeframes too.
+ * a Timeframe string), so fills work for custom timeframes too. Derived from
+ * the replay-aware selectors so fills evaluate over the resolution series when
+ * active (identical to the display series in full-candle mode).
  */
 export const selectFillContext = createSelector(
-  selectActiveCandles,
-  selectVisibleIndex,
-  selectActiveTfSeconds,
-  selectLowerSeries,
+  selectReplaySeries,
+  selectReplayIndex,
+  selectReplayTfSeconds,
+  selectReplayLowerSeries,
   selectContractSize,
   tradingFeature.selectTradingState,
   (candles, idx, tfSeconds, lower, contractSize, trading) => ({
@@ -512,3 +597,67 @@ export function lowerSeriesForSeconds(
   }
   return null;
 }
+
+/**
+ * Last candle the replay cursor sits on, RESOLUTION-AWARE: in resolution mode
+ * it's the latest revealed sub-TF candle (its close is the live intrabar
+ * price); in full-candle mode it equals the active display candle. Drives the
+ * current price for floating P/L so the panel reflects each sub-TF tick instead
+ * of the display candle's (future) close.
+ */
+export const selectCurrentReplayCandle = createSelector(
+  selectReplaySeries,
+  selectReplayIndex,
+  (candles, idx): Candle | null => (idx >= 0 ? candles[idx] : null),
+);
+
+function floatingPnl(p: Position, price: number, contractSize: number): number {
+  const dir = p.side === 'buy' ? 1 : -1;
+  return (price - p.entryPrice) * dir * p.lots * contractSize;
+}
+
+/**
+ * Everything the order panel needs, in ONE consistent emission: trading state,
+ * current (intrabar) price, per-position floating P/L and equity.
+ */
+export const selectTradePanelView = createSelector(
+  tradingFeature.selectTradingState,
+  selectCurrentReplayCandle,
+  selectContractSize,
+  selectPointSize,
+  (t, candle, contractSize, pointSize) => {
+    const price = candle?.close ?? null;
+    const positions = t.positions.map((p) => ({
+      ...p,
+      pnl: price !== null ? floatingPnl(p, price, contractSize) : 0,
+    }));
+    const floating = positions.reduce((sum, p) => sum + p.pnl, 0);
+    return {
+      balance: t.balance,
+      initialBalance: t.initialBalance,
+      equity: t.balance + floating,
+      floating,
+      orders: t.orders,
+      positions,
+      history: t.history,
+      sessionEnded: t.sessionEnded,
+      summaryOpen: t.summaryOpen,
+      riskPct: t.riskPct,
+      price,
+      time: candle?.time ?? 0,
+      contractSize,
+      pointSize,
+    };
+  },
+);
+
+/** Floating P/L of all open positions (null when there are none). */
+export const selectFloatingPnl = createSelector(
+  tradingFeature.selectPositions,
+  selectCurrentReplayCandle,
+  selectContractSize,
+  (positions, candle, contractSize): number | null => {
+    if (!positions.length || !candle) return null;
+    return positions.reduce((sum, p) => sum + floatingPnl(p, candle.close, contractSize), 0);
+  },
+);

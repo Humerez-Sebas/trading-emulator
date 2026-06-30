@@ -1,14 +1,22 @@
+/* Shares the playback HUD's glassmorphism pill aesthetic. */
 .bar {
   position: absolute;
   z-index: 30;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  height: 38px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--text, #d1d4dc);
+  background: var(--surface-2, #181818);
+  background: color-mix(in srgb, var(--surface-2, #181818) 78%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, #fff 8%, transparent);
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.35),
+    inset 0 1px rgba(255, 255, 255, 0.04);
   /* button sizing/coloring consumed by the shared app-toolbar-tools */
   --tool-size: 30px;
   --tool-color: var(--text);
@@ -19,17 +27,21 @@
   align-items: center;
   justify-content: center;
   width: 20px;
-  height: 30px;
+  height: 28px;
+  padding: 0;
   background: none;
   border: none;
-  color: var(--text-muted);
+  border-radius: 6px;
+  color: var(--text-muted, #787b86);
   cursor: grab;
-  padding: 0;
+}
+.handle:hover {
+  color: var(--text, #d1d4dc);
 }
 .handle:active {
   cursor: grabbing;
 }
 .handle:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent, #2962ff);
   outline-offset: 1px;
 }

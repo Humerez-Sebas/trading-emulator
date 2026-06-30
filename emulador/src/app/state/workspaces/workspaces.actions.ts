@@ -17,6 +17,8 @@ export interface PendingSessionRestore {
   intervalMinutes: number;
   /** Playback speed (ms per candle). */
   playbackSpeed: number;
+  /** Replay resolution in MINUTES; null = full candle. */
+  replayResolution: number | null;
 }
 
 export interface PendingCsv {
