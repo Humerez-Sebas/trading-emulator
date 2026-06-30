@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { TestBed } from '@angular/core/testing';
+import { provideMockStore, MockStore } from '@ngrx/store/testing';
+import { firstValueFrom } from 'rxjs';
+import { tradingFeature } from './trading/trading.reducer';
 import {
   lowerSeriesForSeconds,
   selectActiveCandles,
@@ -7,7 +11,7 @@ import {
   selectChartView,
   selectClosedTradeBoxes,
   selectContractSize,
-  selectCurrentCandle,
+  selectCurrentReplayCandle,
   selectDataRange,
   selectFillContext,
   selectFloatingPnl,
@@ -328,15 +332,15 @@ describe('selectContractSize', () => {
   });
 });
 
-// ---- selectCurrentCandle ----
-describe('selectCurrentCandle', () => {
+// ---- selectCurrentReplayCandle ----
+describe('selectCurrentReplayCandle', () => {
   it('returns null when idx < 0', () => {
-    expect(selectCurrentCandle.projector(series(3), -1)).toBeNull();
+    expect(selectCurrentReplayCandle.projector(series(3), -1)).toBeNull();
   });
 
-  it('returns the candle at idx', () => {
+  it('returns the replay-series candle at idx (the live sub-TF candle in resolution mode)', () => {
     const candles = series(3, 0, 3600);
-    const c = selectCurrentCandle.projector(candles, 1);
+    const c = selectCurrentReplayCandle.projector(candles, 1);
     expect(c).toEqual(candles[1]);
   });
 });
@@ -434,6 +438,23 @@ describe('selectFloatingPnl', () => {
     // profit = (4000 - 4020) * -1 * 0.1 * 100 = 200
     const result = selectFloatingPnl.projector([pos], c, 100);
     expect(result).toBeCloseTo(200, 4);
+  });
+
+  // Bug 4: in resolution mode the live price must come from the latest revealed
+  // sub-TF (replay) candle, NOT the display candle's (future) close.
+  it('prices off the replay-series candle (live sub-TF), not the display candle', async () => {
+    TestBed.configureTestingModule({ providers: [provideMockStore()] });
+    const store = TestBed.inject(MockStore);
+    store.overrideSelector(selectReplaySeries, [candle(0, 100, 105, 99, 105)]); // sub-TF close = 105
+    store.overrideSelector(selectReplayIndex, 0);
+    store.overrideSelector(tradingFeature.selectPositions, [
+      position({ side: 'buy', entryPrice: 100, lots: 0.1 }),
+    ]);
+    store.overrideSelector(selectContractSize, 100);
+    store.refreshState();
+    const pnl = await firstValueFrom(store.select(selectFloatingPnl));
+    // (105 - 100) * 0.1 * 100 = 50 → derived from the resolution candle's close
+    expect(pnl).toBeCloseTo(50, 6);
   });
 });
 

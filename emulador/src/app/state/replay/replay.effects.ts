@@ -17,7 +17,7 @@ import {
 } from '../selectors';
 import { replayFeature } from './replay.reducer';
 import { TradingActions } from '../trading/trading.actions';
-import { lastIndexAtOrBefore, sliceRange } from '../trading/fill-engine';
+import { sliceRange } from '../trading/fill-engine';
 
 /** The slice of {@link selectFillContext} the forward-fold needs. */
 interface ForwardFoldContext {
@@ -88,19 +88,22 @@ export class ReplayEffects {
         this.store.select(selectFillContext),
         this.store.select(selectActiveCandles),
         this.store.select(selectVisibleIndex),
+        this.store.select(selectCurrentTime),
       ),
-      mergeMap(([, ctx, display, visIdx]): Action[] => {
+      mergeMap(([, ctx, display, visIdx, cursor]): Action[] => {
         if (!display.length) return [];
         const nextDisplayIdx = visIdx + 1; // visIdx === -1 → first display candle
         if (nextDisplayIdx >= display.length) return [ReplayActions.endOfData()];
-        const target = display[nextDisplayIdx].time;
-        const { candles, idx, trading } = ctx;
-        let to = lastIndexAtOrBefore(candles, target);
-        if (trading.sessionEnd !== null) {
-          while (to > idx + 1 && candles[to].time > trading.sessionEnd) to--;
+        // Land on the next display-TF boundary TIME directly. Deriving it from a
+        // resolution index would freeze across a data gap (market-closed hours on
+        // indices like NASDAQ/US30): no resolution candle sits before the boundary,
+        // so the index resolves to the current one and nothing advances.
+        let target = display[nextDisplayIdx].time;
+        if (ctx.trading.sessionEnd !== null && target > ctx.trading.sessionEnd) {
+          target = ctx.trading.sessionEnd;
         }
-        if (to <= idx) return [];
-        return this.foldForwardFills(ctx, to);
+        if (target <= cursor) return [];
+        return this.foldForwardFills(ctx, target);
       }),
     ),
   );
@@ -123,7 +126,7 @@ export class ReplayEffects {
         if (trading.sessionEnd !== null) {
           while (to > idx + 1 && candles[to].time > trading.sessionEnd) to--;
         }
-        return this.foldForwardFills(ctx, to);
+        return this.foldForwardFills(ctx, candles[to].time);
       }),
     ),
   );
@@ -162,19 +165,20 @@ export class ReplayEffects {
   );
 
   /**
-   * Processes fills for the replay-resolution candles `[idx+1 .. toIdx-1]` and
-   * lands the cursor on `candles[toIdx]` (whose fills processFills$ runs). Shared
-   * by the forward Display Navigation and the multi-candle jump.
+   * Processes fills for every replay-resolution candle strictly before
+   * `targetTime` (those after the cursor) and lands the cursor on `targetTime`
+   * (whose own candle's fills processFills$ runs). Time-based so it stays robust
+   * across data gaps. Shared by forward Display Navigation and the jump.
    */
-  private foldForwardFills(ctx: ForwardFoldContext, toIdx: number): Action[] {
+  private foldForwardFills(ctx: ForwardFoldContext, targetTime: number): Action[] {
     const { candles, idx, tfSeconds, lower, contractSize } = ctx;
     const actions: Action[] = [];
-    for (let i = idx + 1; i < toIdx; i++) {
+    for (let i = idx + 1; i < candles.length && candles[i].time < targetTime; i++) {
       const candle = candles[i];
       const subCandles = lower ? sliceRange(lower, candle.time, candle.time + tfSeconds) : null;
       actions.push(TradingActions.processCandle({ candle, subCandles, contractSize }));
     }
-    actions.push(ReplayActions.goToTime({ time: candles[toIdx].time }));
+    actions.push(ReplayActions.goToTime({ time: targetTime }));
     return actions;
   }
 }

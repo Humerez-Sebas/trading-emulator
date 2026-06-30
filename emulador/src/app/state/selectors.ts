@@ -224,70 +224,12 @@ export const selectContractSize = createSelector(selectCurrentAsset, (symbol) =>
   contractSizeFor(symbol ?? ''),
 );
 
-/** Last candle revealed by the replay (null before the start). */
-export const selectCurrentCandle = createSelector(
-  selectActiveCandles,
-  selectVisibleIndex,
-  (candles, idx): Candle | null => (idx >= 0 ? candles[idx] : null),
-);
-
 /** Minimum price increment of the active series (for points display). */
 export const selectPointSize = createSelector(selectActiveCandles, (candles) =>
   candles.length ? derivePointSize(candles) : 0.01,
 );
 
-function floatingPnl(p: Position, price: number, contractSize: number): number {
-  const dir = p.side === 'buy' ? 1 : -1;
-  return (price - p.entryPrice) * dir * p.lots * contractSize;
-}
-
-/**
- * Everything the order panel needs, in ONE consistent emission: trading
- * state, current price, per-position floating P/L and equity.
- */
-export const selectTradePanelView = createSelector(
-  tradingFeature.selectTradingState,
-  selectCurrentCandle,
-  selectContractSize,
-  selectPointSize,
-  (t, candle, contractSize, pointSize) => {
-    const price = candle?.close ?? null;
-    const positions = t.positions.map((p) => ({
-      ...p,
-      pnl: price !== null ? floatingPnl(p, price, contractSize) : 0,
-    }));
-    const floating = positions.reduce((sum, p) => sum + p.pnl, 0);
-    return {
-      balance: t.balance,
-      initialBalance: t.initialBalance,
-      equity: t.balance + floating,
-      floating,
-      orders: t.orders,
-      positions,
-      history: t.history,
-      sessionEnded: t.sessionEnded,
-      summaryOpen: t.summaryOpen,
-      riskPct: t.riskPct,
-      price,
-      time: candle?.time ?? 0,
-      contractSize,
-      pointSize,
-    };
-  },
-);
-
 export const selectSessionEnd = tradingFeature.selectSessionEnd;
-
-/** Floating P/L of all open positions (null when there are none). */
-export const selectFloatingPnl = createSelector(
-  tradingFeature.selectPositions,
-  selectCurrentCandle,
-  selectContractSize,
-  (positions, candle, contractSize): number | null => {
-    if (!positions.length || !candle) return null;
-    return positions.reduce((sum, p) => sum + floatingPnl(p, candle.close, contractSize), 0);
-  },
-);
 
 /** Marker descriptor with semantic color (the chart maps it to the theme). */
 export interface TradeMarker {
@@ -629,3 +571,67 @@ export function lowerSeriesForSeconds(
   }
   return null;
 }
+
+/**
+ * Last candle the replay cursor sits on, RESOLUTION-AWARE: in resolution mode
+ * it's the latest revealed sub-TF candle (its close is the live intrabar
+ * price); in full-candle mode it equals the active display candle. Drives the
+ * current price for floating P/L so the panel reflects each sub-TF tick instead
+ * of the display candle's (future) close.
+ */
+export const selectCurrentReplayCandle = createSelector(
+  selectReplaySeries,
+  selectReplayIndex,
+  (candles, idx): Candle | null => (idx >= 0 ? candles[idx] : null),
+);
+
+function floatingPnl(p: Position, price: number, contractSize: number): number {
+  const dir = p.side === 'buy' ? 1 : -1;
+  return (price - p.entryPrice) * dir * p.lots * contractSize;
+}
+
+/**
+ * Everything the order panel needs, in ONE consistent emission: trading state,
+ * current (intrabar) price, per-position floating P/L and equity.
+ */
+export const selectTradePanelView = createSelector(
+  tradingFeature.selectTradingState,
+  selectCurrentReplayCandle,
+  selectContractSize,
+  selectPointSize,
+  (t, candle, contractSize, pointSize) => {
+    const price = candle?.close ?? null;
+    const positions = t.positions.map((p) => ({
+      ...p,
+      pnl: price !== null ? floatingPnl(p, price, contractSize) : 0,
+    }));
+    const floating = positions.reduce((sum, p) => sum + p.pnl, 0);
+    return {
+      balance: t.balance,
+      initialBalance: t.initialBalance,
+      equity: t.balance + floating,
+      floating,
+      orders: t.orders,
+      positions,
+      history: t.history,
+      sessionEnded: t.sessionEnded,
+      summaryOpen: t.summaryOpen,
+      riskPct: t.riskPct,
+      price,
+      time: candle?.time ?? 0,
+      contractSize,
+      pointSize,
+    };
+  },
+);
+
+/** Floating P/L of all open positions (null when there are none). */
+export const selectFloatingPnl = createSelector(
+  tradingFeature.selectPositions,
+  selectCurrentReplayCandle,
+  selectContractSize,
+  (positions, candle, contractSize): number | null => {
+    if (!positions.length || !candle) return null;
+    return positions.reduce((sum, p) => sum + floatingPnl(p, candle.close, contractSize), 0);
+  },
+);

@@ -144,6 +144,7 @@ describe('ReplayEffects', () => {
       });
       store.overrideSelector(selectActiveCandles, c);
       store.overrideSelector(selectVisibleIndex, 1);
+      store.overrideSelector(selectCurrentTime, c[1].time);
       store.refreshState();
 
       const out = firstValueFrom(effects.advanceDisplay$.pipe(take(1), toArray()));
@@ -165,6 +166,7 @@ describe('ReplayEffects', () => {
       });
       store.overrideSelector(selectActiveCandles, display);
       store.overrideSelector(selectVisibleIndex, 0); // display bucket 0 (0..3600)
+      store.overrideSelector(selectCurrentTime, res[7].time);
       store.refreshState();
 
       const out = firstValueFrom(effects.advanceDisplay$.pipe(take(5), toArray()));
@@ -181,6 +183,30 @@ describe('ReplayEffects', () => {
       expect(result[4]).toEqual(ReplayActions.goToTime({ time: 3600 }));
     });
 
+    it('resolution mode with a data gap: lands on the next display boundary without freezing (Bug 1)', async () => {
+      // display H1: 0, 3600, 7200
+      const display = series(3, 0, 3600);
+      // resolution M5 ends at 3900 (idx 13), then a market-closed GAP; next data at 10800
+      const res = [...series(14, 0, 300), { time: 10800, open: 1, high: 1, low: 1, close: 1 }];
+      store.overrideSelector(selectFillContext, {
+        candles: res,
+        idx: 13, // cursor at 3900, the last candle before the gap
+        tfSeconds: 300,
+        lower: null,
+        contractSize: 1,
+        trading: { sessionEnd: null } as any,
+      });
+      store.overrideSelector(selectActiveCandles, display);
+      store.overrideSelector(selectVisibleIndex, 1); // display bucket [3600, 7200)
+      store.overrideSelector(selectCurrentTime, 3900);
+      store.refreshState();
+
+      const p = firstValueFrom(effects.advanceDisplay$);
+      actions$.next(ReplayActions.advanceDisplay());
+      // No resolution candle between 3900 and 7200 → lands directly on 7200 (old code froze).
+      expect(await p).toEqual(ReplayActions.goToTime({ time: 7200 }));
+    });
+
     it('emits endOfData at the last display candle', async () => {
       const c = series(3, 0, 3600);
       store.overrideSelector(selectFillContext, {
@@ -193,6 +219,7 @@ describe('ReplayEffects', () => {
       });
       store.overrideSelector(selectActiveCandles, c);
       store.overrideSelector(selectVisibleIndex, 2); // last display candle
+      store.overrideSelector(selectCurrentTime, c[2].time);
       store.refreshState();
 
       const p = firstValueFrom(effects.advanceDisplay$);
