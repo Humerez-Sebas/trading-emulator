@@ -117,119 +117,170 @@
   @if (view().positions.length) {
     <section class="list">
       <h4>Posiciones ({{ view().positions.length }})</h4>
-      @for (p of view().positions; track p.id) {
-        <div class="item" animate.enter="item-enter" animate.leave="item-leave">
-          <div class="item-head">
-            <span class="badge" [class.buy]="p.side === 'buy'" [class.sell]="p.side === 'sell'">
-              {{ sideLabel(p.side) }} {{ p.lots | number: '1.2-2' }}
-            </span>
-            <span class="pnl" [class.up]="p.pnl >= 0" [class.down]="p.pnl < 0">
-              {{ p.pnl | number: '1.2-2' }} $
-            </span>
-            <button
-              appIconButton
-              [borderless]="true"
-              [danger]="true"
-              size="sm"
-              (click)="closePosition(p.id)"
-              appTooltip="Cerrar posición"
-              aria-label="Cerrar posición"
-            >
-              <app-trash-icon />
-            </button>
+      <div class="cards-list">
+        @for (p of view().positions; track p.id) {
+          <div class="trade-card" animate.enter="item-enter" animate.leave="item-leave">
+            <!-- Header Row -->
+            <div class="card-row card-header-row">
+              <div class="card-left">
+                <span
+                  class="card-badge"
+                  [class.buy]="p.side === 'buy'"
+                  [class.sell]="p.side === 'sell'"
+                >
+                  {{ p.side === 'buy' ? 'COMPRA' : 'VENTA' }}
+                </span>
+                <span class="card-lots font-mono">{{ p.lots | number: '1.2-2' }} Lotes</span>
+              </div>
+              <div class="card-right">
+                <span class="card-pnl font-mono" [class.up]="p.pnl >= 0" [class.down]="p.pnl < 0">
+                  {{ p.pnl >= 0 ? '+' : '' }}{{ p.pnl | number: '1.2-2' }} $
+                </span>
+                <button
+                  class="close-btn"
+                  (click)="closePosition(p.id)"
+                  appTooltip="Cerrar posición"
+                  aria-label="Cerrar posición"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="12"
+                    height="12"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Price Info Row -->
+            <div class="card-row card-price-row font-mono">
+              <span class="price-flow">
+                E {{ p.entryPrice | number: '1.2-5' }} <span class="arrow-sep">→</span>
+                {{ view().price | number: '1.2-5' }}
+              </span>
+            </div>
+
+            <!-- Edit Controls Row -->
+            <div class="card-row edit-row">
+              <label class="edit-label">
+                <span>SL</span>
+                <input
+                  type="number"
+                  step="any"
+                  [value]="p.sl"
+                  (change)="onPositionField(p.id, 'sl', $event)"
+                  aria-label="Stop loss de la posición"
+                  class="edit-input font-mono"
+                />
+              </label>
+              <label class="edit-label">
+                <span>TP</span>
+                <input
+                  type="number"
+                  step="any"
+                  [value]="p.tp ?? ''"
+                  placeholder="—"
+                  (change)="onPositionField(p.id, 'tp', $event)"
+                  aria-label="Take profit de la posición"
+                  class="edit-input font-mono"
+                />
+              </label>
+              <button
+                class="be-btn"
+                (click)="breakeven(p.id, p.entryPrice)"
+                appTooltip="Mover el SL a la entrada (breakeven)"
+              >
+                BE
+              </button>
+            </div>
           </div>
-          <div class="item-detail edit-row">
-            <span class="entry">E {{ p.entryPrice | number: '1.2-5' }}</span>
-            <label>
-              SL
-              <input
-                type="number"
-                step="any"
-                [value]="p.sl"
-                (change)="onPositionField(p.id, 'sl', $event)"
-                aria-label="Stop loss de la posición"
-              />
-            </label>
-            <label>
-              TP
-              <input
-                type="number"
-                step="any"
-                [value]="p.tp ?? ''"
-                placeholder="—"
-                (change)="onPositionField(p.id, 'tp', $event)"
-                aria-label="Take profit de la posición"
-              />
-            </label>
-            <button
-              class="be"
-              (click)="breakeven(p.id, p.entryPrice)"
-              appTooltip="Mover el SL a la entrada (breakeven)"
-            >
-              BE
-            </button>
-          </div>
-        </div>
-      }
+        }
+      </div>
     </section>
   }
 
   @if (view().orders.length) {
     <section class="list">
       <h4>Órdenes pendientes ({{ view().orders.length }})</h4>
-      @for (o of view().orders; track o.id) {
-        <div class="item" animate.enter="item-enter" animate.leave="item-leave">
-          <div class="item-head">
-            <span class="badge" [class.buy]="o.side === 'buy'" [class.sell]="o.side === 'sell'">
-              {{ sideLabel(o.side) }} {{ typeLabel(o.type) }} {{ o.lots | number: '1.2-2' }}
-            </span>
-            <button
-              appIconButton
-              [borderless]="true"
-              [danger]="true"
-              size="sm"
-              (click)="cancelOrder(o.id)"
-              appTooltip="Cancelar orden"
-              aria-label="Cancelar orden"
-            >
-              <app-trash-icon />
-            </button>
+      <div class="cards-list">
+        @for (o of view().orders; track o.id) {
+          <div class="trade-card pending" animate.enter="item-enter" animate.leave="item-leave">
+            <!-- Header Row -->
+            <div class="card-row card-header-row">
+              <div class="card-left">
+                <span class="card-badge pending">
+                  {{ o.side === 'buy' ? 'LÍMITE COMPRA' : 'LÍMITE VENTA' }}
+                </span>
+                <span class="card-lots font-mono">{{ o.lots | number: '1.2-2' }} Lotes</span>
+              </div>
+              <div class="card-right">
+                <span class="pending-status">Pendiente</span>
+                <button
+                  class="close-btn"
+                  (click)="cancelOrder(o.id)"
+                  appTooltip="Cancelar orden"
+                  aria-label="Cancelar orden"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="12"
+                    height="12"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Price Info Row / Edit Controls Row -->
+            <div class="card-row edit-row">
+              <label class="edit-label">
+                <span>E</span>
+                <input
+                  type="number"
+                  step="any"
+                  [value]="o.entryPrice"
+                  (change)="onOrderField(o.id, 'entryPrice', $event)"
+                  aria-label="Precio de entrada de la orden"
+                  class="edit-input font-mono"
+                />
+              </label>
+              <label class="edit-label">
+                <span>SL</span>
+                <input
+                  type="number"
+                  step="any"
+                  [value]="o.sl"
+                  (change)="onOrderField(o.id, 'sl', $event)"
+                  aria-label="Stop loss de la orden"
+                  class="edit-input font-mono"
+                />
+              </label>
+              <label class="edit-label">
+                <span>TP</span>
+                <input
+                  type="number"
+                  step="any"
+                  [value]="o.tp ?? ''"
+                  placeholder="—"
+                  (change)="onOrderField(o.id, 'tp', $event)"
+                  aria-label="Take profit de la orden"
+                  class="edit-input font-mono"
+                />
+              </label>
+            </div>
           </div>
-          <div class="item-detail edit-row">
-            <label>
-              E
-              <input
-                type="number"
-                step="any"
-                [value]="o.entryPrice"
-                (change)="onOrderField(o.id, 'entryPrice', $event)"
-                aria-label="Precio de entrada de la orden"
-              />
-            </label>
-            <label>
-              SL
-              <input
-                type="number"
-                step="any"
-                [value]="o.sl"
-                (change)="onOrderField(o.id, 'sl', $event)"
-                aria-label="Stop loss de la orden"
-              />
-            </label>
-            <label>
-              TP
-              <input
-                type="number"
-                step="any"
-                [value]="o.tp ?? ''"
-                placeholder="—"
-                (change)="onOrderField(o.id, 'tp', $event)"
-                aria-label="Take profit de la orden"
-              />
-            </label>
-          </div>
-        </div>
-      }
+        }
+      </div>
     </section>
   }
 

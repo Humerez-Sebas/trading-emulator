@@ -238,3 +238,63 @@
   color: var(--text-muted);
   margin: 6px 0 0;
 }
+
+.timezone-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tz-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+.tz-preset-btn {
+  background: var(--surface-3, #1f2229);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-sm, 4px);
+  padding: 6px 0;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  transition: all 150ms var(--ease-out);
+}
+.tz-preset-btn:hover {
+  background: var(--surface-2, #121417);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.tz-preset-btn.active {
+  background: var(--accent, #2962ff);
+  color: #ffffff;
+  border-color: var(--accent, #2962ff);
+  box-shadow: 0 2px 8px rgba(41, 98, 255, 0.25);
+}
+.tz-select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.tz-globe-icon {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  pointer-events: none;
+  z-index: 10;
+}
+.tz-select-wrapper ui-dropdown {
+  width: 100%;
+}
+.tz-select-wrapper ::ng-deep .dd-trigger {
+  padding-left: 32px !important;
+  background: var(--surface-3, #1f2229) !important;
+  border: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+.tz-select-wrapper ::ng-deep .dd-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}

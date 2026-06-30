@@ -5,9 +5,7 @@ import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { lotsForRisk, OrderSide, OrderType } from '../../state/trading/trading.models';
 import { selectTradePanelView } from '../../state/selectors';
-import { TrashIconComponent } from '../icons/trash-icon.component';
 import { ButtonDirective } from '../ui/button.directive';
-import { IconButtonDirective } from '../ui/icon-button.directive';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 import { EmptyStateComponent } from '../ui/empty-state.component';
@@ -23,9 +21,7 @@ import { RiskSliderComponent } from '../risk-slider.component';
   standalone: true,
   imports: [
     DecimalPipe,
-    TrashIconComponent,
     ButtonDirective,
-    IconButtonDirective,
     TooltipDirective,
     DropdownComponent,
     EmptyStateComponent,
