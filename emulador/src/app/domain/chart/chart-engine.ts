@@ -1,4 +1,4 @@
-import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData, CrosshairMode } from 'lightweight-charts';
 import { RenderModel } from './render-model';
 
 export class ChartEngine {
@@ -17,6 +17,8 @@ export class ChartEngine {
       height: container.clientHeight,
       layout: { background: { color: '#000000' }, textColor: '#ffffff' },
       grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+      crosshair: { mode: CrosshairMode.Normal },
+      timeScale: { timeVisible: true, secondsVisible: false },
     });
     
     this.mainSeries = this.chart.addSeries(CandlestickSeries, {
@@ -25,6 +27,7 @@ export class ChartEngine {
       borderVisible: false,
       wickUpColor: '#26a69a',
       wickDownColor: '#ef5350',
+      priceFormat: { type: 'price', precision: 5, minMove: 0.00001 },
     });
     
     window.addEventListener('resize', this.onResize);
@@ -43,6 +46,10 @@ export class ChartEngine {
           textColor: c.text,
         },
         grid: { vertLines: gridLine, horzLines: gridLine },
+        crosshair: {
+          vertLine: { color: c.crosshair, width: 1, style: 3 },
+          horzLine: { color: c.crosshair, width: 1, style: 3 },
+        },
       });
 
       this.mainSeries.applyOptions({
@@ -57,7 +64,7 @@ export class ChartEngine {
     }
     
     // 2. Update data efficiently
-    if (model.candles && model.candles.length > 0) {
+    if (model.candles !== undefined) {
       this.mainSeries.setData(model.candles as unknown as CandlestickData[]);
     }
   }
