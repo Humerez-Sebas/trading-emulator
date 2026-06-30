@@ -48,6 +48,15 @@ body {
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Respect users who prefer reduced motion (a11y). */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fadeIn,
+  .animate-scaleIn,
+  .animate-slideUp {
+    animation: none;
+  }
+}
+
 /* Forzar la eliminación de flechas en navegadores basados en Webkit (Chrome, Safari, Edge) */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {

@@ -227,7 +227,7 @@ export class RiskSliderComponent {
     const target = event.target as HTMLInputElement;
     const val = parseFloat(target.value);
     if (!isNaN(val)) {
-      const clamped = Math.max(0, Math.min(this.max, val));
+      const clamped = Math.max(this.min, Math.min(this.max, val));
       this.valueChange.emit(clamped);
     }
   }

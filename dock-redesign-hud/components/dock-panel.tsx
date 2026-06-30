@@ -320,7 +320,7 @@ function CustomSwitch({
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+      className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0c0e]"
       style={{ backgroundColor: checked ? "#2962FF" : "#1f2229" }}
     >
       <span
@@ -681,7 +681,7 @@ export function DockPanel() {
               <div className="absolute right-0 bottom-0 left-0 h-12 opacity-[0.03] pointer-events-none group-hover/card:opacity-[0.06] transition-opacity duration-300">
                 <svg className="w-full h-full" viewBox="0 0 100 30" preserveAspectRatio="none">
                   <path
-                    d="M0,25 C10,23 20,28 30,20 C40,12 50,15 60,8 C70,1 C80,10 90,5 100,2"
+                    d="M0,25 C10,23 20,28 30,20 C40,12 50,15 60,8 C70,4 80,10 90,5 L100,2"
                     fill="none"
                     stroke={equity >= balance ? "#26A69A" : "#EF5350"}
                     strokeWidth="1.5"
@@ -825,8 +825,8 @@ export function DockPanel() {
                       className="absolute -top-8 -translate-x-1/2 bg-[#1f2229] border border-white/[0.08] text-white text-[10px] font-semibold px-2 py-0.5 rounded shadow-lg pointer-events-none whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center"
                       style={{ left: `${riskPercentVal}%` }}
                     >
-                      <span>{riskPercent.toFixed(1)}%</span>
-                      <span className="text-[8px] text-[#787b86] font-mono">
+                      <span className="tabular-nums">{riskPercent.toFixed(1)}%</span>
+                      <span className="text-[8px] text-[#787b86] font-mono tabular-nums">
                         ${(riskPercent * balance * 0.01).toFixed(2)}
                       </span>
                     </div>
@@ -869,11 +869,11 @@ export function DockPanel() {
               <div className="rounded-lg bg-white/[0.01] border border-white/[0.03] p-3 text-[12px] flex flex-col gap-2 shadow-[inset_0_1px_rgba(255,255,255,0.01)]">
                 <div className="flex justify-between">
                   <span className="text-[#787b86]">Lotaje calculado:</span>
-                  <span className="font-bold text-white font-mono">0.68 Lotes</span>
+                  <span className="font-bold text-white font-mono tabular-nums">0.68 Lotes</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#787b86]">Riesgo máximo estimado:</span>
-                  <span className="font-semibold text-white font-mono">
+                  <span className="font-semibold text-white font-mono tabular-nums">
                     {(riskPercent * balance * 0.01).toFixed(2)} $
                   </span>
                 </div>
@@ -891,7 +891,7 @@ export function DockPanel() {
               <button
                 disabled={isSlInvalid}
                 onClick={openPosition}
-                className={`w-full py-3 rounded-lg font-bold text-[14px] transition-all flex items-center justify-center gap-1.5 focus:outline-none ${
+                className={`w-full py-3 rounded-lg font-bold text-[14px] transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0c0e] ${
                   isSlInvalid
                     ? "bg-[#16171a] text-zinc-600 border border-white/[0.03] opacity-40 cursor-not-allowed"
                     : tradeType === "BUY"
@@ -941,10 +941,10 @@ export function DockPanel() {
                             {pos.type}
                           </span>
                           <div className="flex flex-col">
-                            <span className="text-[12px] font-semibold text-white font-mono">
+                            <span className="text-[12px] font-semibold text-white font-mono tabular-nums">
                               {pos.lots} Lotes
                             </span>
-                            <span className="text-[10px] text-[#787b86] font-mono">
+                            <span className="text-[10px] text-[#787b86] font-mono tabular-nums">
                               {pos.entryPrice.toFixed(2)} → {pos.currentPrice.toFixed(2)}
                             </span>
                           </div>
@@ -993,13 +993,13 @@ export function DockPanel() {
                       >
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded font-mono bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                            {pos.type} {pos.orderType.toUpperCase()}
+                            {pos.type === "BUY" ? "COMPRA" : "VENTA"} {pos.orderType.toUpperCase()}
                           </span>
                           <div className="flex flex-col">
-                            <span className="text-[12px] font-semibold text-white font-mono">
+                            <span className="text-[12px] font-semibold text-white font-mono tabular-nums">
                               {pos.lots} Lotes
                             </span>
-                            <span className="text-[10px] text-[#787b86] font-mono">
+                            <span className="text-[10px] text-[#787b86] font-mono tabular-nums">
                               Objetivo: {pos.entryPrice.toFixed(2)}
                             </span>
                           </div>
@@ -1129,7 +1129,7 @@ export function DockPanel() {
                       onClick={(e) => openColorPicker("wickUp", "Mecha Alcista", e.currentTarget)}
                       onMouseEnter={() => setHoveredPart("wickUp")}
                       onMouseLeave={() => setHoveredPart(null)}
-                      className="absolute w-[2px] h-[85px] hover:w-[4px] rounded transition-all cursor-pointer focus:outline-none z-10"
+                      className="absolute w-[2px] h-[85px] hover:w-[4px] rounded transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] z-10"
                       style={{
                         backgroundColor: hoveredPart === "wickUp" ? "#4dffd2" : colors.wickUp,
                         boxShadow: hoveredPart === "wickUp" ? `0 0 8px ${colors.wickUp}` : "none",
@@ -1142,7 +1142,7 @@ export function DockPanel() {
                       onClick={(e) => openColorPicker("upColor", "Cuerpo Alcista", e.currentTarget)}
                       onMouseEnter={() => setHoveredPart("upColor")}
                       onMouseLeave={() => setHoveredPart(null)}
-                      className="absolute w-[28px] h-[45px] hover:scale-[1.03] transition-all cursor-pointer focus:outline-none rounded z-20"
+                      className="absolute w-[28px] h-[45px] hover:scale-[1.03] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] rounded z-20"
                       style={{
                         backgroundColor: colors.upColor,
                         border: hoveredPart === "borderUpColor"
@@ -1163,14 +1163,14 @@ export function DockPanel() {
                       onClick={(e) => openColorPicker("borderUpColor", "Borde Alcista", e.currentTarget)}
                       onMouseEnter={() => setHoveredPart("borderUpColor")}
                       onMouseLeave={() => setHoveredPart(null)}
-                      className="absolute -left-1.5 w-[7px] h-[45px] hover:bg-white/10 rounded cursor-pointer focus:outline-none z-30"
+                      className="absolute -left-1.5 w-[7px] h-[45px] hover:bg-white/10 rounded cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] z-30"
                       title="Editar Borde Alcista"
                     />
                     <button
                       onClick={(e) => openColorPicker("borderUpColor", "Borde Alcista", e.currentTarget)}
                       onMouseEnter={() => setHoveredPart("borderUpColor")}
                       onMouseLeave={() => setHoveredPart(null)}
-                      className="absolute -right-1.5 w-[7px] h-[45px] hover:bg-white/10 rounded cursor-pointer focus:outline-none z-30"
+                      className="absolute -right-1.5 w-[7px] h-[45px] hover:bg-white/10 rounded cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] z-30"
                       title="Editar Borde Alcista"
                     />
                   </div>
@@ -1185,7 +1185,7 @@ export function DockPanel() {
                       onClick={(e) => openColorPicker("wickDown", "Mecha Bajista", e.currentTarget)}
                       onMouseEnter={() => setHoveredPart("wickDown")}
                       onMouseLeave={() => setHoveredPart(null)}
-                      className="absolute w-[2px] h-[85px] hover:w-[4px] rounded transition-all cursor-pointer focus:outline-none z-10"
+                      className="absolute w-[2px] h-[85px] hover:w-[4px] rounded transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] z-10"
                       style={{
                         backgroundColor: hoveredPart === "wickDown" ? "#ff8a88" : colors.wickDown,
                         boxShadow: hoveredPart === "wickDown" ? `0 0 8px ${colors.wickDown}` : "none",
@@ -1198,7 +1198,7 @@ export function DockPanel() {
                       onClick={(e) => openColorPicker("downColor", "Cuerpo Bajista", e.currentTarget)}
                       onMouseEnter={() => setHoveredPart("downColor")}
                       onMouseLeave={() => setHoveredPart(null)}
-                      className="absolute w-[28px] h-[45px] hover:scale-[1.03] transition-all cursor-pointer focus:outline-none rounded z-20"
+                      className="absolute w-[28px] h-[45px] hover:scale-[1.03] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] rounded z-20"
                       style={{
                         backgroundColor: colors.downColor,
                         border: hoveredPart === "borderDownColor"
@@ -1219,14 +1219,14 @@ export function DockPanel() {
                       onClick={(e) => openColorPicker("borderDownColor", "Borde Bajista", e.currentTarget)}
                       onMouseEnter={() => setHoveredPart("borderDownColor")}
                       onMouseLeave={() => setHoveredPart(null)}
-                      className="absolute -left-1.5 w-[7px] h-[45px] hover:bg-white/10 rounded cursor-pointer focus:outline-none z-30"
+                      className="absolute -left-1.5 w-[7px] h-[45px] hover:bg-white/10 rounded cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] z-30"
                       title="Editar Borde Bajista"
                     />
                     <button
                       onClick={(e) => openColorPicker("borderDownColor", "Borde Bajista", e.currentTarget)}
                       onMouseEnter={() => setHoveredPart("borderDownColor")}
                       onMouseLeave={() => setHoveredPart(null)}
-                      className="absolute -right-1.5 w-[7px] h-[45px] hover:bg-white/10 rounded cursor-pointer focus:outline-none z-30"
+                      className="absolute -right-1.5 w-[7px] h-[45px] hover:bg-white/10 rounded cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2962FF] z-30"
                       title="Editar Borde Bajista"
                     />
                   </div>
@@ -1295,7 +1295,7 @@ export function DockPanel() {
                     <div className="flex flex-col gap-1.5">
                       <div className="flex justify-between items-center text-[11px] text-zinc-500">
                         <span>Opacidad de Cuadrícula</span>
-                        <span className="font-mono text-zinc-300 font-bold">{gridOpacity}%</span>
+                        <span className="font-mono text-zinc-300 font-bold tabular-nums">{gridOpacity}%</span>
                       </div>
                       {/* Premium Low-Profile Opacity Slider */}
                       <CustomOpacitySlider
@@ -1350,7 +1350,7 @@ export function DockPanel() {
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between items-center text-[11px] text-zinc-400">
                     <span>Opacidad del relleno</span>
-                    <span className="font-mono text-zinc-300 font-bold">{fillOpacity}%</span>
+                    <span className="font-mono text-zinc-300 font-bold tabular-nums">{fillOpacity}%</span>
                   </div>
                   {/* Premium Low-Profile Slider */}
                   <CustomOpacitySlider
@@ -1365,7 +1365,7 @@ export function DockPanel() {
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between items-center text-[11px] text-zinc-400">
                     <span>Opacidad del borde</span>
-                    <span className="font-mono text-zinc-300 font-bold">{borderOpacity}%</span>
+                    <span className="font-mono text-zinc-300 font-bold tabular-nums">{borderOpacity}%</span>
                   </div>
                   {/* Premium Low-Profile Slider */}
                   <CustomOpacitySlider

@@ -4,7 +4,8 @@ export interface ColorPartEditEvent {
   key: string;
   label: string;
   element: SVGElement;
-  event: MouseEvent;
+  /** Original DOM event — mouse click or Enter/Space keyboard activation. */
+  event: Event;
 }
 
 @Component({
@@ -40,9 +41,18 @@ export interface ColorPartEditEvent {
           [attr.stroke-width]="hoveredPart() === 'wickUp' ? 4 : 2"
           [attr.filter]="hoveredPart() === 'wickUp' ? 'url(#glow-up)' : null"
           class="interactive-element wick"
+          tabindex="0"
+          role="button"
+          aria-label="Editar Mecha Alcista"
           (mouseenter)="setHover('wickUp')"
           (mouseleave)="setHover(null)"
-          (click)="onPartClick('wickUp', 'Mecha Alcista', $event)"
+          (focus)="setHover('wickUp')"
+          (blur)="setHover(null)"
+          (click)="onPartActivate('wickUp', 'Mecha Alcista', $event)"
+          (keydown.enter)="onPartActivate('wickUp', 'Mecha Alcista', $event)"
+          (keydown.space)="
+            onPartActivate('wickUp', 'Mecha Alcista', $event); $event.preventDefault()
+          "
         />
 
         <!-- Body Up -->
@@ -61,9 +71,18 @@ export interface ColorPartEditEvent {
               : null
           "
           class="interactive-element body"
+          tabindex="0"
+          role="button"
+          aria-label="Editar Cuerpo Alcista"
           (mouseenter)="setHover('upColor')"
           (mouseleave)="setHover(null)"
-          (click)="onPartClick('upColor', 'Cuerpo Alcista', $event)"
+          (focus)="setHover('upColor')"
+          (blur)="setHover(null)"
+          (click)="onPartActivate('upColor', 'Cuerpo Alcista', $event)"
+          (keydown.enter)="onPartActivate('upColor', 'Cuerpo Alcista', $event)"
+          (keydown.space)="
+            onPartActivate('upColor', 'Cuerpo Alcista', $event); $event.preventDefault()
+          "
         />
 
         <!-- Left Border Hotspot -->
@@ -74,9 +93,18 @@ export interface ColorPartEditEvent {
           height="45"
           fill="transparent"
           class="interactive-element border-hotspot"
+          tabindex="0"
+          role="button"
+          aria-label="Editar Borde Alcista"
           (mouseenter)="setHover('borderUpColor')"
           (mouseleave)="setHover(null)"
-          (click)="onPartClick('borderUpColor', 'Borde Alcista', $event)"
+          (focus)="setHover('borderUpColor')"
+          (blur)="setHover(null)"
+          (click)="onPartActivate('borderUpColor', 'Borde Alcista', $event)"
+          (keydown.enter)="onPartActivate('borderUpColor', 'Borde Alcista', $event)"
+          (keydown.space)="
+            onPartActivate('borderUpColor', 'Borde Alcista', $event); $event.preventDefault()
+          "
         />
 
         <!-- Right Border Hotspot -->
@@ -87,9 +115,18 @@ export interface ColorPartEditEvent {
           height="45"
           fill="transparent"
           class="interactive-element border-hotspot"
+          tabindex="0"
+          role="button"
+          aria-label="Editar Borde Alcista"
           (mouseenter)="setHover('borderUpColor')"
           (mouseleave)="setHover(null)"
-          (click)="onPartClick('borderUpColor', 'Borde Alcista', $event)"
+          (focus)="setHover('borderUpColor')"
+          (blur)="setHover(null)"
+          (click)="onPartActivate('borderUpColor', 'Borde Alcista', $event)"
+          (keydown.enter)="onPartActivate('borderUpColor', 'Borde Alcista', $event)"
+          (keydown.space)="
+            onPartActivate('borderUpColor', 'Borde Alcista', $event); $event.preventDefault()
+          "
         />
 
         <!-- ==================== BEARISH CANDLE ==================== -->
@@ -103,9 +140,18 @@ export interface ColorPartEditEvent {
           [attr.stroke-width]="hoveredPart() === 'wickDown' ? 4 : 2"
           [attr.filter]="hoveredPart() === 'wickDown' ? 'url(#glow-down)' : null"
           class="interactive-element wick"
+          tabindex="0"
+          role="button"
+          aria-label="Editar Mecha Bajista"
           (mouseenter)="setHover('wickDown')"
           (mouseleave)="setHover(null)"
-          (click)="onPartClick('wickDown', 'Mecha Bajista', $event)"
+          (focus)="setHover('wickDown')"
+          (blur)="setHover(null)"
+          (click)="onPartActivate('wickDown', 'Mecha Bajista', $event)"
+          (keydown.enter)="onPartActivate('wickDown', 'Mecha Bajista', $event)"
+          (keydown.space)="
+            onPartActivate('wickDown', 'Mecha Bajista', $event); $event.preventDefault()
+          "
         />
 
         <!-- Body Down -->
@@ -124,9 +170,18 @@ export interface ColorPartEditEvent {
               : null
           "
           class="interactive-element body"
+          tabindex="0"
+          role="button"
+          aria-label="Editar Cuerpo Bajista"
           (mouseenter)="setHover('downColor')"
           (mouseleave)="setHover(null)"
-          (click)="onPartClick('downColor', 'Cuerpo Bajista', $event)"
+          (focus)="setHover('downColor')"
+          (blur)="setHover(null)"
+          (click)="onPartActivate('downColor', 'Cuerpo Bajista', $event)"
+          (keydown.enter)="onPartActivate('downColor', 'Cuerpo Bajista', $event)"
+          (keydown.space)="
+            onPartActivate('downColor', 'Cuerpo Bajista', $event); $event.preventDefault()
+          "
         />
 
         <!-- Left Border Hotspot -->
@@ -137,9 +192,18 @@ export interface ColorPartEditEvent {
           height="45"
           fill="transparent"
           class="interactive-element border-hotspot"
+          tabindex="0"
+          role="button"
+          aria-label="Editar Borde Bajista"
           (mouseenter)="setHover('borderDownColor')"
           (mouseleave)="setHover(null)"
-          (click)="onPartClick('borderDownColor', 'Borde Bajista', $event)"
+          (focus)="setHover('borderDownColor')"
+          (blur)="setHover(null)"
+          (click)="onPartActivate('borderDownColor', 'Borde Bajista', $event)"
+          (keydown.enter)="onPartActivate('borderDownColor', 'Borde Bajista', $event)"
+          (keydown.space)="
+            onPartActivate('borderDownColor', 'Borde Bajista', $event); $event.preventDefault()
+          "
         />
 
         <!-- Right Border Hotspot -->
@@ -150,9 +214,18 @@ export interface ColorPartEditEvent {
           height="45"
           fill="transparent"
           class="interactive-element border-hotspot"
+          tabindex="0"
+          role="button"
+          aria-label="Editar Borde Bajista"
           (mouseenter)="setHover('borderDownColor')"
           (mouseleave)="setHover(null)"
-          (click)="onPartClick('borderDownColor', 'Borde Bajista', $event)"
+          (focus)="setHover('borderDownColor')"
+          (blur)="setHover(null)"
+          (click)="onPartActivate('borderDownColor', 'Borde Bajista', $event)"
+          (keydown.enter)="onPartActivate('borderDownColor', 'Borde Bajista', $event)"
+          (keydown.space)="
+            onPartActivate('borderDownColor', 'Borde Bajista', $event); $event.preventDefault()
+          "
         />
       </svg>
     </div>
@@ -186,8 +259,20 @@ export interface ColorPartEditEvent {
         stroke 0.15s ease,
         filter 0.15s ease;
     }
+    /* Keyboard focus ring (SVG supports outline in modern browsers; the
+       drop-shadow provides a fallback that's visible against any candle color). */
+    .interactive-element:focus-visible {
+      outline: 2px solid #2962ff;
+      outline-offset: 2px;
+      filter: drop-shadow(0 0 4px #2962ff);
+    }
     .border-hotspot {
       cursor: pointer;
+    }
+    /* Make the transparent border hotspots visible when focused so keyboard
+       users can see which border they're about to edit. */
+    .border-hotspot:focus-visible {
+      fill: rgba(41, 98, 255, 0.15);
     }
   `,
 })
@@ -235,8 +320,14 @@ export class InteractiveCandlesComponent {
     }
   }
 
-  onPartClick(key: string, label: string, event: MouseEvent): void {
-    const element = event.target as SVGElement;
+  /**
+   * Unified activation handler — fires for mouse clicks AND keyboard
+   * Enter/Space. currentTarget is used (not target) so the SVG element
+   * passed to the popover is the bound interactive element itself, not a
+   * descendant that might have been clicked.
+   */
+  onPartActivate(key: string, label: string, event: Event): void {
+    const element = (event.currentTarget ?? event.target) as SVGElement;
     this.editPart.emit({ key, label, element, event });
   }
 }

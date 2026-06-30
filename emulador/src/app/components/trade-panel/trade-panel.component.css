@@ -18,12 +18,13 @@
 /* Tabular figures everywhere a live number can change (balance, equity,
    price, lots, risk, PnL), so digits keep a fixed width and the layout stays
    rock-steady as values tick — DESIGN.md "The Tabular Rule". */
-.account .row strong,
 .market-price,
 .sizing,
-.badge,
-.pnl,
-.edit-row .entry,
+.card-pnl,
+.card-lots,
+.card-badge,
+.price-flow,
+.edit-input,
 input {
   font-variant-numeric: tabular-nums;
 }

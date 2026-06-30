@@ -267,4 +267,14 @@ export class TradePanelComponent {
   typeLabel(type: OrderType): string {
     return type === 'market' ? 'Mercado' : type === 'limit' ? 'Limit' : 'Stop';
   }
+
+  /**
+   * Spanish label for a pending order badge — e.g. "LÍMITE COMPRA",
+   * "STOP VENTA". Driven by the order's own `type`, never hardcoded.
+   */
+  pendingBadgeLabel(side: OrderSide, type: OrderType): string {
+    const typeWord = type === 'limit' ? 'LÍMITE' : type === 'stop' ? 'STOP' : '';
+    const sideWord = side === 'buy' ? 'COMPRA' : 'VENTA';
+    return typeWord ? `${typeWord} ${sideWord}` : sideWord;
+  }
 }

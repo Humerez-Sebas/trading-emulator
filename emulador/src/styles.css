@@ -97,6 +97,10 @@
   --text-md: 16px;
   --text-lg: 20px;
   --text-xl: 22px;
+  /* Monospace font stack for numerical readouts (PnL, prices, lots, hex codes).
+     Falls back through Geist Mono → JetBrains Mono → system mono. */
+  --font-mono:
+    'Geist Mono', 'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
@@ -168,4 +172,11 @@ textarea:disabled {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Mono utility for numerical readouts (PnL, prices, lots, hex codes).
+   Pairs the designed mono font with tabular figures for rock-steady columns. */
+.font-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }

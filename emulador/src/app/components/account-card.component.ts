@@ -20,7 +20,7 @@ import { DecimalPipe } from '@angular/common';
       <div class="sparkline-container">
         <svg class="sparkline" viewBox="0 0 100 30" preserveAspectRatio="none">
           <path
-            d="M0,25 C10,23 20,28 30,20 C40,12 50,15 60,8 C70,1 C80,10 90,5 100,2"
+            d="M0,25 C10,23 20,28 30,20 C40,12 50,15 60,8 C70,4 80,10 90,5 L100,2"
             fill="none"
             [attr.stroke]="sparklineColor()"
             stroke-width="1.5"

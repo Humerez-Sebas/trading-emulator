@@ -214,7 +214,7 @@
             <div class="card-row card-header-row">
               <div class="card-left">
                 <span class="card-badge pending">
-                  {{ o.side === 'buy' ? 'LÍMITE COMPRA' : 'LÍMITE VENTA' }}
+                  {{ pendingBadgeLabel(o.side, o.type) }}
                 </span>
                 <span class="card-lots font-mono">{{ o.lots | number: '1.2-2' }} Lotes</span>
               </div>
