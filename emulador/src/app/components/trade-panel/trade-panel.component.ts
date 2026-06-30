@@ -5,12 +5,12 @@ import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { lotsForRisk, OrderSide, OrderType } from '../../state/trading/trading.models';
 import { selectTradePanelView } from '../../state/selectors';
-import { TrashIconComponent } from '../icons/trash-icon.component';
 import { ButtonDirective } from '../ui/button.directive';
-import { IconButtonDirective } from '../ui/icon-button.directive';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 import { EmptyStateComponent } from '../ui/empty-state.component';
+import { AccountCardComponent } from '../account-card.component';
+import { RiskSliderComponent } from '../risk-slider.component';
 
 /**
  * Manual order entry panel: side, type, entry/SL/TP prices, % risk with
@@ -21,12 +21,12 @@ import { EmptyStateComponent } from '../ui/empty-state.component';
   standalone: true,
   imports: [
     DecimalPipe,
-    TrashIconComponent,
     ButtonDirective,
-    IconButtonDirective,
     TooltipDirective,
     DropdownComponent,
     EmptyStateComponent,
+    AccountCardComponent,
+    RiskSliderComponent,
   ],
   templateUrl: './trade-panel.component.html',
   styleUrl: './trade-panel.component.css',
@@ -149,6 +149,11 @@ export class TradePanelComponent {
     }
   }
 
+  onRiskChange(riskPct: number): void {
+    this.riskText.set(String(riskPct));
+    this.store.dispatch(TradingActions.setRiskPct({ riskPct }));
+  }
+
   submit(): void {
     if (this.invalidReason() !== null) return;
     const v = this.view();
@@ -261,5 +266,15 @@ export class TradePanelComponent {
 
   typeLabel(type: OrderType): string {
     return type === 'market' ? 'Mercado' : type === 'limit' ? 'Limit' : 'Stop';
+  }
+
+  /**
+   * Spanish label for a pending order badge — e.g. "LÍMITE COMPRA",
+   * "STOP VENTA". Driven by the order's own `type`, never hardcoded.
+   */
+  pendingBadgeLabel(side: OrderSide, type: OrderType): string {
+    const typeWord = type === 'limit' ? 'LÍMITE' : type === 'stop' ? 'STOP' : '';
+    const sideWord = side === 'buy' ? 'COMPRA' : 'VENTA';
+    return typeWord ? `${typeWord} ${sideWord}` : sideWord;
   }
 }

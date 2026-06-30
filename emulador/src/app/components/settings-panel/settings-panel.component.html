@@ -1,4 +1,4 @@
-<aside class="panel" aria-label="Ajustes">
+<aside id="settings-scroll-container" class="panel" aria-label="Ajustes">
   <header class="panel-header">
     <h2>Ajustes</h2>
   </header>
@@ -6,10 +6,10 @@
   <section class="group">
     <h3>Tema</h3>
     <div class="theme-toggle">
-      <button class="opt" [class.active]="(theme$ | async) === 'dark'" (click)="setTheme('dark')">
+      <button class="opt" [class.active]="theme() === 'dark'" (click)="setTheme('dark')">
         Oscuro
       </button>
-      <button class="opt" [class.active]="(theme$ | async) === 'light'" (click)="setTheme('light')">
+      <button class="opt" [class.active]="theme() === 'light'" (click)="setTheme('light')">
         Claro
       </button>
     </div>
@@ -30,7 +30,7 @@
 
   <section class="group">
     <div class="group-header">
-      <h3>Colores del gráfico</h3>
+      <h3>Personalizar Velas (Click en gráfico)</h3>
       <button
         class="restore-btn"
         (click)="restore()"
@@ -52,90 +52,162 @@
         </svg>
       </button>
     </div>
-    @if (colors$ | async; as colors) {
-      <div class="color-grid">
-        @for (f of colorFields; track f.key) {
-          <div class="color-row">
-            <span>{{ f.label }}</span>
-            <ui-color-field
-              [value]="colors[f.key]"
-              [ariaLabel]="f.label"
-              (valueChange)="onColor(f.key, $event)"
-            />
+
+    <app-interactive-candles
+      [upColor]="colors().upColor"
+      [downColor]="colors().downColor"
+      [wickUp]="colors().wickUp"
+      [wickDown]="colors().wickDown"
+      [borderUpColor]="colors().borderUpColor"
+      [borderDownColor]="colors().borderDownColor"
+      (editPart)="onEditPart($event)"
+    />
+  </section>
+
+  <section class="group">
+    <div class="group-header">
+      <h3>Colores del gráfico</h3>
+    </div>
+    <div class="color-grid">
+      @for (f of colorFields; track f.key) {
+        <div class="color-row">
+          <span>{{ f.label }}</span>
+          <div class="cf-wrapper">
+            <button
+              (click)="openColorPicker(f.key, f.label, $event)"
+              class="cf-swatch"
+              [style.background-color]="colors()[f.key]"
+              [attr.aria-label]="'Editar ' + f.label"
+            ></button>
+            <span class="cf-hex">{{ colors()[f.key].toUpperCase() }}</span>
           </div>
-        }
-      </div>
-    }
+        </div>
+      }
+    </div>
   </section>
 
   <section class="group">
     <h3>Cajas de trade</h3>
-    <label class="grid-opacity">
-      Opacidad del relleno: {{ (boxOpacity().fill * 100).toFixed(0) }}%
-      <input
-        type="range"
-        min="5"
-        max="50"
-        step="1"
+    <div class="opacity-row">
+      <div class="opacity-header">
+        <span>Opacidad del relleno</span>
+        <span class="opacity-value">{{ (boxOpacity().fill * 100).toFixed(0) }}%</span>
+      </div>
+      <app-custom-opacity-slider
+        [min]="5"
+        [max]="50"
         [value]="boxOpacity().fill * 100"
-        (input)="onBoxFill($event)"
+        (valueChange)="onBoxFill($event)"
       />
-    </label>
-    <label class="grid-opacity">
-      Opacidad del borde: {{ (boxOpacity().border * 100).toFixed(0) }}%
-      <input
-        type="range"
-        min="10"
-        max="100"
-        step="5"
+    </div>
+    <div class="opacity-row">
+      <div class="opacity-header">
+        <span>Opacidad del borde</span>
+        <span class="opacity-value">{{ (boxOpacity().border * 100).toFixed(0) }}%</span>
+      </div>
+      <app-custom-opacity-slider
+        [min]="10"
+        [max]="100"
         [value]="boxOpacity().border * 100"
-        (input)="onBoxBorder($event)"
+        (valueChange)="onBoxBorder($event)"
       />
-    </label>
+    </div>
     <p class="hint">Las cajas pendientes y cerradas escalan su relleno proporcionalmente.</p>
   </section>
 
   <section class="group">
     <h3>Cuadrícula</h3>
-    <label class="grid-toggle">
-      <input type="checkbox" [checked]="gridVisible()" (change)="toggleGrid($event)" />
-      Mostrar cuadrícula
-    </label>
-    <label class="grid-opacity" [class.disabled]="!gridVisible()">
-      Opacidad: {{ (gridOpacity() * 100).toFixed(0) }}%
-      <input
-        type="range"
-        min="0"
-        max="100"
-        step="5"
+    <div class="switch-row">
+      <span>Mostrar cuadrícula</span>
+      <app-custom-switch
+        [checked]="gridVisible()"
+        (checkedChange)="toggleGrid($event)"
+        aria-label="Mostrar cuadrícula"
+      />
+    </div>
+    <div class="opacity-row" [class.disabled]="!gridVisible()">
+      <div class="opacity-header">
+        <span>Opacidad</span>
+        <span class="opacity-value">{{ (gridOpacity() * 100).toFixed(0) }}%</span>
+      </div>
+      <app-custom-opacity-slider
+        [min]="0"
+        [max]="100"
         [value]="gridOpacity() * 100"
-        [disabled]="!gridVisible()"
-        (input)="onGridOpacity($event)"
+        (valueChange)="onGridOpacity($event)"
       />
-    </label>
-  </section>
-
-  <section class="group">
-    <h3>Herramientas</h3>
-    <label class="grid-toggle">
-      <input
-        type="checkbox"
-        [checked]="floatingToolbar()"
-        (change)="toggleFloatingToolbar($event)"
-      />
-      Barra flotante (arrastrable sobre el gráfico)
-    </label>
+    </div>
   </section>
 
   <section class="group">
     <h3>Zona horaria</h3>
-    <ui-dropdown
-      [block]="true"
-      ariaLabel="Zona horaria"
-      [options]="utcOptions"
-      [value]="(utcOffset$ | async) + ''"
-      (valueChange)="onOffset($event)"
-    />
+    <div class="timezone-picker">
+      <div class="tz-presets-grid">
+        <button class="tz-preset-btn" [class.active]="utcOffset() === -5" (click)="onOffset('-5')">
+          NY
+        </button>
+        <button class="tz-preset-btn" [class.active]="utcOffset() === 0" (click)="onOffset('0')">
+          LDN
+        </button>
+        <button class="tz-preset-btn" [class.active]="utcOffset() === 1" (click)="onOffset('1')">
+          MAD
+        </button>
+        <button class="tz-preset-btn" [class.active]="utcOffset() === 3" (click)="onOffset('3')">
+          MT5
+        </button>
+        <button class="tz-preset-btn" [class.active]="utcOffset() === 9" (click)="onOffset('9')">
+          TYO
+        </button>
+      </div>
+      <div class="tz-select-wrapper">
+        <svg
+          viewBox="0 0 24 24"
+          class="tz-globe-icon"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path
+            d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+          ></path>
+        </svg>
+        <ui-dropdown
+          [block]="true"
+          ariaLabel="Zona horaria"
+          [options]="utcOptions"
+          [value]="utcOffset() + ''"
+          (valueChange)="onOffset($event)"
+        />
+      </div>
+    </div>
     <p class="hint">Solo afecta a la visualización; los datos se mantienen en UTC.</p>
   </section>
+
+  <!-- Absolute Popover Custom Color Picker -->
+  @if (activePicker(); as picker) {
+    <div class="color-picker-popover animate-scaleIn" [style.top.px]="picker.y">
+      <div class="popover-header">
+        <span class="popover-title">{{ picker.label }}</span>
+        <button (click)="closeColorPicker()" class="close-btn" aria-label="Cerrar">
+          <svg
+            viewBox="0 0 24 24"
+            width="12"
+            height="12"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <app-custom-color-picker
+        [color]="colors()[picker.key]"
+        (colorChange)="onColor(picker.key, $event)"
+      />
+    </div>
+  }
 </aside>
