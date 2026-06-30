@@ -2,6 +2,7 @@ import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData 
 import { RenderModel } from './render-model';
 
 export class ChartEngine {
+  // TODO: Eliminar esta exposición directa en RFC-004/RFC-005 una vez que DrawingsCapability y TradingCapability estén implementados.
   public get chartApi(): IChartApi { return this.chart; }
   public get seriesApi(): ISeriesApi<"Candlestick"> { return this.mainSeries; }
 
@@ -29,19 +30,52 @@ export class ChartEngine {
     window.addEventListener('resize', this.onResize);
   }
   
-  public render(model: RenderModel): void {
+  public render(model: Partial<RenderModel>): void {
     // 1. Update config
-    this.chart.applyOptions({
-      layout: {
-        background: { color: model.config.colors.background },
-        textColor: model.config.colors.text,
-      }
-    });
+    if (model.config) {
+      const c = model.config.colors;
+      const gridColor = this.hexToRgba(c.grid, model.config.gridOpacity);
+      const gridLine = { color: gridColor, visible: model.config.gridVisible };
+
+      this.chart.applyOptions({
+        layout: {
+          background: { color: c.background },
+          textColor: c.text,
+        },
+        grid: { vertLines: gridLine, horzLines: gridLine },
+      });
+
+      this.mainSeries.applyOptions({
+        upColor: c.upColor,
+        downColor: c.downColor,
+        wickUpColor: c.wickUp,
+        wickDownColor: c.wickDown,
+        borderVisible: true,
+        borderUpColor: c.borderUpColor,
+        borderDownColor: c.borderDownColor,
+      });
+    }
     
     // 2. Update data efficiently
-    if (model.candles?.length > 0) {
+    if (model.candles && model.candles.length > 0) {
       this.mainSeries.setData(model.candles as unknown as CandlestickData[]);
     }
+  }
+  
+  public setInteractivity(enabled: boolean): void {
+    this.chart.applyOptions({ handleScroll: enabled, handleScale: enabled });
+  }
+
+  public resetPriceScale(): void {
+    this.mainSeries.priceScale().applyOptions({ autoScale: true });
+  }
+
+  private hexToRgba(hex: string, alpha: number): string {
+    const v = hex.replace('#', '');
+    const r = parseInt(v.slice(0, 2), 16);
+    const g = parseInt(v.slice(2, 4), 16);
+    const b = parseInt(v.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
   
   public destroy(): void {

@@ -3,6 +3,8 @@ import { ChartColors } from '../../state/settings/settings.models';
 
 export interface ChartConfig {
   colors: ChartColors;
+  gridVisible: boolean;
+  gridOpacity: number;
   watermarkText?: string;
   watermarkColor?: string;
 }

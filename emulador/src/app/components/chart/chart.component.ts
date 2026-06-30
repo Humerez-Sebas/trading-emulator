@@ -600,7 +600,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    */
   private resetView(): void {
     if (!this.chart || !this.series) return;
-    this.series.priceScale().applyOptions({ autoScale: true });
+    this.engine?.resetPriceScale();
     this.chart.timeScale().scrollToRealTime();
   }
 
@@ -619,25 +619,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.slZone = c.slZone;
     this.boxFillAlpha = boxOpacity.fill;
     this.boxBorderAlpha = boxOpacity.border;
-    this.lastConfig = { colors: c };
+    this.lastConfig = { colors: c, gridVisible, gridOpacity };
     if (this.engine) {
-      this.engine.render({ config: this.lastConfig, candles: [] });
+      this.engine.render({ config: this.lastConfig });
     }
-    const gridColor = hexToRgba(c.grid, gridOpacity);
-    const gridLine = { color: gridColor, visible: gridVisible };
-    this.chart?.applyOptions({
-      layout: { background: { color: c.background }, textColor: c.text },
-      grid: { vertLines: gridLine, horzLines: gridLine },
-    });
-    this.series?.applyOptions({
-      upColor: c.upColor,
-      downColor: c.downColor,
-      wickUpColor: c.wickUp,
-      wickDownColor: c.wickDown,
-      borderVisible: true,
-      borderUpColor: c.borderUpColor,
-      borderDownColor: c.borderDownColor,
-    });
     this.pushDrawings();
     // trade overlay uses the theme's up/down colors
     this.rebuildTradeLines();
@@ -755,10 +740,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.winStart = winStart;
     this.renderedTimes = slice.map((c) => c.time);
     const mapped = slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp }));
-    if (this.engine && this.lastConfig) {
-      this.engine.render({ config: this.lastConfig, candles: mapped });
-    } else {
-      this.series.setData(mapped);
+    if (this.engine) {
+      this.engine.render({ candles: mapped });
     }
   }
 
@@ -1388,7 +1371,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       const tradeLine = this.hitTestTradeLine(y);
       if (tradeLine) {
         this.lineDrag = { id: tradeLine.id, target: tradeLine.target, field: tradeLine.field };
-        this.chart.applyOptions({ handleScroll: false, handleScale: false });
+        this.engine?.setInteractivity(false);
         e.preventDefault();
         return;
       }
@@ -1400,7 +1383,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
           target: edge.status === 'pending' ? 'order' : 'position',
           field: edge.field,
         };
-        this.chart.applyOptions({ handleScroll: false, handleScale: false });
+        this.engine?.setInteractivity(false);
         e.preventDefault();
         return;
       }
@@ -1420,7 +1403,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ id })));
     this.drag = { id, mode, startX: x, startY: y, x1, y1, x2, y2 };
     // freeze chart panning/zooming while dragging an object
-    this.chart.applyOptions({ handleScroll: false, handleScale: false });
+    this.engine?.setInteractivity(false);
     e.preventDefault();
   }
 
@@ -1483,7 +1466,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.lineDrag = null;
     this.zone.run(() => this.dragInfo.set(null));
     // restore chart panning/zooming
-    this.chart?.applyOptions({ handleScroll: true, handleScale: true });
+    this.engine?.setInteractivity(true);
   }
 
   /** Removes the ephemeral middle-click measurement from the chart. */
