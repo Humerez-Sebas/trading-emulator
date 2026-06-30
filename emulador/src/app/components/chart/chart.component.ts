@@ -333,6 +333,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private chart?: IChartApi;
   private series?: ISeriesApi<'Candlestick'>;
   private engine?: ChartEngine;
+  /** RFC-002: unsubscribe fns for the engine event-bus listeners. */
+  private busUnsubs: Array<() => void> = [];
   private lastConfig?: ChartConfig;
   private drawingsPrimitive = new DrawingsPrimitive();
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
@@ -561,11 +563,14 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // drawing interaction. DblClick too: the quick second click of a shape
     // falls within the double-click threshold and the library suppresses it
     // from Click.
-    this.chart.subscribeClick((p) => this.zone.run(() => this.handleClick(p)));
-    this.chart.subscribeDblClick((p) => this.zone.run(() => this.handleClick(p)));
-    this.chart.subscribeCrosshairMove((p) => this.handleCrosshair(p));
-    // lazy-load older bars when scrolling near the left edge of the window
-    this.chart.timeScale().subscribeVisibleLogicalRangeChange((r) => this.maybeLoadMore(r));
+    // RFC-002: interactions now arrive via the engine's typed event bus instead
+    // of subscribing to lightweight-charts directly. NgZone semantics preserved:
+    // clicks re-enter Angular's zone; crosshair + range stay outside (high-freq).
+    this.busUnsubs.push(
+      this.engine.events.on('ChartClicked', (p) => this.zone.run(() => this.handleClick(p))),
+      this.engine.events.on('CrosshairMoved', (p) => this.handleCrosshair(p)),
+      this.engine.events.on('VisibleRangeChanged', (r) => this.maybeLoadMore(r)),
+    );
 
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
@@ -1485,6 +1490,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     el.removeEventListener('contextmenu', this.onContextMenu);
     el.removeEventListener('auxclick', this.onAuxClick);
     window.removeEventListener('mouseup', this.onMouseUp);
+    this.busUnsubs.forEach((off) => off());
+    this.busUnsubs = [];
     this.engine?.destroy();
   }
 }

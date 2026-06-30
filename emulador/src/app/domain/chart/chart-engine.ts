@@ -1,5 +1,6 @@
 import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData, CrosshairMode } from 'lightweight-charts';
 import { RenderModel } from './render-model';
+import { ChartEventBus } from './chart-event-bus';
 
 export class ChartEngine {
   // TODO: Eliminar esta exposición directa en RFC-004/RFC-005 una vez que DrawingsCapability y TradingCapability estén implementados.
@@ -8,6 +9,9 @@ export class ChartEngine {
 
   private chart: IChartApi;
   private mainSeries: ISeriesApi<"Candlestick">;
+
+  private bus = new ChartEventBus();
+  public get events(): ChartEventBus { return this.bus; }
 
   constructor(container: HTMLElement) {
     // autoSize uses lightweight-charts' internal ResizeObserver on the container,
@@ -30,8 +34,15 @@ export class ChartEngine {
       wickUpColor: '#26a69a',
       wickDownColor: '#ef5350',
     });
+
+    this.chart.subscribeClick((p) => this.bus.emit('ChartClicked', p));
+    this.chart.subscribeDblClick((p) => this.bus.emit('ChartClicked', p));
+    this.chart.subscribeCrosshairMove((p) => this.bus.emit('CrosshairMoved', p));
+    this.chart
+      .timeScale()
+      .subscribeVisibleLogicalRangeChange((r) => this.bus.emit('VisibleRangeChanged', r));
   }
-  
+
   public render(model: Partial<RenderModel>): void {
     // 1. Update config
     if (model.config) {
@@ -85,6 +96,7 @@ export class ChartEngine {
   }
   
   public destroy(): void {
+    this.bus.destroy();
     this.chart.remove();
   }
 }
