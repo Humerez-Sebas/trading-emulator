@@ -1,6 +1,7 @@
 import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData, CrosshairMode } from 'lightweight-charts';
 import { RenderModel } from './render-model';
 import { ChartEventBus } from './chart-event-bus';
+import { Capability } from './capability';
 
 export class ChartEngine {
   // TODO: Eliminar esta exposición directa en RFC-004/RFC-005 una vez que DrawingsCapability y TradingCapability estén implementados.
@@ -11,6 +12,7 @@ export class ChartEngine {
   private mainSeries: ISeriesApi<"Candlestick">;
 
   private bus = new ChartEventBus();
+  private capabilities = new Map<string, Capability>();
   public get events(): ChartEventBus { return this.bus; }
 
   constructor(container: HTMLElement) {
@@ -41,6 +43,11 @@ export class ChartEngine {
     this.chart
       .timeScale()
       .subscribeVisibleLogicalRangeChange((r) => this.bus.emit('VisibleRangeChanged', r));
+  }
+
+  public registerCapability(cap: Capability): void {
+    this.capabilities.set(cap.id, cap);
+    cap.init(this.chart, this.bus);
   }
 
   public render(model: Partial<RenderModel>): void {
@@ -77,6 +84,10 @@ export class ChartEngine {
     if (model.candles !== undefined) {
       this.mainSeries.setData(model.candles as unknown as CandlestickData[]);
     }
+
+    // Capabilities (RFC-003): el engine actualiza su serie y delega el resto del
+    // modelo a los plugins registrados.
+    this.capabilities.forEach((cap) => cap.render(model));
   }
   
   public setInteractivity(enabled: boolean): void {
@@ -96,6 +107,7 @@ export class ChartEngine {
   }
   
   public destroy(): void {
+    this.capabilities.forEach((cap) => cap.destroy());
     this.bus.destroy();
     this.chart.remove();
   }
