@@ -46,6 +46,9 @@ export class ChartEngine {
   }
 
   public registerCapability(cap: Capability): void {
+    if (this.capabilities.has(cap.id)) {
+      throw new Error(`Capability with ID "${cap.id}" is already registered.`);
+    }
     this.capabilities.set(cap.id, cap);
     cap.init(this.chart, this.bus);
   }
@@ -108,6 +111,7 @@ export class ChartEngine {
   
   public destroy(): void {
     this.capabilities.forEach((cap) => cap.destroy());
+    this.capabilities.clear();
     this.bus.destroy();
     this.chart.remove();
   }
