@@ -1,6 +1,8 @@
 import { Candle } from '../../models';
-import { ChartColors } from '../../state/settings/settings.models';
+import { ChartColors, TradeBoxOpacity } from '../../state/settings/settings.models';
 import { Drawing, DrawingTool } from '../../state/drawings/drawings.models';
+import { Position, PendingOrder } from '../../state/trading/trading.models';
+import { TradeBoxItem, TradeMarker } from '../../state/selectors';
 
 export interface ChartConfig {
   colors: ChartColors;
@@ -41,12 +43,23 @@ export interface SessionModel {
   color?: string;
 }
 
+export interface TradingModel {
+  positions: Position[];
+  pendingOrders: PendingOrder[];
+  boxes: TradeBoxItem[];
+  markers: TradeMarker[];
+  shift: number;
+  times: number[];
+  barSpacing: number;
+  colors: ChartColors;
+  opacity: TradeBoxOpacity;
+}
+
 export interface RenderModel {
   candles: Candle[];
   config: ChartConfig;
   drawings?: DrawingsModel;
   countdown?: CountdownModel;
   session?: SessionModel;
+  trading?: TradingModel;
 }
-
-
