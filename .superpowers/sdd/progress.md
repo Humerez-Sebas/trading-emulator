@@ -10,8 +10,10 @@ Verification gate (per task, run inside emulador/): `npx tsc -p tsconfig.app.jso
 
 ## Tasks
 - [x] Task 1: Extend RenderModel for Drawings in `emulador/src/app/domain/chart/render-model.ts`
-- [ ] Task 2: Implement DrawingsCapability in `emulador/src/app/domain/chart/capabilities/drawings-capability.ts`
+- [x] Task 2: Implement DrawingsCapability in `emulador/src/app/domain/chart/capabilities/drawings-capability.ts`
 
 ## Minor findings roll-up (for final review)
 
 ## Log
+- [x] Task 1 complete (eb3435a..a29b0cf, review clean — Spec ✅, quality Approved, 0 issues; tsc exit 0)
+- [x] Task 2 complete (implement drawings-capability & integration; compilation & build green ✅)
