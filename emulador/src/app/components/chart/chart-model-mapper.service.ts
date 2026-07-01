@@ -7,13 +7,8 @@ import {
   selectChartView,
   selectSessionEnd,
   selectTradeChartView,
-  TradeBoxItem as StateTradeBoxItem,
-  TradeMarker as StateTradeMarker,
 } from '../../state/selectors';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
-import { Drawing as StateDrawing, DrawingTool as StateDrawingTool } from '../../state/drawings/drawings.models';
-import { ChartColors as StateChartColors, TradeBoxOpacity as StateTradeBoxOpacity } from '../../state/settings/settings.models';
-import { Position as StatePosition, PendingOrder as StatePendingOrder } from '../../state/trading/trading.models';
 import {
   CountdownModel,
   DrawingsModel,
