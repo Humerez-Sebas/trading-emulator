@@ -15,7 +15,7 @@ export class CountdownCapability implements Capability {
   constructor(private series: ISeriesApi<'Candlestick'>) {}
 
   init(chart: IChartApi, bus: ChartEventBus): void {
-    if (this.isDestroyed) return;
+    if (this.isDestroyed || this.primitive) return;
     this.chart = chart;
     this.bus = bus;
     this.primitive = new CountdownPrimitive();
