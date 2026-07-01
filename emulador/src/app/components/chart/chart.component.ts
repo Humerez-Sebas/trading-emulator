@@ -543,9 +543,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.mapper.tradeChartView$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ positions, orders, markers, boxes }) => {
-        this.lastTradeView = { positions, orders };
-        this.tradeMarkers = markers;
-        this.tradeBoxes = boxes;
+        this.lastTradeView = {
+          positions: positions as unknown as Position[],
+          orders: orders as unknown as PendingOrder[],
+        };
+        this.tradeMarkers = markers as unknown as TradeMarker[];
+        this.tradeBoxes = boxes as unknown as TradeBoxItem[];
         this.pushTrading();
       });
 

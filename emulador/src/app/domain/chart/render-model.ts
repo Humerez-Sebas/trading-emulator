@@ -1,8 +1,79 @@
 import { Candle } from '../../models';
-import { ChartColors, TradeBoxOpacity } from '../../state/settings/settings.models';
-import { Drawing, DrawingTool } from '../../state/drawings/drawings.models';
-import { Position, PendingOrder } from '../../state/trading/trading.models';
-import { TradeBoxItem, TradeMarker } from '../../state/selectors';
+export interface ChartColors {
+  upColor: string;
+  downColor: string;
+  wickUp: string;
+  wickDown: string;
+  borderUpColor: string;
+  borderDownColor: string;
+  background: string;
+  grid: string;
+  text: string;
+  crosshair: string;
+  tpZone: string;
+  slZone: string;
+}
+
+export interface TradeBoxOpacity {
+  fill: number;
+  border: number;
+}
+
+export interface DrawingPoint {
+  time: number;
+  price: number;
+}
+
+export type DrawingTool = 'none' | 'rect' | 'line' | 'fib' | 'ruler';
+export type DrawingType = Exclude<DrawingTool, 'none'>;
+
+export interface Drawing {
+  id: string;
+  kind: DrawingType;
+  p1: DrawingPoint;
+  p2: DrawingPoint;
+}
+
+export interface Position {
+  id: string;
+  side: 'buy' | 'sell';
+  entryPrice: number;
+  sl: number;
+  tp: number | null;
+  lots: number;
+  openTime: number;
+  origin: string;
+}
+
+export interface PendingOrder {
+  id: string;
+  side: 'buy' | 'sell';
+  type: string;
+  entryPrice: number;
+  sl: number;
+  tp: number | null;
+  lots: number;
+}
+
+export interface TradeBoxItem {
+  id: string;
+  status: 'open' | 'pending' | 'closed';
+  side: 'buy' | 'sell';
+  entry: number;
+  sl: number;
+  tp: number | null;
+  from: number;
+  to: number | null;
+  hidden: boolean;
+}
+
+export interface TradeMarker {
+  time: number;
+  position: 'aboveBar' | 'belowBar';
+  shape: 'arrowUp' | 'arrowDown' | 'circle';
+  color: 'up' | 'down';
+  text: string;
+}
 
 export interface ChartConfig {
   colors: ChartColors;

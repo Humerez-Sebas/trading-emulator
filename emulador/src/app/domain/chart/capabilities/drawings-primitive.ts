@@ -8,7 +8,8 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
-import { Drawing, FIB_LEVELS } from '../../../state/drawings/drawings.models';
+import { Drawing } from '../render-model';
+export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 import { timeForX, xForTime } from '../../../components/chart/time-coordinates';
 
 /** On-screen drawing (media/CSS px coordinates already resolved). */

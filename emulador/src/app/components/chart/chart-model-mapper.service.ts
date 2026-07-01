@@ -1,23 +1,32 @@
 import { inject, Injectable } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import {
   selectChartStyle,
   selectChartView,
   selectSessionEnd,
   selectTradeChartView,
-  TradeBoxItem,
-  TradeMarker,
+  TradeBoxItem as StateTradeBoxItem,
+  TradeMarker as StateTradeMarker,
 } from '../../state/selectors';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
-import { Drawing, DrawingTool } from '../../state/drawings/drawings.models';
-import { ChartColors, TradeBoxOpacity } from '../../state/settings/settings.models';
-import { Position, PendingOrder } from '../../state/trading/trading.models';
+import { Drawing as StateDrawing, DrawingTool as StateDrawingTool } from '../../state/drawings/drawings.models';
+import { ChartColors as StateChartColors, TradeBoxOpacity as StateTradeBoxOpacity } from '../../state/settings/settings.models';
+import { Position as StatePosition, PendingOrder as StatePendingOrder } from '../../state/trading/trading.models';
 import {
   CountdownModel,
   DrawingsModel,
   SessionModel,
   TradingModel,
+  Drawing,
+  DrawingTool,
+  Position,
+  PendingOrder,
+  TradeBoxItem,
+  TradeMarker,
+  ChartColors,
+  TradeBoxOpacity,
 } from '../../domain/chart/render-model';
 
 /**
@@ -44,7 +53,14 @@ export class ChartModelMapper {
     gridVisible: boolean;
     gridOpacity: number;
     tradeBoxOpacity: TradeBoxOpacity;
-  }> = this.store.select(selectChartStyle);
+  }> = this.store.select(selectChartStyle).pipe(
+    map(style => ({
+      colors: style.colors as ChartColors,
+      gridVisible: style.gridVisible,
+      gridOpacity: style.gridOpacity,
+      tradeBoxOpacity: style.tradeBoxOpacity as TradeBoxOpacity,
+    }))
+  );
 
   /** Consistent chart view: TF label, candles, visible index, UTC offset, forming candle, countdown. */
   readonly chartView$: Observable<{
@@ -62,7 +78,14 @@ export class ChartModelMapper {
     orders: PendingOrder[];
     markers: TradeMarker[];
     boxes: TradeBoxItem[];
-  }> = this.store.select(selectTradeChartView);
+  }> = this.store.select(selectTradeChartView).pipe(
+    map(data => ({
+      positions: data.positions as unknown as Position[],
+      orders: data.orders as unknown as PendingOrder[],
+      markers: data.markers as unknown as TradeMarker[],
+      boxes: data.boxes as unknown as TradeBoxItem[],
+    }))
+  );
 
   /** Session end UTC timestamp (signal). */
   readonly sessionEnd = this.store.selectSignal(selectSessionEnd);
