@@ -27,15 +27,12 @@ import {
 import { Candle, derivePointSize } from '../../models';
 import {
   selectActiveTfShortfall,
-  selectChartStyle,
-  selectChartView,
   selectDataRange,
-  selectSessionEnd,
-  selectTradeChartView,
   selectTradePanelView,
   TradeBoxItem,
   TradeMarker,
 } from '../../state/selectors';
+import { ChartModelMapper } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import {
   ChartColors,
@@ -61,7 +58,7 @@ import {
   Position,
 } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { ChartConfig, DrawingsModel, CountdownModel, SessionModel } from '../../domain/chart/render-model';
+import { ChartConfig } from '../../domain/chart/render-model';
 
 /** Vertical hit tolerance (px) for grabbing a trade price line. */
 const LINE_GRAB_PX = 4;
@@ -319,6 +316,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private destroyRef = inject(DestroyRef);
   private zone = inject(NgZone);
   private dialogs = inject(DialogService);
+  private mapper = inject(ChartModelMapper);
 
   private chart?: IChartApi;
   private series?: ISeriesApi<'Candlestick'>;
@@ -360,7 +358,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // --- "Ir a fecha…" / "Programar fin…" dialog (context menu) ---
   private dataRange = this.store.selectSignal(selectDataRange);
-  sessionEnd = this.store.selectSignal(selectSessionEnd);
+  sessionEnd = this.mapper.sessionEnd;
   /** Non-blocking warning when the active TF's data ends before the cursor. */
   coverageBanner = signal<string | null>(null);
   dateDialog = signal<{ mode: 'goto' | 'end'; value: string } | null>(null);
@@ -509,24 +507,21 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.engine.registerCapability(tradingCap);
 
     // chart colors + grid controls (theme / user customization)
-    this.store
-      .select(selectChartStyle)
+    this.mapper.chartStyle$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ colors, gridVisible, gridOpacity, tradeBoxOpacity }) =>
         this.applyColors(colors, gridVisible, gridOpacity, tradeBoxOpacity),
       );
 
     // data + replay cursor + display time zone
-    this.store
-      .select(selectChartView)
+    this.mapper.chartView$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ tf, candles, idx, utcOffset, forming, countdown }) =>
         this.render(tf, candles, idx, utcOffset, forming, countdown),
       );
 
     // session end indicator
-    this.store
-      .select(selectSessionEnd)
+    this.mapper.sessionEnd$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.pushSession());
 
@@ -540,14 +535,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       );
 
     // drawings: repaint when they change
-    this.store
-      .select(drawingsFeature.selectDrawingsState)
+    this.mapper.drawingsState$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.pushDrawings());
 
     // trade overlay: entry/SL/TP price lines + entry/exit markers
-    this.store
-      .select(selectTradeChartView)
+    this.mapper.tradeChartView$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ positions, orders, markers, boxes }) => {
         this.lastTradeView = { positions, orders };
@@ -693,14 +686,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         ? candles[idx].close
         : null;
 
-    const countdownModel: CountdownModel = {
-      price,
-      text: label,
-      backColor: '#363a45',
-      textColor: '#ffffff',
-    };
-
-    this.engine!.render({ countdown: countdownModel });
+    this.engine!.render({ countdown: this.mapper.buildCountdownModel(price, label) });
   }
 
   /** Paints/updates the live "forming" bar (resolution mode). */
@@ -1026,17 +1012,17 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private pushTrading(): void {
     if (this.engine) {
       this.engine.render({
-        trading: {
-          positions: this.lastTradeView.positions,
-          pendingOrders: this.lastTradeView.orders,
-          boxes: this.tradeBoxes,
-          markers: this.tradeMarkers,
-          shift: this.shiftSecs,
-          times: this.renderedTimes,
-          barSpacing: this.barSpacing,
-          colors: this.lastConfig?.colors ?? DARK_CHART_COLORS,
-          opacity: { fill: this.boxFillAlpha, border: this.boxBorderAlpha },
-        }
+        trading: this.mapper.buildTradingModel(
+          this.lastTradeView.positions,
+          this.lastTradeView.orders,
+          this.tradeBoxes,
+          this.tradeMarkers,
+          this.shiftSecs,
+          this.renderedTimes,
+          this.barSpacing,
+          this.lastConfig?.colors ?? DARK_CHART_COLORS,
+          { fill: this.boxFillAlpha, border: this.boxBorderAlpha },
+        ),
       });
     }
   }
@@ -1376,33 +1362,30 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** Syncs the current state to the primitive and forces a repaint. */
   private pushDrawings(): void {
-    const drawingsModel: DrawingsModel = {
-      items: this.drawings(),
-      activeTool: this.activeTool(),
-      selectedId: this.selectedId(),
-      draft: this.draft,
-      shift: this.shiftSecs,
-      times: this.renderedTimes,
-      barSpacing: this.barSpacing,
-      pointSize: this.pointSize,
-      colors: {
-        accent: this.accent,
-        up: this.up,
-        down: this.down,
-      },
-    };
-    this.engine!.render({ drawings: drawingsModel });
+    this.engine!.render({
+      drawings: this.mapper.buildDrawingsModel(
+        this.drawings(),
+        this.activeTool(),
+        this.selectedId(),
+        this.draft,
+        this.shiftSecs,
+        this.renderedTimes,
+        this.barSpacing,
+        this.pointSize,
+        { accent: this.accent, up: this.up, down: this.down },
+      ),
+    });
   }
 
   private pushSession(): void {
-    const sessionModel: SessionModel = {
-      sessionEnd: this.sessionEnd(),
-      shift: this.shiftSecs,
-      times: this.renderedTimes,
-      barSpacing: this.barSpacing,
-      color: '#7b7b7b', // default separator color
-    };
-    this.engine!.render({ session: sessionModel });
+    this.engine!.render({
+      session: this.mapper.buildSessionModel(
+        this.mapper.sessionEnd(),
+        this.shiftSecs,
+        this.renderedTimes,
+        this.barSpacing,
+      ),
+    });
   }
 
   ngOnDestroy(): void {
