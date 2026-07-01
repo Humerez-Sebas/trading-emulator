@@ -10,9 +10,27 @@ Verification gate (per task, run inside emulador/): `npx tsc -p tsconfig.app.jso
 
 ## Tasks
 - [x] Task 1: Extend RenderModel for Trading inside `emulador/src/app/domain/chart/render-model.ts`
-- [ ] Task 2: Implement TradingCapability inside `emulador/src/app/domain/chart/capabilities/trading-capability.ts`
+- [x] Task 2: Implement TradingCapability inside `emulador/src/app/domain/chart/capabilities/trading-capability.ts`
 
 ## Minor findings roll-up (for final review)
 
 ## Log
 - [x] Task 1 complete (eb3435a..b96d3bb, review clean — Spec ✅, quality Approved, 0 issues; tsc exit 0 + build complete)
+- [x] Task 2 complete (b96d3bb..78d21c8, review clean — Spec ✅, quality Approved, 0 issues; tsc exit 0 + build complete)
+
+=== ALL 2 TASKS COMPLETE ===
+
+## Final whole-branch review (eb3435a..78d21c8)
+- **Verdict: Ready to merge — YES.** 0 Critical, 0 Important.
+- DoD verified:
+  - `emulador/src/app/domain/chart/capabilities/trading-capability.ts` defines `TradingCapability` implementing `Capability`.
+  - `TradingCapability` constructor receives the candlestick series, attaching `TradeBoxesPrimitive` and `TradeButtonsPrimitive` during `init()`.
+  - Price lines, primitives, and series markers are cleanly managed by the capability.
+  - Teardown of primitives and price lines is correctly handled in `destroy()`.
+  - `ChartEngine` exposes `getCapability` method.
+  - `ChartComponent` routes its trading overlay rendering through the engine render pipeline and delegates hit testing to the capability.
+  - Build succeeds clean (`tsc` exit 0, `ng build` completes).
+- 0 Minors.
+
+## Close-out
+- Ledger updated with final review; branch ready to merge.
