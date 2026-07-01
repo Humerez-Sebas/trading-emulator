@@ -49,9 +49,9 @@ import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
 import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
+import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
 import { TradeButtonsPrimitive } from './trade-buttons-primitive';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
-import { CountdownPrimitive } from './countdown-primitive';
 import { TradingActions } from '../../state/trading/trading.actions';
 import {
   lotsForRisk,
@@ -61,7 +61,7 @@ import {
   Position,
 } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { ChartConfig, DrawingsModel } from '../../domain/chart/render-model';
+import { ChartConfig, DrawingsModel, CountdownModel } from '../../domain/chart/render-model';
 
 /** A horizontal trade level rendered as a price line on the chart. */
 interface TradeLine {
@@ -341,8 +341,6 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private tradeBoxesPrimitive = new TradeBoxesPrimitive();
-  /** Candle-close countdown tag on the price axis (TradingView-style). */
-  private countdownPrimitive = new CountdownPrimitive();
   private seriesMarkers?: ISeriesMarkersPluginApi<Time>;
 
   // --- trade overlay state ---
@@ -514,9 +512,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const drawingsCap = new DrawingsCapability(this.series!);
     this.engine.registerCapability(drawingsCap);
 
+    const countdownCap = new CountdownCapability(this.series!);
+    this.engine.registerCapability(countdownCap);
+
     this.series!.attachPrimitive(this.tradeBoxesPrimitive);
     this.series!.attachPrimitive(this.tradeButtonsPrimitive);
-    this.series!.attachPrimitive(this.countdownPrimitive);
     this.seriesMarkers = createSeriesMarkers(this.series!, []);
 
     // chart colors + grid controls (theme / user customization)
@@ -702,16 +702,15 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       : idx >= 0 && idx < candles.length
         ? candles[idx].close
         : null;
-    if (!label || price === null) {
-      this.countdownPrimitive.setSource(null);
-      return;
-    }
-    this.countdownPrimitive.setSource({
+
+    const countdownModel: CountdownModel = {
       price,
       text: label,
       backColor: '#363a45',
       textColor: '#ffffff',
-    });
+    };
+
+    this.engine!.render({ countdown: countdownModel });
   }
 
   /** Paints/updates the live "forming" bar (resolution mode). */
