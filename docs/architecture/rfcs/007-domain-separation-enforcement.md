@@ -1,21 +1,23 @@
 # RFC 007: Domain Separation Enforcement
 
 ## Objetivo
-Auditar y garantizar la estricta separación entre el Market Data Domain (e.g. velas, timeframes, precios absolutos) y el User Workspace Domain (e.g. configuraciones de UI, estado del dock, colores).
+Auditar y garantizar la estricta separación entre el Market Data Domain (velas, timeframes, precios, y primitivas geométricas) y el User Workspace Domain (configuraciones de UI, estado del dock, colores, y mappers/selectores NgRx).
 
 ## Motivación
-A lo largo de las extracciones anteriores, es posible que el `RenderModel` haya absorbido atributos mixtos. Para la mantenibilidad a 5 años del proyecto, es crítico que el `ChartEngine` no sepa nada de conceptos como "Dock", "Workspace", "Layouts", limitándose estrictamente a pintar entidades financieras y geométricas.
+Actualmente, el `RenderModel` y las capabilities en `src/app/domain/chart` importan interfaces de `src/app/state/*` (por ejemplo, `ChartColors`, `Drawing`, `DrawingTool`, `Position`, `PendingOrder`, `TradeBoxItem`, `TradeMarker`). Para garantizar la mantenibilidad y portabilidad del motor de visualización, `ChartEngine` y sus plugins en `domain/chart` deben ser agnósticos del framework de estado (NgRx) y de los modelos directos de persistencia/estado, comunicándose únicamente a través de DTOs puros.
 
 ## Decisión Arquitectónica
-1. Revisión formal de las interfaces `RenderModel`, `TradingModel`, `DrawingsModel`.
-2. Se eliminan las referencias directas a modelos de NgRx dentro de `src/app/domain/chart`.
-3. El mapper de `ChartComponent` (que transforma estado NgRx a `RenderModel`) se extrae a un servicio/selector dedicado `ChartModelMapper`, asegurando que actúe como una capa de Anti-Corruption (ACL).
+1. **Aislamiento de Tipados**:
+   - Eliminar cualquier referencia o importación directa a `src/app/state/*` o `src/app/state/selectors` desde el dominio (`src/app/domain/chart`).
+   - Redefinir e internalizar las interfaces DTO equivalentes necesarias en `render-model.ts` para Drawings, Trading, Countdown y Session.
+2. **Capa de Anti-Corrupción (ACL)**:
+   - Crear el servicio `ChartModelMapper` (`src/app/components/chart/chart-model-mapper.service.ts`) como inyectable de Angular.
+   - Extraer la lógica de suscripción de selectores complejos de NgRx que pueblan el `RenderModel` (tales como la construcción de la lista de dibujos, órdenes pendientes, posiciones, etc.) desde `ChartComponent` a este servicio mapper.
+   - `ChartComponent` inyectará `ChartModelMapper` y alimentará el `ChartEngine` usando los DTOs puros producidos por el mapper.
 
 ## Impacto
-- **Positivo:** Arquitectura limpia. El dominio del gráfico es totalmente portable y agnóstico del estado de la aplicación.
-
-## Riesgos
-- Complejidad en el mapping si las estructuras difieren sustancialmente.
+- **Positivo:** El dominio del gráfico es totalmente portátil y agnóstico de NgRx.
+- **Mantenibilidad:** Menor acoplamiento. Cualquier cambio en las estructuras de la base de datos o NgRx no impactará el motor del gráfico siempre que el mapper traduzca las estructuras adecuadamente.
 
 ## Estado Esperado
-- Cierre formal del proceso arquitectónico. El emulador funciona con una UI en Angular extremadamente delgada, respaldada por un motor de visualización agnóstico y extensible por capacidades.
+Al finalizar, el emulador compilará con `npx tsc -p tsconfig.app.json --noEmit` sin errores y no existirá ningún import en la carpeta `domain/chart/` que apunte hacia la carpeta `state/`.
