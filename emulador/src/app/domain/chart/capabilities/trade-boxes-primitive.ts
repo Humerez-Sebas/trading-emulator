@@ -9,7 +9,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
-import { TradeBoxItem } from '../../../state/selectors';
+import { TradeBoxItem } from '../render-model';
 import { TimeAnchor, xForTime } from '../../../components/chart/time-coordinates';
 
 /** Vertical hit tolerance (px) for grabbing a box edge (SL/TP). */

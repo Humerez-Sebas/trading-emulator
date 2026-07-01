@@ -13,7 +13,7 @@ import { ChartEventBus } from '../chart-event-bus';
 import { RenderModel } from '../render-model';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
 import { TradeButtonsPrimitive, TradeButton } from './trade-buttons-primitive';
-import { CHART_ACCENT } from '../../../state/settings/settings.models';
+const CHART_ACCENT = '#2962FF';
 
 export interface TradeLine {
   id: string;
