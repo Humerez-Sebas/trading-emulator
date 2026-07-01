@@ -49,8 +49,7 @@ import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
 import { DrawingsPrimitive } from './drawings-primitive';
-import { TradeButtonsPrimitive } from './trade-buttons-primitive';
-import { TradeBoxesPrimitive } from './trade-boxes-primitive';
+import { TradingCapability, TradeLine } from '../../domain/chart/capabilities/trading-capability';
 import { CountdownPrimitive } from './countdown-primitive';
 import { TradingActions } from '../../state/trading/trading.actions';
 import {
@@ -63,19 +62,9 @@ import {
 import { ChartEngine } from '../../domain/chart/chart-engine';
 import { ChartConfig } from '../../domain/chart/render-model';
 
-/** A horizontal trade level rendered as a price line on the chart. */
-interface TradeLine {
-  /** Position or pending-order id. */
-  id: string;
-  target: 'position' | 'order';
-  field: 'entry' | 'sl' | 'tp';
-  price: number;
-  draggable: boolean;
-  line: IPriceLine;
-}
-
 /** Vertical hit tolerance (px) for grabbing a trade price line. */
 const LINE_GRAB_PX = 4;
+
 
 /**
  * Bars painted at once on a TF switch / big jump. A full M1 history is hundreds
@@ -337,16 +326,13 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private busUnsubs: Array<() => void> = [];
   private lastConfig?: ChartConfig;
   private drawingsPrimitive = new DrawingsPrimitive();
-  private tradeButtonsPrimitive = new TradeButtonsPrimitive();
-  private tradeBoxesPrimitive = new TradeBoxesPrimitive();
   /** Candle-close countdown tag on the price axis (TradingView-style). */
   private countdownPrimitive = new CountdownPrimitive();
-  private seriesMarkers?: ISeriesMarkersPluginApi<Time>;
 
   // --- trade overlay state ---
-  private tradeLines: TradeLine[] = [];
   private tradeMarkers: TradeMarker[] = [];
   private tradeBoxes: TradeBoxItem[] = [];
+
   private lastTradeView: { positions: Position[]; orders: PendingOrder[] } = {
     positions: [],
     orders: [],
@@ -509,11 +495,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.chart = this.engine.chartApi;
     this.series = this.engine.seriesApi;
     
-    this.series!.attachPrimitive(this.tradeBoxesPrimitive);
+    this.engine.registerCapability(new TradingCapability(this.series!));
     this.series!.attachPrimitive(this.drawingsPrimitive);
-    this.series!.attachPrimitive(this.tradeButtonsPrimitive);
     this.series!.attachPrimitive(this.countdownPrimitive);
-    this.seriesMarkers = createSeriesMarkers(this.series!, []);
 
     // chart colors + grid controls (theme / user customization)
     this.store
@@ -554,10 +538,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         this.lastTradeView = { positions, orders };
         this.tradeMarkers = markers;
         this.tradeBoxes = boxes;
-        this.rebuildTradeLines();
-        this.applyTradeMarkers();
-        this.pushTradeButtons();
-        this.pushTradeBoxes();
+        this.pushTrading();
       });
 
     // drawing interaction. DblClick too: the quick second click of a shape
@@ -613,11 +594,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.engine.render({ config: this.lastConfig });
     }
     this.pushDrawings();
-    // trade overlay uses the theme's up/down colors
-    this.rebuildTradeLines();
-    this.applyTradeMarkers();
-    this.pushTradeButtons();
-    this.pushTradeBoxes();
+    this.pushTrading();
   }
 
   private render(
@@ -633,7 +610,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (shift !== this.shiftSecs) {
       this.shiftSecs = shift;
       this.pushDrawings();
-      this.applyTradeMarkers();
+      this.pushTrading();
     }
     // Initialize spacing/precision whenever enough candle data exists — even when
     // idx === -1 (resolution mode hides the forming bucket), so overlay primitives
@@ -661,7 +638,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.renderedOffset = shift;
       if (this.renderedTimes.length) this.chart?.timeScale().scrollToRealTime();
       this.pushDrawings();
-      this.pushTradeBoxes();
+      this.pushTrading();
       this.applyForming(forming, shift);
       this.updateCountdown(forming, candles, idx, countdown);
       return;
@@ -677,7 +654,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       if (!this.renderedTimes.includes(c.time)) this.renderedTimes.push(c.time);
     }
     // live trade boxes grow with the last rendered candle
-    this.pushTradeBoxes();
+    this.pushTrading();
     this.applyForming(forming, shift);
     this.updateCountdown(forming, candles, idx, countdown);
   }
@@ -752,7 +729,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         to: (range.to as number) + added,
       } as unknown as LogicalRange);
       this.pushDrawings();
-      this.pushTradeBoxes();
+      this.pushTrading();
     }
     this.loadingMore = false;
   }
@@ -816,7 +793,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       }
     }
     // closed trade box under the cursor: offer hide/delete of the record
-    const box = this.tradeBoxesPrimitive.hitTestBox(x, y);
+    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+    const box = tradingCap?.hitTestBox(x, y);
     this.menu.set({ x, y, options, boxId: box?.id ?? null });
   }
 
@@ -1029,110 +1007,22 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // ============ trade overlay (price lines + markers) ============
 
-  /** Recreates the entry/SL/TP price lines from the last trading state. */
-  private rebuildTradeLines(): void {
-    if (!this.series) return;
-    for (const tl of this.tradeLines) this.series.removePriceLine(tl.line);
-    this.tradeLines = [];
-
-    const add = (
-      id: string,
-      target: 'position' | 'order',
-      field: 'entry' | 'sl' | 'tp',
-      price: number,
-      color: string,
-      style: LineStyle,
-      title: string,
-      draggable: boolean,
-    ) => {
-      const line = this.series!.createPriceLine({
-        price,
-        color,
-        lineWidth: 1,
-        lineStyle: style,
-        axisLabelVisible: true,
-        title,
+  private pushTrading(): void {
+    if (this.engine) {
+      this.engine.render({
+        trading: {
+          positions: this.lastTradeView.positions,
+          pendingOrders: this.lastTradeView.orders,
+          boxes: this.tradeBoxes,
+          markers: this.tradeMarkers,
+          shift: this.shiftSecs,
+          times: this.renderedTimes,
+          barSpacing: this.barSpacing,
+          colors: this.lastConfig?.colors ?? DARK_CHART_COLORS,
+          opacity: { fill: this.boxFillAlpha, border: this.boxBorderAlpha },
+        }
       });
-      this.tradeLines.push({ id, target, field, price, draggable, line });
-    };
-
-    for (const p of this.lastTradeView.positions) {
-      const sideColor = p.side === 'buy' ? this.up : this.down;
-      const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}`;
-      add(p.id, 'position', 'entry', p.entryPrice, sideColor, LineStyle.Solid, label, false);
-      add(p.id, 'position', 'sl', p.sl, this.down, LineStyle.Dashed, 'SL', true);
-      if (p.tp !== null) add(p.id, 'position', 'tp', p.tp, this.up, LineStyle.Dashed, 'TP', true);
     }
-    for (const o of this.lastTradeView.orders) {
-      const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}`;
-      add(o.id, 'order', 'entry', o.entryPrice, this.accent, LineStyle.LargeDashed, label, true);
-      add(o.id, 'order', 'sl', o.sl, this.down, LineStyle.Dashed, 'SL', true);
-      if (o.tp !== null) add(o.id, 'order', 'tp', o.tp, this.up, LineStyle.Dashed, 'TP', true);
-    }
-  }
-
-  /** Syncs the TP/SL zone boxes (one per trade) to their primitive. */
-  private pushTradeBoxes(): void {
-    this.tradeBoxesPrimitive.setSource({
-      items: this.tradeBoxes,
-      shift: this.shiftSecs,
-      times: this.renderedTimes,
-      barSpacing: this.barSpacing,
-      tpColor: this.tpZone,
-      slColor: this.slZone,
-      fillAlpha: this.boxFillAlpha,
-      borderAlpha: this.boxBorderAlpha,
-    });
-  }
-
-  /** ×-buttons on the entry line of every order/position (quick delete). */
-  private pushTradeButtons(): void {
-    this.tradeButtonsPrimitive.setSource({
-      items: [
-        ...this.lastTradeView.positions.map((p) => ({
-          id: p.id,
-          target: 'position' as const,
-          price: p.entryPrice,
-        })),
-        ...this.lastTradeView.orders.map((o) => ({
-          id: o.id,
-          target: 'order' as const,
-          price: o.entryPrice,
-        })),
-      ],
-      color: this.down,
-    });
-  }
-
-  /** Pushes entry/exit markers, applying the display time-zone shift. */
-  private applyTradeMarkers(): void {
-    this.seriesMarkers?.setMarkers(
-      this.tradeMarkers.map((m) => ({
-        time: (m.time + this.shiftSecs) as UTCTimestamp,
-        position: m.position,
-        shape: m.shape,
-        color: m.color === 'up' ? this.up : this.down,
-        text: m.text,
-      })),
-    );
-  }
-
-  /** Draggable trade line under the cursor, if any. */
-  private hitTestTradeLine(y: number): TradeLine | null {
-    if (!this.series) return null;
-    let best: TradeLine | null = null;
-    let bestDist = LINE_GRAB_PX + 1;
-    for (const tl of this.tradeLines) {
-      if (!tl.draggable) continue;
-      const ly = this.series.priceToCoordinate(tl.price);
-      if (ly === null) continue;
-      const dist = Math.abs(ly - y);
-      if (dist <= LINE_GRAB_PX && dist < bestDist) {
-        best = tl;
-        bestDist = dist;
-      }
-    }
-    return best;
   }
 
   /**
@@ -1328,8 +1218,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+
     // ×-button on an entry line: cancel the order / close the position
-    const del = this.tradeButtonsPrimitive.hitTestDelete(x, y);
+    const del = tradingCap?.hitTestDelete(x, y);
     if (del) {
       const ctx = this.tradeCtx();
       this.zone.run(() => {
@@ -1357,7 +1249,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (!id) {
       // trade lines (SL/TP/pending entry) go before drawing bodies: they are
       // thin and would be unreachable under a large rect/fib otherwise
-      const tradeLine = this.hitTestTradeLine(y);
+      const tradeLine = tradingCap?.hitTestTradeLine(y);
       if (tradeLine) {
         this.lineDrag = { id: tradeLine.id, target: tradeLine.target, field: tradeLine.field };
         this.engine?.setInteractivity(false);
@@ -1365,7 +1257,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         return;
       }
       // live trade-box edge (SL/TP): same drag pipeline as the price lines
-      const edge = this.tradeBoxesPrimitive.hitTestEdge(x, y);
+      const edge = tradingCap?.hitTestEdge(x, y);
       if (edge) {
         this.lineDrag = {
           id: edge.id,
@@ -1408,10 +1300,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       if (this.activeTool() === 'none') {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        if (this.tradeButtonsPrimitive.hitTestDelete(x, y)) {
+        const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+        if (tradingCap?.hitTestDelete(x, y)) {
           this.container.nativeElement.style.cursor = 'pointer';
         } else {
-          const over = this.hitTestTradeLine(y) ?? this.tradeBoxesPrimitive.hitTestEdge(x, y);
+          const over = tradingCap?.hitTestTradeLine(y) ?? tradingCap?.hitTestEdge(x, y);
           this.container.nativeElement.style.cursor = over ? 'ns-resize' : '';
         }
       }

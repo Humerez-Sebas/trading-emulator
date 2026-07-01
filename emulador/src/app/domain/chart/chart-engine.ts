@@ -53,6 +53,10 @@ export class ChartEngine {
     cap.init(this.chart, this.bus);
   }
 
+  public getCapability<T extends Capability = Capability>(id: string): T | undefined {
+    return this.capabilities.get(id) as T | undefined;
+  }
+
   public render(model: Partial<RenderModel>): void {
     // 1. Update config
     if (model.config) {
