@@ -48,7 +48,7 @@ import { DialogService } from '../ui/dialog.service';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
-import { DrawingsPrimitive } from './drawings-primitive';
+import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
 import { TradeButtonsPrimitive } from './trade-buttons-primitive';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
 import { CountdownPrimitive } from './countdown-primitive';
@@ -61,7 +61,7 @@ import {
   Position,
 } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { ChartConfig } from '../../domain/chart/render-model';
+import { ChartConfig, DrawingsModel } from '../../domain/chart/render-model';
 
 /** A horizontal trade level rendered as a price line on the chart. */
 interface TradeLine {
@@ -336,7 +336,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   /** RFC-002: unsubscribe fns for the engine event-bus listeners. */
   private busUnsubs: Array<() => void> = [];
   private lastConfig?: ChartConfig;
-  private drawingsPrimitive = new DrawingsPrimitive();
+  private get drawingsCap(): DrawingsCapability {
+    return this.engine!.getCapability('drawings') as DrawingsCapability;
+  }
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private tradeBoxesPrimitive = new TradeBoxesPrimitive();
   /** Candle-close countdown tag on the price axis (TradingView-style). */
@@ -509,8 +511,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.chart = this.engine.chartApi;
     this.series = this.engine.seriesApi;
     
+    const drawingsCap = new DrawingsCapability(this.series!);
+    this.engine.registerCapability(drawingsCap);
+
     this.series!.attachPrimitive(this.tradeBoxesPrimitive);
-    this.series!.attachPrimitive(this.drawingsPrimitive);
     this.series!.attachPrimitive(this.tradeButtonsPrimitive);
     this.series!.attachPrimitive(this.countdownPrimitive);
     this.seriesMarkers = createSeriesMarkers(this.series!, []);
@@ -1204,7 +1208,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   /** Data point (real UTC) under the cursor; extrapolates into the future. */
   private pointAt(param: MouseEventParams<Time>): DrawingPoint | null {
     if (!param.point || !this.series || !this.chart) return null;
-    const time = this.drawingsPrimitive.timeForX(param.point.x);
+    const time = this.drawingsCap.timeForX(param.point.x);
     const price = this.series.coordinateToPrice(param.point.y);
     if (time === null || price === null) return null;
     return { time, price };
@@ -1227,7 +1231,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (tool === 'none') {
       // selection by click
       if (!param.point) return;
-      const hit = this.drawingsPrimitive.hitTestDrawing(param.point.x, param.point.y);
+      const hit = this.drawingsCap.hitTestDrawing(param.point.x, param.point.y);
       this.store.dispatch(DrawingsActions.selectDrawing({ id: hit }));
       return;
     }
@@ -1314,7 +1318,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       e.preventDefault(); // blocks the browser's middle-click autoscroll
       if (this.placing() || this.draftP1 || this.activeTool() !== 'none' || !this.series) return;
       const rect = this.container.nativeElement.getBoundingClientRect();
-      const time = this.drawingsPrimitive.timeForX(e.clientX - rect.left);
+      const time = this.drawingsCap.timeForX(e.clientX - rect.left);
       const price = this.series.coordinateToPrice(e.clientY - rect.top);
       if (time !== null && price !== null) this.quickRuler = { time, price };
       return;
@@ -1351,7 +1355,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     }
 
     // resize handle of the selected drawing takes priority over moving
-    const handle = this.drawingsPrimitive.hitTestHandle(x, y);
+    const handle = this.drawingsCap.hitTestHandle(x, y);
     let id: string | null = handle ? this.selectedId() : null;
     let mode: 'move' | 'p1' | 'p2' = handle ?? 'move';
     if (!id) {
@@ -1376,15 +1380,15 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         e.preventDefault();
         return;
       }
-      id = this.drawingsPrimitive.hitTestDrawing(x, y);
+      id = this.drawingsCap.hitTestDrawing(x, y);
       mode = 'move';
     }
     if (!id) return;
     const d = this.drawings().find((it) => it.id === id);
     if (!d) return;
 
-    const x1 = this.drawingsPrimitive.xForTime(d.p1.time);
-    const x2 = this.drawingsPrimitive.xForTime(d.p2.time);
+    const x1 = this.drawingsCap.xForTime(d.p1.time);
+    const x2 = this.drawingsCap.xForTime(d.p2.time);
     const y1 = this.series.priceToCoordinate(d.p1.price);
     const y2 = this.series.priceToCoordinate(d.p2.price);
     if (x1 === null || x2 === null || y1 === null || y2 === null) return;
@@ -1421,7 +1425,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const dy = e.clientY - rect.top - this.drag.startY;
 
     const pointFor = (sx: number, sy: number): DrawingPoint | null => {
-      const time = this.drawingsPrimitive.timeForX(sx + dx);
+      const time = this.drawingsCap.timeForX(sx + dx);
       const price = this.series!.coordinateToPrice(sy + dy);
       return time !== null && price !== null ? { time, price } : null;
     };
@@ -1467,18 +1471,22 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** Syncs the current state to the primitive and forces a repaint. */
   private pushDrawings(): void {
-    this.drawingsPrimitive.setSource({
+    const drawingsModel: DrawingsModel = {
       items: this.drawings(),
-      draft: this.draft,
+      activeTool: this.activeTool(),
       selectedId: this.selectedId(),
+      draft: this.draft,
       shift: this.shiftSecs,
       times: this.renderedTimes,
       barSpacing: this.barSpacing,
       pointSize: this.pointSize,
-      accent: this.accent,
-      up: this.up,
-      down: this.down,
-    });
+      colors: {
+        accent: this.accent,
+        up: this.up,
+        down: this.down,
+      },
+    };
+    this.engine!.render({ drawings: drawingsModel });
   }
 
   ngOnDestroy(): void {

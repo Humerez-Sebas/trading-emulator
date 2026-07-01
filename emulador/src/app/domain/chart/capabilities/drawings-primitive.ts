@@ -8,8 +8,8 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
-import { Drawing, FIB_LEVELS } from '../../state/drawings/drawings.models';
-import { timeForX, xForTime } from './time-coordinates';
+import { Drawing, FIB_LEVELS } from '../../../state/drawings/drawings.models';
+import { timeForX, xForTime } from '../../../components/chart/time-coordinates';
 
 /** On-screen drawing (media/CSS px coordinates already resolved). */
 interface ScreenShape {
