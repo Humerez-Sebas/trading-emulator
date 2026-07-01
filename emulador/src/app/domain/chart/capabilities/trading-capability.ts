@@ -33,6 +33,7 @@ export class TradingCapability implements Capability {
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private seriesMarkers?: ISeriesMarkersPluginApi<Time>;
   private tradeLines: TradeLine[] = [];
+  private destroyed = false;
 
   constructor(private series: ISeriesApi<'Candlestick'>) {}
 
@@ -168,8 +169,14 @@ export class TradingCapability implements Capability {
   }
 
   public destroy(): void {
+    if (this.destroyed) {
+      return;
+    }
+    this.destroyed = true;
+
     this.series.detachPrimitive(this.tradeBoxesPrimitive);
     this.series.detachPrimitive(this.tradeButtonsPrimitive);
+    this.seriesMarkers?.detach();
     for (const tl of this.tradeLines) {
       this.series.removePriceLine(tl.line);
     }
