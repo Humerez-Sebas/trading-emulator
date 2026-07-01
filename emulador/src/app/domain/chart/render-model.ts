@@ -26,9 +26,27 @@ export interface DrawingsModel {
   };
 }
 
+export interface CountdownModel {
+  price: number | null;
+  text: string | null;
+  backColor?: string;
+  textColor?: string;
+}
+
+export interface SessionModel {
+  sessionEnd: number | null;
+  shift: number;
+  times: number[];
+  barSpacing: number;
+  color?: string;
+}
+
 export interface RenderModel {
   candles: Candle[];
   config: ChartConfig;
   drawings?: DrawingsModel;
+  countdown?: CountdownModel;
+  session?: SessionModel;
 }
+
 

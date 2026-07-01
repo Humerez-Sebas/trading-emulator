@@ -49,9 +49,10 @@ import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
 import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
+import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
+import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
 import { TradeButtonsPrimitive } from './trade-buttons-primitive';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
-import { CountdownPrimitive } from './countdown-primitive';
 import { TradingActions } from '../../state/trading/trading.actions';
 import {
   lotsForRisk,
@@ -61,7 +62,7 @@ import {
   Position,
 } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { ChartConfig, DrawingsModel } from '../../domain/chart/render-model';
+import { ChartConfig, DrawingsModel, CountdownModel, SessionModel } from '../../domain/chart/render-model';
 
 /** A horizontal trade level rendered as a price line on the chart. */
 interface TradeLine {
@@ -341,8 +342,6 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private tradeBoxesPrimitive = new TradeBoxesPrimitive();
-  /** Candle-close countdown tag on the price axis (TradingView-style). */
-  private countdownPrimitive = new CountdownPrimitive();
   private seriesMarkers?: ISeriesMarkersPluginApi<Time>;
 
   // --- trade overlay state ---
@@ -514,9 +513,14 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const drawingsCap = new DrawingsCapability(this.series!);
     this.engine.registerCapability(drawingsCap);
 
+    const countdownCap = new CountdownCapability(this.series!);
+    this.engine.registerCapability(countdownCap);
+
+    const sessionCap = new SessionCapability(this.series!);
+    this.engine.registerCapability(sessionCap);
+
     this.series!.attachPrimitive(this.tradeBoxesPrimitive);
     this.series!.attachPrimitive(this.tradeButtonsPrimitive);
-    this.series!.attachPrimitive(this.countdownPrimitive);
     this.seriesMarkers = createSeriesMarkers(this.series!, []);
 
     // chart colors + grid controls (theme / user customization)
@@ -534,6 +538,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       .subscribe(({ tf, candles, idx, utcOffset, forming, countdown }) =>
         this.render(tf, candles, idx, utcOffset, forming, countdown),
       );
+
+    // session end indicator
+    this.store
+      .select(selectSessionEnd)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.pushSession());
 
     // warn (don't silently teleport) when the active TF's coverage is shorter
     // than the replay cursor — that TF was harvested less far than another
@@ -668,6 +678,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.pushTradeBoxes();
       this.applyForming(forming, shift);
       this.updateCountdown(forming, candles, idx, countdown);
+      this.pushSession();
       return;
     }
 
@@ -684,6 +695,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.pushTradeBoxes();
     this.applyForming(forming, shift);
     this.updateCountdown(forming, candles, idx, countdown);
+    this.pushSession();
   }
 
   /**
@@ -702,16 +714,15 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       : idx >= 0 && idx < candles.length
         ? candles[idx].close
         : null;
-    if (!label || price === null) {
-      this.countdownPrimitive.setSource(null);
-      return;
-    }
-    this.countdownPrimitive.setSource({
+
+    const countdownModel: CountdownModel = {
       price,
       text: label,
       backColor: '#363a45',
       textColor: '#ffffff',
-    });
+    };
+
+    this.engine!.render({ countdown: countdownModel });
   }
 
   /** Paints/updates the live "forming" bar (resolution mode). */
@@ -1487,6 +1498,17 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       },
     };
     this.engine!.render({ drawings: drawingsModel });
+  }
+
+  private pushSession(): void {
+    const sessionModel: SessionModel = {
+      sessionEnd: this.sessionEnd(),
+      shift: this.shiftSecs,
+      times: this.renderedTimes,
+      barSpacing: this.barSpacing,
+      color: '#7b7b7b', // default separator color
+    };
+    this.engine!.render({ session: sessionModel });
   }
 
   ngOnDestroy(): void {
