@@ -55,7 +55,51 @@ export class ChartModelMapper {
     };
   }
 
+  /**
+   * Memoizes a single-object transformation to preserve reference equality
+   * across emissions if the input object reference hasn't changed.
+   */
+  private memoizeObject<I, O>(mapFn: (input: I) => O): (input: I) => O {
+    let lastInput: I | null = null;
+    let lastOutput: O | null = null;
+    return (input: I) => {
+      if (input === lastInput) return lastOutput!;
+      lastInput = input;
+      lastOutput = mapFn(input);
+      return lastOutput;
+    };
+  }
+
   // ───────── selector observables ─────────
+
+  /**
+   * Normalizes the state-owned `ChartColors` into the domain-owned shape.
+   * Memoized on the `style.colors` reference so unrelated `chartStyle$`
+   * emissions (e.g. `gridOpacity` changes) don't allocate a new object —
+   * `TradingCapability.render()` short-circuits on `colors` referential
+   * identity, and a fresh object here would defeat that and force a full
+   * price-line rebuild on every style emission.
+   */
+  private mapColors = this.memoizeObject((colors: ChartColors) => ({
+    upColor: colors.upColor,
+    downColor: colors.downColor,
+    wickUp: colors.wickUp,
+    wickDown: colors.wickDown,
+    borderUpColor: colors.borderUpColor,
+    borderDownColor: colors.borderDownColor,
+    background: colors.background,
+    grid: colors.grid,
+    text: colors.text,
+    crosshair: colors.crosshair,
+    tpZone: colors.tpZone,
+    slZone: colors.slZone,
+  }));
+
+  /** Same reference-stability guarantee as `mapColors`, for trade-box opacity. */
+  private mapTradeBoxOpacity = this.memoizeObject((opacity: TradeBoxOpacity) => ({
+    fill: opacity.fill,
+    border: opacity.border,
+  }));
 
   /** Chart styling data: colors, grid visibility/opacity, trade-box opacity. */
   readonly chartStyle$: Observable<{
@@ -65,26 +109,10 @@ export class ChartModelMapper {
     tradeBoxOpacity: TradeBoxOpacity;
   }> = this.store.select(selectChartStyle).pipe(
     map(style => ({
-      colors: {
-        upColor: style.colors.upColor,
-        downColor: style.colors.downColor,
-        wickUp: style.colors.wickUp,
-        wickDown: style.colors.wickDown,
-        borderUpColor: style.colors.borderUpColor,
-        borderDownColor: style.colors.borderDownColor,
-        background: style.colors.background,
-        grid: style.colors.grid,
-        text: style.colors.text,
-        crosshair: style.colors.crosshair,
-        tpZone: style.colors.tpZone,
-        slZone: style.colors.slZone,
-      },
+      colors: this.mapColors(style.colors),
       gridVisible: style.gridVisible,
       gridOpacity: style.gridOpacity,
-      tradeBoxOpacity: {
-        fill: style.tradeBoxOpacity.fill,
-        border: style.tradeBoxOpacity.border,
-      },
+      tradeBoxOpacity: this.mapTradeBoxOpacity(style.tradeBoxOpacity),
     }))
   );
 
