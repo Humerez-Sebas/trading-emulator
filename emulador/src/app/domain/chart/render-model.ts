@@ -1,4 +1,12 @@
-import { Candle } from '../../models';
+/** OHLC candle. `time` in unix seconds (UTC), as expected by lightweight-charts. */
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
 export interface ChartColors {
   upColor: string;
   downColor: string;
