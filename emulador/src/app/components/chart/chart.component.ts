@@ -50,6 +50,7 @@ import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
 import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
 import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
+import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
 import { TradeButtonsPrimitive } from './trade-buttons-primitive';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
 import { TradingActions } from '../../state/trading/trading.actions';
@@ -61,7 +62,7 @@ import {
   Position,
 } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { ChartConfig, DrawingsModel, CountdownModel } from '../../domain/chart/render-model';
+import { ChartConfig, DrawingsModel, CountdownModel, SessionModel } from '../../domain/chart/render-model';
 
 /** A horizontal trade level rendered as a price line on the chart. */
 interface TradeLine {
@@ -515,6 +516,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const countdownCap = new CountdownCapability(this.series!);
     this.engine.registerCapability(countdownCap);
 
+    const sessionCap = new SessionCapability(this.series!);
+    this.engine.registerCapability(sessionCap);
+
     this.series!.attachPrimitive(this.tradeBoxesPrimitive);
     this.series!.attachPrimitive(this.tradeButtonsPrimitive);
     this.seriesMarkers = createSeriesMarkers(this.series!, []);
@@ -534,6 +538,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       .subscribe(({ tf, candles, idx, utcOffset, forming, countdown }) =>
         this.render(tf, candles, idx, utcOffset, forming, countdown),
       );
+
+    // session end indicator
+    this.store
+      .select(selectSessionEnd)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.pushSession());
 
     // warn (don't silently teleport) when the active TF's coverage is shorter
     // than the replay cursor — that TF was harvested less far than another
@@ -668,6 +678,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.pushTradeBoxes();
       this.applyForming(forming, shift);
       this.updateCountdown(forming, candles, idx, countdown);
+      this.pushSession();
       return;
     }
 
@@ -684,6 +695,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.pushTradeBoxes();
     this.applyForming(forming, shift);
     this.updateCountdown(forming, candles, idx, countdown);
+    this.pushSession();
   }
 
   /**
@@ -1486,6 +1498,17 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       },
     };
     this.engine!.render({ drawings: drawingsModel });
+  }
+
+  private pushSession(): void {
+    const sessionModel: SessionModel = {
+      sessionEnd: this.sessionEnd(),
+      shift: this.shiftSecs,
+      times: this.renderedTimes,
+      barSpacing: this.barSpacing,
+      color: '#7b7b7b', // default separator color
+    };
+    this.engine!.render({ session: sessionModel });
   }
 
   ngOnDestroy(): void {
