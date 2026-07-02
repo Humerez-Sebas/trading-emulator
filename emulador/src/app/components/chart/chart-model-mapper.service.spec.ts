@@ -282,7 +282,9 @@ describe('ChartModelMapper', () => {
       mapperA.configurePanel(panel('a', 'M1'));
       mapperB.configurePanel(panel('b', 'M5'));
 
-      type WithCompute = { computePanelView: (...args: unknown[]) => unknown };
+      interface WithCompute {
+        computePanelView: (...args: unknown[]) => unknown;
+      }
       const computeA = vi.spyOn(mapperA as unknown as WithCompute, 'computePanelView');
       const computeB = vi.spyOn(mapperB as unknown as WithCompute, 'computePanelView');
       let emissionsA = 0;

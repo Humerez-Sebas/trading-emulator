@@ -111,7 +111,9 @@ export const layoutFeature = createFeature({
     }),
     on(LayoutActions.removePanel, (state, { panelId }): LayoutState => {
       if (!state.panels[panelId]) return state;
-      const { [panelId]: _removed, ...panels } = state.panels;
+      const panels = Object.fromEntries(
+        Object.entries(state.panels).filter(([id]) => id !== panelId),
+      );
       return {
         panels,
         workspace: {
