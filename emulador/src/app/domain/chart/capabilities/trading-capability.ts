@@ -10,7 +10,13 @@ import {
   createSeriesMarkers,
 } from 'lightweight-charts';
 import { ChartEventBus } from '../chart-event-bus';
-import { RenderModel } from '../render-model';
+import {
+  ChartColors,
+  PendingOrder,
+  Position,
+  RenderModel,
+  TradeMarker,
+} from '../render-model';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
 import { TradeButtonsPrimitive, TradeButton } from './trade-buttons-primitive';
 const CHART_ACCENT = '#2962FF';
@@ -36,10 +42,10 @@ export class TradingCapability implements Capability {
   private destroyed = false;
 
   // Memoization references to avoid 60fps price-line recreations
-  private lastPositions: any[] | null = null;
-  private lastOrders: any[] | null = null;
-  private lastMarkers: any[] | null = null;
-  private lastColors: any = null;
+  private lastPositions: Position[] | null = null;
+  private lastOrders: PendingOrder[] | null = null;
+  private lastMarkers: TradeMarker[] | null = null;
+  private lastColors: ChartColors | null = null;
 
   constructor(private series: ISeriesApi<'Candlestick'>) {}
 

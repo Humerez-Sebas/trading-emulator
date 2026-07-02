@@ -13,11 +13,9 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 import {
-  createSeriesMarkers,
   IChartApi,
   IPriceLine,
   ISeriesApi,
-  ISeriesMarkersPluginApi,
   LineStyle,
   LogicalRange,
   MouseEventParams,
@@ -46,15 +44,9 @@ import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawing
 import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
 import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
 import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
-import { TradingCapability, TradeLine } from '../../domain/chart/capabilities/trading-capability';
+import { TradingCapability } from '../../domain/chart/capabilities/trading-capability';
 import { TradingActions } from '../../state/trading/trading.actions';
-import {
-  lotsForRisk,
-  OrderSide,
-  PendingOrder,
-  PendingType,
-  Position,
-} from '../../state/trading/trading.models';
+import { lotsForRisk, OrderSide, PendingType } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
 import {
   ChartConfig,
@@ -63,10 +55,6 @@ import {
   Position as DomainPosition,
   PendingOrder as DomainPendingOrder,
 } from '../../domain/chart/render-model';
-
-/** Vertical hit tolerance (px) for grabbing a trade price line. */
-const LINE_GRAB_PX = 4;
-
 
 /**
  * Bars painted at once on a TF switch / big jump. A full M1 history is hundreds
@@ -327,7 +315,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private series?: ISeriesApi<'Candlestick'>;
   private engine?: ChartEngine;
   /** RFC-002: unsubscribe fns for the engine event-bus listeners. */
-  private busUnsubs: Array<() => void> = [];
+  private busUnsubs: (() => void)[] = [];
   /** Guards post-destroy access from global handlers (mouseup, keydown). */
   private destroyed = false;
   private lastConfig?: ChartConfig;
