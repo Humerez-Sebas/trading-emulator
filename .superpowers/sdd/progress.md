@@ -7,7 +7,9 @@
 
 ## Task Progress
 
-Task 1 (movePanel + lifecycle invariant suite): incomplete
+Task 1 (movePanel + lifecycle invariant suite): complete (commit 3884959, verified 2026-07-02: 828 tests green, tsc app+spec clean, lint 0; Opus review PASS, 0 High/Critical)
+  - Adaptation documented: RFC's movePanel(id, targetCellId) -> (panelId, targetTabId, targetCellIndex) — GridCell has no id in frozen interfaces.
+  - Low findings: (1) sourceTab O(tabs×cells) scan could be avoided (cosmetic); (2) same-tab move out of stacked cell where moved panel wasn't active is untested (correct by inspection, shares removePanel's expression).
 Task 2 (derived visibility + keep-alive viewport): incomplete
 Task 3 (mapper update-gating D6 + provider move): incomplete
 Task 4 (ChartRegistry + lifecycle/leak tests): incomplete
