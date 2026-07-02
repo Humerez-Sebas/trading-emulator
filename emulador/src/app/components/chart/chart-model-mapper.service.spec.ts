@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
-import { ChartModelMapper } from './chart-model-mapper.service';
-import { selectChartStyle, selectTradeChartView } from '../../state/selectors';
+import { ChartModelMapper, PanelChartView } from './chart-model-mapper.service';
+import { selectChartStyle, selectTradeChartView, selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
+import { PanelDescriptor } from '../../state/layout/layout.models';
+import { Candle } from '../../models';
 
 describe('ChartModelMapper', () => {
     let mapper: ChartModelMapper;
@@ -231,4 +233,88 @@ describe('ChartModelMapper', () => {
             expect(r2.boxes).toBe(r1.boxes);
         });
     });
+
+  describe('panelChartView$ (RFC-008 D8: per-panel parametrized derivation)', () => {
+    const candle = (time: number, close = 1): Candle => ({
+      time, open: close, high: close, low: close, close,
+    });
+    const m1 = [candle(100), candle(160), candle(220)];
+    const m5 = [candle(100), candle(400)];
+    const panel = (id: string, timeframe: 'M1' | 'M5'): PanelDescriptor => ({
+      id, symbol: 'SP500', timeframe, linkGroupId: null,
+    });
+
+    beforeEach(() => {
+      store.overrideSelector(selectSeries, { M1: m1, M5: m5 });
+      store.overrideSelector(selectCurrentTime, 200);
+      store.overrideSelector(selectUtcOffset, 0);
+    });
+
+    it('does not emit before configurePanel is called', () => {
+      const emissions: unknown[] = [];
+      mapper.panelChartView$.subscribe((v) => emissions.push(v));
+      expect(emissions).toHaveLength(0);
+    });
+
+    it('derives candles and the at-or-before replay index for its own timeframe', () => {
+      mapper.configurePanel(panel('p1', 'M1'));
+      let view: PanelChartView | undefined;
+      mapper.panelChartView$.subscribe((v) => (view = v));
+      expect(view!.symbol).toBe('SP500');
+      expect(view!.timeframe).toBe('M1');
+      expect(view!.candles).toBe(m1);
+      expect(view!.idx).toBe(1); // last candle at-or-before t=200 is time=160
+      expect(view!.utcOffset).toBe(0);
+    });
+
+    it('yields empty candles and idx -1 for a timeframe with no loaded series', () => {
+      mapper.configurePanel({ id: 'p1', symbol: 'SP500', timeframe: 'H4', linkGroupId: null });
+      let view: PanelChartView | undefined;
+      mapper.panelChartView$.subscribe((v) => (view = v));
+      expect(view!.candles).toEqual([]);
+      expect(view!.idx).toBe(-1);
+    });
+
+    it('ISOLATION (Estado Esperado): a change in one panel state does not recompute the others', () => {
+      // two independent mapper instances sharing the same store (N panels => N memo slots)
+      const mapperA = TestBed.runInInjectionContext(() => new ChartModelMapper());
+      const mapperB = TestBed.runInInjectionContext(() => new ChartModelMapper());
+      mapperA.configurePanel(panel('a', 'M1'));
+      mapperB.configurePanel(panel('b', 'M5'));
+
+      type WithCompute = { computePanelView: (...args: unknown[]) => unknown };
+      const computeA = vi.spyOn(mapperA as unknown as WithCompute, 'computePanelView');
+      const computeB = vi.spyOn(mapperB as unknown as WithCompute, 'computePanelView');
+      let emissionsA = 0;
+      let emissionsB = 0;
+      mapperA.panelChartView$.subscribe(() => emissionsA++);
+      mapperB.panelChartView$.subscribe(() => emissionsB++);
+      expect(emissionsA).toBe(1);
+      expect(emissionsB).toBe(1);
+      const computedA = computeA.mock.calls.length;
+      const computedB = computeB.mock.calls.length;
+
+      // M1 gets a new candle array; the M5 array reference is unchanged
+      store.overrideSelector(selectSeries, { M1: [...m1, candle(280)], M5: m5 });
+      store.refreshState();
+
+      // panel A recomputed and re-emitted…
+      expect(computeA.mock.calls.length).toBe(computedA + 1);
+      expect(emissionsA).toBe(2);
+      // …panel B did NOT recompute its RenderModel nor re-emit
+      expect(computeB.mock.calls.length).toBe(computedB);
+      expect(emissionsB).toBe(1);
+    });
+
+    it('the global replay cursor recomputes every panel (single replay clock)', () => {
+      const mapperA = TestBed.runInInjectionContext(() => new ChartModelMapper());
+      mapperA.configurePanel(panel('a', 'M1'));
+      let idx = -99;
+      mapperA.panelChartView$.subscribe((v) => (idx = v.idx));
+      expect(idx).toBe(1);
+      store.overrideSelector(selectCurrentTime, 230);
+      store.refreshState();
+      expect(idx).toBe(2);
+    });
+  });
 });
