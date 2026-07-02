@@ -8,6 +8,7 @@ import {
   ViewChild,
   computed,
   inject,
+  output,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -56,6 +57,7 @@ import {
   Position,
 } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
+import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import {
   ChartConfig,
   TradeBoxItem as DomainTradeBoxItem,
@@ -351,6 +353,13 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   /** Live points/lots/R readout while dragging a trade level. */
   dragInfo = signal<string | null>(null);
 
+  /**
+   * RFC-008: exposes the engine's interaction event bus so the wrapping
+   * ChartPanelComponent can forward crosshair/range events to the ChartSyncBus.
+   * Additive only — the audited render path is unchanged.
+   */
+  readonly chartReady = output<ChartEventBus>();
+
   // --- right-click menu + interactive order placement ---
   /** Current price/risk context for placing orders from the chart. */
   private tradeCtx = this.store.selectSignal(selectTradePanelView);
@@ -572,6 +581,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.engine.events.on('CrosshairMoved', (p) => this.handleCrosshair(p)),
       this.engine.events.on('VisibleRangeChanged', (r) => this.maybeLoadMore(r)),
     );
+
+    this.chartReady.emit(this.engine.events);
 
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
