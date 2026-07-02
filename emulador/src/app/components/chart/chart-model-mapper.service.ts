@@ -7,7 +7,13 @@ import {
   selectChartView,
   selectSessionEnd,
   selectTradeChartView,
+  TradeBoxItem as StateTradeBoxItem,
+  TradeMarker as StateTradeMarker,
 } from '../../state/selectors';
+import {
+  PendingOrder as StatePendingOrder,
+  Position as StatePosition,
+} from '../../state/trading/trading.models';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import {
   CountdownModel,
@@ -126,18 +132,18 @@ export class ChartModelMapper {
     countdown: string | null;
   }> = this.store.select(selectChartView);
 
-  private mapPositions = this.memoizeMap((p: any) => ({
+  private mapPositions = this.memoizeMap((p: StatePosition) => ({
     id: p.id, side: p.side, entryPrice: p.entryPrice, sl: p.sl, tp: p.tp,
     lots: p.lots, openTime: p.openTime, origin: p.origin,
   }));
-  private mapOrders = this.memoizeMap((o: any) => ({
+  private mapOrders = this.memoizeMap((o: StatePendingOrder) => ({
     id: o.id, side: o.side, type: o.type, entryPrice: o.entryPrice,
     sl: o.sl, tp: o.tp, lots: o.lots,
   }));
-  private mapMarkers = this.memoizeMap((m: any) => ({
+  private mapMarkers = this.memoizeMap((m: StateTradeMarker) => ({
     time: m.time, position: m.position, shape: m.shape, color: m.color, text: m.text,
   }));
-  private mapBoxes = this.memoizeMap((b: any) => ({
+  private mapBoxes = this.memoizeMap((b: StateTradeBoxItem) => ({
     id: b.id, status: b.status, side: b.side, entry: b.entry, sl: b.sl, tp: b.tp,
     from: b.from, to: b.to, hidden: b.hidden,
   }));
@@ -235,7 +241,7 @@ export class ChartModelMapper {
     shift: number,
     times: number[],
     barSpacing: number,
-    color: string = '#7b7b7b',
+    color = '#7b7b7b',
   ): SessionModel {
     return { sessionEnd, shift, times, barSpacing, color };
   }
@@ -246,8 +252,8 @@ export class ChartModelMapper {
   buildCountdownModel(
     price: number | null,
     text: string | null,
-    backColor: string = '#363a45',
-    textColor: string = '#ffffff',
+    backColor = '#363a45',
+    textColor = '#ffffff',
   ): CountdownModel {
     return { price, text, backColor, textColor };
   }
