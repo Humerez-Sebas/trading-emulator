@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Component, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -46,6 +46,8 @@ describe('ChartPanelComponent', () => {
     store.overrideSelector(selectCurrentTime, 100);
     store.overrideSelector(selectUtcOffset, 0);
   });
+
+  afterEach(() => store.resetSelectors());
 
   function create(desc: PanelDescriptor = descriptor) {
     const fixture = TestBed.createComponent(ChartPanelComponent);

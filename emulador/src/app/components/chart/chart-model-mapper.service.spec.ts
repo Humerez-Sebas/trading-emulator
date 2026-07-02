@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper, PanelChartView } from './chart-model-mapper.service';
@@ -17,6 +17,8 @@ describe('ChartModelMapper', () => {
         mapper = TestBed.inject(ChartModelMapper);
         store = TestBed.inject(MockStore);
     });
+
+    afterEach(() => store.resetSelectors());
 
     describe('buildDrawingsModel', () => {
         it('returns a DrawingsModel with the exact fields provided', () => {
