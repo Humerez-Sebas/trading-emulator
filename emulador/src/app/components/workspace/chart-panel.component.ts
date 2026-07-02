@@ -72,6 +72,9 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
 export class ChartPanelComponent implements OnDestroy {
   readonly descriptor = input.required<PanelDescriptor>();
 
+  /** RFC-009 (D6): drives update-gating; the viewport derives it from selectVisiblePanelIds. */
+  readonly visible = input<boolean>(true);
+
   private readonly mapper = inject(ChartModelMapper);
   private readonly syncBus = inject(ChartSyncBus);
   private busUnsubs: Unsubscribe[] = [];

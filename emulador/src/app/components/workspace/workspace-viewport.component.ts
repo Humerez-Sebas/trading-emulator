@@ -3,8 +3,8 @@ import { Store } from '@ngrx/store';
 import { ChartPanelComponent } from './chart-panel.component';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { LayoutActions } from '../../state/layout/layout.actions';
-import { layoutFeature, selectActiveTab } from '../../state/layout/layout.reducer';
-import { GridCell, PanelDescriptor } from '../../state/layout/layout.models';
+import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
+import { PanelDescriptor } from '../../state/layout/layout.models';
 
 /**
  * RFC-008: tab bar + single-level grid host. Projects `WorkspaceLayout.tabs`,
@@ -35,8 +35,8 @@ import { GridCell, PanelDescriptor } from '../../state/layout/layout.models';
         </button>
       }
     </div>
-    @if (activeTab(); as tab) {
-      <div class="grid" [attr.data-template]="tab.template">
+    @for (tab of workspace().tabs; track tab.id) {
+      <div class="grid" [attr.data-template]="tab.template" [hidden]="tab.id !== workspace().activeTabId">
         @for (cell of tab.cells; track $index; let ci = $index) {
           <div class="cell">
             @if (cell.panelIds.length > 1) {
@@ -54,9 +54,17 @@ import { GridCell, PanelDescriptor } from '../../state/layout/layout.models';
                 }
               </div>
             }
-            @if (activeDescriptor(cell); as d) {
-              <app-chart-panel class="cell-panel" [descriptor]="d" />
-            } @else {
+            @for (pid of cell.panelIds; track pid) {
+              @if (descriptorOf(pid); as d) {
+                <app-chart-panel
+                  class="cell-panel"
+                  [descriptor]="d"
+                  [visible]="visibleIds()[pid] === true"
+                  [hidden]="pid !== cell.activePanelId"
+                />
+              }
+            }
+            @if (cell.panelIds.length === 0) {
               <div class="cell-empty">Sin panel</div>
             }
           </div>
@@ -177,7 +185,7 @@ export class WorkspaceViewportComponent implements OnDestroy {
 
   readonly workspace = this.store.selectSignal(layoutFeature.selectWorkspace);
   readonly panels = this.store.selectSignal(layoutFeature.selectPanels);
-  readonly activeTab = this.store.selectSignal(selectActiveTab);
+  readonly visibleIds = this.store.selectSignal(selectVisiblePanelIds);
 
   selectTab(tabId: string): void {
     this.store.dispatch(LayoutActions.setActiveTab({ tabId }));
@@ -187,8 +195,8 @@ export class WorkspaceViewportComponent implements OnDestroy {
     this.store.dispatch(LayoutActions.setActivePanel({ tabId, cellIndex, panelId }));
   }
 
-  activeDescriptor(cell: GridCell): PanelDescriptor | null {
-    return cell.activePanelId ? (this.panels()[cell.activePanelId] ?? null) : null;
+  descriptorOf(panelId: string): PanelDescriptor | null {
+    return this.panels()[panelId] ?? null;
   }
 
   panelLabel(panelId: string): string {

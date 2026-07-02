@@ -191,3 +191,22 @@ export const selectActiveTab = createSelector(
   layoutFeature.selectWorkspace,
   (ws) => ws.tabs.find((t) => t.id === ws.activeTabId) ?? null,
 );
+
+/**
+ * RFC-009 (D6): derived visibility — a panel is visible iff its tab is active
+ * and it is its cell's activePanelId. One selector for ALL panels (single memo
+ * slot, non-parametrized): consumers check their own id in the map. Never a
+ * per-panel factory selector (D8 discipline).
+ */
+export const selectVisiblePanelIds = createSelector(
+  layoutFeature.selectWorkspace,
+  (ws): Record<string, true> => {
+    const active = ws.tabs.find((t) => t.id === ws.activeTabId);
+    if (!active) return {};
+    const visible: Record<string, true> = {};
+    for (const cell of active.cells) {
+      if (cell.activePanelId) visible[cell.activePanelId] = true;
+    }
+    return visible;
+  },
+);

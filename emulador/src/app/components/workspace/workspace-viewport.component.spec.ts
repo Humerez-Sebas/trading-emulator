@@ -12,6 +12,7 @@ import { LayoutState, PanelDescriptor } from '../../state/layout/layout.models';
 @Component({ selector: 'app-chart-panel', standalone: true, template: '' })
 class ChartPanelStubComponent {
   readonly descriptor = input.required<PanelDescriptor>();
+  readonly visible = input<boolean>(true);
 }
 
 const desc = (id: string, timeframe: 'M1' | 'M5' | 'M15' = 'M1'): PanelDescriptor => ({
@@ -43,6 +44,10 @@ const layoutState: LayoutState = {
   panels: { p1: desc('p1'), p2: desc('p2', 'M5'), p3: desc('p3', 'M15') },
 };
 
+/** Same layout, but the stacked cell's active panel flips from p2 to p3. */
+const switchedActivePanelState: LayoutState = structuredClone(layoutState);
+switchedActivePanelState.workspace.tabs[0].cells[1].activePanelId = 'p3';
+
 describe('WorkspaceViewportComponent', () => {
   let store: MockStore;
 
@@ -73,16 +78,19 @@ describe('WorkspaceViewportComponent', () => {
     expect(tabs[1].classList.contains('active')).toBe(false);
   });
 
-  it('projects the active tab: one panel per populated cell, placeholders for empty cells', () => {
+  it('projects the active tab: every panel of populated cells renders (keep-alive), placeholders for empty cells', () => {
     const fixture = create();
     const panels = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent));
-    // 3 panels exist but only the ACTIVE panel of each populated cell renders
-    expect(panels).toHaveLength(2);
+    // all 3 panels are kept alive in the DOM; only the active panel of each cell is shown
+    expect(panels).toHaveLength(3);
     expect(panels[0].componentInstance.descriptor().id).toBe('p1');
     expect(panels[1].componentInstance.descriptor().id).toBe('p2');
-    expect(fixture.nativeElement.querySelectorAll('.cell')).toHaveLength(4);
-    expect(fixture.nativeElement.querySelectorAll('.cell-empty')).toHaveLength(2);
-    const grid = fixture.nativeElement.querySelector('.grid');
+    expect(panels[2].componentInstance.descriptor().id).toBe('p3');
+    const nonHidden = panels.filter((p) => !(p.nativeElement as HTMLElement).hidden);
+    expect(nonHidden).toHaveLength(2);
+    const grid = fixture.nativeElement.querySelector('.grid:not([hidden])');
+    expect(grid.querySelectorAll('.cell')).toHaveLength(4);
+    expect(grid.querySelectorAll('.cell-empty')).toHaveLength(2);
     expect(grid.getAttribute('data-template')).toBe('2x2');
   });
 
@@ -111,5 +119,22 @@ describe('WorkspaceViewportComponent', () => {
     expect(dispatch).toHaveBeenCalledWith(
       LayoutActions.setActivePanel({ tabId: 'tab-a', cellIndex: 1, panelId: 'p3' }),
     );
+  });
+
+  it('keep-alive: renders ALL panels of ALL tabs, hiding non-visible ones instead of destroying', () => {
+    const fixture = create();
+    const panels = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent));
+    expect(panels).toHaveLength(3); // p1, p2 AND stacked p3 are all alive in the DOM
+    const hiddenStates = panels.map((p) => (p.nativeElement as HTMLElement).hidden);
+    expect(hiddenStates.filter((h) => !h)).toHaveLength(2); // only active-of-cell panels shown
+  });
+
+  it('switching the stacked cell tab flips [hidden] without recreating the component', () => {
+    const fixture = create();
+    const before = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2].componentInstance;
+    store.setState({ layout: switchedActivePanelState }); // same layout, cell 1 activePanelId -> 'p3'
+    fixture.detectChanges();
+    const after = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2].componentInstance;
+    expect(after).toBe(before); // identity preserved: keep-alive, not re-creation
   });
 });

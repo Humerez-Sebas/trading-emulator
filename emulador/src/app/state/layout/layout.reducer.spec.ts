@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { LayoutActions } from './layout.actions';
-import { layoutFeature, selectActiveTab } from './layout.reducer';
+import { layoutFeature, selectActiveTab, selectVisiblePanelIds } from './layout.reducer';
 import {
   createInitialLayoutState,
   GridCell,
@@ -240,6 +240,25 @@ describe('layoutFeature reducer', () => {
       assertLayoutConsistent(s); // tab-2's panels (p-ctx, p-3) fully deregistered
       expect(s.panels['p-ctx']).toBeUndefined();
       expect(s.panels['p-3']).toBeUndefined();
+    });
+  });
+
+  describe('selectVisiblePanelIds (RFC-009 D6, derived — not stored)', () => {
+    it('marks visible exactly the active panel of each cell of the active tab', () => {
+      let s = reducer(createInitialLayoutState(), LayoutActions.createTab({ id: 'tab-2', name: 'B' }));
+      s = reducer(s, LayoutActions.addPanel({ tabId: 'tab-2', cellIndex: 0, descriptor: descriptor('p-b') }));
+      // active tab is tab-2 after createTab
+      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-b': true });
+      s = reducer(s, LayoutActions.setActiveTab({ tabId: 'tab-main' }));
+      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'panel-1': true, 'panel-2': true });
+    });
+
+    it('stacked cell: only the activePanelId of the cell is visible', () => {
+      const s = reducer(
+        createInitialLayoutState(),
+        LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 0, descriptor: descriptor('p-3') }),
+      );
+      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-3': true, 'panel-2': true });
     });
   });
 });
