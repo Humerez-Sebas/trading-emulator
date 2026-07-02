@@ -1,0 +1,21 @@
+# Folders and files agents should not scan (build output, caches, local tooling state)
+.git/
+node_modules/
+dist/
+.angular/
+coverage/
+.agents/
+.impeccable/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+.venv/
+venv/
+datos/
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example

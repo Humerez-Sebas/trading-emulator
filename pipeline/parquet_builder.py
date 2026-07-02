@@ -163,10 +163,10 @@ def harvest_to_parquet(
     """
     import sys as _sys
 
-    # mt5_common vive en la raiz del proyecto (un nivel por encima de pipeline/).
-    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if _root not in _sys.path:
-        _sys.path.insert(0, _root)
+    # mt5_common vive junto a este modulo en pipeline/.
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    if _dir not in _sys.path:
+        _sys.path.insert(0, _dir)
 
     from mt5_common import TIMEFRAMES, conectar, copiar_rango_troceado  # noqa: PLC0415
 
