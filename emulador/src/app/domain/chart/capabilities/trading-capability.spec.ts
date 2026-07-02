@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TradingCapability } from './trading-capability';
+import type { TradingCapability as TradingCapabilityType } from './trading-capability';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { ChartEventBus } from '../chart-event-bus';
 import type { ChartColors, Position, PendingOrder, TradeMarker, RenderModel } from '../render-model';
@@ -8,15 +8,38 @@ import type { ChartColors, Position, PendingOrder, TradeMarker, RenderModel } fr
 // `createSeriesMarkers(series, [])` call (trading-capability.ts:10,53). ESM
 // namespace exports from the real `lightweight-charts` package are
 // non-configurable (`vi.spyOn` throws "Module namespace is not
-// configurable"), so the export is replaced via `vi.mock`. The factory stays
-// fully synchronous (no `importOriginal`/dynamic import) because the async
-// form proved unreliable once this spec ran bundled alongside the full
-// 57-file suite (`ReferenceError: Cannot access '__vi_import_N__' before
-// initialization`); `LineStyle` is redeclared here as the same numeric enum
-// lightweight-charts ships, since trading-capability.ts uses it only as a
-// plain value (line style ids passed straight through to createPriceLine).
-const setMarkers = vi.fn();
-const detachMarkers = vi.fn();
+// configurable"), so the export is replaced via `vi.mock`. `LineStyle` is
+// redeclared here as the same numeric enum lightweight-charts ships, since
+// trading-capability.ts uses it only as a plain value (line style ids passed
+// straight through to createPriceLine).
+//
+// Two things together make the mock deterministic under the Angular unit-test
+// builder's `isolate: false` pool (see the `beforeEach` for the load-bearing
+// half):
+//   1. The mock fns and the `createSeriesMarkers` stub are built inside
+//      `vi.hoisted`, so they are fully initialized before the (hoisted)
+//      `vi.mock` factory runs — the factory never closes over a `const` that
+//      is still in its temporal dead zone.
+//   2. The SUT is imported inside `beforeEach`, NOT at module scope, so
+//      trading-capability.ts is evaluated after vitest's optimizeDeps step has
+//      settled. Importing it at file-load time raced that step under a cold
+//      `node_modules/.vite` cache: the pre-bundled REAL `lightweight-charts`
+//      occasionally won over this mock, so the real `createSeriesMarkers`
+//      attached its own primitive (`attachPrimitive` 3x instead of 2x) and
+//      returned a real plugin (`setMarkers` 0x instead of 1x).
+const { setMarkers, detachMarkers, seriesMarkersFactory } = vi.hoisted(() => {
+    const setMarkers = vi.fn();
+    const detachMarkers = vi.fn();
+    return {
+        setMarkers,
+        detachMarkers,
+        seriesMarkersFactory: vi.fn(() => ({
+            setMarkers,
+            detach: detachMarkers,
+            markers: vi.fn().mockReturnValue([]),
+        })),
+    };
+});
 vi.mock('lightweight-charts', () => ({
     LineStyle: {
         Solid: 0,
@@ -25,11 +48,7 @@ vi.mock('lightweight-charts', () => ({
         LargeDashed: 3,
         SparseDotted: 4,
     },
-    createSeriesMarkers: vi.fn(() => ({
-        setMarkers,
-        detach: detachMarkers,
-        markers: vi.fn().mockReturnValue([]),
-    })),
+    createSeriesMarkers: seriesMarkersFactory,
 }));
 
 function mockSeries(): ISeriesApi<'Candlestick'> {
@@ -119,11 +138,24 @@ function tradingModel(overrides: Partial<RenderModel['trading']> = {}): Partial<
 }
 
 describe('TradingCapability', () => {
-    let cap: TradingCapability;
+    let TradingCapability: typeof TradingCapabilityType;
+    let cap: TradingCapabilityType;
     let series: ISeriesApi<'Candlestick'>;
     let bus: ChartEventBus;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        // Import the SUT HERE rather than at module scope. `lightweight-charts`
+        // is a pre-bundled ("optimized") dep; evaluating trading-capability.ts
+        // at file-load time races vitest's optimizeDeps step under a cold
+        // `node_modules/.vite` cache (the CI condition), and the pre-bundled
+        // real module occasionally wins over the vi.mock — the real
+        // `createSeriesMarkers` then attaches its own primitive (3 attaches
+        // instead of 2) and returns a real plugin (0 setMarkers instead of 1).
+        // Resetting the registry and importing after optimization has settled
+        // makes the mock deterministically apply on every run.
+        vi.resetModules();
+        ({ TradingCapability } = await import('./trading-capability'));
+        seriesMarkersFactory.mockClear();
         setMarkers.mockClear();
         detachMarkers.mockClear();
         series = mockSeries();
