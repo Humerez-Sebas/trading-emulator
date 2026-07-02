@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { ChartComponent } from '../../components/chart/chart.component';
+import { ChartModelMapper } from '../../components/chart/chart-model-mapper.service';
 import { ControlsComponent } from '../../components/controls/controls.component';
 import { DrawingToolbarComponent } from '../../components/drawing-toolbar/drawing-toolbar.component';
 import { SideDockComponent } from '../../components/side-dock/side-dock.component';
@@ -16,6 +17,7 @@ import { settingsFeature } from '../../state/settings/settings.reducer';
 @Component({
   selector: 'app-emulador-page',
   standalone: true,
+  providers: [ChartModelMapper],
   imports: [
     ChartComponent,
     ControlsComponent,

@@ -95,6 +95,7 @@ export class ChartPanelComponent implements OnDestroy {
 
   constructor() {
     effect(() => this.mapper.configurePanel(this.descriptor()));
+    effect(() => this.mapper.setUpdatesEnabled(this.visible()));
   }
 
   /** Wires the wrapped chart's engine bus into the session ChartSyncBus. */
