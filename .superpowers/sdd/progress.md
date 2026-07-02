@@ -13,6 +13,7 @@ Task 2 (ChartSyncBus skeleton): complete (commit b7a0f80, verified 2026-07-01: 8
   - Low findings (informational, reviewed as sound): (1) necessary `as PanelSyncEvent` cast in emit(), mirrors audited chart-event-bus pattern; (2) emit-after-destroy is a silent no-op (standard Subject semantics, relied on by Task 4 spec).
 Task 3 (ChartModelMapper D8 panel derivation): complete (commit 69759c2, verified 2026-07-01: 813 tests green incl. isolation test, tsc app+spec clean; Opus review PASS, zero findings)
   - Note for future reviewers: run specs via `ng test` / `npm test` (Angular builder wires TestBed init); bare `npx vitest run` fails by design.
-Task 4 (ChartPanelComponent + chartReady output): incomplete
+Task 4 (ChartPanelComponent + chartReady output): complete (commit 8b91017, verified 2026-07-01: 818 tests green x2 independent runs, tsc app+spec clean; Opus review PASS, 0 High/Critical; audited chart.component.ts diff = exactly the 4 sanctioned additive hunks)
+  - Low finding (out of scope, investigated): reviewer's suite run once showed selectors.spec.ts `selectFloatingPnl > prices off the replay-series candle` failing (817/818); two subsequent orchestrator runs were 818/818 green and the test is deterministic — most likely interference from two concurrent `ng test` processes sharing the .angular cache. Not an RFC-008 regression; watch during final audit.
 Task 5 (WorkspaceViewport host): incomplete
 Final audit: incomplete
