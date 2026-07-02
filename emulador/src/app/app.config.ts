@@ -13,6 +13,7 @@ import { drawingsFeature } from './state/drawings/drawings.reducer';
 import { workspacesFeature } from './state/workspaces/workspaces.reducer';
 import { tradingFeature } from './state/trading/trading.reducer';
 import { authFeature } from './state/auth/auth.reducer';
+import { layoutFeature } from './state/layout/layout.reducer';
 import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
@@ -35,6 +36,7 @@ export const appConfig: ApplicationConfig = {
       [workspacesFeature.name]: workspacesFeature.reducer,
       [tradingFeature.name]: tradingFeature.reducer,
       [authFeature.name]: authFeature.reducer,
+      [layoutFeature.name]: layoutFeature.reducer,
     }),
     provideEffects(
       MarketEffects,
