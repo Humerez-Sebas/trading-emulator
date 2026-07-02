@@ -10,7 +10,8 @@ import type {
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { Drawing } from '../render-model';
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-import { timeForX, xForTime } from '../../../components/chart/time-coordinates';
+import { timeForX, xForTime } from '../time-coordinates';
+import { hexToRgba } from '../color-utils';
 
 /** On-screen drawing (media/CSS px coordinates already resolved). */
 interface ScreenShape {
@@ -71,7 +72,7 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
         ctx.strokeStyle = this.colors.accent;
 
         if (s.kind === 'rect') {
-          ctx.fillStyle = this.hexToRgba(this.colors.accent, 0.16);
+          ctx.fillStyle = hexToRgba(this.colors.accent, 0.16);
           ctx.beginPath();
           ctx.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
           ctx.fill();
@@ -172,7 +173,7 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
     const ly = y2 - h / 2;
     if (lx + w > ctx.canvas.width) lx = x2 - w - 8 * hr;
 
-    ctx.fillStyle = this.hexToRgba(this.colors.accent, 0.9);
+    ctx.fillStyle = hexToRgba(this.colors.accent, 0.9);
     ctx.beginPath();
     ctx.rect(lx, ly, w, h);
     ctx.fill();
@@ -182,13 +183,7 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
     ctx.restore();
   }
 
-  private hexToRgba(hex: string, alpha: number): string {
-    const v = hex.replace('#', '');
-    const r = parseInt(v.slice(0, 2), 16);
-    const g = parseInt(v.slice(2, 4), 16);
-    const b = parseInt(v.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
+
 }
 
 class DrawingsPaneView implements IPrimitivePaneView {

@@ -26,6 +26,15 @@ Para asegurar que el proyecto mantenga fluidez, rendimiento y facilidad de mante
 | **5** | [RFC 005](./rfcs/005-drawings-capability.md) | `feature/rfc-005-drawings-capability` | Aislar dibujos geométricos en `DrawingsCapability`. |
 | **6** | [RFC 006](./rfcs/006-auxiliary-capabilities.md) | `feature/rfc-006-auxiliary-capabilities` | Migrar features secundarias (Countdown, Sesiones) a capacidades independientes. |
 | **7** | [RFC 007](./rfcs/007-domain-separation-enforcement.md) | `feature/rfc-007-domain-separation` | Garantizar separación de Market Data y Workspace Domains sin leaks en los DTOs. |
+| **8** | [RFC 008](./rfcs/008-panel-system-and-layout-foundation.md) | `feature/rfc-008-panel-system` | Host de pestañas + grid de un solo nivel para N paneles; esqueleto de `ChartSyncBus` y `ChartModelMapper` local por panel. |
+| **9** | [RFC 009](./rfcs/009-multichart-manager-and-lifecycle.md) | `feature/rfc-009-multichart-manager` | Creación/cierre dinámico de paneles; `PanelRegistry`/`ChartRegistry`; keep-alive con update-gating. |
+| **10** | [RFC 010](./rfcs/010-synchronization.md) | `feature/rfc-010-synchronization` | Grupos de enlace; sync de crosshair y rango de tiempo; fan-out del reloj de replay unificado. |
+| **11** | [RFC 011](./rfcs/011-workspace-layout-persistence.md) | `feature/rfc-011-layout-persistence` | `SessionPayloadV2` (layout, linkGroups, dibujos por símbolo) con migración V1 -> V2. |
+| **12** | [RFC 012](./rfcs/012-performance.md) | `feature/rfc-012-performance` | Formalización del cache de velas compartido, render update-gated, creación lazy de charts. |
+
+Las fases 8 a 12 se rigen por el documento indice
+[RFC 008-012: Multi-Chart & Panel System Vision](./rfcs/008-012-multi-chart-panel-system-vision.md),
+que funciona como resumen ejecutivo y mapa de decisiones arquitectónicas congeladas del bloque.
 
 Cada una de estas fases cuenta con su respectivo Implementation Plan en `docs/superpowers/plans/`.
 Cualquier agente inteligente puede (y debe) ejecutar cada plan de manera secuencial, haciendo un Pull Request a la rama respectiva.

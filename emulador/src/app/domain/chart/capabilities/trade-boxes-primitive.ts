@@ -10,7 +10,8 @@ import type {
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import { TradeBoxItem } from '../render-model';
-import { TimeAnchor, xForTime } from '../../../components/chart/time-coordinates';
+import { TimeAnchor, xForTime } from '../time-coordinates';
+import { hexToRgba } from '../color-utils';
 
 /** Vertical hit tolerance (px) for grabbing a box edge (SL/TP). */
 const EDGE_GRAB_PX = 4;
@@ -54,13 +55,7 @@ const FILL_SCALE: Record<TradeBoxItem['status'], number> = {
 const DEFAULT_FILL_ALPHA = 0.12;
 const DEFAULT_BORDER_ALPHA = 0.6;
 
-function hexToRgba(hex: string, alpha: number): string {
-  const v = hex.replace('#', '');
-  const r = parseInt(v.slice(0, 2), 16);
-  const g = parseInt(v.slice(2, 4), 16);
-  const b = parseInt(v.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
+
 
 class TradeBoxesRenderer implements IPrimitivePaneRenderer {
   constructor(
@@ -122,7 +117,7 @@ class TradeBoxesPaneView implements IPrimitivePaneView {
   constructor(private owner: TradeBoxesPrimitive) {}
 
   update(): void {
-    this.boxes = this.owner.computeScreenBoxes();
+    this.boxes = this.owner.cachedBoxes;
   }
 
   zOrder(): PrimitivePaneViewZOrder {
@@ -152,6 +147,9 @@ export class TradeBoxesPrimitive implements ISeriesPrimitive<Time> {
   series: ISeriesApi<'Candlestick'> | null = null;
   source: TradeBoxesSource | null = null;
 
+  /** Screen boxes computed once per render frame (C-04 cache). */
+  cachedBoxes: ScreenBox[] = [];
+
   private view = new TradeBoxesPaneView(this);
   private requestUpdate: (() => void) | null = null;
 
@@ -173,6 +171,7 @@ export class TradeBoxesPrimitive implements ISeriesPrimitive<Time> {
   }
 
   updateAllViews(): void {
+    this.cachedBoxes = this.computeScreenBoxes();
     this.view.update();
   }
 
@@ -190,7 +189,7 @@ export class TradeBoxesPrimitive implements ISeriesPrimitive<Time> {
    * cursor — a trade opened inside the current coarse bar lives there and was
    * being dropped on M15/M30/H1/…).
    */
-  computeScreenBoxes(): ScreenBox[] {
+  private computeScreenBoxes(): ScreenBox[] {
     const { chart, series, source } = this;
     if (!chart || !series || !source) return [];
     const paneWidth = chart.timeScale().width();
@@ -231,7 +230,7 @@ export class TradeBoxesPrimitive implements ISeriesPrimitive<Time> {
     x: number,
     y: number,
   ): { id: string; status: 'open' | 'pending'; field: 'sl' | 'tp' } | null {
-    for (const b of this.computeScreenBoxes()) {
+    for (const b of this.cachedBoxes) {
       if (b.status === 'closed') continue;
       if (x < b.x1 || x > b.x2) continue;
       if (b.yTp !== null && Math.abs(y - b.yTp) <= EDGE_GRAB_PX) {
@@ -246,7 +245,7 @@ export class TradeBoxesPrimitive implements ISeriesPrimitive<Time> {
 
   /** Hit-test (CSS px) of a CLOSED box body, for the context menu. */
   hitTestBox(x: number, y: number): { id: string } | null {
-    const boxes = this.computeScreenBoxes();
+    const boxes = this.cachedBoxes;
     // walk from the top (last drawn) downwards
     for (let i = boxes.length - 1; i >= 0; i--) {
       const b = boxes[i];

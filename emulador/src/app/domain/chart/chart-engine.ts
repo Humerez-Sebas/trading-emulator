@@ -2,6 +2,7 @@ import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData,
 import { RenderModel } from './render-model';
 import { ChartEventBus } from './chart-event-bus';
 import { Capability } from './capability';
+import { hexToRgba } from './color-utils';
 
 export class ChartEngine {
   // TODO: Eliminar esta exposición directa en RFC-004/RFC-005 una vez que DrawingsCapability y TradingCapability estén implementados.
@@ -61,7 +62,7 @@ export class ChartEngine {
     // 1. Update config
     if (model.config) {
       const c = model.config.colors;
-      const gridColor = this.hexToRgba(c.grid, model.config.gridOpacity);
+      const gridColor = hexToRgba(c.grid, model.config.gridOpacity);
       const gridLine = { color: gridColor, visible: model.config.gridVisible };
 
       this.chart.applyOptions({
@@ -105,13 +106,7 @@ export class ChartEngine {
     this.mainSeries.priceScale().applyOptions({ autoScale: true });
   }
 
-  private hexToRgba(hex: string, alpha: number): string {
-    const v = hex.replace('#', '');
-    const r = parseInt(v.slice(0, 2), 16);
-    const g = parseInt(v.slice(2, 4), 16);
-    const b = parseInt(v.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
+
   
   public destroy(): void {
     this.capabilities.forEach((cap) => cap.destroy());

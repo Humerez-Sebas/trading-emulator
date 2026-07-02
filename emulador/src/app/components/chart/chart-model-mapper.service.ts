@@ -36,11 +36,70 @@ import {
  * signals, and delegates model construction to the builder methods before
  * forwarding the DTOs to `ChartEngine.render()`.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class ChartModelMapper {
   private readonly store = inject(Store);
 
+  /** 
+   * Memoizes array transformations to preserve reference equality across emissions
+   * if the input array reference hasn't changed.
+   */
+  private memoizeMap<T, R>(mapFn: (item: T) => R): (items: T[]) => R[] {
+    let lastInput: T[] | null = null;
+    let lastOutput: R[] | null = null;
+    return (items: T[]) => {
+      if (items === lastInput) return lastOutput!;
+      lastInput = items;
+      lastOutput = items.map(mapFn);
+      return lastOutput;
+    };
+  }
+
+  /**
+   * Memoizes a single-object transformation to preserve reference equality
+   * across emissions if the input object reference hasn't changed.
+   */
+  private memoizeObject<I, O>(mapFn: (input: I) => O): (input: I) => O {
+    let lastInput: I | null = null;
+    let lastOutput: O | null = null;
+    return (input: I) => {
+      if (input === lastInput) return lastOutput!;
+      lastInput = input;
+      lastOutput = mapFn(input);
+      return lastOutput;
+    };
+  }
+
   // ───────── selector observables ─────────
+
+  /**
+   * Normalizes the state-owned `ChartColors` into the domain-owned shape.
+   * Memoized on the `style.colors` reference so unrelated `chartStyle$`
+   * emissions (e.g. `gridOpacity` changes) don't allocate a new object —
+   * `TradingCapability.render()` short-circuits on `colors` referential
+   * identity, and a fresh object here would defeat that and force a full
+   * price-line rebuild on every style emission.
+   */
+  private mapColors = this.memoizeObject((colors: ChartColors) => ({
+    upColor: colors.upColor,
+    downColor: colors.downColor,
+    wickUp: colors.wickUp,
+    wickDown: colors.wickDown,
+    borderUpColor: colors.borderUpColor,
+    borderDownColor: colors.borderDownColor,
+    background: colors.background,
+    grid: colors.grid,
+    text: colors.text,
+    crosshair: colors.crosshair,
+    tpZone: colors.tpZone,
+    slZone: colors.slZone,
+  }));
+
+  /** Same reference-stability guarantee as `mapColors`, for trade-box opacity. */
+  private mapTradeBoxOpacity = this.memoizeObject((opacity: TradeBoxOpacity) => ({
+    fill: opacity.fill,
+    border: opacity.border,
+  }));
 
   /** Chart styling data: colors, grid visibility/opacity, trade-box opacity. */
   readonly chartStyle$: Observable<{
@@ -50,10 +109,10 @@ export class ChartModelMapper {
     tradeBoxOpacity: TradeBoxOpacity;
   }> = this.store.select(selectChartStyle).pipe(
     map(style => ({
-      colors: style.colors as ChartColors,
+      colors: this.mapColors(style.colors),
       gridVisible: style.gridVisible,
       gridOpacity: style.gridOpacity,
-      tradeBoxOpacity: style.tradeBoxOpacity as TradeBoxOpacity,
+      tradeBoxOpacity: this.mapTradeBoxOpacity(style.tradeBoxOpacity),
     }))
   );
 
@@ -67,6 +126,22 @@ export class ChartModelMapper {
     countdown: string | null;
   }> = this.store.select(selectChartView);
 
+  private mapPositions = this.memoizeMap((p: any) => ({
+    id: p.id, side: p.side, entryPrice: p.entryPrice, sl: p.sl, tp: p.tp,
+    lots: p.lots, openTime: p.openTime, origin: p.origin,
+  }));
+  private mapOrders = this.memoizeMap((o: any) => ({
+    id: o.id, side: o.side, type: o.type, entryPrice: o.entryPrice,
+    sl: o.sl, tp: o.tp, lots: o.lots,
+  }));
+  private mapMarkers = this.memoizeMap((m: any) => ({
+    time: m.time, position: m.position, shape: m.shape, color: m.color, text: m.text,
+  }));
+  private mapBoxes = this.memoizeMap((b: any) => ({
+    id: b.id, status: b.status, side: b.side, entry: b.entry, sl: b.sl, tp: b.tp,
+    from: b.from, to: b.to, hidden: b.hidden,
+  }));
+
   /** Trade overlay: open positions, pending orders, markers, boxes. */
   readonly tradeChartView$: Observable<{
     positions: Position[];
@@ -75,10 +150,10 @@ export class ChartModelMapper {
     boxes: TradeBoxItem[];
   }> = this.store.select(selectTradeChartView).pipe(
     map(data => ({
-      positions: data.positions as unknown as Position[],
-      orders: data.orders as unknown as PendingOrder[],
-      markers: data.markers as unknown as TradeMarker[],
-      boxes: data.boxes as unknown as TradeBoxItem[],
+      positions: this.mapPositions(data.positions) as Position[],
+      orders: this.mapOrders(data.orders) as PendingOrder[],
+      markers: this.mapMarkers(data.markers) as TradeMarker[],
+      boxes: this.mapBoxes(data.boxes) as TradeBoxItem[],
     }))
   );
 

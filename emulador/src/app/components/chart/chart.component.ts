@@ -29,8 +29,6 @@ import {
   selectActiveTfShortfall,
   selectDataRange,
   selectTradePanelView,
-  TradeBoxItem,
-  TradeMarker,
 } from '../../state/selectors';
 import { ChartModelMapper } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -58,7 +56,13 @@ import {
   Position,
 } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { ChartConfig } from '../../domain/chart/render-model';
+import {
+  ChartConfig,
+  TradeBoxItem as DomainTradeBoxItem,
+  TradeMarker as DomainTradeMarker,
+  Position as DomainPosition,
+  PendingOrder as DomainPendingOrder,
+} from '../../domain/chart/render-model';
 
 /** Vertical hit tolerance (px) for grabbing a trade price line. */
 const LINE_GRAB_PX = 4;
@@ -96,6 +100,7 @@ interface PlacingState {
 @Component({
   selector: 'app-chart',
   standalone: true,
+  providers: [ChartModelMapper],
   template: `
     <div #container class="chart-container"></div>
     @if (menu(); as m) {
@@ -323,16 +328,18 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private engine?: ChartEngine;
   /** RFC-002: unsubscribe fns for the engine event-bus listeners. */
   private busUnsubs: Array<() => void> = [];
+  /** Guards post-destroy access from global handlers (mouseup, keydown). */
+  private destroyed = false;
   private lastConfig?: ChartConfig;
   private get drawingsCap(): DrawingsCapability {
     return this.engine!.getCapability('drawings') as DrawingsCapability;
   }
 
   // --- trade overlay state ---
-  private tradeMarkers: TradeMarker[] = [];
-  private tradeBoxes: TradeBoxItem[] = [];
+  private tradeMarkers: DomainTradeMarker[] = [];
+  private tradeBoxes: DomainTradeBoxItem[] = [];
 
-  private lastTradeView: { positions: Position[]; orders: PendingOrder[] } = {
+  private lastTradeView: { positions: DomainPosition[]; orders: DomainPendingOrder[] } = {
     positions: [],
     orders: [],
   };
@@ -454,6 +461,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // DOM listeners kept by reference so they can be removed
   private onKeyDown = (e: KeyboardEvent) => {
+    if (this.destroyed) return;
     if (e.key === 'Shift') this.shiftKey = true;
     if (e.key === 'Delete' && this.selectedId()) {
       this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected()));
@@ -471,10 +479,14 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     }
   };
   private onKeyUp = (e: KeyboardEvent) => {
+    if (this.destroyed) return;
     if (e.key === 'Shift') this.shiftKey = false;
   };
   private onMouseDown = (e: MouseEvent) => this.handleMouseDown(e);
+  /** Handles both drag movement (when a drag is active) and hover feedback. */
   private onMouseMoveDom = (e: MouseEvent) => this.handleDragMove(e);
+  /** Hover-only feedback (cursor changes); registered on the container. */
+  private onHoverFeedback = (e: MouseEvent) => this.handleHoverFeedback(e);
   private onMouseUp = () => this.endDrag();
   /** Middle-button auxclick: block paste-on-middle-click in some browsers. */
   private onAuxClick = (e: MouseEvent) => {
@@ -543,12 +555,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.mapper.tradeChartView$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ positions, orders, markers, boxes }) => {
-        this.lastTradeView = {
-          positions: positions as unknown as Position[],
-          orders: orders as unknown as PendingOrder[],
-        };
-        this.tradeMarkers = markers as unknown as TradeMarker[];
-        this.tradeBoxes = boxes as unknown as TradeBoxItem[];
+        this.lastTradeView = { positions, orders };
+        this.tradeMarkers = markers;
+        this.tradeBoxes = boxes;
         this.pushTrading();
       });
 
@@ -568,7 +577,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     window.addEventListener('keyup', this.onKeyUp);
     const el = this.container.nativeElement;
     el.addEventListener('mousedown', this.onMouseDown);
-    el.addEventListener('mousemove', this.onMouseMoveDom);
+    el.addEventListener('mousemove', this.onHoverFeedback);
     el.addEventListener('contextmenu', this.onContextMenu);
     el.addEventListener('auxclick', this.onAuxClick);
     window.addEventListener('mouseup', this.onMouseUp);
@@ -593,7 +602,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     gridOpacity: number,
     boxOpacity: TradeBoxOpacity,
   ): void {
-    this.accent = '#2962FF';
+    this.accent = CHART_ACCENT;
     this.up = c.upColor;
     this.down = c.downColor;
     this.tpZone = c.tpZone;
@@ -661,9 +670,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.renderedIdx++;
       const c = candles[this.renderedIdx];
       this.series.update({ ...c, time: (c.time + shift) as UTCTimestamp });
-      // A forming bucket may already have recorded this time (applyForming); keep
-      // renderedTimes free of duplicates so overlay coordinate lookups stay correct.
-      if (!this.renderedTimes.includes(c.time)) this.renderedTimes.push(c.time);
+      // Deduplicate by comparing with the last entry: in normal replay, times are
+      // strictly increasing. Only the forming bucket can introduce a duplicate of
+      // the most recent time. O(1) vs the previous O(n) renderedTimes.includes().
+      if (this.renderedTimes[this.renderedTimes.length - 1] !== c.time) {
+        this.renderedTimes.push(c.time);
+      }
     }
     // live trade boxes grow with the last rendered candle
     this.pushTrading();
@@ -1075,7 +1087,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     price: number,
     entry: number,
     sl: number,
-    order: PendingOrder | undefined,
+    order: DomainPendingOrder | undefined,
   ): string {
     const pts = (a: number, b: number) => Math.round(Math.abs(a - b) / this.pointSize);
     if (field === 'tp') {
@@ -1085,9 +1097,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     }
     const points = field === 'entry' ? pts(price, sl) : pts(price, entry);
     if (order) {
-      // mirrors the reducer's re-sizing of pending orders (risk % constant)
+      // Use the risk % from the trade panel context, not from the order object
+      // (which belongs to the domain layer and does not carry riskPct).
       const ctx = this.tradeCtx();
-      const lots = lotsForRisk(ctx.balance, order.riskPct, entry, sl, ctx.contractSize);
+      const lots = lotsForRisk(ctx.balance, ctx.riskPct, entry, sl, ctx.contractSize);
       const label = field === 'entry' ? 'Entrada' : 'SL';
       return `${label}: ${points} pts${lots > 0 ? ` · ${lots.toFixed(2)} lotes` : ''}`;
     }
@@ -1257,6 +1270,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       const tradeLine = tradingCap?.hitTestTradeLine(y);
       if (tradeLine) {
         this.lineDrag = { id: tradeLine.id, target: tradeLine.target, field: tradeLine.field };
+        window.addEventListener('mousemove', this.onMouseMoveDom);
         this.engine?.setInteractivity(false);
         e.preventDefault();
         return;
@@ -1269,6 +1283,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
           target: edge.status === 'pending' ? 'order' : 'position',
           field: edge.field,
         };
+        window.addEventListener('mousemove', this.onMouseMoveDom);
         this.engine?.setInteractivity(false);
         e.preventDefault();
         return;
@@ -1288,33 +1303,45 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
     this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ id })));
     this.drag = { id, mode, startX: x, startY: y, x1, y1, x2, y2 };
+    // Capture mousemove globally so drags work even outside the chart area
+    window.addEventListener('mousemove', this.onMouseMoveDom);
     // freeze chart panning/zooming while dragging an object
     this.engine?.setInteractivity(false);
     e.preventDefault();
   }
 
+  /**
+   * Hover feedback handler (registered on the container element): updates
+   * the cursor style based on the element under the pointer.
+   */
+  private handleHoverFeedback(e: MouseEvent): void {
+    if (this.destroyed || !this.chart || !this.series) return;
+    if (this.drag || this.lineDrag) return; // drag handler runs on window
+    if (this.activeTool() !== 'none') return;
+    const rect = this.container.nativeElement.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+    if (tradingCap?.hitTestDelete(x, y)) {
+      this.container.nativeElement.style.cursor = 'pointer';
+    } else {
+      const over = tradingCap?.hitTestTradeLine(y) ?? tradingCap?.hitTestEdge(x, y);
+      this.container.nativeElement.style.cursor = over ? 'ns-resize' : '';
+    }
+  }
+
+  /**
+   * Drag-move handler (registered on window only during an active drag):
+   * processes drawing drags and trade-line drags.
+   */
   private handleDragMove(e: MouseEvent): void {
-    if (!this.chart || !this.series) return;
+    if (this.destroyed || !this.chart || !this.series) return;
     const rect = this.container.nativeElement.getBoundingClientRect();
     if (this.lineDrag) {
       this.dragTradeLine(e.clientY - rect.top);
       return;
     }
-    // hover feedback: pointer over a ×-button, ns-resize over a trade line
-    if (!this.drag) {
-      if (this.activeTool() === 'none') {
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
-        if (tradingCap?.hitTestDelete(x, y)) {
-          this.container.nativeElement.style.cursor = 'pointer';
-        } else {
-          const over = tradingCap?.hitTestTradeLine(y) ?? tradingCap?.hitTestEdge(x, y);
-          this.container.nativeElement.style.cursor = over ? 'ns-resize' : '';
-        }
-      }
-      return;
-    }
+    if (!this.drag) return;
     const dx = e.clientX - rect.left - this.drag.startX;
     const dy = e.clientY - rect.top - this.drag.startY;
 
@@ -1348,7 +1375,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
 
   private endDrag(): void {
-    if (!this.drag && !this.lineDrag) return;
+    if (this.destroyed || (!this.drag && !this.lineDrag)) return;
+    // Release the global drag capture
+    window.removeEventListener('mousemove', this.onMouseMoveDom);
     this.drag = null;
     this.lineDrag = null;
     this.zone.run(() => this.dragInfo.set(null));
@@ -1392,11 +1421,14 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     const el = this.container.nativeElement;
     el.removeEventListener('mousedown', this.onMouseDown);
-    el.removeEventListener('mousemove', this.onMouseMoveDom);
+    el.removeEventListener('mousemove', this.onHoverFeedback);
+    // Also remove the global drag capture in case destroy happens mid-drag
+    window.removeEventListener('mousemove', this.onMouseMoveDom);
     el.removeEventListener('contextmenu', this.onContextMenu);
     el.removeEventListener('auxclick', this.onAuxClick);
     window.removeEventListener('mouseup', this.onMouseUp);

@@ -8,7 +8,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
-import { xForTime } from '../../../components/chart/time-coordinates';
+import { xForTime } from '../time-coordinates';
 
 export interface SessionSource {
   sessionEnd: number | null;

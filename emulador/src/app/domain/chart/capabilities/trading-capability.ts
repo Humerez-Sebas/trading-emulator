@@ -35,6 +35,12 @@ export class TradingCapability implements Capability {
   private tradeLines: TradeLine[] = [];
   private destroyed = false;
 
+  // Memoization references to avoid 60fps price-line recreations
+  private lastPositions: any[] | null = null;
+  private lastOrders: any[] | null = null;
+  private lastMarkers: any[] | null = null;
+  private lastColors: any = null;
+
   constructor(private series: ISeriesApi<'Candlestick'>) {}
 
   public init(chart: IChartApi, bus: ChartEventBus): void {
@@ -80,61 +86,74 @@ export class TradingCapability implements Capability {
       color: t.colors.downColor,
     });
 
-    // 3. Update Price Lines
-    for (const tl of this.tradeLines) {
-      this.series.removePriceLine(tl.line);
-    }
-    this.tradeLines = [];
+    // 3. Update Price Lines & Markers only if their underlying data or theme colors changed
+    const dataChanged =
+      t.positions !== this.lastPositions ||
+      t.pendingOrders !== this.lastOrders ||
+      t.markers !== this.lastMarkers ||
+      t.colors !== this.lastColors;
 
-    const addPriceLine = (
-      id: string,
-      target: 'position' | 'order',
-      field: 'entry' | 'sl' | 'tp',
-      price: number,
-      color: string,
-      style: LineStyle,
-      title: string,
-      draggable: boolean,
-    ) => {
-      const line = this.series.createPriceLine({
-        price,
-        color,
-        lineWidth: 1,
-        lineStyle: style,
-        axisLabelVisible: true,
-        title,
-      });
-      this.tradeLines.push({ id, target, field, price, draggable, line });
-    };
+    if (dataChanged) {
+      this.lastPositions = t.positions;
+      this.lastOrders = t.pendingOrders;
+      this.lastMarkers = t.markers;
+      this.lastColors = t.colors;
 
-    for (const p of t.positions) {
-      const sideColor = p.side === 'buy' ? t.colors.upColor : t.colors.downColor;
-      const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}`;
-      addPriceLine(p.id, 'position', 'entry', p.entryPrice, sideColor, LineStyle.Solid, label, false);
-      addPriceLine(p.id, 'position', 'sl', p.sl, t.colors.downColor, LineStyle.Dashed, 'SL', true);
-      if (p.tp !== null) {
-        addPriceLine(p.id, 'position', 'tp', p.tp, t.colors.upColor, LineStyle.Dashed, 'TP', true);
+      for (const tl of this.tradeLines) {
+        this.series.removePriceLine(tl.line);
       }
-    }
-    for (const o of t.pendingOrders) {
-      const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}`;
-      addPriceLine(o.id, 'order', 'entry', o.entryPrice, CHART_ACCENT, LineStyle.LargeDashed, label, true);
-      addPriceLine(o.id, 'order', 'sl', o.sl, t.colors.downColor, LineStyle.Dashed, 'SL', true);
-      if (o.tp !== null) {
-        addPriceLine(o.id, 'order', 'tp', o.tp, t.colors.upColor, LineStyle.Dashed, 'TP', true);
-      }
-    }
+      this.tradeLines = [];
 
-    // 4. Update Markers
-    this.seriesMarkers?.setMarkers(
-      t.markers.map((m) => ({
-        time: (m.time + t.shift) as UTCTimestamp,
-        position: m.position,
-        shape: m.shape,
-        color: m.color === 'up' ? t.colors.upColor : t.colors.downColor,
-        text: m.text,
-      })),
-    );
+      const addPriceLine = (
+        id: string,
+        target: 'position' | 'order',
+        field: 'entry' | 'sl' | 'tp',
+        price: number,
+        color: string,
+        style: LineStyle,
+        title: string,
+        draggable: boolean,
+      ) => {
+        const line = this.series.createPriceLine({
+          price,
+          color,
+          lineWidth: 1,
+          lineStyle: style,
+          axisLabelVisible: true,
+          title,
+        });
+        this.tradeLines.push({ id, target, field, price, draggable, line });
+      };
+
+      for (const p of t.positions) {
+        const sideColor = p.side === 'buy' ? t.colors.upColor : t.colors.downColor;
+        const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}`;
+        addPriceLine(p.id, 'position', 'entry', p.entryPrice, sideColor, LineStyle.Solid, label, false);
+        addPriceLine(p.id, 'position', 'sl', p.sl, t.colors.downColor, LineStyle.Dashed, 'SL', true);
+        if (p.tp !== null) {
+          addPriceLine(p.id, 'position', 'tp', p.tp, t.colors.upColor, LineStyle.Dashed, 'TP', true);
+        }
+      }
+      for (const o of t.pendingOrders) {
+        const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}`;
+        addPriceLine(o.id, 'order', 'entry', o.entryPrice, CHART_ACCENT, LineStyle.LargeDashed, label, true);
+        addPriceLine(o.id, 'order', 'sl', o.sl, t.colors.downColor, LineStyle.Dashed, 'SL', true);
+        if (o.tp !== null) {
+          addPriceLine(o.id, 'order', 'tp', o.tp, t.colors.upColor, LineStyle.Dashed, 'TP', true);
+        }
+      }
+
+      // 4. Update Markers
+      this.seriesMarkers?.setMarkers(
+        t.markers.map((m) => ({
+          time: (m.time + t.shift) as UTCTimestamp,
+          position: m.position,
+          shape: m.shape,
+          color: m.color === 'up' ? t.colors.upColor : t.colors.downColor,
+          text: m.text,
+        })),
+      );
+    }
   }
 
   public hitTestBox(x: number, y: number): { id: string } | null {
