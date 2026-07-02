@@ -37,3 +37,7 @@ Thumbs.db
 .agents/
 .impeccable/
 skills-lock.json
+
+# --- Temporary review/diff dumps ---
+diff.txt
+diff_utf8.txt
