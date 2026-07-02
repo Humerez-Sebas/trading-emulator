@@ -15,5 +15,9 @@ Task 3 (ChartModelMapper D8 panel derivation): complete (commit 69759c2, verifie
   - Note for future reviewers: run specs via `ng test` / `npm test` (Angular builder wires TestBed init); bare `npx vitest run` fails by design.
 Task 4 (ChartPanelComponent + chartReady output): complete (commit 8b91017, verified 2026-07-01: 818 tests green x2 independent runs, tsc app+spec clean; Opus review PASS, 0 High/Critical; audited chart.component.ts diff = exactly the 4 sanctioned additive hunks)
   - Low finding (out of scope, investigated): reviewer's suite run once showed selectors.spec.ts `selectFloatingPnl > prices off the replay-series candle` failing (817/818); two subsequent orchestrator runs were 818/818 green and the test is deterministic — most likely interference from two concurrent `ng test` processes sharing the .angular cache. Not an RFC-008 regression; watch during final audit.
-Task 5 (WorkspaceViewport host): incomplete
+Task 5 (WorkspaceViewport host): complete (commits 9584dc6 + fix-loop c39995a, verified 2026-07-02: 823 tests green, tsc app+spec clean, lint clean in RFC-008 files; Opus review PASS, 0 High/Critical)
+  - Fix loop executed: 2 branch-introduced lint errors corrected (removePanel rest-destructure -> Object.fromEntries filter; spec type -> interface). Reviewer confirmed behavior-identical.
+  - Low findings logged: (1) no explicit test asserting ChartSyncBus.destroy() on viewport ngOnDestroy; (2) panelLabel duplicates ChartPanelComponent.headerLabel logic (different injection contexts, acceptable).
+  - Repo quality stewardship (user-mandated, commit 31d14d3): mt5_common.py -> pipeline/ (59 py-tests green, ruff clean), removed dock-redesign-hud/ + playback-controller-hud/ + diff dumps, untracked .agents/, added .claudeignore, gitignored diff dumps.
+  - Out-of-scope debt tracked via follow-up chips: 18 pre-existing lint errors on develop (task_ba2c42cc); intermittent flakiness in trading-capability.spec.ts / selectors.spec.ts reproduced on untouched baseline (task_34d65c91).
 Final audit: incomplete
