@@ -21,12 +21,22 @@ const GATE: Record<PanelSyncEventType, keyof LinkGroup> = {
  * WorkspaceViewport. Cannot inject the Store: the viewport pushes state
  * snapshots via `setState` whenever `panels`/`linkGroups` change.
  *
- * Feedback-loop prevention (RFC-010 point 6): (1) events are only ever routed
- * to panels OTHER than the origin (`panelId !== originId` filter below); (2)
- * idempotent apply — the last value applied to each (panelId, eventType) pair
- * is tracked, and a structurally-identical incoming value is a no-op, so even
- * a 3+-panel topology where a receiving panel's handle might otherwise
- * re-trigger a downstream apply cannot cascade.
+ * Feedback-loop prevention (RFC-010 point 6) is TWO independent mechanisms:
+ * (1) events are only ever routed to panels OTHER than the origin
+ * (`panelId !== originId` filter below); (2) idempotent apply — the last
+ * APPLIED value (not the raw payload) for each (panelId, eventType) pair is
+ * tracked, and a value that resolves to the same applied result as last time
+ * is a no-op. Neither mechanism alone closes the RFC's named A->B->A echo: the
+ * echo's originator (A) is never itself an apply target (it's excluded by
+ * mechanism 1, so idempotence never even runs for it), which means the
+ * load-bearing loop-breaker for that specific echo is `ChartEngine`'s private
+ * `applyingSync` re-entrancy guard (RFC-010 Task 3) — it suppresses the
+ * engine's own bus re-emission for the synchronous duration of any
+ * `applyCrosshair`/`applyVisibleRange` call, so a panel that receives and
+ * applies a sync event cannot possibly re-emit as a reaction to that
+ * application. This router's idempotence check is the second, independent
+ * safety net for 3+-panel topologies (see Task 2's tests), not a substitute
+ * for the engine guard.
  */
 export class ChartSyncRouter {
   private state: ChartSyncRouterState = { panels: {}, linkGroups: {} };
@@ -64,11 +74,6 @@ export class ChartSyncRouter {
     payload: PanelSyncEventMap[K],
   ): void {
     const key = `${panelId}:${type}`;
-    const last = this.lastApplied.get(key);
-    if (last !== undefined && JSON.stringify(last) === JSON.stringify(payload)) return; // idempotent short-circuit
-    this.lastApplied.set(key, payload);
-    const handle = this.registry.get(panelId);
-    if (!handle) return;
     if (type === 'CrosshairMoved') {
       const p = payload as PanelSyncEventMap['CrosshairMoved'];
       // `lightweight-charts`' `Time` is `UTCTimestamp | BusinessDay | string`; this codebase's
@@ -77,9 +82,33 @@ export class ChartSyncRouter {
       // matches the same assumption `chart.component.ts` already makes throughout. If a future
       // RFC introduces business-day mode, this cast must be revisited together with the rest of
       // the chart's Time handling — it is not a new assumption introduced by this router.
-      handle.applyCrosshair(p.time != null ? Number(p.time) : null);
+      const appliedTime = p.time != null ? Number(p.time) : null;
+      // Idempotence is keyed on the APPLIED value (the resolved timestamp), not the raw
+      // MouseEventParams payload: `point.{x,y}` differs on every mouse move even when `time`
+      // (the only part that is actually applied) is unchanged, which would otherwise make this
+      // short-circuit permanently inert for CrosshairMoved.
+      const last = this.lastApplied.get(key);
+      if (last !== undefined && last === appliedTime) return; // idempotent short-circuit
+      this.lastApplied.set(key, appliedTime);
+      const handle = this.registry.get(panelId);
+      if (!handle) return;
+      handle.applyCrosshair(appliedTime);
     } else {
-      handle.applyVisibleRange(payload as PanelSyncEventMap['VisibleRangeChanged']);
+      const range = payload as PanelSyncEventMap['VisibleRangeChanged'];
+      const appliedRange = range ? { from: range.from, to: range.to } : null;
+      const last = this.lastApplied.get(key) as { from: number; to: number } | null | undefined;
+      const unchanged =
+        last !== undefined &&
+        ((last === null && appliedRange === null) ||
+          (last !== null &&
+            appliedRange !== null &&
+            last.from === appliedRange.from &&
+            last.to === appliedRange.to));
+      if (unchanged) return; // idempotent short-circuit
+      this.lastApplied.set(key, appliedRange);
+      const handle = this.registry.get(panelId);
+      if (!handle) return;
+      handle.applyVisibleRange(range);
     }
   }
 

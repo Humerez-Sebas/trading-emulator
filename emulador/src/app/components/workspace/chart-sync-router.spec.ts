@@ -102,6 +102,16 @@ describe('ChartSyncRouter (RFC-010)', () => {
     expect(hB.applyVisibleRange).toHaveBeenCalledTimes(1);
   });
 
+  it('idempotence is keyed on the APPLIED time, not the raw payload: two CrosshairMoved events with the SAME time but DIFFERENT point coordinates call the sibling exactly once (FOLDED FIX from Task 2 audit)', () => {
+    const { bus, registry, router } = wire();
+    const hB = handle();
+    registry.register('A', handle()); registry.register('B', hB);
+    router.setState({ panels: { A: panel('A', 'g1'), B: panel('B', 'g1') }, linkGroups: { g1: group('g1') } });
+    bus.emit('A', 'CrosshairMoved', { point: { x: 0, y: 0 }, time: 1000 } as never);
+    bus.emit('A', 'CrosshairMoved', { point: { x: 42, y: 17 }, time: 1000 } as never); // point differs, time (the applied value) doesn't
+    expect(hB.applyCrosshair).toHaveBeenCalledTimes(1);
+  });
+
   it('destroy() unsubscribes from the bus', () => {
     const { bus, registry, router } = wire();
     const hB = handle();
