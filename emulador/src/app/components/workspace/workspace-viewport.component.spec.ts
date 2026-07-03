@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Component, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { WorkspaceViewportComponent } from './workspace-viewport.component';
 import { ChartPanelComponent } from './chart-panel.component';
+import { ChartComponent } from '../chart/chart.component';
+import { ChartModelMapper } from '../chart/chart-model-mapper.service';
+import { ChartEventBus } from '../../domain/chart/chart-event-bus';
+import { ChartRegistry } from './chart-registry.service';
 import { LayoutActions } from '../../state/layout/layout.actions';
+import { layoutFeature } from '../../state/layout/layout.reducer';
+import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
 import { LayoutState, PanelDescriptor } from '../../state/layout/layout.models';
 
 /** Stub panel: renders nothing, keeps the required input contract. */
@@ -47,6 +53,25 @@ const layoutState: LayoutState = {
 /** Same layout, but the stacked cell's active panel flips from p2 to p3. */
 const switchedActivePanelState: LayoutState = structuredClone(layoutState);
 switchedActivePanelState.workspace.tabs[0].cells[1].activePanelId = 'p3';
+
+/**
+ * Derives a consistent `LayoutState` from `layoutState` with the given panels
+ * removed, by folding the REAL `removePanel` reducer over the ids — this keeps
+ * the lifecycle/leak suite honest against the actual invariant-preserving
+ * reducer logic instead of hand-rolled fixture state (RFC-009 Task 4).
+ */
+function stateWithout(...panelIds: string[]): LayoutState {
+  return panelIds.reduce(
+    (state, panelId) => layoutFeature.reducer(state, LayoutActions.removePanel({ panelId })),
+    layoutState,
+  );
+}
+
+/** Stub of the audited ChartComponent: no engine, no canvas — just the output. */
+@Component({ selector: 'app-chart', standalone: true, template: '' })
+class ChartStubComponent {
+  readonly chartReady = output<ChartEventBus>();
+}
 
 describe('WorkspaceViewportComponent', () => {
   let store: MockStore;
@@ -136,5 +161,84 @@ describe('WorkspaceViewportComponent', () => {
     fixture.detectChanges();
     const after = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2].componentInstance;
     expect(after).toBe(before); // identity preserved: keep-alive, not re-creation
+  });
+});
+
+describe('WorkspaceViewportComponent lifecycle: create/hide/show/close (RFC-009, P1 A-3 discipline)', () => {
+  let store: MockStore;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [WorkspaceViewportComponent],
+      providers: [provideMockStore({ initialState: { layout: layoutState } })],
+    });
+    // Use the REAL ChartPanelComponent inside the viewport (not a stub) so its
+    // ngOnInit/ngOnDestroy actually register/deregister with the ChartRegistry.
+    // Only the innermost app-chart (audited ChartComponent) is stubbed, exactly
+    // as chart-panel.component.spec.ts does.
+    TestBed.overrideComponent(ChartPanelComponent, {
+      remove: { imports: [ChartComponent] },
+      add: { imports: [ChartStubComponent] },
+    });
+    store = TestBed.inject(MockStore);
+    store.overrideSelector(selectSeries, {
+      M1: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
+      M5: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
+      M15: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
+    });
+    store.overrideSelector(selectCurrentTime, 100);
+    store.overrideSelector(selectUtcOffset, 0);
+  });
+
+  function create() {
+    const fixture = TestBed.createComponent(WorkspaceViewportComponent);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('registry tracks exactly the live panels across arbitrary close order', () => {
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    expect(registry.ids().sort()).toEqual(['p1', 'p2', 'p3']);
+    store.setState({ layout: stateWithout('p2') });
+    fixture.detectChanges();
+    expect(registry.ids().sort()).toEqual(['p1', 'p3']);
+    store.setState({ layout: stateWithout('p2', 'p1') });
+    fixture.detectChanges();
+    expect(registry.ids()).toEqual(['p3']);
+  });
+
+  it('hidden panels are gated (setUpdatesEnabled(false)) and never destroyed', () => {
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    // p3's own ChartModelMapper is the real call path for gating (the panel's
+    // effect calls `this.mapper.setUpdatesEnabled` directly, per Task 3 D6);
+    // the registry handle wraps that same mapper call for external consumers.
+    // Spy on the mapper reachable from p3's own component injector — this
+    // observes the exact call the plan's semantics require, regardless of
+    // which object identity the internal effect happens to invoke through.
+    const p3Panel = fixture.debugElement
+      .queryAll(By.directive(ChartPanelComponent))
+      .find((de) => de.componentInstance.descriptor().id === 'p3')!;
+    const p3Mapper = p3Panel.injector.get(ChartModelMapper);
+    const gateSpy = vi.spyOn(p3Mapper, 'setUpdatesEnabled');
+    // p3 is the hidden stacked panel: toggle the cell tab so p3 becomes
+    // visible and p2 becomes hidden — the registry keeps all three alive.
+    store.setState({ layout: switchedActivePanelState });
+    fixture.detectChanges();
+    expect(registry.count()).toBe(3);
+    expect(gateSpy).toHaveBeenCalledWith(true);
+  });
+
+  it('no leaks after repeated hide/show cycles: registry count and handle set stable', () => {
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    for (let i = 0; i < 5; i++) {
+      store.setState({ layout: switchedActivePanelState });
+      fixture.detectChanges();
+      store.setState({ layout: layoutState });
+      fixture.detectChanges();
+    }
+    expect(registry.count()).toBe(3);
   });
 });

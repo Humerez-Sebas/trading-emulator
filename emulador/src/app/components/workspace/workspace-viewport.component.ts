@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { ChartPanelComponent } from './chart-panel.component';
+import { ChartRegistry } from './chart-registry.service';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
@@ -12,14 +13,18 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
  * the closed `GridTemplate` enum (max depth 1 — no BSP/nesting). Each cell is
  * a tab-group: several stacked panels, one visible at a time.
  *
- * Provides the per-Session `ChartSyncBus` (one hub per Session, not per panel).
- * The bus stays framework-free, hence the `useFactory` provider.
+ * Provides the per-Session `ChartSyncBus` (one hub per Session, not per panel)
+ * and the per-Session `ChartRegistry` (RFC-009 liveness tracker). Both stay
+ * framework-free, hence the `useFactory` providers.
  */
 @Component({
   selector: 'app-workspace-viewport',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [{ provide: ChartSyncBus, useFactory: () => new ChartSyncBus() }],
+  providers: [
+    { provide: ChartSyncBus, useFactory: () => new ChartSyncBus() },
+    { provide: ChartRegistry, useFactory: () => new ChartRegistry() },
+  ],
   imports: [ChartPanelComponent],
   template: `
     <div class="tab-bar" role="tablist">
