@@ -12,7 +12,7 @@ import { ChartRegistry } from './chart-registry.service';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature } from '../../state/layout/layout.reducer';
 import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
-import { LayoutState, PanelDescriptor } from '../../state/layout/layout.models';
+import { LayoutState, MAX_PANELS_PER_TAB, PanelDescriptor } from '../../state/layout/layout.models';
 
 /** Stub panel: renders nothing, keeps the required input contract. */
 @Component({ selector: 'app-chart-panel', standalone: true, template: '' })
@@ -53,6 +53,33 @@ const layoutState: LayoutState = {
 /** Same layout, but the stacked cell's active panel flips from p2 to p3. */
 const switchedActivePanelState: LayoutState = structuredClone(layoutState);
 switchedActivePanelState.workspace.tabs[0].cells[1].activePanelId = 'p3';
+
+/** Active tab ('tab-a') holds MAX_PANELS_PER_TAB (8) panels — the "+" must be disabled. */
+const fullTabState: LayoutState = (() => {
+  const ids = Array.from({ length: MAX_PANELS_PER_TAB }, (_, i) => `full-${i}`);
+  const panels: Record<string, PanelDescriptor> = {};
+  for (const id of ids) panels[id] = desc(id);
+  return {
+    workspace: {
+      tabs: [
+        {
+          id: 'tab-a',
+          name: 'Principal',
+          template: '2x2',
+          cells: [
+            { panelIds: ids.slice(0, 4), activePanelId: ids[0] },
+            { panelIds: ids.slice(4, 8), activePanelId: ids[4] },
+            { panelIds: [], activePanelId: '' },
+            { panelIds: [], activePanelId: '' },
+          ],
+        },
+        { id: 'tab-b', name: 'Contexto', template: '1', cells: [{ panelIds: [], activePanelId: '' }] },
+      ],
+      activeTabId: 'tab-a',
+    },
+    panels,
+  };
+})();
 
 /**
  * Derives a consistent `LayoutState` from `layoutState` with the given panels
@@ -162,6 +189,46 @@ describe('WorkspaceViewportComponent', () => {
     const after = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2].componentInstance;
     expect(after).toBe(before); // identity preserved: keep-alive, not re-creation
   });
+
+  it('a "+" button renders per cell and dispatches addPanel targeting that (tabId, cellIndex)', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const addButtons = fixture.nativeElement.querySelectorAll('.grid:not([hidden]) .cell-add');
+    expect(addButtons).toHaveLength(4); // one per cell of the active '2x2' tab
+    (addButtons[2] as HTMLButtonElement).click(); // third cell: empty, cellIndex 2
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<typeof LayoutActions.addPanel>;
+    expect(dispatched.type).toBe(LayoutActions.addPanel.type);
+    expect(dispatched.tabId).toBe('tab-a');
+    expect(dispatched.cellIndex).toBe(2);
+    expect(dispatched.descriptor).toEqual({
+      id: expect.any(String),
+      symbol: '',
+      timeframe: 'M1',
+      linkGroupId: null,
+    });
+  });
+
+  it('"+" is disabled when the active tab already holds MAX_PANELS_PER_TAB panels', () => {
+    store.setState({ layout: fullTabState });
+    const fixture = create();
+    fixture.detectChanges();
+    const addButtons = fixture.nativeElement.querySelectorAll('.grid:not([hidden]) .cell-add');
+    expect(addButtons).toHaveLength(4);
+    for (const btn of Array.from(addButtons) as HTMLButtonElement[]) {
+      expect(btn.disabled).toBe(true);
+    }
+  });
+
+  it('an "x" affordance on each cell tab dispatches removePanel and does not also dispatch setActivePanel', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const closeButtons = fixture.nativeElement.querySelectorAll('.cell-tabs .cell-tab .cell-tab-close');
+    expect(closeButtons).toHaveLength(2); // stacked cell has 2 panels (p2, p3)
+    (closeButtons[1] as HTMLButtonElement).click(); // p3's close affordance
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(LayoutActions.removePanel({ panelId: 'p3' }));
+  });
 });
 
 describe('WorkspaceViewportComponent lifecycle: create/hide/show/close (RFC-009, P1 A-3 discipline)', () => {
@@ -222,12 +289,21 @@ describe('WorkspaceViewportComponent lifecycle: create/hide/show/close (RFC-009,
       .find((de) => de.componentInstance.descriptor().id === 'p3')!;
     const p3Mapper = p3Panel.injector.get(ChartModelMapper);
     const gateSpy = vi.spyOn(p3Mapper, 'setUpdatesEnabled');
+    // p2 becomes hidden on this same toggle (stacked cell flips its active
+    // panel from p2 to p3): spy its mapper too and assert the (false) leg of
+    // the same gate transition (RFC-009 Task 4 Medium finding, closed here).
+    const p2Panel = fixture.debugElement
+      .queryAll(By.directive(ChartPanelComponent))
+      .find((de) => de.componentInstance.descriptor().id === 'p2')!;
+    const p2Mapper = p2Panel.injector.get(ChartModelMapper);
+    const hideGateSpy = vi.spyOn(p2Mapper, 'setUpdatesEnabled');
     // p3 is the hidden stacked panel: toggle the cell tab so p3 becomes
     // visible and p2 becomes hidden — the registry keeps all three alive.
     store.setState({ layout: switchedActivePanelState });
     fixture.detectChanges();
     expect(registry.count()).toBe(3);
     expect(gateSpy).toHaveBeenCalledWith(true);
+    expect(hideGateSpy).toHaveBeenCalledWith(false);
   });
 
   it('no leaks after repeated hide/show cycles: registry count and handle set stable', () => {

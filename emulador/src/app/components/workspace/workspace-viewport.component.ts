@@ -5,7 +5,7 @@ import { ChartRegistry } from './chart-registry.service';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
-import { PanelDescriptor } from '../../state/layout/layout.models';
+import { MAX_PANELS_PER_TAB, PanelDescriptor, TabLayout } from '../../state/layout/layout.models';
 
 /**
  * RFC-008: tab bar + single-level grid host. Projects `WorkspaceLayout.tabs`,
@@ -55,6 +55,16 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
                     (click)="selectPanel(tab.id, ci, pid)"
                   >
                     {{ panelLabel(pid) }}
+                    <span
+                      class="cell-tab-close"
+                      role="button"
+                      tabindex="0"
+                      [attr.aria-label]="'Cerrar ' + panelLabel(pid)"
+                      (click)="closePanel($event, pid)"
+                      (keydown.enter)="closePanel($event, pid)"
+                      (keydown.space)="closePanel($event, pid)"
+                      >&times;</span
+                    >
                   </button>
                 }
               </div>
@@ -72,6 +82,7 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
             @if (cell.panelIds.length === 0) {
               <div class="cell-empty">Sin panel</div>
             }
+            <button class="cell-add" [disabled]="tabAtCap(tab)" (click)="addPanel(tab.id, ci)">+</button>
           </div>
         }
       </div>
@@ -168,6 +179,24 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
         background: var(--surface);
         color: var(--text);
       }
+      .cell-tab-close {
+        margin-left: 6px;
+        cursor: pointer;
+      }
+      .cell-add {
+        padding: 3px 10px;
+        background: none;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius);
+        color: var(--text-muted);
+        font-size: 11px;
+        cursor: pointer;
+        align-self: flex-start;
+      }
+      .cell-add:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
       .cell-panel {
         flex: 1;
         min-height: 0;
@@ -198,6 +227,28 @@ export class WorkspaceViewportComponent implements OnDestroy {
 
   selectPanel(tabId: string, cellIndex: number, panelId: string): void {
     this.store.dispatch(LayoutActions.setActivePanel({ tabId, cellIndex, panelId }));
+  }
+
+  /** RFC-009 Task 5: hot-creates a fresh panel targeting (tabId, cellIndex); no-op past MAX_PANELS_PER_TAB (reducer-enforced). */
+  addPanel(tabId: string, cellIndex: number): void {
+    this.store.dispatch(
+      LayoutActions.addPanel({
+        tabId,
+        cellIndex,
+        descriptor: { id: crypto.randomUUID(), symbol: '', timeframe: 'M1', linkGroupId: null },
+      }),
+    );
+  }
+
+  /** RFC-009 Task 5: closes a panel via the single deregistration path (removePanel); stops propagation so the cell-tab's own click (selectPanel) doesn't also fire. */
+  closePanel(event: Event, panelId: string): void {
+    event.stopPropagation();
+    this.store.dispatch(LayoutActions.removePanel({ panelId }));
+  }
+
+  /** RFC-009 Task 5: true when the tab already holds MAX_PANELS_PER_TAB panels across all its cells (mirrors the reducer's own cap check). */
+  tabAtCap(tab: TabLayout): boolean {
+    return tab.cells.reduce((n, c) => n + c.panelIds.length, 0) >= MAX_PANELS_PER_TAB;
   }
 
   descriptorOf(panelId: string): PanelDescriptor | null {
