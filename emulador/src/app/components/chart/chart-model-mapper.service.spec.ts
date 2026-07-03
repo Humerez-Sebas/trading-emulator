@@ -321,4 +321,65 @@ describe('ChartModelMapper', () => {
       expect(idx).toBe(2);
     });
   });
+
+  describe('setUpdatesEnabled (RFC-009 D6 update-gating)', () => {
+    const styleFixtureA = {
+      colors: {
+        upColor: '#26A69A', downColor: '#EF5350', wickUp: '#26A69A', wickDown: '#EF5350',
+        borderUpColor: '#000000', borderDownColor: '#000000', background: '#000000',
+        grid: '#1A1A1A', text: '#787B86', crosshair: '#787B86', tpZone: '#089981', slZone: '#F23645',
+      },
+      gridVisible: true,
+      gridOpacity: 0.5,
+      tradeBoxOpacity: { fill: 0.12, border: 0.6 },
+    };
+    const styleFixtureB = {
+      ...styleFixtureA,
+      colors: { ...styleFixtureA.colors, upColor: '#FFFFFF' },
+    };
+
+    beforeEach(() => {
+      store.overrideSelector(selectChartStyle, styleFixtureA); // build one from existing spec fixtures
+    });
+
+    it('suppresses emissions while disabled and re-emits the latest value on enable', () => {
+      const seen: unknown[] = [];
+      mapper.chartStyle$.subscribe((v) => seen.push(v));
+      expect(seen).toHaveLength(1);
+      mapper.setUpdatesEnabled(false);
+      store.overrideSelector(selectChartStyle, styleFixtureB);
+      store.refreshState();
+      expect(seen).toHaveLength(1); // gated: no emission
+      mapper.setUpdatesEnabled(true);
+      expect(seen).toHaveLength(2); // re-sync: latest value delivered
+    });
+
+    it('does not duplicate the last value when nothing changed while gated', () => {
+      const seen: unknown[] = [];
+      mapper.chartStyle$.subscribe((v) => seen.push(v));
+      mapper.setUpdatesEnabled(false);
+      mapper.setUpdatesEnabled(true);
+      expect(seen).toHaveLength(1);
+    });
+
+    it('default state is enabled (regression: pre-RFC-009 behavior unchanged)', () => {
+      const seen: unknown[] = [];
+      mapper.chartStyle$.subscribe((v) => seen.push(v));
+      expect(seen).toHaveLength(1);
+    });
+
+    it('panelChartView$ stays UNgated: it still emits while setUpdatesEnabled(false)', () => {
+      const candle = (time: number, close = 1) => ({ time, open: close, high: close, low: close, close });
+      store.overrideSelector(selectSeries, { M1: [candle(100), candle(160)] });
+      store.overrideSelector(selectCurrentTime, 100);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.refreshState();
+      mapper.setUpdatesEnabled(false);
+      mapper.configurePanel({ id: 'p1', symbol: 'SP500', timeframe: 'M1', linkGroupId: null });
+      let view: PanelChartView | undefined;
+      mapper.panelChartView$.subscribe((v) => (view = v));
+      expect(view).toBeDefined();
+      expect(view!.symbol).toBe('SP500');
+    });
+  });
 });

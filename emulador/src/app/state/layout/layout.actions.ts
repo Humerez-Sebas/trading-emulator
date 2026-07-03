@@ -16,5 +16,7 @@ export const LayoutActions = createActionGroup({
     'Remove Panel': props<{ panelId: string }>(),
     /** No-op unless the cell actually contains panelId. */
     'Set Active Panel': props<{ tabId: string; cellIndex: number; panelId: string }>(),
+    /** Relocates an existing panel to (targetTabId, targetCellIndex). No-op if it would exceed MAX_PANELS_PER_TAB in the target tab. */
+    'Move Panel': props<{ panelId: string; targetTabId: string; targetCellIndex: number }>(),
   },
 });

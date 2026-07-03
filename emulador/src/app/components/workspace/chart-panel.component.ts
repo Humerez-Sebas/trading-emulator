@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   OnDestroy,
+  OnInit,
   computed,
   effect,
   inject,
@@ -12,6 +13,7 @@ import { ChartComponent } from '../chart/chart.component';
 import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus, Unsubscribe } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
+import { ChartRegistry } from './chart-registry.service';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 
 /**
@@ -69,11 +71,15 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
     `,
   ],
 })
-export class ChartPanelComponent implements OnDestroy {
+export class ChartPanelComponent implements OnInit, OnDestroy {
   readonly descriptor = input.required<PanelDescriptor>();
+
+  /** RFC-009 (D6): drives update-gating; the viewport derives it from selectVisiblePanelIds. */
+  readonly visible = input<boolean>(true);
 
   private readonly mapper = inject(ChartModelMapper);
   private readonly syncBus = inject(ChartSyncBus);
+  private readonly registry = inject(ChartRegistry);
   private busUnsubs: Unsubscribe[] = [];
 
   /** Panel-local view (own mapper instance, own memo slot — D8). */
@@ -92,6 +98,14 @@ export class ChartPanelComponent implements OnDestroy {
 
   constructor() {
     effect(() => this.mapper.configurePanel(this.descriptor()));
+    effect(() => this.mapper.setUpdatesEnabled(this.visible()));
+  }
+
+  /** RFC-009: registers this panel's live handle in the session ChartRegistry. */
+  ngOnInit(): void {
+    this.registry.register(this.descriptor().id, {
+      setUpdatesEnabled: (on) => this.mapper.setUpdatesEnabled(on),
+    });
   }
 
   /** Wires the wrapped chart's engine bus into the session ChartSyncBus. */
@@ -107,6 +121,7 @@ export class ChartPanelComponent implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.registry.deregister(this.descriptor().id);
     this.busUnsubs.forEach((off) => off());
     this.busUnsubs = [];
   }

@@ -90,7 +90,6 @@ interface PlacingState {
 @Component({
   selector: 'app-chart',
   standalone: true,
-  providers: [ChartModelMapper],
   template: `
     <div #container class="chart-container"></div>
     @if (menu(); as m) {
