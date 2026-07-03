@@ -23,8 +23,45 @@ export class ChartEngine implements ChartApplyHandle {
   private capabilities = new Map<string, Capability>();
   public get events(): ChartEventBus { return this.bus; }
 
-  /** RFC-010: true only for the synchronous duration of an applyCrosshair/applyVisibleRange call — suppresses re-emission if the underlying library fires its own subscribeX callback as a side effect of a PROGRAMMATIC change, closing the A->B->A feedback-loop risk at its root (chart-engine.ts is the only place that talks to lightweight-charts directly). */
+  /**
+   * RFC-010: true only for the synchronous duration of an applyCrosshair/applyVisibleRange call —
+   * suppresses re-emission if the underlying library fires its own subscribeX callback
+   * SYNCHRONOUSLY as a side effect of a PROGRAMMATIC change.
+   *
+   * IMPORTANT (verified against lightweight-charts v5.2 source,
+   * node_modules/lightweight-charts/dist/lightweight-charts.development.mjs): for
+   * `setVisibleLogicalRange`, the library does NOT fire `subscribeVisibleLogicalRangeChange`
+   * synchronously — it only schedules a `requestAnimationFrame`, and the range-changed delegate
+   * fires during that NEXT-FRAME draw. By the time that callback runs, this flag has ALREADY been
+   * reset to `false` in `applyVisibleRange`'s `finally`, so `applyingSync` alone CANNOT catch the
+   * range echo. It remains harmless belt-and-suspenders here for any synchronous paths and is the
+   * correct (and sufficient) guard for crosshair: `setCrosshairPosition` internally passes
+   * `skipEvent=true`, so the library never invokes `subscribeCrosshairMove` at all on programmatic
+   * calls (no echo exists to suppress in that case). The load-bearing loop-breaker for the RANGE
+   * echo is the one-shot `suppressNextRangeEvent` flag below — see its doc and
+   * `applyVisibleRange`/the `subscribeVisibleLogicalRangeChange` handler.
+   */
   private applyingSync = false;
+
+  /**
+   * RFC-010 (fix loop, Task 3 audit): one-shot, timing-independent suppressor for the NEXT
+   * `subscribeVisibleLogicalRangeChange` callback after a programmatic `applyVisibleRange`.
+   *
+   * Why this exists: lightweight-charts v5.2's `setVisibleLogicalRange` fires its range-changed
+   * delegate on the NEXT animation frame (via `requestAnimationFrame`), never synchronously. The
+   * synchronous `applyingSync` flag (see above) has already unwound by the time that callback
+   * runs, so it cannot suppress the echo. This flag survives ACROSS the RAF instead: it is set to
+   * `true` before calling `setVisibleLogicalRange` and is only cleared by the first subsequent
+   * `subscribeVisibleLogicalRangeChange` invocation (or by a throwing apply — see
+   * `applyVisibleRange`), whichever comes first.
+   *
+   * Value-independence: the echoed range can differ fractionally from the applied one (v5.2
+   * round-trips {from,to} through barSpacing math with clamping and 1e-6 rounding), so this
+   * mechanism deliberately does NOT compare the echoed value to the applied value — it treats the
+   * first range-changed event after a programmatic apply as that apply's echo BY CONSTRUCTION, and
+   * consumes it unconditionally.
+   */
+  private suppressNextRangeEvent = false;
 
   constructor(container: HTMLElement) {
     // autoSize uses lightweight-charts' internal ResizeObserver on the container,
@@ -54,10 +91,24 @@ export class ChartEngine implements ChartApplyHandle {
       if (!this.applyingSync) this.bus.emit('CrosshairMoved', p);
     });
     this.chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+      // One-shot echo suppression (load-bearing — see `suppressNextRangeEvent`'s doc): the first
+      // range-changed event after a programmatic `applyVisibleRange` is that apply's echo BY
+      // CONSTRUCTION, even if the library adjusted/clamped the value, so it is consumed
+      // unconditionally and WITHOUT comparing `r` to the applied range.
+      if (this.suppressNextRangeEvent) {
+        this.suppressNextRangeEvent = false;
+        return;
+      }
       if (!this.applyingSync) this.bus.emit('VisibleRangeChanged', r);
     });
   }
 
+  /**
+   * Applies a programmatic crosshair position. No `suppressNextRangeEvent`-style one-shot flag is
+   * needed here: lightweight-charts' `setCrosshairPosition` internally passes `skipEvent=true`, so
+   * the library never invokes `subscribeCrosshairMove` as a side effect of a programmatic call —
+   * there is no echo to suppress. `applyingSync` remains as defensive belt-and-suspenders only.
+   */
   public applyCrosshair(time: UTCTimestamp | null): void {
     this.applyingSync = true;
     try {
@@ -68,11 +119,27 @@ export class ChartEngine implements ChartApplyHandle {
     }
   }
 
+  /**
+   * Applies a programmatic visible logical range. Unlike crosshair, this DOES need the one-shot
+   * `suppressNextRangeEvent` guard: lightweight-charts v5.2 fires
+   * `subscribeVisibleLogicalRangeChange` on the NEXT animation frame (not synchronously), so
+   * `applyingSync` has already reset by the time the echo arrives. `suppressNextRangeEvent` is set
+   * BEFORE calling `setVisibleLogicalRange` and is deliberately NOT reset in `finally` — it must
+   * survive past this call's return, across the RAF, until the echo callback consumes it. If
+   * `setVisibleLogicalRange` throws, no echo will ever arrive for this call, so the pending flag is
+   * cleared in the `catch` to avoid permanently muting the NEXT genuine (user-driven) range event.
+   */
   public applyVisibleRange(range: LogicalRange | null): void {
     if (!range) return; // mirrors the engine's own maybeLoadMore-adjacent null guards
     this.applyingSync = true;
     try {
+      this.suppressNextRangeEvent = true;
       this.chart.timeScale().setVisibleLogicalRange(range);
+    } catch (err) {
+      // No echo will arrive for a throwing apply — clear the pending one-shot flag so it doesn't
+      // incorrectly swallow the next genuine user-driven range event.
+      this.suppressNextRangeEvent = false;
+      throw err;
     } finally {
       this.applyingSync = false;
     }

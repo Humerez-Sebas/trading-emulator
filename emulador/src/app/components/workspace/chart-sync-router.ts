@@ -29,14 +29,24 @@ const GATE: Record<PanelSyncEventType, keyof LinkGroup> = {
  * is a no-op. Neither mechanism alone closes the RFC's named A->B->A echo: the
  * echo's originator (A) is never itself an apply target (it's excluded by
  * mechanism 1, so idempotence never even runs for it), which means the
- * load-bearing loop-breaker for that specific echo is `ChartEngine`'s private
- * `applyingSync` re-entrancy guard (RFC-010 Task 3) — it suppresses the
- * engine's own bus re-emission for the synchronous duration of any
- * `applyCrosshair`/`applyVisibleRange` call, so a panel that receives and
- * applies a sync event cannot possibly re-emit as a reaction to that
- * application. This router's idempotence check is the second, independent
- * safety net for 3+-panel topologies (see Task 2's tests), not a substitute
- * for the engine guard.
+ * load-bearing loop-breaker for that specific echo lives in `ChartEngine`
+ * (RFC-010 Task 3, fix loop). For CROSSHAIR, that guard is the private
+ * `applyingSync` re-entrancy flag: lightweight-charts' `setCrosshairPosition`
+ * passes `skipEvent=true` internally, so a programmatic crosshair apply never
+ * even invokes `subscribeCrosshairMove`, and `applyingSync` is defense in
+ * depth. For RANGE, `applyingSync` is NOT sufficient on its own: verified
+ * against lightweight-charts v5.2 source, `setVisibleLogicalRange` fires
+ * `subscribeVisibleLogicalRangeChange` on the NEXT animation frame (via
+ * `requestAnimationFrame`), by which point the synchronous `applyingSync`
+ * flag has already reset. The actual load-bearing mechanism for range is
+ * `ChartEngine`'s one-shot `suppressNextRangeEvent` flag, which survives
+ * across that RAF and consumes exactly the first range-changed callback after
+ * a programmatic apply — value-independently, since the library can return a
+ * fractionally adjusted {from,to} (clamping/rounding) rather than an exact
+ * echo. Either way, a panel that receives and applies a sync event cannot
+ * re-emit as a reaction to that application. This router's idempotence check
+ * is the second, independent safety net for 3+-panel topologies (see Task 2's
+ * tests), not a substitute for the engine-level guard.
  */
 export class ChartSyncRouter {
   private state: ChartSyncRouterState = { panels: {}, linkGroups: {} };
