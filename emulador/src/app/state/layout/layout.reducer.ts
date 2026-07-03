@@ -145,6 +145,44 @@ export const layoutFeature = createFeature({
         })),
       };
     }),
+    on(LayoutActions.movePanel, (state, { panelId, targetTabId, targetCellIndex }): LayoutState => {
+      if (!state.panels[panelId]) return state;
+      const targetTab = state.workspace.tabs.find((t) => t.id === targetTabId);
+      if (!targetTab || targetCellIndex < 0 || targetCellIndex >= targetTab.cells.length) return state;
+      const alreadyThere = targetTab.cells[targetCellIndex].panelIds.includes(panelId);
+      if (alreadyThere) return state;
+      const sourceTab = state.workspace.tabs.find((t) =>
+        t.cells.some((c) => c.panelIds.includes(panelId)),
+      )!;
+      // R1 cap applies to the TARGET tab (unless moving within the same tab)
+      if (sourceTab.id !== targetTabId && countPanelsInTab(targetTab) >= MAX_PANELS_PER_TAB) {
+        return state;
+      }
+      return {
+        ...state,
+        workspace: {
+          ...state.workspace,
+          tabs: state.workspace.tabs.map((tab) => ({
+            ...tab,
+            cells: tab.cells.map((cell, i) => {
+              const isTarget = tab.id === targetTabId && i === targetCellIndex;
+              const holds = cell.panelIds.includes(panelId);
+              if (holds && !isTarget) {
+                const panelIds = cell.panelIds.filter((id) => id !== panelId);
+                return {
+                  panelIds,
+                  activePanelId: cell.activePanelId === panelId ? (panelIds[0] ?? '') : cell.activePanelId,
+                };
+              }
+              if (isTarget && !holds) {
+                return { panelIds: [...cell.panelIds, panelId], activePanelId: panelId };
+              }
+              return cell;
+            }),
+          })),
+        },
+      };
+    }),
   ),
 });
 
@@ -152,4 +190,23 @@ export const layoutFeature = createFeature({
 export const selectActiveTab = createSelector(
   layoutFeature.selectWorkspace,
   (ws) => ws.tabs.find((t) => t.id === ws.activeTabId) ?? null,
+);
+
+/**
+ * RFC-009 (D6): derived visibility — a panel is visible iff its tab is active
+ * and it is its cell's activePanelId. One selector for ALL panels (single memo
+ * slot, non-parametrized): consumers check their own id in the map. Never a
+ * per-panel factory selector (D8 discipline).
+ */
+export const selectVisiblePanelIds = createSelector(
+  layoutFeature.selectWorkspace,
+  (ws): Record<string, true> => {
+    const active = ws.tabs.find((t) => t.id === ws.activeTabId);
+    if (!active) return {};
+    const visible: Record<string, true> = {};
+    for (const cell of active.cells) {
+      if (cell.activePanelId) visible[cell.activePanelId] = true;
+    }
+    return visible;
+  },
 );

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { LayoutActions } from './layout.actions';
-import { layoutFeature, selectActiveTab } from './layout.reducer';
+import { layoutFeature, selectActiveTab, selectVisiblePanelIds } from './layout.reducer';
 import {
   createInitialLayoutState,
   GridCell,
@@ -8,6 +8,7 @@ import {
   MAX_PANELS_PER_TAB,
   PanelDescriptor,
 } from './layout.models';
+import { assertLayoutConsistent } from './layout-invariants.spec-util';
 
 const reducer = layoutFeature.reducer;
 
@@ -171,5 +172,93 @@ describe('layoutFeature reducer', () => {
   it('selectActiveTab resolves the active tab from the workspace', () => {
     const state = createInitialLayoutState();
     expect(selectActiveTab.projector(state.workspace)?.id).toBe('tab-main');
+  });
+
+  describe('movePanel + lifecycle invariants (RFC-009)', () => {
+    const twoTabs = (): LayoutState => {
+      let s = reducer(createInitialLayoutState(), LayoutActions.createTab({ id: 'tab-2', name: 'Contexto' }));
+      s = reducer(s, LayoutActions.addPanel({ tabId: 'tab-2', cellIndex: 0, descriptor: descriptor('p-ctx') }));
+      return s;
+    };
+
+    it('moves a panel to another tab/cell and fixes both activePanelIds', () => {
+      const state = reducer(
+        twoTabs(),
+        LayoutActions.movePanel({ panelId: 'panel-2', targetTabId: 'tab-2', targetCellIndex: 0 }),
+      );
+      const source = state.workspace.tabs[0].cells[1];
+      const target = state.workspace.tabs[1].cells[0];
+      expect(source.panelIds).toEqual([]);
+      expect(source.activePanelId).toBe('');
+      expect(target.panelIds).toEqual(['p-ctx', 'panel-2']);
+      expect(target.activePanelId).toBe('panel-2');
+      assertLayoutConsistent(state);
+    });
+
+    it('movePanel within the same tab relocates between cells', () => {
+      const state = reducer(
+        createInitialLayoutState(),
+        LayoutActions.movePanel({ panelId: 'panel-2', targetTabId: 'tab-main', targetCellIndex: 0 }),
+      );
+      expect(state.workspace.tabs[0].cells[0].panelIds).toEqual(['panel-1', 'panel-2']);
+      expect(state.workspace.tabs[0].cells[1].panelIds).toEqual([]);
+      assertLayoutConsistent(state);
+    });
+
+    it('rejects moves that would exceed MAX_PANELS_PER_TAB in the target tab', () => {
+      let state = twoTabs();
+      for (let i = 0; i < MAX_PANELS_PER_TAB - 1; i++) {
+        state = reducer(state, LayoutActions.addPanel({ tabId: 'tab-2', cellIndex: 0, descriptor: descriptor(`f-${i}`) }));
+      }
+      const full = state;
+      const same = reducer(
+        full,
+        LayoutActions.movePanel({ panelId: 'panel-1', targetTabId: 'tab-2', targetCellIndex: 0 }),
+      );
+      expect(same).toBe(full);
+    });
+
+    it('rejects unknown panel, unknown tab, and out-of-range cell (no-ops)', () => {
+      const state = twoTabs();
+      expect(reducer(state, LayoutActions.movePanel({ panelId: 'nope', targetTabId: 'tab-2', targetCellIndex: 0 }))).toBe(state);
+      expect(reducer(state, LayoutActions.movePanel({ panelId: 'panel-1', targetTabId: 'nope', targetCellIndex: 0 }))).toBe(state);
+      expect(reducer(state, LayoutActions.movePanel({ panelId: 'panel-1', targetTabId: 'tab-2', targetCellIndex: 9 }))).toBe(state);
+    });
+
+    it('keeps the invariant across an arbitrary create/move/close/closeTab/shrink sequence', () => {
+      let s = twoTabs();
+      assertLayoutConsistent(s);
+      s = reducer(s, LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 0, descriptor: descriptor('p-3') }));
+      assertLayoutConsistent(s);
+      s = reducer(s, LayoutActions.movePanel({ panelId: 'p-3', targetTabId: 'tab-2', targetCellIndex: 0 }));
+      assertLayoutConsistent(s);
+      s = reducer(s, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
+      assertLayoutConsistent(s);
+      s = reducer(s, LayoutActions.removePanel({ panelId: 'panel-1' }));
+      assertLayoutConsistent(s);
+      s = reducer(s, LayoutActions.closeTab({ tabId: 'tab-2' }));
+      assertLayoutConsistent(s); // tab-2's panels (p-ctx, p-3) fully deregistered
+      expect(s.panels['p-ctx']).toBeUndefined();
+      expect(s.panels['p-3']).toBeUndefined();
+    });
+  });
+
+  describe('selectVisiblePanelIds (RFC-009 D6, derived — not stored)', () => {
+    it('marks visible exactly the active panel of each cell of the active tab', () => {
+      let s = reducer(createInitialLayoutState(), LayoutActions.createTab({ id: 'tab-2', name: 'B' }));
+      s = reducer(s, LayoutActions.addPanel({ tabId: 'tab-2', cellIndex: 0, descriptor: descriptor('p-b') }));
+      // active tab is tab-2 after createTab
+      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-b': true });
+      s = reducer(s, LayoutActions.setActiveTab({ tabId: 'tab-main' }));
+      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'panel-1': true, 'panel-2': true });
+    });
+
+    it('stacked cell: only the activePanelId of the cell is visible', () => {
+      const s = reducer(
+        createInitialLayoutState(),
+        LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 0, descriptor: descriptor('p-3') }),
+      );
+      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-3': true, 'panel-2': true });
+    });
   });
 });

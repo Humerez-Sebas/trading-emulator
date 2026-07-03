@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { Store } from '@ngrx/store';
-import { combineLatest, Observable, ReplaySubject } from 'rxjs';
-import { distinctUntilChanged, map } from 'rxjs/operators';
+import { BehaviorSubject, combineLatest, Observable, ReplaySubject } from 'rxjs';
+import { distinctUntilChanged, filter, map } from 'rxjs/operators';
 import {
   selectChartStyle,
   selectChartView,
@@ -94,6 +94,27 @@ export class ChartModelMapper {
     };
   }
 
+  /** RFC-009 (D6): update-gating switch — true by default (visible panel). */
+  private readonly updatesEnabled$ = new BehaviorSubject<boolean>(true);
+
+  setUpdatesEnabled(enabled: boolean): void {
+    if (this.updatesEnabled$.value !== enabled) this.updatesEnabled$.next(enabled);
+  }
+
+  /**
+   * Pauses the stream while updates are disabled and replays the LATEST
+   * upstream value on re-enable (distinctUntilChanged suppresses the replay
+   * when nothing changed while hidden — the engine already painted it).
+   */
+  private gated<T>(): (source: Observable<T>) => Observable<T> {
+    return (source) =>
+      combineLatest([source, this.updatesEnabled$]).pipe(
+        filter(([, enabled]) => enabled),
+        map(([value]) => value),
+        distinctUntilChanged(),
+      );
+  }
+
   // ───────── selector observables ─────────
 
   /**
@@ -137,7 +158,8 @@ export class ChartModelMapper {
       gridVisible: style.gridVisible,
       gridOpacity: style.gridOpacity,
       tradeBoxOpacity: this.mapTradeBoxOpacity(style.tradeBoxOpacity),
-    }))
+    })),
+    this.gated(),
   );
 
   /** Consistent chart view: TF label, candles, visible index, UTC offset, forming candle, countdown. */
@@ -148,7 +170,7 @@ export class ChartModelMapper {
     utcOffset: number;
     forming: import('../../models').Candle | null;
     countdown: string | null;
-  }> = this.store.select(selectChartView);
+  }> = this.store.select(selectChartView).pipe(this.gated());
 
   private mapPositions = this.memoizeMap((p: StatePosition) => ({
     id: p.id, side: p.side, entryPrice: p.entryPrice, sl: p.sl, tp: p.tp,
@@ -178,19 +200,22 @@ export class ChartModelMapper {
       orders: this.mapOrders(data.orders) as PendingOrder[],
       markers: this.mapMarkers(data.markers) as TradeMarker[],
       boxes: this.mapBoxes(data.boxes) as TradeBoxItem[],
-    }))
+    })),
+    this.gated(),
   );
 
   /** Session end UTC timestamp (signal). */
   readonly sessionEnd = this.store.selectSignal(selectSessionEnd);
 
   /** Session end as observable (for subscription-based session indicator repaint). */
-  readonly sessionEnd$: Observable<number | null> = this.store.select(selectSessionEnd);
+  readonly sessionEnd$: Observable<number | null> = this.store
+    .select(selectSessionEnd)
+    .pipe(this.gated());
 
   /** Drawings state changes (triggers full drawings repaint). */
-  readonly drawingsState$: Observable<unknown> = this.store.select(
-    drawingsFeature.selectDrawingsState,
-  );
+  readonly drawingsState$: Observable<unknown> = this.store
+    .select(drawingsFeature.selectDrawingsState)
+    .pipe(this.gated());
 
   // ───────── RFC-008: per-panel parametrized derivation (D8) ─────────
 

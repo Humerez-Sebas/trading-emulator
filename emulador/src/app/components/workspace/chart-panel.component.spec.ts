@@ -9,6 +9,7 @@ import { ChartComponent } from '../chart/chart.component';
 import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus, PanelSyncEvent } from '../../domain/chart/chart-sync-bus';
+import { ChartRegistry } from './chart-registry.service';
 import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 
@@ -33,7 +34,11 @@ describe('ChartPanelComponent', () => {
     syncBus = new ChartSyncBus();
     TestBed.configureTestingModule({
       imports: [ChartPanelComponent],
-      providers: [provideMockStore(), { provide: ChartSyncBus, useValue: syncBus }],
+      providers: [
+        provideMockStore(),
+        { provide: ChartSyncBus, useValue: syncBus },
+        { provide: ChartRegistry, useValue: new ChartRegistry() },
+      ],
     });
     TestBed.overrideComponent(ChartPanelComponent, {
       remove: { imports: [ChartComponent] },
