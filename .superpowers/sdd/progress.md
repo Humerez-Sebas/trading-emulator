@@ -20,6 +20,7 @@ Task 3 (ChartPanel wiring + ChartEngine guarded apply seam): complete (commits f
   - Also closed in fd6e8a3: Task-2 Mediums (idempotence re-keyed on applied values; crosshair idempotence test; honest doc comments).
   - Residual LOW (documented, no fix): identical-range apply fires no echo -> armed flag would consume the next genuine user event; masked by router value-idempotence, self-heals next interaction.
   - HANDOFF to Task 5 e2e: real-RAF loop regression must cover (i) coalesced double-apply, (ii) user-drag racing the echo window (converges, no sustained oscillation), (iii) no-value-change apply not swallowing the next real drag; 3+-panel topology for the idempotence net.
-Task 4 (replay clock fan-out + freeze-on-last verification suite): incomplete
+Task 4 (replay clock fan-out + freeze-on-last verification suite): complete (commit 82e71ee, verified 2026-07-03: 877 tests green, tsc spec clean, lint 0; Opus review PASS, 0 High/Critical)
+  - Pure-test task, zero production code; D5 claims held on first run (nothing falsified). Reviewer ratified fidelity: selectReplayIndex stays the single-chart path; panelChartView$ is the per-panel fan-out surface — both use the same audited lastIndexAtOrBefore primitive.
 Task 5 (viewport ChartSyncRouter wiring + e2e feedback-loop regression): incomplete
 Final audit: incomplete
