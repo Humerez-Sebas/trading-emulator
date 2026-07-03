@@ -1,10 +1,12 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, effect, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { ChartPanelComponent } from './chart-panel.component';
 import { ChartRegistry } from './chart-registry.service';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
+import { ChartSyncRouter } from './chart-sync-router';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
+import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import { MAX_PANELS_PER_TAB, PanelDescriptor, TabLayout } from '../../state/layout/layout.models';
 
 /**
@@ -13,9 +15,13 @@ import { MAX_PANELS_PER_TAB, PanelDescriptor, TabLayout } from '../../state/layo
  * the closed `GridTemplate` enum (max depth 1 — no BSP/nesting). Each cell is
  * a tab-group: several stacked panels, one visible at a time.
  *
- * Provides the per-Session `ChartSyncBus` (one hub per Session, not per panel)
- * and the per-Session `ChartRegistry` (RFC-009 liveness tracker). Both stay
- * framework-free, hence the `useFactory` providers.
+ * Provides the per-Session `ChartSyncBus` (one hub per Session, not per panel),
+ * the per-Session `ChartRegistry` (RFC-009 liveness tracker), and the
+ * per-Session `ChartSyncRouter` (RFC-010: group-scoped fan-out over the bus +
+ * registry above). All three stay framework-free, hence the `useFactory`
+ * providers; the router cannot inject the Store itself, so this component
+ * feeds it live `{panels, linkGroups}` snapshots via an `effect` (see the
+ * constructor).
  */
 @Component({
   selector: 'app-workspace-viewport',
@@ -24,6 +30,11 @@ import { MAX_PANELS_PER_TAB, PanelDescriptor, TabLayout } from '../../state/layo
   providers: [
     { provide: ChartSyncBus, useFactory: () => new ChartSyncBus() },
     { provide: ChartRegistry, useFactory: () => new ChartRegistry() },
+    {
+      provide: ChartSyncRouter,
+      useFactory: (bus: ChartSyncBus, registry: ChartRegistry) => new ChartSyncRouter(bus, registry),
+      deps: [ChartSyncBus, ChartRegistry],
+    },
   ],
   imports: [ChartPanelComponent],
   template: `
@@ -216,10 +227,19 @@ import { MAX_PANELS_PER_TAB, PanelDescriptor, TabLayout } from '../../state/layo
 export class WorkspaceViewportComponent implements OnDestroy {
   private readonly store = inject(Store);
   private readonly syncBus = inject(ChartSyncBus);
+  private readonly syncRouter = inject(ChartSyncRouter);
 
   readonly workspace = this.store.selectSignal(layoutFeature.selectWorkspace);
   readonly panels = this.store.selectSignal(layoutFeature.selectPanels);
   readonly visibleIds = this.store.selectSignal(selectVisiblePanelIds);
+  /** RFC-010: live LinkGroup map, fed to the ChartSyncRouter below. */
+  readonly linkGroups = this.store.selectSignal(linkGroupsFeature.selectGroups);
+
+  constructor() {
+    // RFC-010: the router is framework-free (no Store injection of its own), so it is kept fed
+    // with the live panels/linkGroups snapshot it needs to resolve "same linkGroup" siblings.
+    effect(() => this.syncRouter.setState({ panels: this.panels(), linkGroups: this.linkGroups() }));
+  }
 
   selectTab(tabId: string): void {
     this.store.dispatch(LayoutActions.setActiveTab({ tabId }));
@@ -262,6 +282,7 @@ export class WorkspaceViewportComponent implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.syncRouter.destroy();
     this.syncBus.destroy();
   }
 }

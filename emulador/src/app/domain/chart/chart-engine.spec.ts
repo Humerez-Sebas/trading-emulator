@@ -51,8 +51,17 @@ const {
    */
   let librarySelfFiresOnProgrammaticCalls = false;
 
-  /** Pending deferred range echoes, flushed by `flushEcho()` (stands in for the next RAF/tick). */
-  let pendingRangeEchoes: (() => void)[] = [];
+  /**
+   * Pending same-frame-coalesced range echo, flushed by `flushEcho()` (stands in for the next
+   * RAF/tick). Traced against node_modules/lightweight-charts/dist/lightweight-charts.development.mjs
+   * (`_invalidateHandler`): the real library MERGES every invalidation raised before the next
+   * `requestAnimationFrame` fires into a single mask and schedules at most ONE RAF per draw cycle
+   * (`if (!this._private__drawPlanned) { ... requestAnimationFrame(...) }`) — repeated
+   * `setVisibleLogicalRange` calls within the same tick do NOT each get their own downstream
+   * range-changed callback; only the last-applied value survives to the single coalesced draw.
+   * Modeled here as one pending slot (last-write-wins) rather than a queue.
+   */
+  let pendingRangeEcho: (() => void) | undefined;
 
   const timeScaleStub = {
     subscribeVisibleLogicalRangeChange: (cb: (r: unknown) => void) => {
@@ -60,9 +69,10 @@ const {
     },
     setVisibleLogicalRange: vi.fn((r: unknown) => {
       // Real lightweight-charts v5.2 behaviour: the range-changed delegate fires on the NEXT
-      // animation frame, never synchronously. Model that with a deferred microtask instead of a
-      // synchronous callback.
-      pendingRangeEchoes.push(() => rangeCb?.(r));
+      // animation frame, never synchronously, and same-frame calls coalesce into that ONE frame
+      // (see the doc above) — so this overwrites any not-yet-flushed pending echo instead of
+      // queuing an additional one.
+      pendingRangeEcho = () => rangeCb?.(r);
     }),
   };
   const seriesStub = {
@@ -97,13 +107,13 @@ const {
       crosshairCb = undefined;
       rangeCb = undefined;
       librarySelfFiresOnProgrammaticCalls = false;
-      pendingRangeEchoes = [];
+      pendingRangeEcho = undefined;
     },
-    /** Flushes every range echo scheduled so far by `setVisibleLogicalRange`, in order. */
+    /** Flushes the pending (same-frame-coalesced) range echo, if any. */
     flushEcho: async () => {
-      const toRun = pendingRangeEchoes;
-      pendingRangeEchoes = [];
-      toRun.forEach((run) => run());
+      const toRun = pendingRangeEcho;
+      pendingRangeEcho = undefined;
+      toRun?.();
       // let any microtasks the callback itself queues settle too
       await Promise.resolve();
     },
@@ -256,6 +266,78 @@ describe('ChartEngine.applyCrosshair/applyVisibleRange (RFC-010 Task 3)', () => 
       fireRange({ from: 1, to: 2 });
 
       expect(seen).toEqual([{ from: 1, to: 2 }]);
+    });
+
+    // RFC-010 Task 5 (folded from the Task 3 fix-loop re-audit's residual-risk list, since a real
+    // RAF is not available at the router/viewport spec level — these three exercise ChartEngine's
+    // one-shot suppression directly against the deferred-echo stub already established above).
+
+    it('(i) RFC-010 Task 5: two rapid applyVisibleRange calls followed by ONE coalesced echo (as lightweight-charts does for same-frame invalidations) still cause NO leaked bus emission', async () => {
+      const { chart, flushEcho } = stubChart();
+      const engine = new ChartEngine(document.createElement('div'));
+      const seen: unknown[] = [];
+      engine.events.on('VisibleRangeChanged', (r) => seen.push(r));
+
+      // Two rapid programmatic applies within the same frame — the stub queues one pending echo
+      // per call, but the one-shot flag is armed (not counted) once per apply, so the SECOND
+      // apply re-arms it even though the first echo hasn't fired yet.
+      engine.applyVisibleRange({ from: 0, to: 10 } as never);
+      engine.applyVisibleRange({ from: 5, to: 15 } as never);
+      expect(chart.timeScale().setVisibleLogicalRange).toHaveBeenCalledTimes(2);
+
+      // The library coalesces same-frame invalidations into a single next-frame callback in
+      // practice; model that here as ONE flushed echo carrying the latest applied value.
+      await flushEcho();
+
+      expect(seen).toEqual([]); // no bus emission leaked from either apply's echo
+    });
+
+    it('(ii) RFC-010 Task 5: a genuine user range event racing the echo window (fired BETWEEN an apply and its deferred echo) converges — bounded emissions, no sustained oscillation', async () => {
+      const { flushEcho } = stubChart();
+      const engine = new ChartEngine(document.createElement('div'));
+      const seen: unknown[] = [];
+      engine.events.on('VisibleRangeChanged', (r) => seen.push(r));
+
+      engine.applyVisibleRange({ from: 0, to: 10 } as never); // programmatic apply arms the one-shot suppressor
+      // A genuine user drag/zoom races in BEFORE the apply's own echo arrives. The one-shot flag
+      // cannot distinguish "the apply's own echo" from "an unrelated event that happens to arrive
+      // first" — by design it consumes whichever range-changed callback fires FIRST after the
+      // apply. Here that is the racing user event, so it is (incorrectly, but boundedly) swallowed:
+      getRangeCb()?.({ from: 2, to: 12 }); // the racing user event, arrives first — consumes the one-shot flag
+      expect(seen).toEqual([]); // swallowed: indistinguishable from the apply's own echo at this layer
+
+      // The apply's OWN queued echo then arrives (this stub's deferred queue, standing in for the
+      // real RAF) — the one-shot flag was already spent by the race above, so this echo is no
+      // longer suppressed and leaks through once:
+      await flushEcho();
+      expect(seen).toEqual([{ from: 0, to: 10 }]); // one bounded leak, not a cascade — see convergence below
+
+      // Bounded, not unbounded: exactly one extra emission resulted from the race, never more.
+      expect(seen.length).toBe(1);
+
+      // Convergence: the NEXT genuine user event (after the race has settled and the one-shot
+      // flag is spent) emits normally — the exchange did not leave the engine permanently stuck
+      // suppressing, nor did it enter a sustained oscillation (no further swallows, no repeats).
+      getRangeCb()?.({ from: 20, to: 30 });
+      expect(seen).toEqual([{ from: 0, to: 10 }, { from: 20, to: 30 }]);
+    });
+
+    it('(iii) RFC-010 Task 5: a no-value-change apply that the library does not echo at all consumes the NEXT user event (documented Low); the event AFTER that emits again (self-healing)', () => {
+      const engine = new ChartEngine(document.createElement('div'));
+      const seen: unknown[] = [];
+      engine.events.on('VisibleRangeChanged', (r) => seen.push(r));
+
+      // Applying a range that is already the current one: the real library may not fire ANY
+      // range-changed callback at all (nothing actually changed), so the armed one-shot flag is
+      // never consumed by an echo — it stays armed until the next callback of any origin.
+      engine.applyVisibleRange({ from: 0, to: 10 } as never);
+      // No echo arrives (simulating the library's no-op case). The armed flag is still pending.
+
+      getRangeCb()?.({ from: 0, to: 10 } as never); // the NEXT event — a genuine user nudge — is swallowed instead
+      expect(seen).toEqual([]); // documented Low: this one genuine event is incorrectly consumed
+
+      getRangeCb()?.({ from: 30, to: 40 }); // self-healing: the event AFTER that is unaffected
+      expect(seen).toEqual([{ from: 30, to: 40 }]);
     });
   });
 });
