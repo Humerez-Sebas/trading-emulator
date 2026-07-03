@@ -183,6 +183,11 @@ export const layoutFeature = createFeature({
         },
       };
     }),
+    on(LayoutActions.setPanelLinkGroup, (state, { panelId, linkGroupId }): LayoutState => {
+      const panel = state.panels[panelId];
+      if (!panel || panel.linkGroupId === linkGroupId) return state;
+      return { ...state, panels: { ...state.panels, [panelId]: { ...panel, linkGroupId } } };
+    }),
   ),
 });
 

@@ -18,5 +18,7 @@ export const LayoutActions = createActionGroup({
     'Set Active Panel': props<{ tabId: string; cellIndex: number; panelId: string }>(),
     /** Relocates an existing panel to (targetTabId, targetCellIndex). No-op if it would exceed MAX_PANELS_PER_TAB in the target tab. */
     'Move Panel': props<{ panelId: string; targetTabId: string; targetCellIndex: number }>(),
+    /** Assigns/clears the panel's link group. Reducer transports only; sync semantics are RFC-010's ChartSyncRouter. No-op if panelId is unknown. */
+    'Set Panel Link Group': props<{ panelId: string; linkGroupId: string | null }>(),
   },
 });
