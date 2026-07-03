@@ -19,5 +19,8 @@ Task 4 (ChartRegistry + lifecycle/leak tests): complete (commit 1db6209, verifie
   - Sanctioned deviation confirmed faithful: gating test spies the panel's mapper (the real D6 seam) instead of the registry handle (a delegate with no internal call sites); plan's original spy would have observed nothing.
   - MEDIUM logged (fix folded into Task 5, same spec file): viewport gate test asserts the re-show true-path only; add a spy on the panel being HIDDEN asserting setUpdatesEnabled(false). Mechanism itself unit-covered in mapper spec.
   - Lows: handle→mapper delegate wiring untested (no external consumer yet); registry read API has no production consumer until RFC-010+.
-Task 5 (hot create/close affordances): incomplete
+Task 5 (hot create/close affordances): complete (commit 872f439, verified 2026-07-02: 845 tests green, tsc app+spec clean, lint 0, invariant greps empty; Opus review PASS, 0 High/Critical)
+  - Also closed the Task-4 Medium: lifecycle gate test now asserts setUpdatesEnabled(false) on the hidden panel and (true) on the shown one.
+  - Deviations (reviewed, behavior-preserving): a11y attrs/handlers on the close affordance; .grid:not([hidden]) query scoping (required by keep-alive DOM); test-only action cast.
+  - Low logged: close "×" is a span[role=button] nested inside the cell-tab button — a11y smell; lift to a sibling control in a future pass.
 Final audit: incomplete
