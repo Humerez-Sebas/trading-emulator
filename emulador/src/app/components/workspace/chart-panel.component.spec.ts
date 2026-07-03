@@ -5,7 +5,7 @@ import { By } from '@angular/platform-browser';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { MouseEventParams, Time } from 'lightweight-charts';
 import { ChartPanelComponent } from './chart-panel.component';
-import { ChartComponent } from '../chart/chart.component';
+import { ChartComponent, ChartControlHandle } from '../chart/chart.component';
 import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus, PanelSyncEvent } from '../../domain/chart/chart-sync-bus';
@@ -13,10 +13,11 @@ import { ChartRegistry } from './chart-registry.service';
 import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 
-/** Stub of the audited ChartComponent: no engine, no canvas — just the output. */
+/** Stub of the audited ChartComponent: no engine, no canvas — just the outputs. */
 @Component({ selector: 'app-chart', standalone: true, template: '' })
 class ChartStubComponent {
   readonly chartReady = output<ChartEventBus>();
+  readonly chartControlReady = output<ChartControlHandle>();
 }
 
 const descriptor: PanelDescriptor = {
@@ -113,5 +114,30 @@ describe('ChartPanelComponent', () => {
     fixture.destroy();
     engineBus.emit('VisibleRangeChanged', null);
     expect(events).toHaveLength(0);
+  });
+
+  it('registers applyCrosshair/applyVisibleRange delegates that forward to the chartControlReady handle', () => {
+    const fixture = create();
+    const registry = TestBed.inject(ChartRegistry);
+    const stub = fixture.debugElement.query(By.directive(ChartStubComponent));
+    const controlHandle = { applyCrosshair: vi.fn(), applyVisibleRange: vi.fn() };
+    stub.componentInstance.chartControlReady.emit(controlHandle);
+
+    const panelHandle = registry.get('panel-1')!;
+    panelHandle.applyCrosshair(1000);
+    // `LogicalRange.from/to` are the branded `Logical` type, not plain `number`; `as never`
+    // matches this repo's existing convention for LogicalRange test literals (see
+    // chart-sync-bus.spec.ts, chart-engine.spec.ts).
+    panelHandle.applyVisibleRange({ from: 0, to: 10 } as never);
+
+    expect(controlHandle.applyCrosshair).toHaveBeenCalledWith(1000);
+    expect(controlHandle.applyVisibleRange).toHaveBeenCalledWith({ from: 0, to: 10 });
+  });
+
+  it('a delegate call BEFORE chartControlReady has fired is a silent no-op, not a throw', () => {
+    create(); // registers panel-1 in the registry via ngOnInit; no chartControlReady emitted yet
+    const registry = TestBed.inject(ChartRegistry);
+    const panelHandle = registry.get('panel-1')!;
+    expect(() => panelHandle.applyCrosshair(1000)).not.toThrow();
   });
 });

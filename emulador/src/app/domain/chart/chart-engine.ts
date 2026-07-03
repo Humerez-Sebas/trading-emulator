@@ -1,10 +1,17 @@
-import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData, CrosshairMode } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData, CrosshairMode, LogicalRange, UTCTimestamp } from 'lightweight-charts';
 import { RenderModel } from './render-model';
 import { ChartEventBus } from './chart-event-bus';
 import { Capability } from './capability';
 import { hexToRgba } from './color-utils';
 
-export class ChartEngine {
+export interface ChartApplyHandle {
+  /** Sets the crosshair to a given time; `null` clears it. Re-entrancy-guarded (see class doc). */
+  applyCrosshair(time: UTCTimestamp | null): void;
+  /** Sets the visible logical range; `null` is a no-op (never clears). Re-entrancy-guarded. */
+  applyVisibleRange(range: LogicalRange | null): void;
+}
+
+export class ChartEngine implements ChartApplyHandle {
   // TODO: Eliminar esta exposición directa en RFC-004/RFC-005 una vez que DrawingsCapability y TradingCapability estén implementados.
   public get chartApi(): IChartApi { return this.chart; }
   public get seriesApi(): ISeriesApi<"Candlestick"> { return this.mainSeries; }
@@ -15,6 +22,9 @@ export class ChartEngine {
   private bus = new ChartEventBus();
   private capabilities = new Map<string, Capability>();
   public get events(): ChartEventBus { return this.bus; }
+
+  /** RFC-010: true only for the synchronous duration of an applyCrosshair/applyVisibleRange call — suppresses re-emission if the underlying library fires its own subscribeX callback as a side effect of a PROGRAMMATIC change, closing the A->B->A feedback-loop risk at its root (chart-engine.ts is the only place that talks to lightweight-charts directly). */
+  private applyingSync = false;
 
   constructor(container: HTMLElement) {
     // autoSize uses lightweight-charts' internal ResizeObserver on the container,
@@ -40,10 +50,32 @@ export class ChartEngine {
 
     this.chart.subscribeClick((p) => this.bus.emit('ChartClicked', p));
     this.chart.subscribeDblClick((p) => this.bus.emit('ChartClicked', p));
-    this.chart.subscribeCrosshairMove((p) => this.bus.emit('CrosshairMoved', p));
-    this.chart
-      .timeScale()
-      .subscribeVisibleLogicalRangeChange((r) => this.bus.emit('VisibleRangeChanged', r));
+    this.chart.subscribeCrosshairMove((p) => {
+      if (!this.applyingSync) this.bus.emit('CrosshairMoved', p);
+    });
+    this.chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+      if (!this.applyingSync) this.bus.emit('VisibleRangeChanged', r);
+    });
+  }
+
+  public applyCrosshair(time: UTCTimestamp | null): void {
+    this.applyingSync = true;
+    try {
+      if (time === null) this.chart.clearCrosshairPosition();
+      else this.chart.setCrosshairPosition(0, time, this.mainSeries);
+    } finally {
+      this.applyingSync = false;
+    }
+  }
+
+  public applyVisibleRange(range: LogicalRange | null): void {
+    if (!range) return; // mirrors the engine's own maybeLoadMore-adjacent null guards
+    this.applyingSync = true;
+    try {
+      this.chart.timeScale().setVisibleLogicalRange(range);
+    } finally {
+      this.applyingSync = false;
+    }
   }
 
   public registerCapability(cap: Capability): void {
