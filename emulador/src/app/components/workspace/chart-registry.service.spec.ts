@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { ChartRegistry, PanelChartHandle } from './chart-registry.service';
 
-const handle = (): PanelChartHandle => ({ setUpdatesEnabled: () => void 0 });
+const handle = (): PanelChartHandle => ({
+  setUpdatesEnabled: () => void 0,
+  applyCrosshair: () => void 0,
+  applyVisibleRange: () => void 0,
+});
 
 describe('ChartRegistry (RFC-009)', () => {
   it('registers, resolves, lists and counts handles', () => {

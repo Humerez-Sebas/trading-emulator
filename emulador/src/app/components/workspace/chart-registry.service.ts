@@ -14,9 +14,15 @@
  * (tab switch, cell-tab switch) never removes it, and that only the state
  * actions above ever do.
  */
+import { LogicalRange } from 'lightweight-charts';
+
 export interface PanelChartHandle {
   /** Toggles update-gating on the panel's mapper (spied on by lifecycle tests). */
   setUpdatesEnabled(enabled: boolean): void;
+  /** RFC-010: applies a synced crosshair position (UTCTimestamp, see Task 2 Step 4's note on `Time`). `time === null` clears it. Idempotent per handle. */
+  applyCrosshair(time: number | null): void;
+  /** RFC-010: applies a synced visible logical range. `range === null` is a no-op (never clears). Idempotent per handle. */
+  applyVisibleRange(range: LogicalRange | null): void;
 }
 
 export class ChartRegistry {

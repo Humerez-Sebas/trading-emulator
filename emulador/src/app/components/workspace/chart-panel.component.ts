@@ -105,6 +105,12 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.registry.register(this.descriptor().id, {
       setUpdatesEnabled: (on) => this.mapper.setUpdatesEnabled(on),
+      // RFC-010 Task 2 compile-compat stub: PanelChartHandle gained these two
+      // methods for ChartSyncRouter's fan-out. Real wiring to the chart's
+      // ChartControlHandle (chartControlReady) is Task 3's scope; until then
+      // these are inert no-ops so no panel is ever a live sync target.
+      applyCrosshair: () => void 0,
+      applyVisibleRange: () => void 0,
     });
   }
 
