@@ -320,6 +320,42 @@ describe('ChartModelMapper', () => {
       store.refreshState();
       expect(idx).toBe(2);
     });
+
+    it('RFC-010 D5: two panels of the SAME symbol but DIFFERENT timeframes project the SAME global currentTime to DIFFERENT candle indices (fan-out by projection, not shared-index replication)', () => {
+      // reuses this describe block's own beforeEach: selectSeries={M1: m1, M5: m5}, selectCurrentTime=200
+      const mapperA = TestBed.runInInjectionContext(() => new ChartModelMapper()); // own instance = own D8 memo slot
+      const mapperB = TestBed.runInInjectionContext(() => new ChartModelMapper());
+      mapperA.configurePanel(panel('a', 'M1'));
+      mapperB.configurePanel(panel('b', 'M5'));
+
+      let idxA = -99, idxB = -99;
+      mapperA.panelChartView$.subscribe((v) => (idxA = v.idx));
+      mapperB.panelChartView$.subscribe((v) => (idxB = v.idx));
+
+      expect(idxA).toBe(1); // M1 candle at t=160 is at-or-before the shared cursor t=200
+      expect(idxB).toBe(0); // M5 candle at t=100 is at-or-before t=200; M5's t=400 candle is still ahead
+      // Same cursor T, different indices per panel: proof of per-panel projection, matching the
+      // existing 'the global replay cursor recomputes every panel' test just above, extended to
+      // show DIVERGENT (not merely simultaneous) projections across timeframes.
+    });
+
+    it('RFC-010 D5: a panel whose symbol has a data gap freezes idx on the last available candle when the global cursor is beyond its coverage, and un-freezes on returning to coverage', () => {
+      const gappy = [{ time: 100, open: 1, high: 1, low: 1, close: 1 }, { time: 200, open: 1, high: 1, low: 1, close: 2 }];
+      store.overrideSelector(selectSeries, { M1: gappy });
+      store.overrideSelector(selectCurrentTime, 100);
+      store.refreshState();
+      mapper.configurePanel({ id: 'gap-panel', symbol: 'Y', timeframe: 'M1', linkGroupId: null });
+      const views: PanelChartView[] = [];
+      mapper.panelChartView$.subscribe((v) => views.push(v));
+
+      store.overrideSelector(selectCurrentTime, 9999); // cursor far beyond this panel's own last candle
+      store.refreshState();
+      expect(views.at(-1)!.idx).toBe(1); // frozen on the last candle (index 1), not -1
+
+      store.overrideSelector(selectCurrentTime, 150); // cursor moves back within coverage (replay resolution change, etc.)
+      store.refreshState();
+      expect(views.at(-1)!.idx).toBe(0); // un-frozen: tracks the cursor again
+    });
   });
 
   describe('setUpdatesEnabled (RFC-009 D6 update-gating)', () => {
