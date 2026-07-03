@@ -23,4 +23,4 @@ Task 5 (hot create/close affordances): complete (commit 872f439, verified 2026-0
   - Also closed the Task-4 Medium: lifecycle gate test now asserts setUpdatesEnabled(false) on the hidden panel and (true) on the shown one.
   - Deviations (reviewed, behavior-preserving): a11y attrs/handlers on the close affordance; .grid:not([hidden]) query scoping (required by keep-alive DOM); test-only action cast.
   - Low logged: close "×" is a span[role=button] nested inside the cell-tab button — a11y smell; lift to a sibling control in a future pass.
-Final audit: incomplete
+Final audit: complete (2026-07-02, Opus whole-increment review 34b047d..1632da0: PASS, 0 High/Critical; RFC-009 DoD met — "Ship it". Gates re-run by auditor: tsc app+spec clean, 845/845 tests, lint 0, build OK at 604.50 kB (budget warning pre-existing, not materially moved). chart.component.ts diff = exactly the sanctioned providers-line removal; domain purity + no-factory-selector + no-new-deps invariants hold; Task-4 Medium confirmed closed in Task 5. Lows carried: UI tabAtCap mirrors reducer helper (authoritative guard is the reducer); close-affordance nesting a11y smell (future lift-to-sibling).)
