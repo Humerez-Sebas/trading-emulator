@@ -15,6 +15,9 @@ Task 2 (derived visibility + keep-alive viewport): complete (commit 7cf875a, ver
 Task 3 (mapper update-gating D6 + provider move): complete (commit ff3cf68, verified 2026-07-02: 836 tests green, tsc app+spec clean, lint 0; audit PASS, 0 High/Critical)
   - AUDIT MODE DEVIATION: the Opus reviewer dispatch was killed by the account session-usage limit (resets 9:30pm La Paz); the orchestrator performed the review inline with the identical checklist. Verified: gate semantics (suppress/resync/no-dup/cold-sub), chart.component.ts diff = exactly the removed providers line, DI sweep shows no NullInjectorError path (mapper injected only by ChartComponent + ChartPanelComponent; app-chart mounted only under panel/page providers), only the mapper spec changed among tests.
   - D6 seam established: panel + inner chart share one mapper instance per panel; five render feeds gated by visibility; panelChartView$ and sessionEnd signal ungated by design.
-Task 4 (ChartRegistry + lifecycle/leak tests): incomplete
+Task 4 (ChartRegistry + lifecycle/leak tests): complete (commit 1db6209, verified 2026-07-02: 842 tests green, tsc app+spec clean, lint 0; Opus review PASS, 0 High/Critical)
+  - Sanctioned deviation confirmed faithful: gating test spies the panel's mapper (the real D6 seam) instead of the registry handle (a delegate with no internal call sites); plan's original spy would have observed nothing.
+  - MEDIUM logged (fix folded into Task 5, same spec file): viewport gate test asserts the re-show true-path only; add a spy on the panel being HIDDEN asserting setUpdatesEnabled(false). Mechanism itself unit-covered in mapper spec.
+  - Lows: handle→mapper delegate wiring untested (no external consumer yet); registry read API has no production consumer until RFC-010+.
 Task 5 (hot create/close affordances): incomplete
 Final audit: incomplete
