@@ -46,4 +46,18 @@ describe('linkGroupsFeature reducer', () => {
     const state = reducer(createInitialLinkGroupsState(), LinkGroupsActions.createGroup({ group: withReserved }));
     expect(state.groups['g1'].syncPriceScale).toBe(true); // stored verbatim, R3: never read elsewhere
   });
+
+  describe('restoreGroups (RFC-011 Task 2)', () => {
+    it('replaces the entire groups map keyed by id', () => {
+      const groups = [group('g1'), { ...group('g2'), syncCrosshair: false }];
+      const state = reducer(createInitialLinkGroupsState(), LinkGroupsActions.restoreGroups({ groups }));
+      expect(state.groups).toEqual({ g1: groups[0], g2: groups[1] });
+    });
+
+    it('an empty array (V1 migration default) clears any existing groups', () => {
+      let state = reducer(createInitialLinkGroupsState(), LinkGroupsActions.createGroup({ group: group('g1') }));
+      state = reducer(state, LinkGroupsActions.restoreGroups({ groups: [] }));
+      expect(state.groups).toEqual({});
+    });
+  });
 });

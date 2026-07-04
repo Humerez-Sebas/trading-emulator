@@ -7,6 +7,7 @@ import {
   LayoutState,
   MAX_PANELS_PER_TAB,
   PanelDescriptor,
+  WorkspaceLayout,
 } from './layout.models';
 import { assertLayoutConsistent } from './layout-invariants.spec-util';
 
@@ -281,6 +282,36 @@ describe('layoutFeature reducer', () => {
     it('is a no-op for an unknown panelId', () => {
       const state = createInitialLayoutState();
       expect(reducer(state, LayoutActions.setPanelLinkGroup({ panelId: 'nope', linkGroupId: 'g1' }))).toBe(state);
+    });
+  });
+
+  describe('restoreLayout (RFC-011 Task 2)', () => {
+    it('replaces both workspace and panels wholesale', () => {
+      const layout: WorkspaceLayout = {
+        tabs: [{ id: 't1', name: 'Restored', template: '1', cells: [{ panelIds: ['p9'], activePanelId: 'p9' }] }],
+        activeTabId: 't1',
+      };
+      const panels = { p9: { id: 'p9', symbol: 'EURUSD', timeframe: 'H1' as const, linkGroupId: null } };
+      const state = reducer(createInitialLayoutState(), LayoutActions.restoreLayout({ layout, panels }));
+      expect(state.workspace).toEqual(layout);
+      expect(state.panels).toEqual(panels);
+    });
+
+    it('a restored layout satisfies assertLayoutConsistent', () => {
+      const layout: WorkspaceLayout = {
+        tabs: [{ id: 't1', name: 'Restored', template: '2h', cells: [
+          { panelIds: ['p1'], activePanelId: 'p1' },
+          { panelIds: ['p2', 'p3'], activePanelId: 'p2' },
+        ] }],
+        activeTabId: 't1',
+      };
+      const panels = {
+        p1: { id: 'p1', symbol: 'A', timeframe: 'M1' as const, linkGroupId: null },
+        p2: { id: 'p2', symbol: 'B', timeframe: 'M1' as const, linkGroupId: null },
+        p3: { id: 'p3', symbol: 'B', timeframe: 'M5' as const, linkGroupId: 'g1' },
+      };
+      const state = reducer(createInitialLayoutState(), LayoutActions.restoreLayout({ layout, panels }));
+      expect(() => assertLayoutConsistent(state)).not.toThrow();
     });
   });
 });

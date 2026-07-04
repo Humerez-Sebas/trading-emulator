@@ -188,6 +188,10 @@ export const layoutFeature = createFeature({
       if (!panel || panel.linkGroupId === linkGroupId) return state;
       return { ...state, panels: { ...state.panels, [panelId]: { ...panel, linkGroupId } } };
     }),
+    on(LayoutActions.restoreLayout, (_state, { layout, panels }): LayoutState => ({
+      workspace: layout,
+      panels,
+    })),
   ),
 });
 

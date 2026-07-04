@@ -25,5 +25,8 @@ export const linkGroupsFeature = createFeature({
       if (!g || g.syncTimeRange === enabled) return state;
       return { groups: { ...state.groups, [groupId]: { ...g, syncTimeRange: enabled } } };
     }),
+    on(LinkGroupsActions.restoreGroups, (_state, { groups }): LinkGroupsState => ({
+      groups: Object.fromEntries(groups.map((g) => [g.id, g])),
+    })),
   ),
 });
