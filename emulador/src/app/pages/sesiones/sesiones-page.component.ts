@@ -829,6 +829,17 @@ export class SesionesPageComponent {
     };
     const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
     meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
+    // RFC-011 gap fix: the cloud payload is the ONLY live production cloud-pull
+    // path (reconstructWorkspaces is spec-only dead code) — it must carry the
+    // multi-panel layout/panels/linkGroups across devices, not just the
+    // trading/cursor fields, or a fresh device silently falls back to the
+    // single-panel default on open. `restored.*` always comes from
+    // `parseSessionPayload` (via `fromPayload`), so these are always present
+    // and already consistency-validated — no extra guarding needed.
+    meta.layout = restored.layout;
+    meta.panels = restored.panels;
+    meta.linkGroups = restored.linkGroups;
+    meta.drawings = restored.drawings[card.symbol]?.items ?? meta.drawings ?? [];
     await this.db.putMeta(meta);
     await this.reload();
     await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });
