@@ -25,11 +25,22 @@ import {
   WorkspacesActions,
 } from './workspaces.actions';
 import { emptyWorkspace, Workspace, WorkspaceMeta } from './workspaces.models';
+import type { LinkGroup } from '../link-groups/link-groups.models';
 
 // Key for remembering the last active asset across restarts.
 const CURRENT_KEY = 'emulador.currentAsset';
 
-type MetaSnapshot = Omit<WorkspaceMeta, 'symbol' | 'lastModified'>;
+/**
+ * `selectWorkspaceMetaSnapshot`'s actual output shape. `linkGroups` here is
+ * `linkGroupsFeature.selectGroups`'s RUNTIME Record<string, LinkGroup> (RFC-011
+ * Task 4) — NOT `WorkspaceMeta.linkGroups`'s array (the persisted wire-shape
+ * mirror) — so this type overrides that one field rather than reusing
+ * `WorkspaceMeta` as-is; `doSwitch`/`persistMeta$` convert Record -> array
+ * (`Object.values`) at the exact point they call `putMeta`.
+ */
+type MetaSnapshot = Omit<WorkspaceMeta, 'symbol' | 'lastModified' | 'linkGroups'> & {
+  linkGroups: Record<string, LinkGroup>;
+};
 
 @Injectable()
 export class WorkspacesEffects {
@@ -91,6 +102,12 @@ export class WorkspacesEffects {
                 .putMeta({
                   symbol: current!,
                   ...meta,
+                  // RFC-011 Task 4 (folded audit fix): selectWorkspaceMetaSnapshot's
+                  // `linkGroups` is linkGroupsFeature's runtime Record<string,
+                  // LinkGroup> (state), but WorkspaceMeta.linkGroups is declared as
+                  // an ARRAY (the local mirror of the wire/SessionPayloadV2 shape).
+                  // Converting explicitly here keeps the Record out of IndexedDB.
+                  linkGroups: Object.values(meta.linkGroups),
                   lastModified: Date.now(),
                   activeClientUpdatedAt: existing?.activeClientUpdatedAt,
                   activeSyncedAt: existing?.activeSyncedAt,
@@ -168,7 +185,15 @@ export class WorkspacesEffects {
     // 1) persist the outgoing asset's meta (its series are already stored)
     if (current) {
       try {
-        await this.db.putMeta({ symbol: current, ...meta, lastModified: Date.now() });
+        // RFC-011 Task 4 (folded audit fix): see persistMeta$'s comment — the
+        // snapshot's linkGroups is a Record (runtime state); WorkspaceMeta
+        // wants an array (wire-shape mirror).
+        await this.db.putMeta({
+          symbol: current,
+          ...meta,
+          linkGroups: Object.values(meta.linkGroups),
+          lastModified: Date.now(),
+        });
       } catch {
         /* persistence is best-effort */
       }

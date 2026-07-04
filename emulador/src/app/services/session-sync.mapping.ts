@@ -1,7 +1,6 @@
 import type { TradingData, ClosedTrade, SavedSession } from '../state/trading/trading.models';
 import { buildRequiredDatasets, yearsInRange, type AnchorTf } from './session.service';
 import {
-  SESSION_PAYLOAD_VERSION,
   SESSION_PAYLOAD_VERSION_2,
   type PayloadInput,
   type SessionPayloadV1,
@@ -205,7 +204,13 @@ function buildRow(
     symbol,
     name: session.name ?? autoName(symbol, session.createdAt),
     folderId: session.trading.folderId,
-    schemaVersion: SESSION_PAYLOAD_VERSION,
+    // RFC-011 Task 4 (folded audit fix): stamp the row with the EMBEDDED
+    // payload's own version rather than the hardcoded V1 constant — toPayload
+    // always emits SessionPayloadV2 now (D9), so the `schema_version` column
+    // must track that reality. Nothing branches on this column (mergeByLww
+    // ignores it; it's a display-only reader), so this is metadata honesty,
+    // not a behavior change.
+    schemaVersion: payload.schemaVersion,
     createdAt: session.createdAt,
     clientUpdatedAt: session.clientUpdatedAt,
     lastOpenedAt: session.lastOpenedAt ?? null,

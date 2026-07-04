@@ -15,6 +15,7 @@ import type {
   FlattenInput,
   FlattenSession,
   SessionPayloadV1,
+  SessionPayloadV2,
   SessionSummary,
 } from './session-sync.models';
 import { WorkspaceDbService } from './workspace-db.service';
@@ -79,15 +80,22 @@ export class SessionSyncService {
     });
   }
 
-  /** Fetches the full lossless payload for one session (the column `listSummaries` deliberately omits). */
-  async fetchPayload(id: string): Promise<SessionPayloadV1> {
+  /**
+   * Fetches the full lossless payload for one session (the column
+   * `listSummaries` deliberately omits). Widened to `SessionPayloadV1 |
+   * SessionPayloadV2` (RFC-011 Task 4 audit fix, type-only): the cloud column
+   * legitimately holds either version — a row written before this RFC is
+   * still V1 — and callers already route the result through
+   * `parseSessionPayload`/`fromPayload`, which accept both.
+   */
+  async fetchPayload(id: string): Promise<SessionPayloadV1 | SessionPayloadV2> {
     const { data, error } = await this.client
       .from('sessions')
       .select('payload')
       .eq('id', id)
       .single();
     if (error) throw new Error(error.message);
-    return (data as { payload: SessionPayloadV1 }).payload;
+    return (data as { payload: SessionPayloadV1 | SessionPayloadV2 }).payload;
   }
 
   /**
@@ -511,15 +519,12 @@ function inferRange(trading: TradingData, currentTime: number): [number, number]
  * NOT persisted locally today, so they're defaulted here (known fidelity
  * boundary — see Task 9 report).
  *
- * RFC-011 Task 3 interim note: `WorkspaceMeta` does not yet carry
- * `layout`/`panels`/`linkGroups` (that IndexedDB-model extension is Task 4's
- * scope — see plan Task 4 Step 3/4). Until Task 4 lands, this function
- * defaults them via `singlePanelLayoutFor`/`[]` (the same pure fallback
- * `migrateV1ToV2` and this file's `defaultView` use) purely to satisfy
- * `SessionView`'s new required fields — a type-completeness stopgap, not a
- * behavioral claim that per-panel layout survives a local IndexedDB
- * round-trip yet. Task 4 replaces this with `meta.layout ?? fallback.layout`
- * (reading the real persisted value once `WorkspaceMeta` gains the field).
+ * RFC-011 Task 4: `WorkspaceMeta` now carries `layout`/`panels`/`linkGroups`
+ * (see workspaces.models.ts). They are read straight off the meta when
+ * present; `singlePanelLayoutFor`/`[]` remain the fallback for a legacy
+ * pre-RFC-011 meta record that predates these fields (mirrors
+ * `migrateV1ToV2`'s own default, so a never-persisted-layout asset still
+ * gets a valid single-panel layout rather than `undefined`).
  */
 function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
   const trading = meta.trading ?? defaultTradingData();
@@ -542,9 +547,9 @@ function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
       selectedTfs: meta.selectedTfs ?? [],
       startRange,
       endRange,
-      layout: fallback.layout,
-      panels: fallback.panels,
-      linkGroups: [],
+      layout: meta.layout ?? fallback.layout,
+      panels: meta.panels ?? fallback.panels,
+      linkGroups: meta.linkGroups ?? [],
     },
     clientUpdatedAt: meta.activeClientUpdatedAt ?? Date.now(),
     lastOpenedAt: null,

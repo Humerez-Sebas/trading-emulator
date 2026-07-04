@@ -2,11 +2,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionSyncService } from './session-sync.service';
 import type { SupabaseService } from '../auth/supabase.service';
-import { PAYLOAD_MAX_BYTES } from './session-sync.mapping';
+import { PAYLOAD_MAX_BYTES, reconstructWorkspaces } from './session-sync.mapping';
+import { SESSION_PAYLOAD_VERSION_2 } from './session-sync.models';
 import type { CloudFolderRow, CloudSessionRow, SessionPayloadV1 } from './session-sync.models';
 import { WorkspaceDbService } from './workspace-db.service';
 import { workspaceMeta, savedSession, position } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
+import { singlePanelLayoutFor } from './session-migration';
+import type { LinkGroup } from '../state/link-groups/link-groups.models';
 
 function makeService(client: unknown, db?: WorkspaceDbService): SessionSyncService {
   return new SessionSyncService(
@@ -755,6 +758,41 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     const updated = await db.getMeta('EURUSD');
     expect(updated?.activeSyncedAt).toBe(200);
   });
+
+  it('flushDirtySessions pushes a row whose payload includes layout/panels/linkGroups sourced from the meta (RFC-011 Task 4)', async () => {
+    const { layout, panels } = singlePanelLayoutFor('EURUSD', 'M1');
+    const linkGroups: LinkGroup[] = [{ id: 'g1', color: '#0f0', syncCrosshair: true, syncTimeRange: false }];
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'B',
+      activeClientUpdatedAt: 200,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta({ ...meta, layout, panels, linkGroups });
+
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      folderRows: [],
+      userId: 'user-1',
+    });
+    const service = makeService(client, db);
+
+    await service.flushDirty();
+
+    const sessionUpsert = recorder.upsertCalls.find((c) => c.table === 'sessions');
+    expect(sessionUpsert).toBeDefined();
+    const pushed = (sessionUpsert!.row as Record<string, unknown>)['payload'] as {
+      layout: unknown;
+      panels: unknown;
+      linkGroups: unknown;
+      schemaVersion: number;
+    };
+    expect(pushed.layout).toEqual(layout);
+    expect(pushed.panels).toEqual(panels);
+    expect(pushed.linkGroups).toEqual(linkGroups);
+    expect(pushed.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
+  });
 });
 
 describe('SessionSyncService.markActiveDirty', () => {
@@ -803,5 +841,21 @@ describe('SessionSyncService.markActiveDirty', () => {
 
     await expect(service.markActiveDirty('NOPE')).resolves.toBeUndefined();
     expect(await db.getMeta('NOPE')).toBeUndefined();
+  });
+});
+
+describe('reconstructWorkspaces — V1 cloud row migration (RFC-011 Task 4)', () => {
+  it('reconstructWorkspaces on a V1-only cloud row (no layout field at all) migrates it to a single-panel default', () => {
+    // cleanPayload()/cleanRow() are this file's existing bare-V1 fixtures
+    // (schemaVersion 1, no layout/panels/linkGroups keys at all).
+    const row = cleanRow();
+    const workspaces = reconstructWorkspaces([row]);
+
+    const ws = workspaces.get('EURUSD');
+    expect(ws).toBeDefined();
+    const { layout, panels } = singlePanelLayoutFor('EURUSD', row.payload.activeTf ?? 'M1');
+    expect(ws!.active.layout).toEqual(layout);
+    expect(ws!.active.panels).toEqual(panels);
+    expect(ws!.active.linkGroups).toEqual([]);
   });
 });

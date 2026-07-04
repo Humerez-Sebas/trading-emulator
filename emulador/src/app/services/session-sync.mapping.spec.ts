@@ -13,7 +13,6 @@ import {
   mergeByLww,
 } from './session-sync.mapping';
 import {
-  SESSION_PAYLOAD_VERSION,
   SESSION_PAYLOAD_VERSION_2,
   type PayloadInput,
   type SessionPayloadV1,
@@ -325,7 +324,11 @@ describe('flattenWorkspace', () => {
     expect(rows.length).toBe(3);
     for (const row of rows) {
       expect(row.symbol).toBe('GBPUSD');
-      expect(row.schemaVersion).toBe(SESSION_PAYLOAD_VERSION);
+      // RFC-011 Task 4 (folded audit fix): buildRow now stamps the row with
+      // the EMBEDDED payload's own schemaVersion (toPayload always emits V2,
+      // D9) rather than the hardcoded V1 constant, so the cloud
+      // `schema_version` column tracks reality.
+      expect(row.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
       expect(() => assertNoCandles(row.payload)).not.toThrow();
     }
   });
