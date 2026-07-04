@@ -60,6 +60,7 @@ const layoutState: LayoutState = {
     activeTabId: 'tab-a',
   },
   panels: { p1: desc('p1'), p2: desc('p2', 'M5'), p3: desc('p3', 'M15') },
+  focusedPanelId: 'p1',
 };
 
 /** Same layout, but the stacked cell's active panel flips from p2 to p3. */
@@ -95,6 +96,7 @@ const fullTabState: LayoutState = (() => {
       activeTabId: 'tab-a',
     },
     panels,
+    focusedPanelId: ids[0],
   };
 })();
 
@@ -289,6 +291,7 @@ describe('WorkspaceViewportComponent', () => {
         activeTabId: 'tab-a',
       },
       panels: layoutState.panels,
+      focusedPanelId: 'p1',
     };
     store.setState({ layout: singleTabState });
     const fixture = create();

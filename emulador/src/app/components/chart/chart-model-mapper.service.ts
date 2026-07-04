@@ -38,6 +38,7 @@ import {
 import { lastIndexAtOrBefore, firstIndexAtOrAfter } from '../../state/trading/fill-engine';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 import { Candle, Timeframe, TIMEFRAME_SECONDS } from '../../models';
+import { generateCustomSeries } from '../../state/market/custom-timeframe';
 
 function computeFormingCandle(
   resSeries: Candle[] | null,
@@ -232,9 +233,16 @@ export class ChartModelMapper {
           return globalChartView;
         }
         const tf = descriptor.timeframe;
-        const candles = series[tf] ?? [];
+        let candles = series[tf] ?? [];
+        let activeSeconds = TIMEFRAME_SECONDS[tf] ?? 0;
+        if (candles.length === 0 && tf.startsWith('M')) {
+          const minutes = parseInt(tf.substring(1), 10);
+          if (!isNaN(minutes)) {
+            candles = generateCustomSeries(series, minutes);
+            activeSeconds = minutes * 60;
+          }
+        }
         const idx = lastIndexAtOrBefore(candles, currentTime);
-        const activeSeconds = TIMEFRAME_SECONDS[tf] ?? 0;
         const forming = computeFormingCandle(
           resolutionSeries,
           activeSeconds,
@@ -365,7 +373,14 @@ export class ChartModelMapper {
     this.store.select(selectUtcOffset),
   ]).pipe(
     map(([descriptor, series, currentTime, utcOffset]) => {
-      const candles = series[descriptor.timeframe];
+      const tf = descriptor.timeframe;
+      let candles = series[tf];
+      if ((!candles || candles.length === 0) && tf.startsWith('M')) {
+        const minutes = parseInt(tf.substring(1), 10);
+        if (!isNaN(minutes)) {
+          candles = generateCustomSeries(series, minutes);
+        }
+      }
       const last = this.lastPanelInputs;
       if (
         last &&

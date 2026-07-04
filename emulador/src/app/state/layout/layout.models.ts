@@ -51,6 +51,7 @@ export interface LayoutState {
   workspace: WorkspaceLayout;
   /** Descriptor lookup for every panelId referenced by the cells. */
   panels: Record<string, PanelDescriptor>;
+  focusedPanelId: string | null;
 }
 
 /**
@@ -75,5 +76,6 @@ export function createInitialLayoutState(): LayoutState {
     panels: {
       'panel-1': { id: 'panel-1', symbol: '', timeframe: 'M1', linkGroupId: null },
     },
+    focusedPanelId: 'panel-1',
   };
 }

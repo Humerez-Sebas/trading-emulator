@@ -40,6 +40,7 @@ import { Timeframe } from '../../models';
   imports: [ChartComponent],
   host: {
     '(document:click)': 'onDocClick($event)',
+    '(click)': 'onPanelClick()',
   },
   template: `
     <div class="panel-header">
@@ -285,6 +286,10 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
       LayoutActions.setPanelLinkGroup({ panelId: this.descriptor().id, linkGroupId }),
     );
     this.linkChipMenuOpen.set(false);
+  }
+
+  onPanelClick(): void {
+    this.store.dispatch(LayoutActions.setFocusedPanel({ panelId: this.descriptor().id }));
   }
 
   /** RFC-013 (Task 4): plain-DOM outside-click-to-close (no CDK) — ignores clicks inside this component's own host. */

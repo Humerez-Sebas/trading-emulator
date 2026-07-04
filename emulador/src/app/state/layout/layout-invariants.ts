@@ -1,4 +1,4 @@
-import { LayoutState } from './layout.models';
+import { WorkspaceLayout, PanelDescriptor } from './layout.models';
 
 /**
  * RFC-009 lifecycle invariant: cells and the panels entity map reference each
@@ -12,7 +12,10 @@ import { LayoutState } from './layout.models';
  * free of test-only dependencies; `layout-invariants.spec-util.ts` wraps
  * `layoutInvariantViolation` with `expect(...).toBeNull()` for specs.
  */
-export function layoutInvariantViolation(state: LayoutState): string | null {
+export function layoutInvariantViolation(state: {
+  workspace: WorkspaceLayout;
+  panels: Record<string, PanelDescriptor>;
+}): string | null {
   // Shape guard: this checker also receives payloads read from storage
   // (parseSessionPayload's defensive parse) — structurally malformed input
   // (layout null/{}, non-array tabs/cells/panelIds, null panels) must yield
@@ -59,6 +62,9 @@ export function layoutInvariantViolation(state: LayoutState): string | null {
 }
 
 /** Convenience boolean wrapper over {@link layoutInvariantViolation}. */
-export function isLayoutConsistentPure(state: LayoutState): boolean {
+export function isLayoutConsistentPure(state: {
+  workspace: WorkspaceLayout;
+  panels: Record<string, PanelDescriptor>;
+}): boolean {
   return layoutInvariantViolation(state) === null;
 }

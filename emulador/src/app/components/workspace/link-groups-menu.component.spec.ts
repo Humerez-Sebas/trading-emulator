@@ -20,6 +20,7 @@ const emptyLayout: LayoutState = {
     activeTabId: 'tab-a',
   },
   panels: {},
+  focusedPanelId: null,
 };
 
 describe('LinkGroupsMenuComponent', () => {
@@ -124,6 +125,7 @@ describe('LinkGroupsMenuComponent', () => {
         p2: { id: 'p2', symbol: '', timeframe: 'M1', linkGroupId: 'g1' },
         p3: { id: 'p3', symbol: '', timeframe: 'M1', linkGroupId: 'g2' },
       },
+      focusedPanelId: null,
     };
     const fixture = create(
       {

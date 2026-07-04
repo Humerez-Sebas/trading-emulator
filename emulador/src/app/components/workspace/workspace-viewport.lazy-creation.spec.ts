@@ -48,6 +48,7 @@ const layoutState: LayoutState = {
     p3: { id: 'p3', symbol: 'SP500', timeframe: 'M15', linkGroupId: null },
     p4: { id: 'p4', symbol: 'SP500', timeframe: 'H1', linkGroupId: null },
   },
+  focusedPanelId: 'p1',
 };
 
 describe('WorkspaceViewport lazy chart creation (RFC-012 Task 4)', () => {
