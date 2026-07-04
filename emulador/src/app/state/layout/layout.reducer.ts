@@ -9,6 +9,8 @@ import {
   TabLayout,
   WorkspaceLayout,
 } from './layout.models';
+import { WorkspacesActions } from '../workspaces/workspaces.actions';
+import { singlePanelLayoutFor } from '../../services/session-migration';
 
 const emptyCell = (): GridCell => ({ panelIds: [], activePanelId: '' });
 
@@ -192,6 +194,13 @@ export const layoutFeature = createFeature({
       workspace: layout,
       panels,
     })),
+    on(WorkspacesActions.workspaceRestored, (_state, { workspace }): LayoutState => {
+      if (workspace.layout && workspace.panels) {
+        return { workspace: workspace.layout, panels: workspace.panels };
+      }
+      const fallback = singlePanelLayoutFor(workspace.symbol, workspace.activeTf ?? 'M1');
+      return { workspace: fallback.layout, panels: fallback.panels };
+    }),
   ),
 });
 

@@ -10,6 +10,9 @@ import {
   WorkspaceLayout,
 } from './layout.models';
 import { assertLayoutConsistent } from './layout-invariants.spec-util';
+import { WorkspacesActions } from '../workspaces/workspaces.actions';
+import { emptyWorkspace } from '../workspaces/workspaces.models';
+import { singlePanelLayoutFor } from '../../services/session-migration';
 
 const reducer = layoutFeature.reducer;
 
@@ -312,6 +315,27 @@ describe('layoutFeature reducer', () => {
       };
       const state = reducer(createInitialLayoutState(), LayoutActions.restoreLayout({ layout, panels }));
       expect(() => assertLayoutConsistent(state)).not.toThrow();
+    });
+  });
+
+  describe('workspaceRestored (RFC-011 Task 5)', () => {
+    it('hydrates workspace/panels from the restored Workspace when present', () => {
+      const { layout, panels } = singlePanelLayoutFor('EURUSD', 'H1');
+      const state = reducer(
+        createInitialLayoutState(),
+        WorkspacesActions.workspaceRestored({ workspace: { ...emptyWorkspace('EURUSD'), layout, panels } }),
+      );
+      expect(state.workspace).toEqual(layout);
+      expect(state.panels).toEqual(panels);
+    });
+
+    it('falls back to a single-panel default of the restored symbol+activeTf when the workspace predates RFC-011 (no layout field)', () => {
+      const state = reducer(
+        createInitialLayoutState(),
+        WorkspacesActions.workspaceRestored({ workspace: { ...emptyWorkspace('GBPUSD'), activeTf: 'M5' } }),
+      );
+      const panelId = state.workspace.tabs[0].cells[0].panelIds[0];
+      expect(state.panels[panelId]).toEqual({ id: panelId, symbol: 'GBPUSD', timeframe: 'M5', linkGroupId: null });
     });
   });
 });

@@ -17,6 +17,8 @@ import { loadedTfForMinutes } from '../market/custom-timeframe';
 import { ReplayActions } from '../replay/replay.actions';
 import { TradingActions } from '../trading/trading.actions';
 import { DrawingsActions } from '../drawings/drawings.actions';
+import { LayoutActions } from '../layout/layout.actions';
+import { LinkGroupsActions } from '../link-groups/link-groups.actions';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
 import {
   PendingCsv,
@@ -221,11 +223,20 @@ export class WorkspacesEffects {
     }
     // 3r) `.session.json` restore: inject the full live state right AFTER the
     // candles land (so the chart has data) and BEFORE the legacy import/wizard
-    // branches. Order matters: trading → drawings → interval → speed; the
-    // cursor is handled by `thenGoTo` below, exactly as in the wizard flow.
+    // branches. Order matters: trading → drawings → layout/linkGroups (RFC-011,
+    // only when present) → interval → speed; the cursor is handled by
+    // `thenGoTo` below, exactly as in the wizard flow.
     if (thenRestore) {
       actions.push(TradingActions.restoreSession({ trading: thenRestore.trading }));
       actions.push(DrawingsActions.restoreDrawings({ drawings: thenRestore.drawings }));
+      if (thenRestore.layout && thenRestore.panels) {
+        actions.push(
+          LayoutActions.restoreLayout({ layout: thenRestore.layout, panels: thenRestore.panels }),
+        );
+      }
+      if (thenRestore.linkGroups) {
+        actions.push(LinkGroupsActions.restoreGroups({ groups: thenRestore.linkGroups }));
+      }
       const matchTf = loadedTfForMinutes(
         thenRestore.intervalMinutes,
         thenLoad.map((c) => c.tf),

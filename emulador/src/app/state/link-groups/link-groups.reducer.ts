@@ -1,6 +1,7 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { LinkGroupsActions } from './link-groups.actions';
 import { createInitialLinkGroupsState, LinkGroupsState } from './link-groups.models';
+import { WorkspacesActions } from '../workspaces/workspaces.actions';
 
 export const linkGroupsFeature = createFeature({
   name: 'linkGroups',
@@ -27,6 +28,9 @@ export const linkGroupsFeature = createFeature({
     }),
     on(LinkGroupsActions.restoreGroups, (_state, { groups }): LinkGroupsState => ({
       groups: Object.fromEntries(groups.map((g) => [g.id, g])),
+    })),
+    on(WorkspacesActions.workspaceRestored, (_state, { workspace }): LinkGroupsState => ({
+      groups: Object.fromEntries((workspace.linkGroups ?? []).map((g) => [g.id, g])),
     })),
   ),
 });
