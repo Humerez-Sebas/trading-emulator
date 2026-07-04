@@ -261,4 +261,26 @@ describe('layoutFeature reducer', () => {
       expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-3': true, 'panel-2': true });
     });
   });
+
+  describe('setPanelLinkGroup (RFC-010 Task 1)', () => {
+    it('assigns a linkGroupId to an existing panel', () => {
+      const state = reducer(
+        createInitialLayoutState(),
+        LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: 'g1' }),
+      );
+      expect(state.panels['panel-1'].linkGroupId).toBe('g1');
+      expect(state.panels['panel-2'].linkGroupId).toBeNull(); // untouched
+    });
+
+    it('clears a linkGroupId back to null', () => {
+      let state = reducer(createInitialLayoutState(), LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: 'g1' }));
+      state = reducer(state, LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: null }));
+      expect(state.panels['panel-1'].linkGroupId).toBeNull();
+    });
+
+    it('is a no-op for an unknown panelId', () => {
+      const state = createInitialLayoutState();
+      expect(reducer(state, LayoutActions.setPanelLinkGroup({ panelId: 'nope', linkGroupId: 'g1' }))).toBe(state);
+    });
+  });
 });

@@ -87,6 +87,17 @@ interface PlacingState {
   stage: 'sl' | 'tp';
 }
 
+/**
+ * RFC-010: a handle the wrapping ChartPanelComponent uses to APPLY synced
+ * crosshair/range changes (as opposed to chartReady's ChartEventBus, which
+ * only reports the chart's OWN interaction events out). Pure re-export of the
+ * engine's own re-entrancy-guarded ChartApplyHandle (chart-engine.ts).
+ */
+export interface ChartControlHandle {
+  applyCrosshair(time: UTCTimestamp | null): void;
+  applyVisibleRange(range: LogicalRange | null): void;
+}
+
 @Component({
   selector: 'app-chart',
   standalone: true,
@@ -347,6 +358,15 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    */
   readonly chartReady = output<ChartEventBus>();
 
+  /**
+   * RFC-010: a second, additive output — a handle the wrapping ChartPanelComponent
+   * uses to APPLY synced crosshair/range changes (as opposed to chartReady's
+   * ChartEventBus, which only reports the chart's OWN interaction events out).
+   * Pure pass-through to the engine's own re-entrancy-guarded ChartApplyHandle
+   * (chart-engine.ts) — no additional logic lives here.
+   */
+  readonly chartControlReady = output<ChartControlHandle>();
+
   // --- right-click menu + interactive order placement ---
   /** Current price/risk context for placing orders from the chart. */
   private tradeCtx = this.store.selectSignal(selectTradePanelView);
@@ -570,6 +590,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     );
 
     this.chartReady.emit(this.engine.events);
+    this.chartControlReady.emit({
+      applyCrosshair: (t) => this.engine!.applyCrosshair(t),
+      applyVisibleRange: (r) => this.engine!.applyVisibleRange(r),
+    });
 
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);

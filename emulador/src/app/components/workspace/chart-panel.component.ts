@@ -9,7 +9,8 @@ import {
   input,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ChartComponent } from '../chart/chart.component';
+import { UTCTimestamp } from 'lightweight-charts';
+import { ChartComponent, ChartControlHandle } from '../chart/chart.component';
 import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus, Unsubscribe } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
@@ -37,7 +38,11 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
         <span class="panel-price">{{ lastClose() }}</span>
       }
     </div>
-    <app-chart class="panel-chart" (chartReady)="onChartReady($event)" />
+    <app-chart
+      class="panel-chart"
+      (chartReady)="onChartReady($event)"
+      (chartControlReady)="onChartControlReady($event)"
+    />
   `,
   styles: [
     `
@@ -81,6 +86,8 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
   private readonly syncBus = inject(ChartSyncBus);
   private readonly registry = inject(ChartRegistry);
   private busUnsubs: Unsubscribe[] = [];
+  /** RFC-010: the wrapped ChartComponent's control handle, once it's ready. */
+  private controlHandle: ChartControlHandle | null = null;
 
   /** Panel-local view (own mapper instance, own memo slot — D8). */
   private readonly panelView = toSignal(this.mapper.panelChartView$, { initialValue: null });
@@ -101,10 +108,17 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
     effect(() => this.mapper.setUpdatesEnabled(this.visible()));
   }
 
-  /** RFC-009: registers this panel's live handle in the session ChartRegistry. */
+  /** RFC-009/RFC-010: registers this panel's live handle in the session ChartRegistry. */
   ngOnInit(): void {
     this.registry.register(this.descriptor().id, {
       setUpdatesEnabled: (on) => this.mapper.setUpdatesEnabled(on),
+      // Both delegates read `this.controlHandle` lazily at CALL time (not captured at
+      // registration time), so registration order relative to chartControlReady's emission
+      // does not matter: a call arriving before the handle exists is simply a no-op (`?.`)
+      // rather than a crash, and every call after chartControlReady fires reaches the real
+      // handle (RFC-010 Task 3).
+      applyCrosshair: (time) => this.controlHandle?.applyCrosshair(time as UTCTimestamp | null),
+      applyVisibleRange: (range) => this.controlHandle?.applyVisibleRange(range),
     });
   }
 
@@ -118,6 +132,11 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
         this.syncBus.emit(this.descriptor().id, 'VisibleRangeChanged', r),
       ),
     );
+  }
+
+  /** RFC-010: stores the wrapped chart's control handle for the registry delegates above. */
+  onChartControlReady(handle: ChartControlHandle): void {
+    this.controlHandle = handle;
   }
 
   ngOnDestroy(): void {

@@ -9,6 +9,7 @@ import { ChartComponent } from '../chart/chart.component';
 import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import { ChartRegistry } from './chart-registry.service';
+import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature } from '../../state/layout/layout.reducer';
 import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
@@ -316,5 +317,167 @@ describe('WorkspaceViewportComponent lifecycle: create/hide/show/close (RFC-009,
       fixture.detectChanges();
     }
     expect(registry.count()).toBe(3);
+  });
+});
+
+describe('ChartSyncRouter wiring end-to-end (RFC-010 Task 5)', () => {
+  let store: MockStore;
+
+  /** p1, p2, p3 all in linkGroup 'g1' with syncCrosshair+syncTimeRange on. */
+  const linkedState: LayoutState = structuredClone(layoutState);
+  linkedState.panels['p1'].linkGroupId = 'g1';
+  linkedState.panels['p2'].linkGroupId = 'g1';
+  linkedState.panels['p3'].linkGroupId = 'g1';
+  const linkGroupsState = {
+    groups: { g1: { id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: true } },
+  };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [WorkspaceViewportComponent],
+      providers: [
+        provideMockStore({ initialState: { layout: linkedState, linkGroups: linkGroupsState } }),
+      ],
+    });
+    // Same discipline as the lifecycle describe block above: REAL ChartPanelComponent so its
+    // ngOnInit/ngOnDestroy register/deregister with ChartRegistry and its onChartReady wiring
+    // forwards to ChartSyncBus; only the innermost app-chart (audited ChartComponent) is stubbed.
+    TestBed.overrideComponent(ChartPanelComponent, {
+      remove: { imports: [ChartComponent] },
+      add: { imports: [ChartStubComponent] },
+    });
+    store = TestBed.inject(MockStore);
+    store.overrideSelector(selectSeries, {
+      M1: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
+      M5: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
+      M15: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
+    });
+    store.overrideSelector(selectCurrentTime, 100);
+    store.overrideSelector(selectUtcOffset, 0);
+  });
+
+  function create() {
+    const fixture = TestBed.createComponent(WorkspaceViewportComponent);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('one user interaction on p1 produces exactly one applyCrosshair call on EACH of p2 and p3, zero on p1 itself, and no cascade on re-emission of the same value', () => {
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    const syncBus = fixture.debugElement.injector.get(ChartSyncBus);
+    const spyP1 = vi.spyOn(registry.get('p1')!, 'applyCrosshair');
+    const spyP2 = vi.spyOn(registry.get('p2')!, 'applyCrosshair');
+    const spyP3 = vi.spyOn(registry.get('p3')!, 'applyCrosshair');
+
+    // Simulates the ONE user-driven interaction: p1's ChartPanelComponent forwarding its
+    // OWN engine's CrosshairMoved to the shared bus (RFC-008 wiring, unchanged).
+    syncBus.emit('p1', 'CrosshairMoved', { point: { x: 1, y: 1 }, time: 1000 } as never);
+
+    expect(spyP1).not.toHaveBeenCalled(); // never back to the origin
+    expect(spyP2).toHaveBeenCalledTimes(1);
+    expect(spyP3).toHaveBeenCalledTimes(1);
+
+    // Re-emitting the SAME payload (as an idempotent handle's own no-op re-apply would, if it
+    // ever incorrectly looped) must not cascade further:
+    syncBus.emit('p1', 'CrosshairMoved', { point: { x: 1, y: 1 }, time: 1000 } as never);
+    expect(spyP2).toHaveBeenCalledTimes(1); // still 1: idempotent short-circuit, no re-render/re-apply
+    expect(spyP3).toHaveBeenCalledTimes(1);
+  });
+
+  it('a 3+ panel topology bounds total handle-apply calls: one origin event never produces more than N-1 applies, across BOTH event types', () => {
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    const syncBus = fixture.debugElement.injector.get(ChartSyncBus);
+    const spies = ['p1', 'p2', 'p3'].map((id) => ({
+      id,
+      crosshair: vi.spyOn(registry.get(id)!, 'applyCrosshair'),
+      range: vi.spyOn(registry.get(id)!, 'applyVisibleRange'),
+    }));
+
+    syncBus.emit('p1', 'CrosshairMoved', { point: { x: 1, y: 1 }, time: 1000 } as never);
+    syncBus.emit('p2', 'VisibleRangeChanged', { from: 0, to: 10 } as never);
+
+    const totalApplies = spies.reduce(
+      (n, s) => n + s.crosshair.mock.calls.length + s.range.mock.calls.length,
+      0,
+    );
+    // Exactly N-1 (=2) applyCrosshair calls from p1's event, plus exactly N-1 (=2)
+    // applyVisibleRange calls from p2's event: 4 total, never more (no cascade).
+    expect(totalApplies).toBe(4);
+    expect(spies.find((s) => s.id === 'p1')!.crosshair).not.toHaveBeenCalled();
+    expect(spies.find((s) => s.id === 'p2')!.range).not.toHaveBeenCalled();
+  });
+
+  it('syncCrosshair and syncTimeRange gate independently: crosshair-only group routes CrosshairMoved but not VisibleRangeChanged', () => {
+    // Reuse the same linked panels, but flip the group to crosshair-only via a fresh store state.
+    const crosshairOnlyGroups = {
+      groups: { g1: { id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: false } },
+    };
+    store.setState({ layout: linkedState, linkGroups: crosshairOnlyGroups });
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    const syncBus = fixture.debugElement.injector.get(ChartSyncBus);
+    const spyP2Crosshair = vi.spyOn(registry.get('p2')!, 'applyCrosshair');
+    const spyP2Range = vi.spyOn(registry.get('p2')!, 'applyVisibleRange');
+
+    syncBus.emit('p1', 'CrosshairMoved', { point: { x: 1, y: 1 }, time: 1000 } as never);
+    syncBus.emit('p1', 'VisibleRangeChanged', { from: 0, to: 10 } as never);
+
+    expect(spyP2Crosshair).toHaveBeenCalledTimes(1);
+    expect(spyP2Range).not.toHaveBeenCalled();
+  });
+
+  it('syncCrosshair and syncTimeRange gate independently: timeRange-only group routes VisibleRangeChanged but not CrosshairMoved', () => {
+    const rangeOnlyGroups = {
+      groups: { g1: { id: 'g1', color: '#f00', syncCrosshair: false, syncTimeRange: true } },
+    };
+    store.setState({ layout: linkedState, linkGroups: rangeOnlyGroups });
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    const syncBus = fixture.debugElement.injector.get(ChartSyncBus);
+    const spyP2Crosshair = vi.spyOn(registry.get('p2')!, 'applyCrosshair');
+    const spyP2Range = vi.spyOn(registry.get('p2')!, 'applyVisibleRange');
+
+    syncBus.emit('p1', 'CrosshairMoved', { point: { x: 1, y: 1 }, time: 1000 } as never);
+    syncBus.emit('p1', 'VisibleRangeChanged', { from: 0, to: 10 } as never);
+
+    expect(spyP2Crosshair).not.toHaveBeenCalled();
+    expect(spyP2Range).toHaveBeenCalledTimes(1);
+  });
+
+  it('router state stays live across a layout change: unlinking p2 stops it from receiving further sync events', () => {
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    const syncBus = fixture.debugElement.injector.get(ChartSyncBus);
+    const spyP2 = vi.spyOn(registry.get('p2')!, 'applyCrosshair');
+    const spyP3 = vi.spyOn(registry.get('p3')!, 'applyCrosshair');
+
+    syncBus.emit('p1', 'CrosshairMoved', { point: { x: 1, y: 1 }, time: 1000 } as never);
+    expect(spyP2).toHaveBeenCalledTimes(1);
+    expect(spyP3).toHaveBeenCalledTimes(1);
+
+    const unlinkedP2State: LayoutState = structuredClone(linkedState);
+    unlinkedP2State.panels['p2'].linkGroupId = null;
+    store.setState({ layout: unlinkedP2State, linkGroups: linkGroupsState });
+    fixture.detectChanges();
+
+    syncBus.emit('p1', 'CrosshairMoved', { point: { x: 2, y: 2 }, time: 2000 } as never);
+    expect(spyP2).toHaveBeenCalledTimes(1); // unchanged: p2 no longer in the group, router state updated live
+    expect(spyP3).toHaveBeenCalledTimes(2); // p3 still linked: keeps receiving
+  });
+
+  it('destroys the ChartSyncRouter alongside the ChartSyncBus on ngOnDestroy (no post-destroy routing)', () => {
+    const fixture = create();
+    const registry = fixture.debugElement.injector.get(ChartRegistry);
+    const syncBus = fixture.debugElement.injector.get(ChartSyncBus);
+    const spyP2 = vi.spyOn(registry.get('p2')!, 'applyCrosshair');
+
+    fixture.destroy();
+
+    expect(() =>
+      syncBus.emit('p1', 'CrosshairMoved', { point: { x: 1, y: 1 }, time: 1000 } as never),
+    ).not.toThrow();
+    expect(spyP2).not.toHaveBeenCalled();
   });
 });
