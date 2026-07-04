@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   input,
+  signal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { UTCTimestamp } from 'lightweight-charts';
@@ -38,11 +39,13 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
         <span class="panel-price">{{ lastClose() }}</span>
       }
     </div>
-    <app-chart
-      class="panel-chart"
-      (chartReady)="onChartReady($event)"
-      (chartControlReady)="onChartControlReady($event)"
-    />
+    @if (hasBeenVisible()) {
+      <app-chart
+        class="panel-chart"
+        (chartReady)="onChartReady($event)"
+        (chartControlReady)="onChartControlReady($event)"
+      />
+    }
   `,
   styles: [
     `
@@ -103,7 +106,18 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
     return view.candles[view.idx]?.close ?? null;
   });
 
+  /**
+   * RFC-012 (pt 3): sticky "has this panel ever been visible" latch. Once true, never flips
+   * back — preserving RFC-009 keep-alive (hiding after first show must NOT destroy the engine).
+   * Gates only the child `<app-chart>`, deferring `ChartEngine` construction until a panel born
+   * in a non-active tab/cell is first shown.
+   */
+  readonly hasBeenVisible = signal(false);
+
   constructor() {
+    effect(() => {
+      if (this.visible()) this.hasBeenVisible.set(true);
+    });
     effect(() => this.mapper.configurePanel(this.descriptor()));
     effect(() => this.mapper.setUpdatesEnabled(this.visible()));
   }
