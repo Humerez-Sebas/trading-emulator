@@ -5,7 +5,7 @@ import type {
 } from './session-sync.models';
 import { SESSION_PAYLOAD_VERSION_2 } from './session-sync.models';
 import type { WorkspaceLayout, PanelDescriptor, TabLayout, GridCell } from '../state/layout/layout.models';
-import { assertLayoutConsistent } from '../state/layout/layout-invariants.spec-util';
+import { isLayoutConsistentPure } from '../state/layout/layout-invariants';
 import type { Timeframe } from '../models';
 
 /** Builds the vision-mandated migration default (single tab/cell/panel). Pure, deterministic id (no crypto.randomUUID — keeps round-trip tests reproducible; the id only needs to be internally unique within this one payload, which a fixed literal satisfies). */
@@ -58,12 +58,7 @@ export function isSessionPayloadV2(p: StoredSessionPayload): p is SessionPayload
 }
 
 function isLayoutConsistent(layout: WorkspaceLayout, panels: Record<string, PanelDescriptor>): boolean {
-  try {
-    assertLayoutConsistent({ workspace: layout, panels });
-    return true;
-  } catch {
-    return false;
-  }
+  return isLayoutConsistentPure({ workspace: layout, panels });
 }
 
 export function parseSessionPayload(raw: StoredSessionPayload, primarySymbol: string): SessionPayloadV2 {
