@@ -1,6 +1,8 @@
 import { Candle, Timeframe } from '../../models';
 import { Drawing } from '../drawings/drawings.models';
 import { defaultTradingData, SavedSession, TradingData } from '../trading/trading.models';
+import { WorkspaceLayout, PanelDescriptor } from '../layout/layout.models';
+import { LinkGroup } from '../link-groups/link-groups.models';
 
 /** Lightweight entry for the asset registry shown in the UI. */
 export interface AssetMeta {
@@ -41,6 +43,11 @@ export interface Workspace {
   activeClientUpdatedAt?: number;
   /** Active session last successful push, epoch ms (spec §10). dirty ⇔ activeClientUpdatedAt > (activeSyncedAt ?? 0). */
   activeSyncedAt?: number;
+  /** RFC-011: this asset's layout, mirrored from layoutFeature at persist time. Optional — absent = legacy pre-RFC-011 record, migration default applies on restore. */
+  layout?: WorkspaceLayout;
+  panels?: Record<string, PanelDescriptor>;
+  /** RFC-011: mirrored from linkGroupsFeature (array form, matching SessionPayloadV2.linkGroups — NOT a Record here, since this is the local mirror of the wire shape, not runtime state). */
+  linkGroups?: LinkGroup[];
 }
 
 /**

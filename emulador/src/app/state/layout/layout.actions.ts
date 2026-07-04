@@ -1,5 +1,5 @@
 import { createActionGroup, props } from '@ngrx/store';
-import { GridTemplate, PanelDescriptor } from './layout.models';
+import { GridTemplate, PanelDescriptor, WorkspaceLayout } from './layout.models';
 
 export const LayoutActions = createActionGroup({
   source: 'Layout',
@@ -20,5 +20,7 @@ export const LayoutActions = createActionGroup({
     'Move Panel': props<{ panelId: string; targetTabId: string; targetCellIndex: number }>(),
     /** Assigns/clears the panel's link group. Reducer transports only; sync semantics are RFC-010's ChartSyncRouter. No-op if panelId is unknown. */
     'Set Panel Link Group': props<{ panelId: string; linkGroupId: string | null }>(),
+    /** Wholesale-replaces workspace + panels from a restored session (RFC-011). */
+    'Restore Layout': props<{ layout: WorkspaceLayout; panels: Record<string, PanelDescriptor> }>(),
   },
 });

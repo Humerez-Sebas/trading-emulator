@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { LinkGroupsActions } from './link-groups.actions';
 import { linkGroupsFeature } from './link-groups.reducer';
 import { createInitialLinkGroupsState, LinkGroup } from './link-groups.models';
+import { WorkspacesActions } from '../workspaces/workspaces.actions';
+import { emptyWorkspace } from '../workspaces/workspaces.models';
 
 const reducer = linkGroupsFeature.reducer;
 
@@ -45,5 +47,38 @@ describe('linkGroupsFeature reducer', () => {
     const withReserved: LinkGroup = { ...group('g1'), syncPriceScale: true };
     const state = reducer(createInitialLinkGroupsState(), LinkGroupsActions.createGroup({ group: withReserved }));
     expect(state.groups['g1'].syncPriceScale).toBe(true); // stored verbatim, R3: never read elsewhere
+  });
+
+  describe('restoreGroups (RFC-011 Task 2)', () => {
+    it('replaces the entire groups map keyed by id', () => {
+      const groups = [group('g1'), { ...group('g2'), syncCrosshair: false }];
+      const state = reducer(createInitialLinkGroupsState(), LinkGroupsActions.restoreGroups({ groups }));
+      expect(state.groups).toEqual({ g1: groups[0], g2: groups[1] });
+    });
+
+    it('an empty array (V1 migration default) clears any existing groups', () => {
+      let state = reducer(createInitialLinkGroupsState(), LinkGroupsActions.createGroup({ group: group('g1') }));
+      state = reducer(state, LinkGroupsActions.restoreGroups({ groups: [] }));
+      expect(state.groups).toEqual({});
+    });
+  });
+
+  describe('workspaceRestored (RFC-011 Task 5)', () => {
+    it('hydrates groups from the restored Workspace.linkGroups when present', () => {
+      const groups = [group('g1')];
+      const state = reducer(
+        createInitialLinkGroupsState(),
+        WorkspacesActions.workspaceRestored({ workspace: { ...emptyWorkspace('EURUSD'), linkGroups: groups } }),
+      );
+      expect(state.groups).toEqual({ g1: groups[0] });
+    });
+
+    it('defaults to empty groups when the workspace predates RFC-011', () => {
+      const state = reducer(
+        createInitialLinkGroupsState(),
+        WorkspacesActions.workspaceRestored({ workspace: emptyWorkspace('GBPUSD') }),
+      );
+      expect(state.groups).toEqual({});
+    });
   });
 });

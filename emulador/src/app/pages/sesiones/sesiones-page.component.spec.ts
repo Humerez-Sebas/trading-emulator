@@ -23,6 +23,7 @@ import { DialogService } from '../../components/ui/dialog.service';
 import { SessionService } from '../../services/session.service';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { SessionSummary } from '../../services/session-sync.models';
+import { singlePanelLayoutFor } from '../../services/session-migration';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { DataOnboardingService } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
@@ -697,6 +698,113 @@ describe('SesionesPageComponent', () => {
         thenOpenSession: 'cloud-1',
       }),
     );
+  });
+
+  // ---- cloud-open layout threading (RFC-011 gap fix) ----
+
+  it('open: a cloud-only V2 payload (multi-panel) threads layout/panels/linkGroups/drawings into the meta written by putMeta', async () => {
+    const { layout, panels } = singlePanelLayoutFor('XAUUSD', 'M1');
+    const multiPanelLayout = {
+      tabs: [
+        {
+          id: 'tab-main',
+          name: 'Principal',
+          template: '2h' as const,
+          cells: [
+            { panelIds: ['p1'], activePanelId: 'p1' },
+            { panelIds: ['p2'], activePanelId: 'p2' },
+          ],
+        },
+      ],
+      activeTabId: 'tab-main',
+    };
+    const multiPanels = {
+      p1: { id: 'p1', symbol: 'XAUUSD', timeframe: 'M1' as const, linkGroupId: 'g1' },
+      p2: { id: 'p2', symbol: 'EURUSD', timeframe: 'H1' as const, linkGroupId: 'g1' },
+    };
+    const linkGroups = [{ id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: true }];
+    const cloudDrawing = {
+      id: 'd1',
+      kind: 'line' as const,
+      p1: { time: 0, price: 1.1 },
+      p2: { time: 3600, price: 1.2 },
+    };
+    const payload = {
+      schemaVersion: 2,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      replayResolution: null,
+      drawings: { XAUUSD: { version: 1, items: [cloudDrawing] } },
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+      layout: multiPanelLayout,
+      panels: multiPanels,
+      linkGroups,
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: { getMeta: vi.fn().mockResolvedValue(undefined), putMeta },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+
+    expect(putMeta).toHaveBeenCalled();
+    const metaArg = putMeta.mock.calls[0][0];
+    expect(metaArg.layout).toEqual(multiPanelLayout);
+    expect(metaArg.panels).toEqual(multiPanels);
+    expect(metaArg.linkGroups).toEqual(linkGroups);
+    expect(metaArg.drawings).toEqual([cloudDrawing]);
+    // sanity: the migration-default single-panel shape used elsewhere is NOT
+    // what got written (i.e. this really carries the cloud payload's layout).
+    expect(metaArg.layout).not.toEqual(layout);
+    expect(metaArg.panels).not.toEqual(panels);
+  });
+
+  it('open: a cloud-only V1 payload (no layout fields) still materializes without throwing, writing the migration-default single-panel layout', async () => {
+    const payload = {
+      schemaVersion: 1,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const fetchPayload = vi.fn().mockResolvedValue(payload);
+    const putMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: { getMeta: vi.fn().mockResolvedValue(undefined), putMeta },
+      sync: { fetchPayload },
+    });
+    await settle();
+
+    await expect(
+      component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true })),
+    ).resolves.not.toThrow();
+
+    expect(putMeta).toHaveBeenCalled();
+    const metaArg = putMeta.mock.calls[0][0];
+    const { layout, panels } = singlePanelLayoutFor('XAUUSD', 'M1');
+    expect(metaArg.layout).toEqual(layout);
+    expect(metaArg.panels).toEqual(panels);
+    expect(metaArg.linkGroups).toEqual([]);
+    expect(metaArg.drawings).toEqual([]);
   });
 
   // ---- rename ----

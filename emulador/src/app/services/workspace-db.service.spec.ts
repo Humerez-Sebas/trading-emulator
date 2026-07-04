@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { WorkspaceDbService } from './workspace-db.service';
 import { series, workspaceMeta } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
+import { singlePanelLayoutFor } from './session-migration';
+import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
+import type { LinkGroup } from '../state/link-groups/link-groups.models';
 
 const DB_NAME = 'emulador-workspaces';
 
@@ -33,6 +36,26 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
 
   it('getMeta returns undefined for unknown symbol', async () => {
     expect(await svc.getMeta('UNKNOWN')).toBeUndefined();
+  });
+
+  it('putMeta/getMeta round-trip layout/panels/linkGroups when present (RFC-011 Task 4)', async () => {
+    const { layout, panels } = singlePanelLayoutFor('EURUSD', 'H1');
+    const linkGroups: LinkGroup[] = [{ id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: true }];
+    const meta: WorkspaceMeta = { ...workspaceMeta({ symbol: 'EURUSD' }), layout, panels, linkGroups };
+    await svc.putMeta(meta);
+    const read = await svc.getMeta('EURUSD');
+    expect(read?.layout).toEqual(layout);
+    expect(read?.panels).toEqual(panels);
+    expect(read?.linkGroups).toEqual(linkGroups);
+  });
+
+  it('getMeta on a legacy record (no layout/panels/linkGroups fields) returns them as undefined, not throwing (RFC-011 Task 4)', async () => {
+    const legacy = workspaceMeta({ symbol: 'GBPUSD' }); // no layout/panels/linkGroups keys at all
+    await svc.putMeta(legacy);
+    const read = await svc.getMeta('GBPUSD');
+    expect(read?.layout).toBeUndefined();
+    expect(read?.panels).toBeUndefined();
+    expect(read?.linkGroups).toBeUndefined();
   });
 });
 
