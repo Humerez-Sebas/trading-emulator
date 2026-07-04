@@ -31,6 +31,7 @@ Para asegurar que el proyecto mantenga fluidez, rendimiento y facilidad de mante
 | **10** | [RFC 010](./rfcs/010-synchronization.md) | `feature/rfc-010-synchronization` | Grupos de enlace; sync de crosshair y rango de tiempo; fan-out del reloj de replay unificado. |
 | **11** | [RFC 011](./rfcs/011-workspace-layout-persistence.md) | `feature/rfc-011-layout-persistence` | `SessionPayloadV2` (layout, linkGroups, dibujos por símbolo) con migración V1 -> V2. |
 | **12** | [RFC 012](./rfcs/012-performance.md) | `feature/rfc-012-performance` | Formalización del cache de velas compartido, render update-gated, creación lazy de charts. |
+| **13** | [RFC 013](./rfcs/013-workspace-ui-integration.md) | `feature/rfc-013-workspace-ui-integration` | Integración del workspace multi-chart en la página de producción: swap `<app-chart>` → `<app-workspace-viewport>`, gestión de tabs/plantillas y UI de LinkGroups. |
 
 Las fases 8 a 12 se rigen por el documento indice
 [RFC 008-012: Multi-Chart & Panel System Vision](./rfcs/008-012-multi-chart-panel-system-vision.md),
