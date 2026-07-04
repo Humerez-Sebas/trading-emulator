@@ -2,11 +2,22 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper } from './chart-model-mapper.service';
-import { selectSeries, selectCurrentTime, selectUtcOffset, selectChartView } from '../../state/selectors';
+import {
+  selectSeries,
+  selectCurrentTime,
+  selectUtcOffset,
+  selectChartView,
+} from '../../state/selectors';
 import { MAX_PANELS_PER_TAB, PanelDescriptor } from '../../state/layout/layout.models';
 import { Candle } from '../../models';
 
-const candle = (time: number, close = 1): Candle => ({ time, open: close, high: close, low: close, close });
+const candle = (time: number, close = 1): Candle => ({
+  time,
+  open: close,
+  high: close,
+  low: close,
+  close,
+});
 // A single shared M1 series (proving 8 same-symbol panels reference ONE array; see Task 1).
 const m1: Candle[] = Array.from({ length: 300 }, (_, i) => candle(100 + i * 60));
 
@@ -36,7 +47,12 @@ describe('8-panel replay profiling (RFC-012 pt 6: measured fan-out, deterministi
   function eightMappers(): ChartModelMapper[] {
     return Array.from({ length: MAX_PANELS_PER_TAB }, (_, i) => {
       const m = TestBed.runInInjectionContext(() => new ChartModelMapper());
-      const d: PanelDescriptor = { id: `p${i}`, symbol: 'SP500', timeframe: 'M1', linkGroupId: null };
+      const d: PanelDescriptor = {
+        id: `p${i}`,
+        symbol: 'SP500',
+        timeframe: 'M1',
+        linkGroupId: null,
+      };
       m.configurePanel(d);
       return m;
     });
@@ -78,8 +94,7 @@ describe('8-panel replay profiling (RFC-012 pt 6: measured fan-out, deterministi
     store.refreshState();
 
     const visiblePanels = MAX_PANELS_PER_TAB - hidden;
-    const rendersThisTick = viewCounts.reduce((a, b) => a + b, 0)
-      - MAX_PANELS_PER_TAB; // subtract the initial per-panel emission baseline
+    const rendersThisTick = viewCounts.reduce((a, b) => a + b, 0) - MAX_PANELS_PER_TAB; // subtract the initial per-panel emission baseline
     // Only visible panels contributed a render for this tick.
     expect(rendersThisTick).toBeLessThanOrEqual(visiblePanels);
   });

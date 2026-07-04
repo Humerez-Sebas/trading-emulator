@@ -11,7 +11,12 @@ import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus, PanelSyncEvent } from '../../domain/chart/chart-sync-bus';
 import { ChartRegistry } from './chart-registry.service';
 import { LayoutActions } from '../../state/layout/layout.actions';
-import { selectCurrentTime, selectSeries, selectSessionTfs, selectUtcOffset } from '../../state/selectors';
+import {
+  selectCurrentTime,
+  selectSeries,
+  selectSessionTfs,
+  selectUtcOffset,
+} from '../../state/selectors';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import { LinkGroup } from '../../state/link-groups/link-groups.models';
@@ -210,8 +215,18 @@ describe('ChartPanelComponent', () => {
   });
 
   describe('link-group chip (RFC-013 Task 4)', () => {
-    const groupA: LinkGroup = { id: 'g1', color: '#2962FF', syncCrosshair: true, syncTimeRange: true };
-    const groupB: LinkGroup = { id: 'g2', color: '#F23645', syncCrosshair: true, syncTimeRange: true };
+    const groupA: LinkGroup = {
+      id: 'g1',
+      color: '#2962FF',
+      syncCrosshair: true,
+      syncTimeRange: true,
+    };
+    const groupB: LinkGroup = {
+      id: 'g2',
+      color: '#F23645',
+      syncCrosshair: true,
+      syncTimeRange: true,
+    };
 
     it('an unlinked panel shows a hollow (unfilled) chip', () => {
       const fixture = create({ ...descriptor, linkGroupId: null });
@@ -246,7 +261,9 @@ describe('ChartPanelComponent', () => {
       fixture.detectChanges();
       const items = fixture.nativeElement.querySelectorAll('.link-chip-menu .link-chip-menu-item');
       expect(items).toHaveLength(3); // g1, g2, Sin grupo
-      expect(fixture.nativeElement.querySelector('.link-chip-menu').textContent).toContain('Sin grupo');
+      expect(fixture.nativeElement.querySelector('.link-chip-menu').textContent).toContain(
+        'Sin grupo',
+      );
     });
 
     it('choosing a group in the mini-menu dispatches setPanelLinkGroup with THIS panel id and closes the menu', () => {

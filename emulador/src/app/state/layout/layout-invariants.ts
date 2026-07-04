@@ -20,7 +20,9 @@ export function layoutInvariantViolation(state: LayoutState): string | null {
   const tabs = state?.workspace?.tabs;
   if (
     !Array.isArray(tabs) ||
-    tabs.some((t) => !Array.isArray(t?.cells) || t.cells.some((c) => !Array.isArray(c?.panelIds))) ||
+    tabs.some(
+      (t) => !Array.isArray(t?.cells) || t.cells.some((c) => !Array.isArray(c?.panelIds)),
+    ) ||
     !state.panels ||
     typeof state.panels !== 'object'
   ) {

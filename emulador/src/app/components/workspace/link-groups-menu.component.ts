@@ -154,7 +154,9 @@ export class LinkGroupsMenuComponent {
     this.store.dispatch(LinkGroupsActions.removeGroup({ groupId }));
     const members = Object.values(this.panels()).filter((p) => p.linkGroupId === groupId);
     for (const panel of members) {
-      this.store.dispatch(LayoutActions.setPanelLinkGroup({ panelId: panel.id, linkGroupId: null }));
+      this.store.dispatch(
+        LayoutActions.setPanelLinkGroup({ panelId: panel.id, linkGroupId: null }),
+      );
     }
   }
 }

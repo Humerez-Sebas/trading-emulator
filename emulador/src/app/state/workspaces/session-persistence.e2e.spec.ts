@@ -165,7 +165,12 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
     );
 
     let linkGroupsState = linkGroupsFeature.reducer(undefined, { type: '@@INIT' } as never);
-    const uiGroup: LinkGroup = { id: 'ui-g1', color: '#2962FF', syncCrosshair: true, syncTimeRange: true };
+    const uiGroup: LinkGroup = {
+      id: 'ui-g1',
+      color: '#2962FF',
+      syncCrosshair: true,
+      syncTimeRange: true,
+    };
     linkGroupsState = linkGroupsFeature.reducer(
       linkGroupsState,
       LinkGroupsActions.createGroup({ group: uiGroup }),

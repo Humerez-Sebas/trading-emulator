@@ -761,7 +761,9 @@ describe('SessionSyncService.flushDirty — active session push', () => {
 
   it('flushDirtySessions pushes a row whose payload includes layout/panels/linkGroups sourced from the meta (RFC-011 Task 4)', async () => {
     const { layout, panels } = singlePanelLayoutFor('EURUSD', 'M1');
-    const linkGroups: LinkGroup[] = [{ id: 'g1', color: '#0f0', syncCrosshair: true, syncTimeRange: false }];
+    const linkGroups: LinkGroup[] = [
+      { id: 'g1', color: '#0f0', syncCrosshair: true, syncTimeRange: false },
+    ];
     const meta = workspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: 'B',

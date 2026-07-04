@@ -197,7 +197,8 @@ describe('EmuladorPageComponent template (RFC-013 Task 5)', () => {
   });
 
   it('the component metadata carries no ChartModelMapper provider (its only consumers are now panel-provided)', () => {
-    const metadata = (EmuladorPageComponent as unknown as { ɵcmp: { providersResolver?: unknown } }).ɵcmp;
+    const metadata = (EmuladorPageComponent as unknown as { ɵcmp: { providersResolver?: unknown } })
+      .ɵcmp;
     // Angular compiles `providers: [...]` into a `providersResolver` on the component def;
     // its absence here is the compiled proof that no page-level providers array remains.
     expect(metadata.providersResolver).toBeFalsy();

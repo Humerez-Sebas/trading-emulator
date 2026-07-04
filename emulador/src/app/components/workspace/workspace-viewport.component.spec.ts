@@ -13,7 +13,12 @@ import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature } from '../../state/layout/layout.reducer';
 import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
-import { GridTemplate, LayoutState, MAX_PANELS_PER_TAB, PanelDescriptor } from '../../state/layout/layout.models';
+import {
+  GridTemplate,
+  LayoutState,
+  MAX_PANELS_PER_TAB,
+  PanelDescriptor,
+} from '../../state/layout/layout.models';
 import { createInitialLinkGroupsState } from '../../state/link-groups/link-groups.models';
 
 /** Stub panel: renders nothing, keeps the required input contract. */
@@ -45,7 +50,12 @@ const layoutState: LayoutState = {
           { panelIds: [], activePanelId: '' },
         ],
       },
-      { id: 'tab-b', name: 'Contexto', template: '1', cells: [{ panelIds: [], activePanelId: '' }] },
+      {
+        id: 'tab-b',
+        name: 'Contexto',
+        template: '1',
+        cells: [{ panelIds: [], activePanelId: '' }],
+      },
     ],
     activeTabId: 'tab-a',
   },
@@ -75,7 +85,12 @@ const fullTabState: LayoutState = (() => {
             { panelIds: [], activePanelId: '' },
           ],
         },
-        { id: 'tab-b', name: 'Contexto', template: '1', cells: [{ panelIds: [], activePanelId: '' }] },
+        {
+          id: 'tab-b',
+          name: 'Contexto',
+          template: '1',
+          cells: [{ panelIds: [], activePanelId: '' }],
+        },
       ],
       activeTabId: 'tab-a',
     },
@@ -189,10 +204,12 @@ describe('WorkspaceViewportComponent', () => {
 
   it('switching the stacked cell tab flips [hidden] without recreating the component', () => {
     const fixture = create();
-    const before = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2].componentInstance;
+    const before = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2]
+      .componentInstance;
     store.setState({ layout: switchedActivePanelState }); // same layout, cell 1 activePanelId -> 'p3'
     fixture.detectChanges();
-    const after = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2].componentInstance;
+    const after = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2]
+      .componentInstance;
     expect(after).toBe(before); // identity preserved: keep-alive, not re-creation
   });
 
@@ -203,7 +220,9 @@ describe('WorkspaceViewportComponent', () => {
     expect(addButtons).toHaveLength(4); // one per cell of the active '2x2' tab
     (addButtons[2] as HTMLButtonElement).click(); // third cell: empty, cellIndex 2
     expect(dispatch).toHaveBeenCalledTimes(1);
-    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<typeof LayoutActions.addPanel>;
+    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<
+      typeof LayoutActions.addPanel
+    >;
     expect(dispatched.type).toBe(LayoutActions.addPanel.type);
     expect(dispatched.tabId).toBe('tab-a');
     expect(dispatched.cellIndex).toBe(2);
@@ -229,7 +248,9 @@ describe('WorkspaceViewportComponent', () => {
   it('an "x" affordance on each cell tab dispatches removePanel and does not also dispatch setActivePanel', () => {
     const fixture = create();
     const dispatch = vi.spyOn(store, 'dispatch');
-    const closeButtons = fixture.nativeElement.querySelectorAll('.cell-tabs .cell-tab .cell-tab-close');
+    const closeButtons = fixture.nativeElement.querySelectorAll(
+      '.cell-tabs .cell-tab .cell-tab-close',
+    );
     expect(closeButtons).toHaveLength(2); // stacked cell has 2 panels (p2, p3)
     (closeButtons[1] as HTMLButtonElement).click(); // p3's close affordance
     expect(dispatch).toHaveBeenCalledTimes(1);
@@ -243,7 +264,9 @@ describe('WorkspaceViewportComponent', () => {
     expect(addTabButton).toBeTruthy();
     addTabButton.click();
     expect(dispatch).toHaveBeenCalledTimes(1);
-    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<typeof LayoutActions.createTab>;
+    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<
+      typeof LayoutActions.createTab
+    >;
     expect(dispatched.type).toBe(LayoutActions.createTab.type);
     expect(dispatched.id).toEqual(expect.any(String));
     expect(dispatched.name).toBe('Tab 3');
@@ -288,7 +311,9 @@ describe('WorkspaceViewportComponent', () => {
     fixture.detectChanges();
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     fixture.detectChanges();
-    expect(dispatch).toHaveBeenCalledWith(LayoutActions.renameTab({ tabId: 'tab-a', name: 'Renamed Tab' }));
+    expect(dispatch).toHaveBeenCalledWith(
+      LayoutActions.renameTab({ tabId: 'tab-a', name: 'Renamed Tab' }),
+    );
   });
 
   it('Escape cancels the inline rename without dispatching', () => {

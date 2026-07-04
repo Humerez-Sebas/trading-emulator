@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, effect, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  OnDestroy,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
 import { Store } from '@ngrx/store';
 import { ChartPanelComponent } from './chart-panel.component';
 import { ChartRegistry } from './chart-registry.service';
@@ -8,7 +16,12 @@ import { LinkGroupsMenuComponent } from './link-groups-menu.component';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
-import { GridTemplate, MAX_PANELS_PER_TAB, PanelDescriptor, TabLayout } from '../../state/layout/layout.models';
+import {
+  GridTemplate,
+  MAX_PANELS_PER_TAB,
+  PanelDescriptor,
+  TabLayout,
+} from '../../state/layout/layout.models';
 
 /** RFC-013 (D5): the closed `GridTemplate` union, in the order the switcher renders its buttons. */
 const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3'];
@@ -36,7 +49,8 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
     { provide: ChartRegistry, useFactory: () => new ChartRegistry() },
     {
       provide: ChartSyncRouter,
-      useFactory: (bus: ChartSyncBus, registry: ChartRegistry) => new ChartSyncRouter(bus, registry),
+      useFactory: (bus: ChartSyncBus, registry: ChartRegistry) =>
+        new ChartSyncRouter(bus, registry),
       deps: [ChartSyncBus, ChartRegistry],
     },
   ],
@@ -110,7 +124,11 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
       </div>
     </div>
     @for (tab of workspace().tabs; track tab.id) {
-      <div class="grid" [attr.data-template]="tab.template" [hidden]="tab.id !== workspace().activeTabId">
+      <div
+        class="grid"
+        [attr.data-template]="tab.template"
+        [hidden]="tab.id !== workspace().activeTabId"
+      >
         @for (cell of tab.cells; track $index; let ci = $index) {
           <div class="cell">
             @if (cell.panelIds.length > 1) {
@@ -151,7 +169,9 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
             @if (cell.panelIds.length === 0) {
               <div class="cell-empty">Sin panel</div>
             }
-            <button class="cell-add" [disabled]="tabAtCap(tab)" (click)="addPanel(tab.id, ci)">+</button>
+            <button class="cell-add" [disabled]="tabAtCap(tab)" (click)="addPanel(tab.id, ci)">
+              +
+            </button>
           </div>
         }
       </div>
@@ -376,7 +396,9 @@ export class WorkspaceViewportComponent implements OnDestroy {
   constructor() {
     // RFC-010: the router is framework-free (no Store injection of its own), so it is kept fed
     // with the live panels/linkGroups snapshot it needs to resolve "same linkGroup" siblings.
-    effect(() => this.syncRouter.setState({ panels: this.panels(), linkGroups: this.linkGroups() }));
+    effect(() =>
+      this.syncRouter.setState({ panels: this.panels(), linkGroups: this.linkGroups() }),
+    );
   }
 
   selectTab(tabId: string): void {

@@ -4,7 +4,12 @@ import type {
   StoredSessionPayload,
 } from './session-sync.models';
 import { SESSION_PAYLOAD_VERSION_2 } from './session-sync.models';
-import type { WorkspaceLayout, PanelDescriptor, TabLayout, GridCell } from '../state/layout/layout.models';
+import type {
+  WorkspaceLayout,
+  PanelDescriptor,
+  TabLayout,
+  GridCell,
+} from '../state/layout/layout.models';
 import { isLayoutConsistentPure } from '../state/layout/layout-invariants';
 import type { Timeframe } from '../models';
 
@@ -57,11 +62,17 @@ export function isSessionPayloadV2(p: StoredSessionPayload): p is SessionPayload
   );
 }
 
-function isLayoutConsistent(layout: WorkspaceLayout, panels: Record<string, PanelDescriptor>): boolean {
+function isLayoutConsistent(
+  layout: WorkspaceLayout,
+  panels: Record<string, PanelDescriptor>,
+): boolean {
   return isLayoutConsistentPure({ workspace: layout, panels });
 }
 
-export function parseSessionPayload(raw: StoredSessionPayload, primarySymbol: string): SessionPayloadV2 {
+export function parseSessionPayload(
+  raw: StoredSessionPayload,
+  primarySymbol: string,
+): SessionPayloadV2 {
   if (!isSessionPayloadV2(raw)) {
     return migrateV1ToV2(raw as SessionPayloadV1, primarySymbol);
   }

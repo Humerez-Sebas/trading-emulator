@@ -74,8 +74,7 @@ export const layoutFeature = createFeature({
       const panels = Object.fromEntries(
         Object.entries(state.panels).filter(([id]) => !closedIds.has(id)),
       );
-      const nextActive =
-        activeTabId === tabId ? remaining[Math.max(0, index - 1)].id : activeTabId;
+      const nextActive = activeTabId === tabId ? remaining[Math.max(0, index - 1)].id : activeTabId;
       return { workspace: { tabs: remaining, activeTabId: nextActive }, panels };
     }),
     on(LayoutActions.setActiveTab, (state, { tabId }): LayoutState => {
@@ -157,7 +156,8 @@ export const layoutFeature = createFeature({
     on(LayoutActions.movePanel, (state, { panelId, targetTabId, targetCellIndex }): LayoutState => {
       if (!state.panels[panelId]) return state;
       const targetTab = state.workspace.tabs.find((t) => t.id === targetTabId);
-      if (!targetTab || targetCellIndex < 0 || targetCellIndex >= targetTab.cells.length) return state;
+      if (!targetTab || targetCellIndex < 0 || targetCellIndex >= targetTab.cells.length)
+        return state;
       const alreadyThere = targetTab.cells[targetCellIndex].panelIds.includes(panelId);
       if (alreadyThere) return state;
       const sourceTab = state.workspace.tabs.find((t) =>
@@ -180,7 +180,8 @@ export const layoutFeature = createFeature({
                 const panelIds = cell.panelIds.filter((id) => id !== panelId);
                 return {
                   panelIds,
-                  activePanelId: cell.activePanelId === panelId ? (panelIds[0] ?? '') : cell.activePanelId,
+                  activePanelId:
+                    cell.activePanelId === panelId ? (panelIds[0] ?? '') : cell.activePanelId,
                 };
               }
               if (isTarget && !holds) {
@@ -202,10 +203,13 @@ export const layoutFeature = createFeature({
       if (!panel || panel.timeframe === timeframe) return state;
       return { ...state, panels: { ...state.panels, [panelId]: { ...panel, timeframe } } };
     }),
-    on(LayoutActions.restoreLayout, (_state, { layout, panels }): LayoutState => ({
-      workspace: layout,
-      panels,
-    })),
+    on(
+      LayoutActions.restoreLayout,
+      (_state, { layout, panels }): LayoutState => ({
+        workspace: layout,
+        panels,
+      }),
+    ),
     on(WorkspacesActions.workspaceRestored, (_state, { workspace }): LayoutState => {
       if (workspace.layout && workspace.panels) {
         return { workspace: workspace.layout, panels: workspace.panels };

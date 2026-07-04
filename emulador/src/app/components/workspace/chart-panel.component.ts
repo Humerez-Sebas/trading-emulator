@@ -70,7 +70,12 @@ import { Timeframe } from '../../models';
                 <span class="link-chip-menu-dot" [style.background-color]="group.color"></span>
               </button>
             }
-            <button type="button" class="link-chip-menu-item link-chip-menu-none" role="menuitem" (click)="selectLinkGroup(null)">
+            <button
+              type="button"
+              class="link-chip-menu-item link-chip-menu-none"
+              role="menuitem"
+              (click)="selectLinkGroup(null)"
+            >
               Sin grupo
             </button>
           </div>
@@ -263,7 +268,9 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
   /** RFC-013 (Task 3): dispatches this panel's timeframe change; the mapper re-derives the view from the updated descriptor. */
   onTimeframeChange(event: Event): void {
     const timeframe = (event.target as HTMLSelectElement).value as Timeframe;
-    this.store.dispatch(LayoutActions.setPanelTimeframe({ panelId: this.descriptor().id, timeframe }));
+    this.store.dispatch(
+      LayoutActions.setPanelTimeframe({ panelId: this.descriptor().id, timeframe }),
+    );
   }
 
   /** RFC-013 (Task 4): opens/closes the link-group mini-menu; stops propagation so the host's own document-click handler doesn't immediately close it again. */
@@ -274,7 +281,9 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
 
   /** RFC-013 (Task 4): assigns (or clears, when null) this panel's link group and closes the mini-menu. */
   selectLinkGroup(linkGroupId: string | null): void {
-    this.store.dispatch(LayoutActions.setPanelLinkGroup({ panelId: this.descriptor().id, linkGroupId }));
+    this.store.dispatch(
+      LayoutActions.setPanelLinkGroup({ panelId: this.descriptor().id, linkGroupId }),
+    );
     this.linkChipMenuOpen.set(false);
   }
 

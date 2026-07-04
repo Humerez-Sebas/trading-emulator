@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { migrateV1ToV2, parseSessionPayload, singlePanelLayoutFor, isSessionPayloadV2 } from './session-migration';
-import { SESSION_PAYLOAD_VERSION, SESSION_PAYLOAD_VERSION_2, type SessionPayloadV1 } from './session-sync.models';
+import {
+  migrateV1ToV2,
+  parseSessionPayload,
+  singlePanelLayoutFor,
+  isSessionPayloadV2,
+} from './session-migration';
+import {
+  SESSION_PAYLOAD_VERSION,
+  SESSION_PAYLOAD_VERSION_2,
+  type SessionPayloadV1,
+} from './session-sync.models';
 import { defaultTradingData } from '../state/trading/trading.models';
 import type { Drawing } from '../state/drawings/drawings.models';
 
@@ -40,7 +49,12 @@ describe('singlePanelLayoutFor', () => {
     expect(layout.tabs[0].cells).toHaveLength(1);
     const panelId = layout.tabs[0].cells[0].panelIds[0];
     expect(layout.tabs[0].cells[0].activePanelId).toBe(panelId);
-    expect(panels[panelId]).toEqual({ id: panelId, symbol: 'EURUSD', timeframe: 'H1', linkGroupId: null });
+    expect(panels[panelId]).toEqual({
+      id: panelId,
+      symbol: 'EURUSD',
+      timeframe: 'H1',
+      linkGroupId: null,
+    });
     expect(layout.activeTabId).toBe(layout.tabs[0].id);
   });
 });
@@ -73,7 +87,12 @@ describe('migrateV1ToV2', () => {
     const v1 = sampleV1();
     const v2 = migrateV1ToV2(v1, 'EURUSD');
     const panelId = v2.layout.tabs[0].cells[0].panelIds[0];
-    expect(v2.panels[panelId]).toEqual({ id: panelId, symbol: 'EURUSD', timeframe: 'H1', linkGroupId: null });
+    expect(v2.panels[panelId]).toEqual({
+      id: panelId,
+      symbol: 'EURUSD',
+      timeframe: 'H1',
+      linkGroupId: null,
+    });
     expect(v2.linkGroups).toEqual([]);
   });
 
@@ -128,10 +147,26 @@ describe('parseSessionPayload defensive fallback', () => {
 
   it('falls back to the single-panel default when layout/panels are inconsistent (orphan panelId)', () => {
     const v2 = migrateV1ToV2(sampleV1(), 'EURUSD');
-    const corrupt = { ...v2, layout: { ...v2.layout, tabs: [{ ...v2.layout.tabs[0], cells: [{ panelIds: ['ghost-panel'], activePanelId: 'ghost-panel' }] }] } };
+    const corrupt = {
+      ...v2,
+      layout: {
+        ...v2.layout,
+        tabs: [
+          {
+            ...v2.layout.tabs[0],
+            cells: [{ panelIds: ['ghost-panel'], activePanelId: 'ghost-panel' }],
+          },
+        ],
+      },
+    };
     const parsed = parseSessionPayload(corrupt, 'EURUSD');
     const panelId = parsed.layout.tabs[0].cells[0].panelIds[0];
-    expect(parsed.panels[panelId]).toEqual({ id: panelId, symbol: 'EURUSD', timeframe: v2.activeTf ?? 'M1', linkGroupId: null });
+    expect(parsed.panels[panelId]).toEqual({
+      id: panelId,
+      symbol: 'EURUSD',
+      timeframe: v2.activeTf ?? 'M1',
+      linkGroupId: null,
+    });
   });
 
   it('falls back to the single-panel default when layout/panels are structurally malformed, instead of throwing', () => {
@@ -141,13 +176,21 @@ describe('parseSessionPayload defensive fallback', () => {
       { ...v2, layout: {} },
       { ...v2, layout: { tabs: null } },
       { ...v2, layout: { tabs: 'x' } },
-      { ...v2, layout: { ...v2.layout, tabs: [{ id: 't', name: 't', template: '1', cells: null }] } },
+      {
+        ...v2,
+        layout: { ...v2.layout, tabs: [{ id: 't', name: 't', template: '1', cells: null }] },
+      },
       { ...v2, panels: null },
     ];
     for (const corrupt of malformed) {
       const parsed = parseSessionPayload(corrupt, 'EURUSD');
       const panelId = parsed.layout.tabs[0].cells[0].panelIds[0];
-      expect(parsed.panels[panelId]).toEqual({ id: panelId, symbol: 'EURUSD', timeframe: 'H1', linkGroupId: null });
+      expect(parsed.panels[panelId]).toEqual({
+        id: panelId,
+        symbol: 'EURUSD',
+        timeframe: 'H1',
+        linkGroupId: null,
+      });
       expect(parsed.trading).toEqual(v2.trading); // non-layout fields survive the fallback
     }
   });
@@ -155,7 +198,13 @@ describe('parseSessionPayload defensive fallback', () => {
   it('falls back to the single-panel default when panels references a linkGroupId with no matching LinkGroup entry is NOT itself invalid (linkGroups only gate ChartSyncRouter behavior, not layout consistency) — sanity check this does NOT trigger a fallback', () => {
     const v2 = migrateV1ToV2(sampleV1(), 'EURUSD');
     const panelId = Object.keys(v2.panels)[0];
-    const withDanglingGroup = { ...v2, panels: { ...v2.panels, [panelId]: { ...v2.panels[panelId], linkGroupId: 'nonexistent-group' } } };
+    const withDanglingGroup = {
+      ...v2,
+      panels: {
+        ...v2.panels,
+        [panelId]: { ...v2.panels[panelId], linkGroupId: 'nonexistent-group' },
+      },
+    };
     const parsed = parseSessionPayload(withDanglingGroup, 'EURUSD');
     expect(parsed.panels[panelId].linkGroupId).toBe('nonexistent-group'); // preserved: not layout's job to validate group refs
   });

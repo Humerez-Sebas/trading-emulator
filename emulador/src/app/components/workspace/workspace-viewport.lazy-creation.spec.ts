@@ -82,9 +82,11 @@ describe('WorkspaceViewport lazy chart creation (RFC-012 Task 4)', () => {
     expect(charts).toHaveLength(2); // p1,p2 only — p3,p4 create no ChartEngine yet
   });
 
-  it('activating tab-b mounts its previously-lazy panels while tab-a\'s stay alive (sticky keep-alive)', () => {
+  it("activating tab-b mounts its previously-lazy panels while tab-a's stay alive (sticky keep-alive)", () => {
     const fixture = create();
-    store.setState({ layout: { ...layoutState, workspace: { ...layoutState.workspace, activeTabId: 'tab-b' } } });
+    store.setState({
+      layout: { ...layoutState, workspace: { ...layoutState.workspace, activeTabId: 'tab-b' } },
+    });
     fixture.detectChanges();
     const charts = fixture.debugElement.queryAll(By.directive(ChartLeafStub));
     expect(charts).toHaveLength(4); // p1,p2 latched-open + p3,p4 now shown

@@ -9,7 +9,14 @@ import { LayoutState } from '../../state/layout/layout.models';
 
 const emptyLayout: LayoutState = {
   workspace: {
-    tabs: [{ id: 'tab-a', name: 'Principal', template: '1', cells: [{ panelIds: [], activePanelId: '' }] }],
+    tabs: [
+      {
+        id: 'tab-a',
+        name: 'Principal',
+        template: '1',
+        cells: [{ panelIds: [], activePanelId: '' }],
+      },
+    ],
     activeTabId: 'tab-a',
   },
   panels: {},
@@ -54,7 +61,9 @@ describe('LinkGroupsMenuComponent', () => {
     const addBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-add');
     addBtn.click();
     expect(dispatch).toHaveBeenCalledTimes(1);
-    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<typeof LinkGroupsActions.createGroup>;
+    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<
+      typeof LinkGroupsActions.createGroup
+    >;
     expect(dispatched.type).toBe(LinkGroupsActions.createGroup.type);
     expect(dispatched.group.id).toEqual(expect.any(String));
     expect(dispatched.group.color).toBe(LINK_GROUP_PALETTE[1]);
@@ -64,13 +73,18 @@ describe('LinkGroupsMenuComponent', () => {
 
   it('"Nuevo grupo" wraps around to the first color when all palette colors are used', () => {
     const groups = Object.fromEntries(
-      LINK_GROUP_PALETTE.map((color, i) => [`g${i}`, { id: `g${i}`, color, syncCrosshair: true, syncTimeRange: true }]),
+      LINK_GROUP_PALETTE.map((color, i) => [
+        `g${i}`,
+        { id: `g${i}`, color, syncCrosshair: true, syncTimeRange: true },
+      ]),
     );
     const fixture = create({ groups });
     const dispatch = vi.spyOn(store, 'dispatch');
     const addBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-add');
     addBtn.click();
-    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<typeof LinkGroupsActions.createGroup>;
+    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<
+      typeof LinkGroupsActions.createGroup
+    >;
     expect(dispatched.group.color).toBe(LINK_GROUP_PALETTE[0]);
   });
 
@@ -79,9 +93,13 @@ describe('LinkGroupsMenuComponent', () => {
       groups: { g1: { id: 'g1', color: '#2962FF', syncCrosshair: false, syncTimeRange: true } },
     });
     const dispatch = vi.spyOn(store, 'dispatch');
-    const checkbox: HTMLInputElement = fixture.nativeElement.querySelector('.group-row .sync-crosshair');
+    const checkbox: HTMLInputElement = fixture.nativeElement.querySelector(
+      '.group-row .sync-crosshair',
+    );
     checkbox.click();
-    expect(dispatch).toHaveBeenCalledWith(LinkGroupsActions.setSyncCrosshair({ groupId: 'g1', enabled: true }));
+    expect(dispatch).toHaveBeenCalledWith(
+      LinkGroupsActions.setSyncCrosshair({ groupId: 'g1', enabled: true }),
+    );
   });
 
   it('the Rango checkbox dispatches setSyncTimeRange with the row groupId and the new enabled value', () => {
@@ -89,9 +107,13 @@ describe('LinkGroupsMenuComponent', () => {
       groups: { g1: { id: 'g1', color: '#2962FF', syncCrosshair: true, syncTimeRange: true } },
     });
     const dispatch = vi.spyOn(store, 'dispatch');
-    const checkbox: HTMLInputElement = fixture.nativeElement.querySelector('.group-row .sync-time-range');
+    const checkbox: HTMLInputElement = fixture.nativeElement.querySelector(
+      '.group-row .sync-time-range',
+    );
     checkbox.click();
-    expect(dispatch).toHaveBeenCalledWith(LinkGroupsActions.setSyncTimeRange({ groupId: 'g1', enabled: false }));
+    expect(dispatch).toHaveBeenCalledWith(
+      LinkGroupsActions.setSyncTimeRange({ groupId: 'g1', enabled: false }),
+    );
   });
 
   it('delete dispatches removeGroup AND setPanelLinkGroup(null) for each panel currently in that group', () => {
@@ -116,9 +138,15 @@ describe('LinkGroupsMenuComponent', () => {
     const deleteButtons = fixture.nativeElement.querySelectorAll('.group-row .group-delete');
     (deleteButtons[0] as HTMLButtonElement).click(); // g1's delete
     expect(dispatch).toHaveBeenCalledWith(LinkGroupsActions.removeGroup({ groupId: 'g1' }));
-    expect(dispatch).toHaveBeenCalledWith(LayoutActions.setPanelLinkGroup({ panelId: 'p1', linkGroupId: null }));
-    expect(dispatch).toHaveBeenCalledWith(LayoutActions.setPanelLinkGroup({ panelId: 'p2', linkGroupId: null }));
-    expect(dispatch).not.toHaveBeenCalledWith(LayoutActions.setPanelLinkGroup({ panelId: 'p3', linkGroupId: null }));
+    expect(dispatch).toHaveBeenCalledWith(
+      LayoutActions.setPanelLinkGroup({ panelId: 'p1', linkGroupId: null }),
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      LayoutActions.setPanelLinkGroup({ panelId: 'p2', linkGroupId: null }),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      LayoutActions.setPanelLinkGroup({ panelId: 'p3', linkGroupId: null }),
+    );
     expect(dispatch).toHaveBeenCalledTimes(3); // removeGroup + 2 setPanelLinkGroup(null)
   });
 
@@ -127,7 +155,9 @@ describe('LinkGroupsMenuComponent', () => {
       groups: { g1: { id: 'g1', color: '#2962FF', syncCrosshair: true, syncTimeRange: true } },
     });
     const dispatch = vi.spyOn(store, 'dispatch');
-    const deleteBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.group-row .group-delete');
+    const deleteBtn: HTMLButtonElement = fixture.nativeElement.querySelector(
+      '.group-row .group-delete',
+    );
     deleteBtn.click();
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith(LinkGroupsActions.removeGroup({ groupId: 'g1' }));
