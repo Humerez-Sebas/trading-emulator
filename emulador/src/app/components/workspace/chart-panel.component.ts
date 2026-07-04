@@ -10,13 +10,17 @@ import {
   signal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { Store } from '@ngrx/store';
 import { UTCTimestamp } from 'lightweight-charts';
 import { ChartComponent, ChartControlHandle } from '../chart/chart.component';
 import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus, Unsubscribe } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { ChartRegistry } from './chart-registry.service';
+import { LayoutActions } from '../../state/layout/layout.actions';
+import { selectSessionTfs } from '../../state/selectors';
 import { PanelDescriptor } from '../../state/layout/layout.models';
+import { Timeframe } from '../../models';
 
 /**
  * RFC-008: thin wrapper around the audited ChartComponent — one instance per
@@ -35,6 +39,11 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
   template: `
     <div class="panel-header">
       <span class="panel-label">{{ headerLabel() }}</span>
+      <select class="panel-tf-select" (change)="onTimeframeChange($event)">
+        @for (tf of tfOptions(); track tf) {
+          <option [value]="tf" [selected]="tf === descriptor().timeframe">{{ tf }}</option>
+        }
+      </select>
       @if (lastClose() !== null) {
         <span class="panel-price">{{ lastClose() }}</span>
       }
@@ -72,6 +81,14 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
       .panel-label {
         font-weight: 600;
       }
+      .panel-tf-select {
+        font-size: 11px;
+        padding: 1px 4px;
+        background: transparent;
+        color: var(--text-muted);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
       .panel-chart {
         flex: 1;
         min-height: 0;
@@ -88,6 +105,8 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
   private readonly mapper = inject(ChartModelMapper);
   private readonly syncBus = inject(ChartSyncBus);
   private readonly registry = inject(ChartRegistry);
+  /** RFC-013 (Task 3): sole consumer is the per-panel timeframe select's dispatch below. */
+  private readonly store = inject(Store);
   private busUnsubs: Unsubscribe[] = [];
   /** RFC-010: the wrapped ChartComponent's control handle, once it's ready. */
   private controlHandle: ChartControlHandle | null = null;
@@ -95,6 +114,24 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
   /** Panel-local view (own mapper instance, own memo slot — D8). */
   private readonly panelView = toSignal(this.mapper.panelChartView$, { initialValue: null });
 
+  /**
+   * RFC-013 (Task 3): the panel timeframe select reuses the SAME source of truth as the global
+   * toolbar (`ControlsComponent`) — `selectSessionTfs` (loaded timeframes intersected with the
+   * session's selected set) — rather than a second hand-written list, and rather than the full
+   * static `TIMEFRAME_ORDER` (which would offer timeframes with no series harvested yet).
+   */
+  readonly tfOptions = this.store.selectSignal(selectSessionTfs);
+
+  /**
+   * RFC-013 (Task 3) deviation note: the plan invites reducing this label to symbol-only now
+   * that the adjacent select surfaces the timeframe. Left UNCHANGED instead — the existing
+   * spec (`'shows the panel identity (symbol · timeframe) in the header'`) asserts the current
+   * "symbol · timeframe" text verbatim, and the hard constraint for this task is to keep
+   * existing specs passing untouched (STOP/BLOCKED if one must change beyond TestBed
+   * providers). The label and the select are therefore redundant-but-harmless for now: the
+   * select is the interactive control, the label keeps its historical "symbol · timeframe"
+   * summary text (bare timeframe when symbol is '' — D3 sentinel), unchanged from RFC-008.
+   */
   readonly headerLabel = computed(() => {
     const d = this.descriptor();
     return d.symbol ? `${d.symbol} · ${d.timeframe}` : d.timeframe;
@@ -120,6 +157,12 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
     });
     effect(() => this.mapper.configurePanel(this.descriptor()));
     effect(() => this.mapper.setUpdatesEnabled(this.visible()));
+  }
+
+  /** RFC-013 (Task 3): dispatches this panel's timeframe change; the mapper re-derives the view from the updated descriptor. */
+  onTimeframeChange(event: Event): void {
+    const timeframe = (event.target as HTMLSelectElement).value as Timeframe;
+    this.store.dispatch(LayoutActions.setPanelTimeframe({ panelId: this.descriptor().id, timeframe }));
   }
 
   /** RFC-009/RFC-010: registers this panel's live handle in the session ChartRegistry. */

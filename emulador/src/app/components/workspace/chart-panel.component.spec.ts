@@ -10,7 +10,8 @@ import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus, PanelSyncEvent } from '../../domain/chart/chart-sync-bus';
 import { ChartRegistry } from './chart-registry.service';
-import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
+import { LayoutActions } from '../../state/layout/layout.actions';
+import { selectCurrentTime, selectSeries, selectSessionTfs, selectUtcOffset } from '../../state/selectors';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 
 /** Stub of the audited ChartComponent: no engine, no canvas — just the outputs. */
@@ -51,6 +52,7 @@ describe('ChartPanelComponent', () => {
     });
     store.overrideSelector(selectCurrentTime, 100);
     store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectSessionTfs, ['M1', 'M5', 'M15']);
   });
 
   afterEach(() => store.resetSelectors());
@@ -174,6 +176,33 @@ describe('ChartPanelComponent', () => {
       fixture.detectChanges();
       // still mounted: hiding after first show must NOT tear the engine down
       expect(fixture.debugElement.query(By.directive(ChartStubComponent))).not.toBeNull();
+    });
+  });
+
+  describe('per-panel timeframe selector (RFC-013 Task 3)', () => {
+    it('renders a select whose value mirrors the descriptor timeframe', () => {
+      const fixture = create(); // descriptor.timeframe === 'M5'
+      const select: HTMLSelectElement = fixture.nativeElement.querySelector('.panel-tf-select');
+      expect(select).toBeTruthy();
+      expect(select.value).toBe('M5');
+    });
+
+    it('lists exactly the session/global timeframe options (selectSessionTfs)', () => {
+      const fixture = create();
+      const select: HTMLSelectElement = fixture.nativeElement.querySelector('.panel-tf-select');
+      const values = Array.from(select.options).map((o) => o.value);
+      expect(values).toEqual(['M1', 'M5', 'M15']);
+    });
+
+    it('changing the select dispatches setPanelTimeframe with THIS panel id and the chosen timeframe', () => {
+      const fixture = create();
+      const dispatch = vi.spyOn(store, 'dispatch');
+      const select: HTMLSelectElement = fixture.nativeElement.querySelector('.panel-tf-select');
+      select.value = 'M15';
+      select.dispatchEvent(new Event('change'));
+      expect(dispatch).toHaveBeenCalledWith(
+        LayoutActions.setPanelTimeframe({ panelId: 'panel-1', timeframe: 'M15' }),
+      );
     });
   });
 });
