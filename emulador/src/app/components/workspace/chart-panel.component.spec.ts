@@ -140,4 +140,40 @@ describe('ChartPanelComponent', () => {
     const panelHandle = registry.get('panel-1')!;
     expect(() => panelHandle.applyCrosshair(1000)).not.toThrow();
   });
+
+  function createWithVisible(visible: boolean, desc: PanelDescriptor = descriptor) {
+    const fixture = TestBed.createComponent(ChartPanelComponent);
+    fixture.componentRef.setInput('descriptor', desc);
+    fixture.componentRef.setInput('visible', visible);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  describe('lazy chart creation on first show (RFC-012 Task 3)', () => {
+    it('does NOT render <app-chart> for a panel that has never been visible', () => {
+      const fixture = createWithVisible(false);
+      expect(fixture.debugElement.query(By.directive(ChartStubComponent))).toBeNull();
+      // header still renders so the tab is not blank
+      expect(fixture.nativeElement.querySelector('.panel-label').textContent).toContain(
+        'SP500 · M5',
+      );
+    });
+
+    it('renders <app-chart> once the panel first becomes visible', () => {
+      const fixture = createWithVisible(false);
+      expect(fixture.debugElement.query(By.directive(ChartStubComponent))).toBeNull();
+      fixture.componentRef.setInput('visible', true);
+      fixture.detectChanges();
+      expect(fixture.debugElement.query(By.directive(ChartStubComponent))).not.toBeNull();
+    });
+
+    it('keeps <app-chart> mounted after the panel is hidden again (sticky latch preserves RFC-009 keep-alive)', () => {
+      const fixture = createWithVisible(true);
+      expect(fixture.debugElement.query(By.directive(ChartStubComponent))).not.toBeNull();
+      fixture.componentRef.setInput('visible', false);
+      fixture.detectChanges();
+      // still mounted: hiding after first show must NOT tear the engine down
+      expect(fixture.debugElement.query(By.directive(ChartStubComponent))).not.toBeNull();
+    });
+  });
 });
