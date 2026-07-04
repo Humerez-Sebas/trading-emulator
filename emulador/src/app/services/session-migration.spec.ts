@@ -134,6 +134,24 @@ describe('parseSessionPayload defensive fallback', () => {
     expect(parsed.panels[panelId]).toEqual({ id: panelId, symbol: 'EURUSD', timeframe: v2.activeTf ?? 'M1', linkGroupId: null });
   });
 
+  it('falls back to the single-panel default when layout/panels are structurally malformed, instead of throwing', () => {
+    const v2 = migrateV1ToV2(sampleV1(), 'EURUSD');
+    const malformed: Record<string, unknown>[] = [
+      { ...v2, layout: null },
+      { ...v2, layout: {} },
+      { ...v2, layout: { tabs: null } },
+      { ...v2, layout: { tabs: 'x' } },
+      { ...v2, layout: { ...v2.layout, tabs: [{ id: 't', name: 't', template: '1', cells: null }] } },
+      { ...v2, panels: null },
+    ];
+    for (const corrupt of malformed) {
+      const parsed = parseSessionPayload(corrupt, 'EURUSD');
+      const panelId = parsed.layout.tabs[0].cells[0].panelIds[0];
+      expect(parsed.panels[panelId]).toEqual({ id: panelId, symbol: 'EURUSD', timeframe: 'H1', linkGroupId: null });
+      expect(parsed.trading).toEqual(v2.trading); // non-layout fields survive the fallback
+    }
+  });
+
   it('falls back to the single-panel default when panels references a linkGroupId with no matching LinkGroup entry is NOT itself invalid (linkGroups only gate ChartSyncRouter behavior, not layout consistency) — sanity check this does NOT trigger a fallback', () => {
     const v2 = migrateV1ToV2(sampleV1(), 'EURUSD');
     const panelId = Object.keys(v2.panels)[0];

@@ -13,9 +13,20 @@ import { LayoutState } from './layout.models';
  * `layoutInvariantViolation` with `expect(...).toBeNull()` for specs.
  */
 export function layoutInvariantViolation(state: LayoutState): string | null {
-  const referenced: string[] = state.workspace.tabs.flatMap((t) =>
-    t.cells.flatMap((c) => c.panelIds),
-  );
+  // Shape guard: this checker also receives payloads read from storage
+  // (parseSessionPayload's defensive parse) — structurally malformed input
+  // (layout null/{}, non-array tabs/cells/panelIds, null panels) must yield
+  // a violation string, never a TypeError.
+  const tabs = state?.workspace?.tabs;
+  if (
+    !Array.isArray(tabs) ||
+    tabs.some((t) => !Array.isArray(t?.cells) || t.cells.some((c) => !Array.isArray(c?.panelIds))) ||
+    !state.panels ||
+    typeof state.panels !== 'object'
+  ) {
+    return 'malformed layout state';
+  }
+  const referenced: string[] = tabs.flatMap((t) => t.cells.flatMap((c) => c.panelIds));
   const registered = Object.keys(state.panels);
   // no duplicates: each panel lives in exactly one cell
   if (new Set(referenced).size !== referenced.length) {
