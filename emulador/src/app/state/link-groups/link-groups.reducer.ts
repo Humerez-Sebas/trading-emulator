@@ -13,7 +13,9 @@ export const linkGroupsFeature = createFeature({
     }),
     on(LinkGroupsActions.removeGroup, (state, { groupId }): LinkGroupsState => {
       if (!state.groups[groupId]) return state;
-      const groups = Object.fromEntries(Object.entries(state.groups).filter(([id]) => id !== groupId));
+      const groups = Object.fromEntries(
+        Object.entries(state.groups).filter(([id]) => id !== groupId),
+      );
       return { groups };
     }),
     on(LinkGroupsActions.setSyncCrosshair, (state, { groupId, enabled }): LinkGroupsState => {
@@ -26,11 +28,17 @@ export const linkGroupsFeature = createFeature({
       if (!g || g.syncTimeRange === enabled) return state;
       return { groups: { ...state.groups, [groupId]: { ...g, syncTimeRange: enabled } } };
     }),
-    on(LinkGroupsActions.restoreGroups, (_state, { groups }): LinkGroupsState => ({
-      groups: Object.fromEntries(groups.map((g) => [g.id, g])),
-    })),
-    on(WorkspacesActions.workspaceRestored, (_state, { workspace }): LinkGroupsState => ({
-      groups: Object.fromEntries((workspace.linkGroups ?? []).map((g) => [g.id, g])),
-    })),
+    on(
+      LinkGroupsActions.restoreGroups,
+      (_state, { groups }): LinkGroupsState => ({
+        groups: Object.fromEntries(groups.map((g) => [g.id, g])),
+      }),
+    ),
+    on(
+      WorkspacesActions.workspaceRestored,
+      (_state, { workspace }): LinkGroupsState => ({
+        groups: Object.fromEntries((workspace.linkGroups ?? []).map((g) => [g.id, g])),
+      }),
+    ),
   ),
 });

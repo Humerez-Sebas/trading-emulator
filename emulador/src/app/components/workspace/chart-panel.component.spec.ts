@@ -10,8 +10,16 @@ import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus, PanelSyncEvent } from '../../domain/chart/chart-sync-bus';
 import { ChartRegistry } from './chart-registry.service';
-import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
+import { LayoutActions } from '../../state/layout/layout.actions';
+import {
+  selectCurrentTime,
+  selectSeries,
+  selectSessionTfs,
+  selectUtcOffset,
+} from '../../state/selectors';
 import { PanelDescriptor } from '../../state/layout/layout.models';
+import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
+import { LinkGroup } from '../../state/link-groups/link-groups.models';
 
 /** Stub of the audited ChartComponent: no engine, no canvas — just the outputs. */
 @Component({ selector: 'app-chart', standalone: true, template: '' })
@@ -51,6 +59,8 @@ describe('ChartPanelComponent', () => {
     });
     store.overrideSelector(selectCurrentTime, 100);
     store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectSessionTfs, ['M1', 'M5', 'M15']);
+    store.overrideSelector(linkGroupsFeature.selectGroups, {});
   });
 
   afterEach(() => store.resetSelectors());
@@ -174,6 +184,121 @@ describe('ChartPanelComponent', () => {
       fixture.detectChanges();
       // still mounted: hiding after first show must NOT tear the engine down
       expect(fixture.debugElement.query(By.directive(ChartStubComponent))).not.toBeNull();
+    });
+  });
+
+  describe('per-panel timeframe selector (RFC-013 Task 3)', () => {
+    it('renders a select whose value mirrors the descriptor timeframe', () => {
+      const fixture = create(); // descriptor.timeframe === 'M5'
+      const select: HTMLSelectElement = fixture.nativeElement.querySelector('.panel-tf-select');
+      expect(select).toBeTruthy();
+      expect(select.value).toBe('M5');
+    });
+
+    it('lists exactly the session/global timeframe options (selectSessionTfs)', () => {
+      const fixture = create();
+      const select: HTMLSelectElement = fixture.nativeElement.querySelector('.panel-tf-select');
+      const values = Array.from(select.options).map((o) => o.value);
+      expect(values).toEqual(['M1', 'M5', 'M15']);
+    });
+
+    it('changing the select dispatches setPanelTimeframe with THIS panel id and the chosen timeframe', () => {
+      const fixture = create();
+      const dispatch = vi.spyOn(store, 'dispatch');
+      const select: HTMLSelectElement = fixture.nativeElement.querySelector('.panel-tf-select');
+      select.value = 'M15';
+      select.dispatchEvent(new Event('change'));
+      expect(dispatch).toHaveBeenCalledWith(
+        LayoutActions.setPanelTimeframe({ panelId: 'panel-1', timeframe: 'M15' }),
+      );
+    });
+  });
+
+  describe('link-group chip (RFC-013 Task 4)', () => {
+    const groupA: LinkGroup = {
+      id: 'g1',
+      color: '#2962FF',
+      syncCrosshair: true,
+      syncTimeRange: true,
+    };
+    const groupB: LinkGroup = {
+      id: 'g2',
+      color: '#F23645',
+      syncCrosshair: true,
+      syncTimeRange: true,
+    };
+
+    it('an unlinked panel shows a hollow (unfilled) chip', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      const chip: HTMLElement = fixture.nativeElement.querySelector('.panel-link-chip');
+      expect(chip).toBeTruthy();
+      expect(chip.classList.contains('linked')).toBe(false);
+    });
+
+    it('a linked panel shows the chip filled with its group color', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: groupA });
+      const fixture = create({ ...descriptor, linkGroupId: 'g1' });
+      const chip: HTMLElement = fixture.nativeElement.querySelector('.panel-link-chip');
+      expect(chip.classList.contains('linked')).toBe(true);
+      expect((chip.style as CSSStyleDeclaration).backgroundColor).toBeTruthy();
+    });
+
+    it('a dangling linkGroupId (group no longer exists) renders hollow without throwing', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, {});
+      let fixture!: ReturnType<typeof create>;
+      expect(() => {
+        fixture = create({ ...descriptor, linkGroupId: 'ghost' });
+      }).not.toThrow();
+      const chip: HTMLElement = fixture.nativeElement.querySelector('.panel-link-chip');
+      expect(chip.classList.contains('linked')).toBe(false);
+    });
+
+    it('clicking the chip opens a mini-menu listing every group plus "Sin grupo"', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: groupA, g2: groupB });
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      const chip: HTMLButtonElement = fixture.nativeElement.querySelector('.panel-link-chip');
+      chip.click();
+      fixture.detectChanges();
+      const items = fixture.nativeElement.querySelectorAll('.link-chip-menu .link-chip-menu-item');
+      expect(items).toHaveLength(3); // g1, g2, Sin grupo
+      expect(fixture.nativeElement.querySelector('.link-chip-menu').textContent).toContain(
+        'Sin grupo',
+      );
+    });
+
+    it('choosing a group in the mini-menu dispatches setPanelLinkGroup with THIS panel id and closes the menu', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: groupA, g2: groupB });
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      const dispatch = vi.spyOn(store, 'dispatch');
+      const chip: HTMLButtonElement = fixture.nativeElement.querySelector('.panel-link-chip');
+      chip.click();
+      fixture.detectChanges();
+      const items: NodeListOf<HTMLButtonElement> = fixture.nativeElement.querySelectorAll(
+        '.link-chip-menu .link-chip-menu-item',
+      );
+      items[0].click(); // g1
+      expect(dispatch).toHaveBeenCalledWith(
+        LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: 'g1' }),
+      );
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.link-chip-menu')).toBeNull();
+    });
+
+    it('choosing "Sin grupo" dispatches setPanelLinkGroup with linkGroupId null', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: groupA });
+      const fixture = create({ ...descriptor, linkGroupId: 'g1' });
+      const dispatch = vi.spyOn(store, 'dispatch');
+      const chip: HTMLButtonElement = fixture.nativeElement.querySelector('.panel-link-chip');
+      chip.click();
+      fixture.detectChanges();
+      const items: NodeListOf<HTMLButtonElement> = fixture.nativeElement.querySelectorAll(
+        '.link-chip-menu .link-chip-menu-item',
+      );
+      const sinGrupo = Array.from(items).find((el) => el.textContent?.includes('Sin grupo'))!;
+      sinGrupo.click();
+      expect(dispatch).toHaveBeenCalledWith(
+        LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: null }),
+      );
     });
   });
 });

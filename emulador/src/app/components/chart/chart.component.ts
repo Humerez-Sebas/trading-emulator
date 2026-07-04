@@ -521,7 +521,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.engine = new ChartEngine(this.container.nativeElement);
     this.chart = this.engine.chartApi;
     this.series = this.engine.seriesApi;
-    
+
     const drawingsCap = new DrawingsCapability(this.series!);
     this.engine.registerCapability(drawingsCap);
 

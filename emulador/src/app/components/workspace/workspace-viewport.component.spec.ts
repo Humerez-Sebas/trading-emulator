@@ -13,7 +13,13 @@ import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature } from '../../state/layout/layout.reducer';
 import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
-import { LayoutState, MAX_PANELS_PER_TAB, PanelDescriptor } from '../../state/layout/layout.models';
+import {
+  GridTemplate,
+  LayoutState,
+  MAX_PANELS_PER_TAB,
+  PanelDescriptor,
+} from '../../state/layout/layout.models';
+import { createInitialLinkGroupsState } from '../../state/link-groups/link-groups.models';
 
 /** Stub panel: renders nothing, keeps the required input contract. */
 @Component({ selector: 'app-chart-panel', standalone: true, template: '' })
@@ -44,11 +50,17 @@ const layoutState: LayoutState = {
           { panelIds: [], activePanelId: '' },
         ],
       },
-      { id: 'tab-b', name: 'Contexto', template: '1', cells: [{ panelIds: [], activePanelId: '' }] },
+      {
+        id: 'tab-b',
+        name: 'Contexto',
+        template: '1',
+        cells: [{ panelIds: [], activePanelId: '' }],
+      },
     ],
     activeTabId: 'tab-a',
   },
   panels: { p1: desc('p1'), p2: desc('p2', 'M5'), p3: desc('p3', 'M15') },
+  focusedPanelId: 'p1',
 };
 
 /** Same layout, but the stacked cell's active panel flips from p2 to p3. */
@@ -74,11 +86,17 @@ const fullTabState: LayoutState = (() => {
             { panelIds: [], activePanelId: '' },
           ],
         },
-        { id: 'tab-b', name: 'Contexto', template: '1', cells: [{ panelIds: [], activePanelId: '' }] },
+        {
+          id: 'tab-b',
+          name: 'Contexto',
+          template: '1',
+          cells: [{ panelIds: [], activePanelId: '' }],
+        },
       ],
       activeTabId: 'tab-a',
     },
     panels,
+    focusedPanelId: ids[0],
   };
 })();
 
@@ -107,7 +125,11 @@ describe('WorkspaceViewportComponent', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [WorkspaceViewportComponent],
-      providers: [provideMockStore({ initialState: { layout: layoutState } })],
+      providers: [
+        provideMockStore({
+          initialState: { layout: layoutState, linkGroups: createInitialLinkGroupsState() },
+        }),
+      ],
     });
     TestBed.overrideComponent(WorkspaceViewportComponent, {
       remove: { imports: [ChartPanelComponent] },
@@ -184,10 +206,12 @@ describe('WorkspaceViewportComponent', () => {
 
   it('switching the stacked cell tab flips [hidden] without recreating the component', () => {
     const fixture = create();
-    const before = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2].componentInstance;
+    const before = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2]
+      .componentInstance;
     store.setState({ layout: switchedActivePanelState }); // same layout, cell 1 activePanelId -> 'p3'
     fixture.detectChanges();
-    const after = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2].componentInstance;
+    const after = fixture.debugElement.queryAll(By.directive(ChartPanelStubComponent))[2]
+      .componentInstance;
     expect(after).toBe(before); // identity preserved: keep-alive, not re-creation
   });
 
@@ -198,7 +222,9 @@ describe('WorkspaceViewportComponent', () => {
     expect(addButtons).toHaveLength(4); // one per cell of the active '2x2' tab
     (addButtons[2] as HTMLButtonElement).click(); // third cell: empty, cellIndex 2
     expect(dispatch).toHaveBeenCalledTimes(1);
-    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<typeof LayoutActions.addPanel>;
+    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<
+      typeof LayoutActions.addPanel
+    >;
     expect(dispatched.type).toBe(LayoutActions.addPanel.type);
     expect(dispatched.tabId).toBe('tab-a');
     expect(dispatched.cellIndex).toBe(2);
@@ -224,11 +250,172 @@ describe('WorkspaceViewportComponent', () => {
   it('an "x" affordance on each cell tab dispatches removePanel and does not also dispatch setActivePanel', () => {
     const fixture = create();
     const dispatch = vi.spyOn(store, 'dispatch');
-    const closeButtons = fixture.nativeElement.querySelectorAll('.cell-tabs .cell-tab .cell-tab-close');
+    const closeButtons = fixture.nativeElement.querySelectorAll(
+      '.cell-tabs .cell-tab .cell-tab-close',
+    );
     expect(closeButtons).toHaveLength(2); // stacked cell has 2 panels (p2, p3)
     (closeButtons[1] as HTMLButtonElement).click(); // p3's close affordance
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith(LayoutActions.removePanel({ panelId: 'p3' }));
+  });
+
+  it('a "+" add-tab button dispatches createTab with a fresh id and a generated name', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const addTabButton: HTMLButtonElement = fixture.nativeElement.querySelector('.tab-bar-add');
+    expect(addTabButton).toBeTruthy();
+    addTabButton.click();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    const dispatched = dispatch.mock.calls[0][0] as unknown as ReturnType<
+      typeof LayoutActions.createTab
+    >;
+    expect(dispatched.type).toBe(LayoutActions.createTab.type);
+    expect(dispatched.id).toEqual(expect.any(String));
+    expect(dispatched.name).toBe('Tab 3');
+  });
+
+  it('a "x" close affordance on each tab dispatches closeTab for THAT tab only, not setActiveTab', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
+    expect(closeButtons).toHaveLength(2); // two tabs present, both closable
+    (closeButtons[1] as HTMLElement).click(); // tab-b's close affordance
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(LayoutActions.closeTab({ tabId: 'tab-b' }));
+  });
+
+  it('the tab close affordance is absent when only a single tab exists', () => {
+    const singleTabState: LayoutState = {
+      workspace: {
+        tabs: [layoutState.workspace.tabs[0]],
+        activeTabId: 'tab-a',
+      },
+      panels: layoutState.panels,
+      focusedPanelId: 'p1',
+    };
+    store.setState({ layout: singleTabState });
+    const fixture = create();
+    fixture.detectChanges();
+    const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
+    expect(closeButtons).toHaveLength(0);
+  });
+
+  it('double-clicking a tab enters inline rename; Enter commits renameTab with the typed name', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const tabs = fixture.nativeElement.querySelectorAll('.tab-bar .tab');
+    (tabs[0] as HTMLElement).dispatchEvent(new Event('dblclick', { bubbles: true }));
+    fixture.detectChanges();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('.tab-rename-input');
+    expect(input).toBeTruthy();
+    expect(input.value).toBe('Principal');
+    input.value = 'Renamed Tab';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+    expect(dispatch).toHaveBeenCalledWith(
+      LayoutActions.renameTab({ tabId: 'tab-a', name: 'Renamed Tab' }),
+    );
+  });
+
+  it('Escape cancels the inline rename without dispatching', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const tabs = fixture.nativeElement.querySelectorAll('.tab-bar .tab');
+    (tabs[0] as HTMLElement).dispatchEvent(new Event('dblclick', { bubbles: true }));
+    fixture.detectChanges();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('.tab-rename-input');
+    input.value = 'Should Not Commit';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('.tab-rename-input')).toBeNull();
+  });
+
+  it('committing an empty/whitespace-only rename cancels without dispatching', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const tabs = fixture.nativeElement.querySelectorAll('.tab-bar .tab');
+    (tabs[0] as HTMLElement).dispatchEvent(new Event('dblclick', { bubbles: true }));
+    fixture.detectChanges();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('.tab-rename-input');
+    input.value = '   ';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('renders one grid-template button per GridTemplate, dispatching applyGridTemplate for the ACTIVE tab', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const templateButtons = fixture.nativeElement.querySelectorAll('.tab-bar-tools .template-btn');
+    expect(templateButtons).toHaveLength(7);
+    const templates: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3'];
+    const target = Array.from(templateButtons as NodeListOf<HTMLButtonElement>).find(
+      (btn, i) => templates[i] === '2v',
+    )!;
+    target.click();
+    expect(dispatch).toHaveBeenCalledWith(
+      LayoutActions.applyGridTemplate({ tabId: 'tab-a', template: '2v' }),
+    );
+  });
+
+  it('the active tab template button carries the active class', () => {
+    const fixture = create(); // active tab-a's template is '2x2'
+    const templateButtons = fixture.nativeElement.querySelectorAll(
+      '.tab-bar-tools .template-btn',
+    ) as NodeListOf<HTMLButtonElement>;
+    const templates: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3'];
+    templateButtons.forEach((btn, i) => {
+      expect(btn.classList.contains('active')).toBe(templates[i] === '2x2');
+    });
+  });
+
+  describe('link-groups popover (RFC-013 Task 4)', () => {
+    it('a link-groups toggle button lives in .tab-bar-tools and is closed by default', () => {
+      const fixture = create();
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector(
+        '.tab-bar-tools .link-groups-toggle',
+      );
+      expect(toggle).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeNull();
+    });
+
+    it('clicking the toggle opens the popover; clicking it again closes it', () => {
+      const fixture = create();
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-toggle');
+      toggle.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeTruthy();
+      toggle.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeNull();
+    });
+
+    it('a click outside the popover closes it', () => {
+      const fixture = create();
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-toggle');
+      toggle.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeTruthy();
+      document.body.dispatchEvent(new Event('click', { bubbles: true }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeNull();
+    });
+
+    it('a click inside the popover does not close it', () => {
+      const fixture = create();
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-toggle');
+      toggle.click();
+      fixture.detectChanges();
+      const menu: HTMLElement = fixture.nativeElement.querySelector('app-link-groups-menu');
+      menu.dispatchEvent(new Event('click', { bubbles: true }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeTruthy();
+    });
   });
 });
 

@@ -6,11 +6,20 @@ import { selectSeries, selectCurrentTime, selectUtcOffset } from '../../state/se
 import { PanelDescriptor } from '../../state/layout/layout.models';
 import { Candle } from '../../models';
 
-const candle = (time: number, close = 1): Candle => ({ time, open: close, high: close, low: close, close });
+const candle = (time: number, close = 1): Candle => ({
+  time,
+  open: close,
+  high: close,
+  low: close,
+  close,
+});
 const m1: Candle[] = [candle(100), candle(160), candle(220)];
 const m5: Candle[] = [candle(100), candle(400)];
 const panel = (id: string, symbol: string, timeframe: 'M1' | 'M5'): PanelDescriptor => ({
-  id, symbol, timeframe, linkGroupId: null,
+  id,
+  symbol,
+  timeframe,
+  linkGroupId: null,
 });
 
 describe('ChartModelMapper shared candle cache (RFC-012 pt 1 / R4: reference identity, no copy)', () => {
@@ -37,8 +46,8 @@ describe('ChartModelMapper shared candle cache (RFC-012 pt 1 / R4: reference ide
     mapperA.panelChartView$.subscribe((v) => (viewA = v));
     mapperB.panelChartView$.subscribe((v) => (viewB = v));
 
-    expect(viewA!.candles).toBe(m1);        // A did not copy
-    expect(viewB!.candles).toBe(m1);        // B did not copy
+    expect(viewA!.candles).toBe(m1); // A did not copy
+    expect(viewB!.candles).toBe(m1); // B did not copy
     expect(viewA!.candles).toBe(viewB!.candles); // and both share ONE array object
   });
 

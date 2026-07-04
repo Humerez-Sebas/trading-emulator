@@ -122,4 +122,105 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
     expect(eurusdDrawingsState.items).toEqual([eurusdDrawing]);
     expect(gbpusdDrawingsState.items).toEqual([gbpusdDrawing]);
   });
+
+  /**
+   * RFC-013 Task 5 Step 3 (DoD-5): a workspace built the way the NEW UI
+   * actually builds one — createTab -> applyGridTemplate('2x2') -> addPanel x2
+   * -> setPanelTimeframe -> LinkGroupsActions.createGroup + setPanelLinkGroup,
+   * all folded through the REAL feature reducers (not hand-authored fixture
+   * state) — must survive the exact same persist -> JSON -> parse -> restore
+   * cycle proven above, landing on an equal layout/panels/linkGroups state
+   * that still satisfies `assertLayoutConsistent`.
+   */
+  it('a UI-built workspace (createTab, applyGridTemplate, addPanel, setPanelTimeframe, LinkGroups) survives the full persistence cycle', () => {
+    // build: fold the exact action sequence the new UI dispatches over FRESH reducers.
+    let layoutState = layoutFeature.reducer(undefined, { type: '@@INIT' } as never);
+    layoutState = layoutFeature.reducer(
+      layoutState,
+      LayoutActions.createTab({ id: 'tab-ui', name: 'UI Tab' }),
+    );
+    layoutState = layoutFeature.reducer(
+      layoutState,
+      LayoutActions.applyGridTemplate({ tabId: 'tab-ui', template: '2x2' }),
+    );
+    layoutState = layoutFeature.reducer(
+      layoutState,
+      LayoutActions.addPanel({
+        tabId: 'tab-ui',
+        cellIndex: 0,
+        descriptor: { id: 'ui-p1', symbol: '', timeframe: 'M1', linkGroupId: null },
+      }),
+    );
+    layoutState = layoutFeature.reducer(
+      layoutState,
+      LayoutActions.addPanel({
+        tabId: 'tab-ui',
+        cellIndex: 1,
+        descriptor: { id: 'ui-p2', symbol: '', timeframe: 'M1', linkGroupId: null },
+      }),
+    );
+    layoutState = layoutFeature.reducer(
+      layoutState,
+      LayoutActions.setPanelTimeframe({ panelId: 'ui-p2', timeframe: 'M15' }),
+    );
+
+    let linkGroupsState = linkGroupsFeature.reducer(undefined, { type: '@@INIT' } as never);
+    const uiGroup: LinkGroup = {
+      id: 'ui-g1',
+      color: '#2962FF',
+      syncCrosshair: true,
+      syncTimeRange: true,
+    };
+    linkGroupsState = linkGroupsFeature.reducer(
+      linkGroupsState,
+      LinkGroupsActions.createGroup({ group: uiGroup }),
+    );
+    layoutState = layoutFeature.reducer(
+      layoutState,
+      LayoutActions.setPanelLinkGroup({ panelId: 'ui-p1', linkGroupId: 'ui-g1' }),
+    );
+    layoutState = layoutFeature.reducer(
+      layoutState,
+      LayoutActions.setPanelLinkGroup({ panelId: 'ui-p2', linkGroupId: 'ui-g1' }),
+    );
+
+    expect(() => assertLayoutConsistent(layoutState)).not.toThrow();
+
+    // persist: same PayloadInput shape as the proof above, but sourced from the built state.
+    const input: PayloadInput = {
+      trading: defaultTradingData(10000),
+      currentTime: 1700050000,
+      activeTf: 'M1',
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: {},
+      notes: [],
+      selectedTfs: ['M1', 'M15'],
+      startRange: 1699000000,
+      endRange: 1700200000,
+      requiredDatasets: [{ symbol: 'EURUSD', timeframe: 'M1' }],
+      layout: layoutState.workspace,
+      panels: layoutState.panels,
+      linkGroups: Object.values(linkGroupsState.groups),
+    };
+
+    const payload = toPayload(input);
+    const stored = JSON.parse(JSON.stringify(payload));
+    const parsed = parseSessionPayload(stored, 'EURUSD');
+    const restored = fromPayload(parsed, 'EURUSD');
+
+    const restoredLayoutState = layoutFeature.reducer(
+      undefined,
+      LayoutActions.restoreLayout({ layout: restored.layout, panels: restored.panels }),
+    );
+    const restoredLinkGroupsState = linkGroupsFeature.reducer(
+      undefined,
+      LinkGroupsActions.restoreGroups({ groups: restored.linkGroups }),
+    );
+
+    expect(() => assertLayoutConsistent(restoredLayoutState)).not.toThrow();
+    expect(restoredLayoutState.workspace).toEqual(layoutState.workspace);
+    expect(restoredLayoutState.panels).toEqual(layoutState.panels);
+    expect(restoredLinkGroupsState.groups).toEqual(linkGroupsState.groups);
+  });
 });

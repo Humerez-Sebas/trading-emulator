@@ -10,13 +10,7 @@ import {
   createSeriesMarkers,
 } from 'lightweight-charts';
 import { ChartEventBus } from '../chart-event-bus';
-import {
-  ChartColors,
-  PendingOrder,
-  Position,
-  RenderModel,
-  TradeMarker,
-} from '../render-model';
+import { ChartColors, PendingOrder, Position, RenderModel, TradeMarker } from '../render-model';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
 import { TradeButtonsPrimitive, TradeButton } from './trade-buttons-primitive';
 const CHART_ACCENT = '#2962FF';
@@ -134,15 +128,51 @@ export class TradingCapability implements Capability {
       for (const p of t.positions) {
         const sideColor = p.side === 'buy' ? t.colors.upColor : t.colors.downColor;
         const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}`;
-        addPriceLine(p.id, 'position', 'entry', p.entryPrice, sideColor, LineStyle.Solid, label, false);
-        addPriceLine(p.id, 'position', 'sl', p.sl, t.colors.downColor, LineStyle.Dashed, 'SL', true);
+        addPriceLine(
+          p.id,
+          'position',
+          'entry',
+          p.entryPrice,
+          sideColor,
+          LineStyle.Solid,
+          label,
+          false,
+        );
+        addPriceLine(
+          p.id,
+          'position',
+          'sl',
+          p.sl,
+          t.colors.downColor,
+          LineStyle.Dashed,
+          'SL',
+          true,
+        );
         if (p.tp !== null) {
-          addPriceLine(p.id, 'position', 'tp', p.tp, t.colors.upColor, LineStyle.Dashed, 'TP', true);
+          addPriceLine(
+            p.id,
+            'position',
+            'tp',
+            p.tp,
+            t.colors.upColor,
+            LineStyle.Dashed,
+            'TP',
+            true,
+          );
         }
       }
       for (const o of t.pendingOrders) {
         const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}`;
-        addPriceLine(o.id, 'order', 'entry', o.entryPrice, CHART_ACCENT, LineStyle.LargeDashed, label, true);
+        addPriceLine(
+          o.id,
+          'order',
+          'entry',
+          o.entryPrice,
+          CHART_ACCENT,
+          LineStyle.LargeDashed,
+          label,
+          true,
+        );
         addPriceLine(o.id, 'order', 'sl', o.sl, t.colors.downColor, LineStyle.Dashed, 'SL', true);
         if (o.tp !== null) {
           addPriceLine(o.id, 'order', 'tp', o.tp, t.colors.upColor, LineStyle.Dashed, 'TP', true);

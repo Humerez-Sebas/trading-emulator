@@ -21,7 +21,7 @@ export interface SessionSource {
 class SessionRenderer implements IPrimitivePaneRenderer {
   constructor(
     private x: number,
-    private color: string
+    private color: string,
   ) {}
 
   draw(target: CanvasRenderingTarget2D): void {

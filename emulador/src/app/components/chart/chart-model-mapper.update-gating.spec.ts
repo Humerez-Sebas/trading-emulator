@@ -6,15 +6,33 @@ import { selectChartStyle, selectChartView } from '../../state/selectors';
 
 const styleA = {
   colors: {
-    upColor: '#26A69A', downColor: '#EF5350', wickUp: '#26A69A', wickDown: '#EF5350',
-    borderUpColor: '#000000', borderDownColor: '#000000', background: '#000000',
-    grid: '#1A1A1A', text: '#787B86', crosshair: '#787B86', tpZone: '#089981', slZone: '#F23645',
+    upColor: '#26A69A',
+    downColor: '#EF5350',
+    wickUp: '#26A69A',
+    wickDown: '#EF5350',
+    borderUpColor: '#000000',
+    borderDownColor: '#000000',
+    background: '#000000',
+    grid: '#1A1A1A',
+    text: '#787B86',
+    crosshair: '#787B86',
+    tpZone: '#089981',
+    slZone: '#F23645',
   },
-  gridVisible: true, gridOpacity: 0.5, tradeBoxOpacity: { fill: 0.12, border: 0.6 },
+  gridVisible: true,
+  gridOpacity: 0.5,
+  tradeBoxOpacity: { fill: 0.12, border: 0.6 },
 };
 const styleB = { ...styleA, colors: { ...styleA.colors, upColor: '#FFFFFF' } };
 
-const view = (idx: number) => ({ tf: 'M1', candles: [], idx, utcOffset: 0, forming: null, countdown: null });
+const view = (idx: number) => ({
+  tf: 'M1',
+  candles: [],
+  idx,
+  utcOffset: 0,
+  forming: null,
+  countdown: null,
+});
 
 describe('ChartModelMapper update-gating (RFC-012 pt 2 / D6: hidden panel does zero render work)', () => {
   let store: MockStore;
@@ -67,8 +85,8 @@ describe('ChartModelMapper update-gating (RFC-012 pt 2 / D6: hidden panel does z
 
     mapper.setUpdatesEnabled(true); // panel becomes visible again
 
-    expect(viewSeen).toHaveLength(2);          // exactly ONE catch-up emission, not five
-    expect(viewSeen[1].idx).toBe(5);           // and it is the LATEST state, not a replay of idx=1
+    expect(viewSeen).toHaveLength(2); // exactly ONE catch-up emission, not five
+    expect(viewSeen[1].idx).toBe(5); // and it is the LATEST state, not a replay of idx=1
   });
 
   it('re-show with NOTHING changed while hidden delivers NO duplicate (distinctUntilChanged already painted it)', () => {

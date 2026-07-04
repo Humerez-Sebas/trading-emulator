@@ -55,8 +55,6 @@ const FILL_SCALE: Record<TradeBoxItem['status'], number> = {
 const DEFAULT_FILL_ALPHA = 0.12;
 const DEFAULT_BORDER_ALPHA = 0.6;
 
-
-
 class TradeBoxesRenderer implements IPrimitivePaneRenderer {
   constructor(
     private boxes: ScreenBox[],

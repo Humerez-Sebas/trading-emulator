@@ -1,5 +1,10 @@
 import { Subscription } from 'rxjs';
-import { PanelSyncEvent, PanelSyncEventMap, PanelSyncEventType, ChartSyncBus } from '../../domain/chart/chart-sync-bus';
+import {
+  PanelSyncEvent,
+  PanelSyncEventMap,
+  PanelSyncEventType,
+  ChartSyncBus,
+} from '../../domain/chart/chart-sync-bus';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 import { LinkGroup } from '../../state/link-groups/link-groups.models';
 import { ChartRegistry } from './chart-registry.service';

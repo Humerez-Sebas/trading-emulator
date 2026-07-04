@@ -182,8 +182,6 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
     ctx.fillText(text, lx + padX, ly + h / 2);
     ctx.restore();
   }
-
-
 }
 
 class DrawingsPaneView implements IPrimitivePaneView {

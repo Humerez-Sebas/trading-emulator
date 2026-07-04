@@ -1,7 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
-import { ChartComponent } from '../../components/chart/chart.component';
-import { ChartModelMapper } from '../../components/chart/chart-model-mapper.service';
+import { WorkspaceViewportComponent } from '../../components/workspace/workspace-viewport.component';
 import { ControlsComponent } from '../../components/controls/controls.component';
 import { DrawingToolbarComponent } from '../../components/drawing-toolbar/drawing-toolbar.component';
 import { SideDockComponent } from '../../components/side-dock/side-dock.component';
@@ -17,9 +16,8 @@ import { settingsFeature } from '../../state/settings/settings.reducer';
 @Component({
   selector: 'app-emulador-page',
   standalone: true,
-  providers: [ChartModelMapper],
   imports: [
-    ChartComponent,
+    WorkspaceViewportComponent,
     ControlsComponent,
     DrawingToolbarComponent,
     SideDockComponent,
@@ -36,7 +34,7 @@ import { settingsFeature } from '../../state/settings/settings.reducer';
       <div class="workspace">
         <app-drawing-toolbar></app-drawing-toolbar>
         <main class="chart-area">
-          <app-chart></app-chart>
+          <app-workspace-viewport />
           <app-floating-pnl></app-floating-pnl>
           <app-playback-controller></app-playback-controller>
           @if (floatingToolbar()) {

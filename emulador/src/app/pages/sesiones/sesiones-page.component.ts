@@ -16,7 +16,11 @@ import {
 } from '../../services/session.service';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { fromPayload } from '../../services/session-sync.mapping';
-import { SessionPayloadV1, SessionPayloadV2, SessionSummary } from '../../services/session-sync.models';
+import {
+  SessionPayloadV1,
+  SessionPayloadV2,
+  SessionSummary,
+} from '../../services/session-sync.models';
 import { authFeature } from '../../state/auth/auth.reducer';
 import type { DatasetRecord } from '../../services/market-data-db';
 import { ReplayActions } from '../../state/replay/replay.actions';

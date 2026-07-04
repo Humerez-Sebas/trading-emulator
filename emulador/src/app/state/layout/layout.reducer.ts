@@ -10,7 +10,9 @@ import {
   WorkspaceLayout,
 } from './layout.models';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
+import { MarketActions } from '../market/market.actions';
 import { singlePanelLayoutFor } from '../../services/session-migration';
+import { Timeframe } from '../../models';
 
 const emptyCell = (): GridCell => ({ panelIds: [], activePanelId: '' });
 
@@ -74,13 +76,19 @@ export const layoutFeature = createFeature({
       const panels = Object.fromEntries(
         Object.entries(state.panels).filter(([id]) => !closedIds.has(id)),
       );
-      const nextActive =
-        activeTabId === tabId ? remaining[Math.max(0, index - 1)].id : activeTabId;
-      return { workspace: { tabs: remaining, activeTabId: nextActive }, panels };
+      const nextActive = activeTabId === tabId ? remaining[Math.max(0, index - 1)].id : activeTabId;
+      return { ...state, workspace: { tabs: remaining, activeTabId: nextActive }, panels };
     }),
     on(LayoutActions.setActiveTab, (state, { tabId }): LayoutState => {
       if (!state.workspace.tabs.some((t) => t.id === tabId)) return state;
       return { ...state, workspace: { ...state.workspace, activeTabId: tabId } };
+    }),
+    on(LayoutActions.renameTab, (state, { tabId, name }): LayoutState => {
+      if (!state.workspace.tabs.some((t) => t.id === tabId)) return state;
+      return {
+        ...state,
+        workspace: updateTab(state.workspace, tabId, (tab) => ({ ...tab, name })),
+      };
     }),
     on(LayoutActions.applyGridTemplate, (state, { tabId, template }): LayoutState => {
       if (!state.workspace.tabs.some((t) => t.id === tabId)) return state;
@@ -100,6 +108,7 @@ export const layoutFeature = createFeature({
       if (countPanelsInTab(tab) >= MAX_PANELS_PER_TAB) return state;
       if (state.panels[descriptor.id]) return state;
       return {
+        ...state,
         panels: { ...state.panels, [descriptor.id]: descriptor },
         workspace: updateTab(state.workspace, tabId, (t) => ({
           ...t,
@@ -117,6 +126,7 @@ export const layoutFeature = createFeature({
         Object.entries(state.panels).filter(([id]) => id !== panelId),
       );
       return {
+        ...state,
         panels,
         workspace: {
           ...state.workspace,
@@ -141,6 +151,7 @@ export const layoutFeature = createFeature({
       if (!cell || !cell.panelIds.includes(panelId)) return state;
       return {
         ...state,
+        focusedPanelId: panelId,
         workspace: updateTab(state.workspace, tabId, (t) => ({
           ...t,
           cells: t.cells.map((c, i) => (i === cellIndex ? { ...c, activePanelId: panelId } : c)),
@@ -150,7 +161,8 @@ export const layoutFeature = createFeature({
     on(LayoutActions.movePanel, (state, { panelId, targetTabId, targetCellIndex }): LayoutState => {
       if (!state.panels[panelId]) return state;
       const targetTab = state.workspace.tabs.find((t) => t.id === targetTabId);
-      if (!targetTab || targetCellIndex < 0 || targetCellIndex >= targetTab.cells.length) return state;
+      if (!targetTab || targetCellIndex < 0 || targetCellIndex >= targetTab.cells.length)
+        return state;
       const alreadyThere = targetTab.cells[targetCellIndex].panelIds.includes(panelId);
       if (alreadyThere) return state;
       const sourceTab = state.workspace.tabs.find((t) =>
@@ -173,7 +185,8 @@ export const layoutFeature = createFeature({
                 const panelIds = cell.panelIds.filter((id) => id !== panelId);
                 return {
                   panelIds,
-                  activePanelId: cell.activePanelId === panelId ? (panelIds[0] ?? '') : cell.activePanelId,
+                  activePanelId:
+                    cell.activePanelId === panelId ? (panelIds[0] ?? '') : cell.activePanelId,
                 };
               }
               if (isTarget && !holds) {
@@ -190,16 +203,63 @@ export const layoutFeature = createFeature({
       if (!panel || panel.linkGroupId === linkGroupId) return state;
       return { ...state, panels: { ...state.panels, [panelId]: { ...panel, linkGroupId } } };
     }),
-    on(LayoutActions.restoreLayout, (_state, { layout, panels }): LayoutState => ({
-      workspace: layout,
-      panels,
-    })),
+    on(LayoutActions.setPanelTimeframe, (state, { panelId, timeframe }): LayoutState => {
+      const panel = state.panels[panelId];
+      if (!panel || panel.timeframe === timeframe) return state;
+      return { ...state, panels: { ...state.panels, [panelId]: { ...panel, timeframe } } };
+    }),
+    on(LayoutActions.setFocusedPanel, (state, { panelId }): LayoutState => {
+      if (!state.panels[panelId] || state.focusedPanelId === panelId) return state;
+      return { ...state, focusedPanelId: panelId };
+    }),
+    on(MarketActions.changeTimeframe, (state, { tf }): LayoutState => {
+      const focusedId = state.focusedPanelId;
+      if (!focusedId || !state.panels[focusedId]) return state;
+      const panel = state.panels[focusedId];
+      if (panel.timeframe === tf) return state;
+      return {
+        ...state,
+        panels: {
+          ...state.panels,
+          [focusedId]: { ...panel, timeframe: tf },
+        },
+      };
+    }),
+    on(MarketActions.changeCustomTimeframe, (state, { minutes }): LayoutState => {
+      const focusedId = state.focusedPanelId;
+      if (!focusedId || !state.panels[focusedId]) return state;
+      const panel = state.panels[focusedId];
+      const customTf = `M${minutes}` as Timeframe;
+      if (panel.timeframe === customTf) return state;
+      return {
+        ...state,
+        panels: {
+          ...state.panels,
+          [focusedId]: { ...panel, timeframe: customTf },
+        },
+      };
+    }),
+    on(LayoutActions.restoreLayout, (_state, { layout, panels }): LayoutState => {
+      const activeTab = layout.tabs.find((t) => t.id === layout.activeTabId);
+      const focusedPanelId = activeTab?.cells[0]?.activePanelId ?? null;
+      return {
+        workspace: layout,
+        panels,
+        focusedPanelId,
+      };
+    }),
     on(WorkspacesActions.workspaceRestored, (_state, { workspace }): LayoutState => {
-      if (workspace.layout && workspace.panels) {
-        return { workspace: workspace.layout, panels: workspace.panels };
+      const layout = workspace.layout;
+      const panels = workspace.panels;
+      if (layout && panels) {
+        const activeTab = layout.tabs.find((t) => t.id === layout.activeTabId);
+        const focusedPanelId = activeTab?.cells[0]?.activePanelId ?? null;
+        return { workspace: layout, panels, focusedPanelId };
       }
       const fallback = singlePanelLayoutFor(workspace.symbol, workspace.activeTf ?? 'M1');
-      return { workspace: fallback.layout, panels: fallback.panels };
+      const activeTab = fallback.layout.tabs.find((t) => t.id === fallback.layout.activeTabId);
+      const focusedPanelId = activeTab?.cells[0]?.activePanelId ?? null;
+      return { workspace: fallback.layout, panels: fallback.panels, focusedPanelId };
     }),
   ),
 });

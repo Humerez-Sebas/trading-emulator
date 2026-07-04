@@ -1,4 +1,13 @@
-import { createChart, IChartApi, ISeriesApi, CandlestickSeries, CandlestickData, CrosshairMode, LogicalRange, UTCTimestamp } from 'lightweight-charts';
+import {
+  createChart,
+  IChartApi,
+  ISeriesApi,
+  CandlestickSeries,
+  CandlestickData,
+  CrosshairMode,
+  LogicalRange,
+  UTCTimestamp,
+} from 'lightweight-charts';
 import { RenderModel } from './render-model';
 import { ChartEventBus } from './chart-event-bus';
 import { Capability } from './capability';
@@ -13,15 +22,21 @@ export interface ChartApplyHandle {
 
 export class ChartEngine implements ChartApplyHandle {
   // TODO: Eliminar esta exposición directa en RFC-004/RFC-005 una vez que DrawingsCapability y TradingCapability estén implementados.
-  public get chartApi(): IChartApi { return this.chart; }
-  public get seriesApi(): ISeriesApi<"Candlestick"> { return this.mainSeries; }
+  public get chartApi(): IChartApi {
+    return this.chart;
+  }
+  public get seriesApi(): ISeriesApi<'Candlestick'> {
+    return this.mainSeries;
+  }
 
   private chart: IChartApi;
-  private mainSeries: ISeriesApi<"Candlestick">;
+  private mainSeries: ISeriesApi<'Candlestick'>;
 
   private bus = new ChartEventBus();
   private capabilities = new Map<string, Capability>();
-  public get events(): ChartEventBus { return this.bus; }
+  public get events(): ChartEventBus {
+    return this.bus;
+  }
 
   /**
    * RFC-010: true only for the synchronous duration of an applyCrosshair/applyVisibleRange call —
@@ -186,7 +201,7 @@ export class ChartEngine implements ChartApplyHandle {
         borderDownColor: c.borderDownColor,
       });
     }
-    
+
     // 2. Update data efficiently
     if (model.candles !== undefined) {
       this.mainSeries.setData(model.candles as unknown as CandlestickData[]);
@@ -196,7 +211,7 @@ export class ChartEngine implements ChartApplyHandle {
     // modelo a los plugins registrados.
     this.capabilities.forEach((cap) => cap.render(model));
   }
-  
+
   public setInteractivity(enabled: boolean): void {
     this.chart.applyOptions({ handleScroll: enabled, handleScale: enabled });
   }
@@ -205,8 +220,6 @@ export class ChartEngine implements ChartApplyHandle {
     this.mainSeries.priceScale().applyOptions({ autoScale: true });
   }
 
-
-  
   public destroy(): void {
     this.capabilities.forEach((cap) => cap.destroy());
     this.capabilities.clear();

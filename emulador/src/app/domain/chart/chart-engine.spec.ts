@@ -32,14 +32,7 @@ import type { ChartEngine as ChartEngineType } from './chart-engine';
 // it never invokes `subscribeCrosshairMove` as a side effect of a programmatic call at all — the
 // crosshair stub's synchronous self-fire mode is a worst-case simulation kept only to pin
 // `applyingSync` as defense-in-depth, not a model of real timing.
-const {
-  chartStub,
-  getCrosshairCb,
-  getRangeCb,
-  setSelfFires,
-  reset,
-  flushEcho,
-} = vi.hoisted(() => {
+const { chartStub, getCrosshairCb, getRangeCb, setSelfFires, reset, flushEcho } = vi.hoisted(() => {
   let crosshairCb: ((p: unknown) => void) | undefined;
   let rangeCb: ((r: unknown) => void) | undefined;
   /**
@@ -255,9 +248,11 @@ describe('ChartEngine.applyCrosshair/applyVisibleRange (RFC-010 Task 3)', () => 
       const seen: unknown[] = [];
       engine.events.on('VisibleRangeChanged', (r) => seen.push(r));
 
-      (chart.timeScale().setVisibleLogicalRange as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
-        throw new Error('boom');
-      });
+      (chart.timeScale().setVisibleLogicalRange as ReturnType<typeof vi.fn>).mockImplementationOnce(
+        () => {
+          throw new Error('boom');
+        },
+      );
 
       expect(() => engine.applyVisibleRange({ from: 0, to: 10 } as never)).toThrow('boom');
 
@@ -319,7 +314,10 @@ describe('ChartEngine.applyCrosshair/applyVisibleRange (RFC-010 Task 3)', () => 
       // flag is spent) emits normally — the exchange did not leave the engine permanently stuck
       // suppressing, nor did it enter a sustained oscillation (no further swallows, no repeats).
       getRangeCb()?.({ from: 20, to: 30 });
-      expect(seen).toEqual([{ from: 0, to: 10 }, { from: 20, to: 30 }]);
+      expect(seen).toEqual([
+        { from: 0, to: 10 },
+        { from: 20, to: 30 },
+      ]);
     });
 
     it('(iii) RFC-010 Task 5: a no-value-change apply that the library does not echo at all consumes the NEXT user event (documented Low); the event AFTER that emits again (self-healing)', () => {

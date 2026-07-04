@@ -21,6 +21,9 @@ export const DrawingsActions = createActionGroup({
      * the FULL per-symbol record and narrows to the given symbol's items.
      * Additive alongside `restoreDrawings`, which stays untouched.
      */
-    'Restore Drawings For Symbol': props<{ drawings: Record<string, DrawingCollection>; symbol: string }>(),
+    'Restore Drawings For Symbol': props<{
+      drawings: Record<string, DrawingCollection>;
+      symbol: string;
+    }>(),
   },
 });

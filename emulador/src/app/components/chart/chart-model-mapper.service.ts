@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { BehaviorSubject, combineLatest, Observable, ReplaySubject } from 'rxjs';
-import { distinctUntilChanged, filter, map } from 'rxjs/operators';
+import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
 import {
   selectChartStyle,
   selectChartView,
@@ -10,6 +10,9 @@ import {
   selectSessionEnd,
   selectTradeChartView,
   selectUtcOffset,
+  selectResolutionMinutes,
+  selectResolutionSeries,
+  formatCountdown,
   TradeBoxItem as StateTradeBoxItem,
   TradeMarker as StateTradeMarker,
 } from '../../state/selectors';
@@ -32,9 +35,43 @@ import {
   ChartColors,
   TradeBoxOpacity,
 } from '../../domain/chart/render-model';
-import { lastIndexAtOrBefore } from '../../state/trading/fill-engine';
+import { lastIndexAtOrBefore, firstIndexAtOrAfter } from '../../state/trading/fill-engine';
 import { PanelDescriptor } from '../../state/layout/layout.models';
-import { Candle, Timeframe } from '../../models';
+import { Candle, Timeframe, TIMEFRAME_SECONDS } from '../../models';
+import { generateCustomSeries } from '../../state/market/custom-timeframe';
+
+function computeFormingCandle(
+  resSeries: Candle[] | null,
+  activeSeconds: number,
+  cursor: number,
+  minutes: number | null,
+): Candle | null {
+  if (minutes == null || !resSeries || activeSeconds <= 0 || cursor <= 0) return null;
+  if (minutes * 60 >= activeSeconds) return null;
+  const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
+  const lo = firstIndexAtOrAfter(resSeries, bucketStart);
+  const hi = lastIndexAtOrBefore(resSeries, cursor);
+  if (hi < lo) return null;
+  let high = resSeries[lo].high;
+  let low = resSeries[lo].low;
+  for (let i = lo + 1; i <= hi; i++) {
+    if (resSeries[i].high > high) high = resSeries[i].high;
+    if (resSeries[i].low < low) low = resSeries[i].low;
+  }
+  return {
+    time: bucketStart,
+    open: resSeries[lo].open,
+    high,
+    low,
+    close: resSeries[hi].close,
+  };
+}
+
+function computeCountdown(activeSeconds: number, currentTime: number): string | null {
+  if (activeSeconds <= 0 || currentTime <= 0) return null;
+  const bucketStart = Math.floor(currentTime / activeSeconds) * activeSeconds;
+  return formatCountdown(bucketStart + activeSeconds - currentTime);
+}
 
 /**
  * RFC-008 (D8): the per-panel chart view derived by a panel-local mapper
@@ -64,7 +101,10 @@ export interface PanelChartView {
 export class ChartModelMapper {
   private readonly store = inject(Store);
 
-  /** 
+  /** Descriptor of the panel this instance serves (ReplaySubject: late-subscription safe). */
+  private readonly panelDescriptor$ = new ReplaySubject<PanelDescriptor>(1);
+
+  /**
    * Memoizes array transformations to preserve reference equality across emissions
    * if the input array reference hasn't changed.
    */
@@ -153,7 +193,7 @@ export class ChartModelMapper {
     gridOpacity: number;
     tradeBoxOpacity: TradeBoxOpacity;
   }> = this.store.select(selectChartStyle).pipe(
-    map(style => ({
+    map((style) => ({
       colors: this.mapColors(style.colors),
       gridVisible: style.gridVisible,
       gridOpacity: style.gridOpacity,
@@ -170,22 +210,91 @@ export class ChartModelMapper {
     utcOffset: number;
     forming: import('../../models').Candle | null;
     countdown: string | null;
-  }> = this.store.select(selectChartView).pipe(this.gated());
+  }> = combineLatest([
+    this.panelDescriptor$.pipe(startWith(null)),
+    this.store.select(selectSeries),
+    this.store.select(selectCurrentTime),
+    this.store.select(selectUtcOffset),
+    this.store.select(selectResolutionMinutes),
+    this.store.select(selectResolutionSeries),
+    this.store.select(selectChartView),
+  ]).pipe(
+    map(
+      ([
+        descriptor,
+        series,
+        currentTime,
+        utcOffset,
+        resolutionMinutes,
+        resolutionSeries,
+        globalChartView,
+      ]) => {
+        if (!descriptor) {
+          return globalChartView;
+        }
+        const tf = descriptor.timeframe;
+        let candles = series[tf] ?? [];
+        let activeSeconds = TIMEFRAME_SECONDS[tf] ?? 0;
+        if (candles.length === 0 && tf.startsWith('M')) {
+          const minutes = parseInt(tf.substring(1), 10);
+          if (!isNaN(minutes)) {
+            candles = generateCustomSeries(series, minutes);
+            activeSeconds = minutes * 60;
+          }
+        }
+        const idx = lastIndexAtOrBefore(candles, currentTime);
+        const forming = computeFormingCandle(
+          resolutionSeries,
+          activeSeconds,
+          currentTime,
+          resolutionMinutes,
+        );
+        const countdown = computeCountdown(activeSeconds, currentTime);
+        if (resolutionMinutes != null && forming != null && idx >= 0) {
+          return { tf, candles, idx: idx - 1, utcOffset, forming, countdown };
+        }
+        return { tf, candles, idx, utcOffset, forming: null, countdown };
+      },
+    ),
+    this.gated(),
+  );
 
   private mapPositions = this.memoizeMap((p: StatePosition) => ({
-    id: p.id, side: p.side, entryPrice: p.entryPrice, sl: p.sl, tp: p.tp,
-    lots: p.lots, openTime: p.openTime, origin: p.origin,
+    id: p.id,
+    side: p.side,
+    entryPrice: p.entryPrice,
+    sl: p.sl,
+    tp: p.tp,
+    lots: p.lots,
+    openTime: p.openTime,
+    origin: p.origin,
   }));
   private mapOrders = this.memoizeMap((o: StatePendingOrder) => ({
-    id: o.id, side: o.side, type: o.type, entryPrice: o.entryPrice,
-    sl: o.sl, tp: o.tp, lots: o.lots,
+    id: o.id,
+    side: o.side,
+    type: o.type,
+    entryPrice: o.entryPrice,
+    sl: o.sl,
+    tp: o.tp,
+    lots: o.lots,
   }));
   private mapMarkers = this.memoizeMap((m: StateTradeMarker) => ({
-    time: m.time, position: m.position, shape: m.shape, color: m.color, text: m.text,
+    time: m.time,
+    position: m.position,
+    shape: m.shape,
+    color: m.color,
+    text: m.text,
   }));
   private mapBoxes = this.memoizeMap((b: StateTradeBoxItem) => ({
-    id: b.id, status: b.status, side: b.side, entry: b.entry, sl: b.sl, tp: b.tp,
-    from: b.from, to: b.to, hidden: b.hidden,
+    id: b.id,
+    status: b.status,
+    side: b.side,
+    entry: b.entry,
+    sl: b.sl,
+    tp: b.tp,
+    from: b.from,
+    to: b.to,
+    hidden: b.hidden,
   }));
 
   /** Trade overlay: open positions, pending orders, markers, boxes. */
@@ -195,7 +304,7 @@ export class ChartModelMapper {
     markers: TradeMarker[];
     boxes: TradeBoxItem[];
   }> = this.store.select(selectTradeChartView).pipe(
-    map(data => ({
+    map((data) => ({
       positions: this.mapPositions(data.positions) as Position[],
       orders: this.mapOrders(data.orders) as PendingOrder[],
       markers: this.mapMarkers(data.markers) as TradeMarker[],
@@ -218,9 +327,6 @@ export class ChartModelMapper {
     .pipe(this.gated());
 
   // ───────── RFC-008: per-panel parametrized derivation (D8) ─────────
-
-  /** Descriptor of the panel this instance serves (ReplaySubject: late-subscription safe). */
-  private readonly panelDescriptor$ = new ReplaySubject<PanelDescriptor>(1);
 
   /** One memo slot per mapper instance — N panels ⇒ N independent memoizers. */
   private lastPanelInputs: {
@@ -267,7 +373,14 @@ export class ChartModelMapper {
     this.store.select(selectUtcOffset),
   ]).pipe(
     map(([descriptor, series, currentTime, utcOffset]) => {
-      const candles = series[descriptor.timeframe];
+      const tf = descriptor.timeframe;
+      let candles = series[tf];
+      if ((!candles || candles.length === 0) && tf.startsWith('M')) {
+        const minutes = parseInt(tf.substring(1), 10);
+        if (!isNaN(minutes)) {
+          candles = generateCustomSeries(series, minutes);
+        }
+      }
       const last = this.lastPanelInputs;
       if (
         last &&

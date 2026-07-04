@@ -523,7 +523,9 @@ function sampleV2Input(): PayloadInput {
     drawings: { EURUSD: { version: 1, items: [] } },
     layout,
     panels,
-    linkGroups: [{ id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: false }] as LinkGroup[],
+    linkGroups: [
+      { id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: false },
+    ] as LinkGroup[],
   };
 }
 
