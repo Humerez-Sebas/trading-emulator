@@ -1,30 +1,15 @@
-# SDD Progress Ledger — RFC-010 Synchronization
+# SDD Progress Ledger — RFC-011 Workspace Layout Persistence
 
-- **Plan:** `docs/superpowers/plans/2026-07-02-rfc-010-synchronization.md`
-- **RFC:** `docs/architecture/rfcs/010-synchronization.md`
-- **Branch:** `feature/rfc-010-synchronization` (off develop @ 5867ac5 — RFC-008 PR #26/#28 + RFC-009 PR #27 merged)
-- **Base commit:** `5867ac5`
+- **Plan:** `docs/superpowers/plans/2026-07-03-rfc-011-layout-persistence.md`
+- **RFC:** `docs/architecture/rfcs/011-workspace-layout-persistence.md`
+- **Branch:** `feature/rfc-011-layout-persistence` (off develop @ 8e89142 — RFC-010 PR #29 merged)
+- **Base commit:** `8e89142`
 
 ## Task Progress
 
-Task 1 (linkGroups NgRx feature + setPanelLinkGroup): complete (commit 14f306e, verified 2026-07-03: 853 tests green, tsc app+spec clean, lint 0; Opus review PASS, 0 High/Critical)
-  - removeGroup deliberately leaves orphaned PanelDescriptor.linkGroupId (documented); Task 2 router must treat a dangling group id as unlinked (reviewer verified the planned route() guard does exactly that).
-  - Lows (optional polish): add assertLayoutConsistent to one setPanelLinkGroup spec; removeGroup Object.fromEntries pattern noted as house-consistent.
-Task 2 (ChartSyncRouter group-scoped fan-out, idempotent apply): complete (commit 4b42921, verified 2026-07-03: 860 tests green, tsc app+spec clean, lint 0; Opus review PASS, 0 High/Critical)
-  - SAFE-STATE confirmed: router constructed nowhere in production; panel apply handles are inert no-ops until Task 3; loop cannot form in this commit.
-  - Reviewer's loop trace ratified the plan's two-mechanism design: origin-exclusion + idempotence alone do NOT close A->B->A (the echo's originator was never an apply target); Task 3's ChartEngine applyingSync guard is the load-bearing second mechanism.
-  - MEDIUMS folded into Task 3 (adjacent files): (1) re-key applyIfChanged on the APPLIED value per event type (time for crosshair, {from,to} for range) — raw MouseEventParams stringify makes crosshair idempotence inert; (2) add a crosshair idempotence test; (3) fix router doc comment to name the engine guard as load-bearing.
-  - Deviations reviewed OK: GATE Record type (lint), typed vi.fn generics (spec-only), inert panel stubs (required-methods contract defensible; replaced in Task 3).
-Task 3 (ChartPanel wiring + ChartEngine guarded apply seam): complete (commits fd6e8a3 + 317c2e1 + fix cc35aa5, verified 2026-07-03: 872 tests green x2, tsc app+spec clean, lint 0; initial Opus audit FAIL [1 High], fix re-audited PASS, 0 High/Critical)
-  - HIGH (closed): lightweight-charts v5 fires range callbacks on the NEXT animation frame — the synchronous applyingSync flag could not catch the echo. Fix: one-shot suppressNextRangeEvent armed before setVisibleLogicalRange, consumed value-independently by the next range callback, cleared in catch on throw. Re-auditor verified against v5.2 source: RAF coalescing (two rapid applies -> one echo) and crosshair's internal skipEvent=true both confirmed.
-  - Also closed in fd6e8a3: Task-2 Mediums (idempotence re-keyed on applied values; crosshair idempotence test; honest doc comments).
-  - Residual LOW (documented, no fix): identical-range apply fires no echo -> armed flag would consume the next genuine user event; masked by router value-idempotence, self-heals next interaction.
-  - HANDOFF to Task 5 e2e: real-RAF loop regression must cover (i) coalesced double-apply, (ii) user-drag racing the echo window (converges, no sustained oscillation), (iii) no-value-change apply not swallowing the next real drag; 3+-panel topology for the idempotence net.
-Task 4 (replay clock fan-out + freeze-on-last verification suite): complete (commit 82e71ee, verified 2026-07-03: 877 tests green, tsc spec clean, lint 0; Opus review PASS, 0 High/Critical)
-  - Pure-test task, zero production code; D5 claims held on first run (nothing falsified). Reviewer ratified fidelity: selectReplayIndex stays the single-chart path; panelChartView$ is the per-panel fan-out surface — both use the same audited lastIndexAtOrBefore primitive.
-Task 5 (viewport ChartSyncRouter wiring + e2e feedback-loop regression): complete (commit 4a884da, verified 2026-07-03: 886 tests green, tsc app+spec clean, lint 0, invariant greps empty; Opus review PASS, 0 High/Critical)
-  - Headline e2e proven with real panel handles (stubbed inner chart): one origin event -> exactly N-1 same-group applies, never origin, never out-of-group, no cascade; independent syncCrosshair/syncTimeRange gating; live setState re-feed; router destroy ordering safe.
-  - Residual cases covered at engine level: coalesced double-apply (stub fixed to match v5.2 RAF coalescing), racing user event -> exactly-one bounded leak then convergence, no-value-change apply self-heals.
-  - CORRECTION to Task 3 note: in the A<->B echo case the loop terminator is the SECOND engine guard (B's suppressor swallowing B's echo), not router value-idempotence (which masks only already-applied siblings like C). Reviewer hand-traced termination in 2-node and 3-node topologies.
-  - MEDIUM logged (coverage-completeness, not a defect): the engine-leak -> router-re-route -> second-engine-suppression chain is proven in two independently-tested halves, with no single end-to-end assertion (stubbed engines cannot produce real echoes in the e2e). Lows: RFC's literal one-outgoing-event counter split across layers; case (iii) asserted correctly.
-Final audit: complete (2026-07-03, Opus whole-branch review develop..c6b6912: PASS, 0 High/Critical; RFC-010 DoD met — "Ship it". Gates re-run by auditor: tsc app+spec clean, 886/886 tests, lint 0, build OK at 605.48 kB (pre-existing warning, branch adds only router + linkGroups reducer eagerly). Loop-safety defense layers verified against installed lightweight-charts 5.2.0 source: crosshair skipEvent=true, one-shot suppressNextRangeEvent as the load-bearing range breaker, router origin-exclusion + value-keyed idempotence. Carried Medium (no single cross-layer e2e assertion; engines stubbed) ruled NON-BLOCKING: both halves independently tested, termination hand-traced in 2- and 3-node topologies; full-integration harness would need a canvas polyfill the repo deliberately omits. syncPriceScale: zero production read sites. Audited chart files: strictly additive, within sanction.)
+Task 1 (SessionPayloadV2 model + pure migrateV1ToV2/parseSessionPayload): incomplete
+Task 2 (restore actions: restoreLayout / restoreGroups / restoreDrawingsForSymbol): incomplete
+Task 3 (workspace meta snapshot + Supabase toPayload/fromPayload V2 mapping): incomplete
+Task 4 (workspace-db IndexedDB threading of layout/panels/linkGroups, no DB_VERSION bump): incomplete
+Task 5 (restore dispatch wiring + .session.json thenRestore + persist→restore e2e): incomplete
+Final audit: incomplete
