@@ -8,7 +8,9 @@
 
 ## Task Progress
 
-Task 1 (renameTab/setPanelTimeframe actions + mono-panel default layout): incomplete
+Task 1 (renameTab/setPanelTimeframe actions + mono-panel default layout): complete (commit f78a692, verified 2026-07-04: 943 tests green (939+4), tsc app+spec clean, lint 0; orchestrator diff-scan verify — handlers idiomatic: identity-return no-op guards, reuses updateTab helper, value-idempotence early returns; existing 9 actions byte-untouched)
+  - D2 default change broke exactly 8 default-encoding specs in layout.reducer.spec.ts (hard-coded panel-2/'2h'/two-cell) — all fixed in place, itemized in task-1-report; repo-wide grep confirmed nothing else depends on the old demo default.
+  - Deviation (inert): new handlers grouped with related existing on()s rather than appended at file end.
 Task 2 (tab create/rename/close + GridTemplate switcher in viewport tab bar): incomplete
 Task 3 (per-panel timeframe selector in panel header): incomplete
 Task 4 (LinkGroups manager popover + panel link chip): incomplete
