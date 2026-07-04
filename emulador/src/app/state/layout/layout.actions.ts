@@ -1,5 +1,6 @@
 import { createActionGroup, props } from '@ngrx/store';
 import { GridTemplate, PanelDescriptor, WorkspaceLayout } from './layout.models';
+import { Timeframe } from '../../models';
 
 export const LayoutActions = createActionGroup({
   source: 'Layout',
@@ -9,6 +10,8 @@ export const LayoutActions = createActionGroup({
     /** Removes the tab and its panels' descriptors. Closing the last remaining tab is a no-op. */
     'Close Tab': props<{ tabId: string }>(),
     'Set Active Tab': props<{ tabId: string }>(),
+    /** Renames a tab in place. No-op if tabId is unknown. */
+    'Rename Tab': props<{ tabId: string; name: string }>(),
     /** Resizes the tab's cells to the template; panels of removed cells merge into the last kept cell. */
     'Apply Grid Template': props<{ tabId: string; template: GridTemplate }>(),
     /** No-op if the tab already holds MAX_PANELS_PER_TAB panels or cellIndex is out of range. */
@@ -20,6 +23,8 @@ export const LayoutActions = createActionGroup({
     'Move Panel': props<{ panelId: string; targetTabId: string; targetCellIndex: number }>(),
     /** Assigns/clears the panel's link group. Reducer transports only; sync semantics are RFC-010's ChartSyncRouter. No-op if panelId is unknown. */
     'Set Panel Link Group': props<{ panelId: string; linkGroupId: string | null }>(),
+    /** Updates one panel's timeframe (descriptor-only; the mapper re-derives the view). No-op if panelId is unknown. */
+    'Set Panel Timeframe': props<{ panelId: string; timeframe: Timeframe }>(),
     /** Wholesale-replaces workspace + panels from a restored session (RFC-011). */
     'Restore Layout': props<{ layout: WorkspaceLayout; panels: Record<string, PanelDescriptor> }>(),
   },

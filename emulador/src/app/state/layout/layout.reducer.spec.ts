@@ -24,13 +24,13 @@ const descriptor = (id: string): PanelDescriptor => ({
 });
 
 describe('layoutFeature reducer', () => {
-  it('starts with the fixed in-memory panel set (one 2h tab, panels M1/M5)', () => {
+  it('starts with the mono-panel default (one "1" tab, one M1 panel — RFC-013 D2)', () => {
     const state = reducer(undefined, { type: '@@init' });
     expect(state.workspace.tabs).toHaveLength(1);
-    expect(state.workspace.tabs[0].template).toBe('2h');
+    expect(state.workspace.tabs[0].template).toBe('1');
     expect(state.workspace.activeTabId).toBe('tab-main');
+    expect(state.workspace.tabs[0].cells).toEqual([{ panelIds: ['panel-1'], activePanelId: 'panel-1' }]);
     expect(state.panels['panel-1'].timeframe).toBe('M1');
-    expect(state.panels['panel-2'].timeframe).toBe('M5');
   });
 
   it('createTab appends a single-cell tab and activates it', () => {
@@ -102,10 +102,15 @@ describe('layoutFeature reducer', () => {
   });
 
   it('applyGridTemplate shrink merges orphaned panels into the last kept cell', () => {
-    const state = reducer(
+    let state = reducer(
       createInitialLayoutState(),
-      LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }),
+      LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }),
     );
+    state = reducer(
+      state,
+      LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
+    );
+    state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
     const tab = state.workspace.tabs[0];
     expect(tab.cells).toHaveLength(1);
     expect(tab.cells[0].panelIds).toEqual(['panel-1', 'panel-2']);
@@ -127,8 +132,8 @@ describe('layoutFeature reducer', () => {
 
   it('addPanel rejects the 9th panel of a tab (MAX_PANELS_PER_TAB)', () => {
     let state: LayoutState = createInitialLayoutState();
-    // initial tab holds 2 panels; add 6 more to reach the cap of 8
-    for (let i = 0; i < MAX_PANELS_PER_TAB - 2; i++) {
+    // initial tab holds 1 panel; add 7 more to reach the cap of 8
+    for (let i = 0; i < MAX_PANELS_PER_TAB - 1; i++) {
       state = reducer(
         state,
         LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 0, descriptor: descriptor(`p-${i}`) }),
@@ -185,9 +190,17 @@ describe('layoutFeature reducer', () => {
       return s;
     };
 
+    // tab-main starts mono-panel (RFC-013 D2); grow it to '2h' and add panel-2
+    // into the second cell so these specs still exercise a two-cell tab-main.
+    const twoTabsWithSecondPanel = (): LayoutState => {
+      let s = reducer(twoTabs(), LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }));
+      s = reducer(s, LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }));
+      return s;
+    };
+
     it('moves a panel to another tab/cell and fixes both activePanelIds', () => {
       const state = reducer(
-        twoTabs(),
+        twoTabsWithSecondPanel(),
         LayoutActions.movePanel({ panelId: 'panel-2', targetTabId: 'tab-2', targetCellIndex: 0 }),
       );
       const source = state.workspace.tabs[0].cells[1];
@@ -201,7 +214,7 @@ describe('layoutFeature reducer', () => {
 
     it('movePanel within the same tab relocates between cells', () => {
       const state = reducer(
-        createInitialLayoutState(),
+        twoTabsWithSecondPanel(),
         LayoutActions.movePanel({ panelId: 'panel-2', targetTabId: 'tab-main', targetCellIndex: 0 }),
       );
       expect(state.workspace.tabs[0].cells[0].panelIds).toEqual(['panel-1', 'panel-2']);
@@ -254,7 +267,7 @@ describe('layoutFeature reducer', () => {
       // active tab is tab-2 after createTab
       expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-b': true });
       s = reducer(s, LayoutActions.setActiveTab({ tabId: 'tab-main' }));
-      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'panel-1': true, 'panel-2': true });
+      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'panel-1': true });
     });
 
     it('stacked cell: only the activePanelId of the cell is visible', () => {
@@ -262,16 +275,18 @@ describe('layoutFeature reducer', () => {
         createInitialLayoutState(),
         LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 0, descriptor: descriptor('p-3') }),
       );
-      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-3': true, 'panel-2': true });
+      // p-3 was added into tab-main's only cell and became its activePanelId
+      expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-3': true });
     });
   });
 
   describe('setPanelLinkGroup (RFC-010 Task 1)', () => {
     it('assigns a linkGroupId to an existing panel', () => {
-      const state = reducer(
+      let state = reducer(
         createInitialLayoutState(),
-        LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: 'g1' }),
+        LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 0, descriptor: descriptor('panel-2') }),
       );
+      state = reducer(state, LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: 'g1' }));
       expect(state.panels['panel-1'].linkGroupId).toBe('g1');
       expect(state.panels['panel-2'].linkGroupId).toBeNull(); // untouched
     });
@@ -315,6 +330,46 @@ describe('layoutFeature reducer', () => {
       };
       const state = reducer(createInitialLayoutState(), LayoutActions.restoreLayout({ layout, panels }));
       expect(() => assertLayoutConsistent(state)).not.toThrow();
+    });
+  });
+
+  describe('renameTab (RFC-013 Task 1)', () => {
+    it('renames the target tab and leaves others untouched', () => {
+      let state = reducer(
+        createInitialLayoutState(),
+        LayoutActions.createTab({ id: 'tab-2', name: 'Contexto' }),
+      );
+      state = reducer(state, LayoutActions.renameTab({ tabId: 'tab-main', name: 'Renombrada' }));
+      expect(state.workspace.tabs.find((t) => t.id === 'tab-main')?.name).toBe('Renombrada');
+      expect(state.workspace.tabs.find((t) => t.id === 'tab-2')?.name).toBe('Contexto');
+      assertLayoutConsistent(state);
+    });
+
+    it('is a no-op for an unknown tabId (state identity preserved)', () => {
+      const state = createInitialLayoutState();
+      const same = reducer(state, LayoutActions.renameTab({ tabId: 'nope', name: 'X' }));
+      expect(same).toBe(state);
+    });
+  });
+
+  describe('setPanelTimeframe (RFC-013 Task 1)', () => {
+    it('updates only that descriptor timeframe, leaving id/symbol/linkGroupId and other panels untouched', () => {
+      let state = reducer(
+        createInitialLayoutState(),
+        LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 0, descriptor: descriptor('p-3') }),
+      );
+      state = reducer(state, LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: 'g1' }));
+      const before = state.panels['panel-1'];
+      state = reducer(state, LayoutActions.setPanelTimeframe({ panelId: 'panel-1', timeframe: 'H1' }));
+      expect(state.panels['panel-1']).toEqual({ ...before, timeframe: 'H1' });
+      expect(state.panels['p-3'].timeframe).toBe('M1'); // other panel untouched
+      assertLayoutConsistent(state);
+    });
+
+    it('is a no-op for an unknown panelId', () => {
+      const state = createInitialLayoutState();
+      const same = reducer(state, LayoutActions.setPanelTimeframe({ panelId: 'nope', timeframe: 'H1' }));
+      expect(same).toBe(state);
     });
   });
 

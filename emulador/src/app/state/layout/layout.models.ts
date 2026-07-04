@@ -54,8 +54,10 @@ export interface LayoutState {
 }
 
 /**
- * RFC-008 fixed in-memory panel set: one tab, '2h' template, two panels of the
- * active asset (M1 | M5). Dynamic creation/close arrives with RFC-009.
+ * RFC-013 (D2) mono-panel cold-start default: one tab, '1' template, a single
+ * panel of the active asset (M1). Keeps first launch visually identical to
+ * the pre-workspace single-chart app; multi-panel is opt-in via the grid
+ * template switcher (dynamic creation/close, RFC-009).
  */
 export function createInitialLayoutState(): LayoutState {
   return {
@@ -64,18 +66,14 @@ export function createInitialLayoutState(): LayoutState {
         {
           id: 'tab-main',
           name: 'Principal',
-          template: '2h',
-          cells: [
-            { panelIds: ['panel-1'], activePanelId: 'panel-1' },
-            { panelIds: ['panel-2'], activePanelId: 'panel-2' },
-          ],
+          template: '1',
+          cells: [{ panelIds: ['panel-1'], activePanelId: 'panel-1' }],
         },
       ],
       activeTabId: 'tab-main',
     },
     panels: {
       'panel-1': { id: 'panel-1', symbol: '', timeframe: 'M1', linkGroupId: null },
-      'panel-2': { id: 'panel-2', symbol: '', timeframe: 'M5', linkGroupId: null },
     },
   };
 }

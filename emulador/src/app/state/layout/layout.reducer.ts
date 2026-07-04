@@ -82,6 +82,13 @@ export const layoutFeature = createFeature({
       if (!state.workspace.tabs.some((t) => t.id === tabId)) return state;
       return { ...state, workspace: { ...state.workspace, activeTabId: tabId } };
     }),
+    on(LayoutActions.renameTab, (state, { tabId, name }): LayoutState => {
+      if (!state.workspace.tabs.some((t) => t.id === tabId)) return state;
+      return {
+        ...state,
+        workspace: updateTab(state.workspace, tabId, (tab) => ({ ...tab, name })),
+      };
+    }),
     on(LayoutActions.applyGridTemplate, (state, { tabId, template }): LayoutState => {
       if (!state.workspace.tabs.some((t) => t.id === tabId)) return state;
       return {
@@ -189,6 +196,11 @@ export const layoutFeature = createFeature({
       const panel = state.panels[panelId];
       if (!panel || panel.linkGroupId === linkGroupId) return state;
       return { ...state, panels: { ...state.panels, [panelId]: { ...panel, linkGroupId } } };
+    }),
+    on(LayoutActions.setPanelTimeframe, (state, { panelId, timeframe }): LayoutState => {
+      const panel = state.panels[panelId];
+      if (!panel || panel.timeframe === timeframe) return state;
+      return { ...state, panels: { ...state.panels, [panelId]: { ...panel, timeframe } } };
     }),
     on(LayoutActions.restoreLayout, (_state, { layout, panels }): LayoutState => ({
       workspace: layout,
