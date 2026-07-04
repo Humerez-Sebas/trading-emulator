@@ -1,9 +1,10 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, effect, inject, signal } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { ChartPanelComponent } from './chart-panel.component';
 import { ChartRegistry } from './chart-registry.service';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { ChartSyncRouter } from './chart-sync-router';
+import { LinkGroupsMenuComponent } from './link-groups-menu.component';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
@@ -39,7 +40,10 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
       deps: [ChartSyncBus, ChartRegistry],
     },
   ],
-  imports: [ChartPanelComponent],
+  imports: [ChartPanelComponent, LinkGroupsMenuComponent],
+  host: {
+    '(document:click)': 'onDocClick($event)',
+  },
   template: `
     <div class="tab-bar" role="tablist">
       @for (tab of workspace().tabs; track tab.id) {
@@ -90,6 +94,19 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
             {{ template }}
           </button>
         }
+        <div class="link-groups-anchor">
+          <button
+            class="link-groups-toggle"
+            aria-label="Grupos de enlace"
+            [attr.aria-expanded]="linkGroupsMenuOpen()"
+            (click)="toggleLinkGroupsMenu($event)"
+          >
+            &#128279;
+          </button>
+          @if (linkGroupsMenuOpen()) {
+            <app-link-groups-menu class="link-groups-popover" />
+          }
+        </div>
       </div>
     </div>
     @for (tab of workspace().tabs; track tab.id) {
@@ -213,6 +230,24 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
         background: var(--surface);
         color: var(--text);
       }
+      .link-groups-anchor {
+        position: relative;
+      }
+      .link-groups-toggle {
+        padding: 3px 8px;
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--text-muted);
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .link-groups-popover {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        z-index: 20;
+      }
       .grid {
         flex: 1;
         min-height: 0;
@@ -313,6 +348,7 @@ export class WorkspaceViewportComponent implements OnDestroy {
   private readonly store = inject(Store);
   private readonly syncBus = inject(ChartSyncBus);
   private readonly syncRouter = inject(ChartSyncRouter);
+  private readonly host = inject(ElementRef<HTMLElement>);
 
   /** RFC-013 (D5): the closed GridTemplate union, rendered in this fixed order by the switcher. */
   readonly gridTemplates = GRID_TEMPLATES;
@@ -327,6 +363,9 @@ export class WorkspaceViewportComponent implements OnDestroy {
   readonly editingTabId = signal<string | null>(null);
   /** RFC-013 (D4): local draft of the rename input's value, uncommitted until Enter/blur. */
   readonly editingTabName = signal('');
+
+  /** RFC-013 (D6): open/closed state of the LinkGroups manager popover. */
+  readonly linkGroupsMenuOpen = signal(false);
 
   /** RFC-013 (D5): the active tab's current template, for highlighting the switcher. */
   readonly activeTabTemplate = () => {
@@ -386,6 +425,19 @@ export class WorkspaceViewportComponent implements OnDestroy {
   applyTemplate(template: GridTemplate): void {
     const tabId = this.workspace().activeTabId;
     this.store.dispatch(LayoutActions.applyGridTemplate({ tabId, template }));
+  }
+
+  /** RFC-013 (D6): opens/closes the LinkGroups manager popover; stops propagation so the host's own document-click handler doesn't immediately close it again. */
+  toggleLinkGroupsMenu(event: Event): void {
+    event.stopPropagation();
+    this.linkGroupsMenuOpen.update((v) => !v);
+  }
+
+  /** RFC-013 (D6): plain-DOM outside-click-to-close (no CDK) — ignores clicks inside this component's own host. */
+  onDocClick(event: MouseEvent): void {
+    if (this.linkGroupsMenuOpen() && !this.host.nativeElement.contains(event.target as Node)) {
+      this.linkGroupsMenuOpen.set(false);
+    }
   }
 
   selectPanel(tabId: string, cellIndex: number, panelId: string): void {

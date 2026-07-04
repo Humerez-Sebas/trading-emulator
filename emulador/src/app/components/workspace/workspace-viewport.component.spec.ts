@@ -14,6 +14,7 @@ import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature } from '../../state/layout/layout.reducer';
 import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
 import { GridTemplate, LayoutState, MAX_PANELS_PER_TAB, PanelDescriptor } from '../../state/layout/layout.models';
+import { createInitialLinkGroupsState } from '../../state/link-groups/link-groups.models';
 
 /** Stub panel: renders nothing, keeps the required input contract. */
 @Component({ selector: 'app-chart-panel', standalone: true, template: '' })
@@ -107,7 +108,11 @@ describe('WorkspaceViewportComponent', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [WorkspaceViewportComponent],
-      providers: [provideMockStore({ initialState: { layout: layoutState } })],
+      providers: [
+        provideMockStore({
+          initialState: { layout: layoutState, linkGroups: createInitialLinkGroupsState() },
+        }),
+      ],
     });
     TestBed.overrideComponent(WorkspaceViewportComponent, {
       remove: { imports: [ChartPanelComponent] },
@@ -338,6 +343,50 @@ describe('WorkspaceViewportComponent', () => {
     const templates: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3'];
     templateButtons.forEach((btn, i) => {
       expect(btn.classList.contains('active')).toBe(templates[i] === '2x2');
+    });
+  });
+
+  describe('link-groups popover (RFC-013 Task 4)', () => {
+    it('a link-groups toggle button lives in .tab-bar-tools and is closed by default', () => {
+      const fixture = create();
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector(
+        '.tab-bar-tools .link-groups-toggle',
+      );
+      expect(toggle).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeNull();
+    });
+
+    it('clicking the toggle opens the popover; clicking it again closes it', () => {
+      const fixture = create();
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-toggle');
+      toggle.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeTruthy();
+      toggle.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeNull();
+    });
+
+    it('a click outside the popover closes it', () => {
+      const fixture = create();
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-toggle');
+      toggle.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeTruthy();
+      document.body.dispatchEvent(new Event('click', { bubbles: true }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeNull();
+    });
+
+    it('a click inside the popover does not close it', () => {
+      const fixture = create();
+      const toggle: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-toggle');
+      toggle.click();
+      fixture.detectChanges();
+      const menu: HTMLElement = fixture.nativeElement.querySelector('app-link-groups-menu');
+      menu.dispatchEvent(new Event('click', { bubbles: true }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-link-groups-menu')).toBeTruthy();
     });
   });
 });
