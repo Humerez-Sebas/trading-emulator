@@ -40,6 +40,7 @@ import { DARK_CHART_COLORS, DARK_TRADE_BOX_OPACITY } from './settings/settings.m
 import { defaultTradingData } from './trading/trading.models';
 import { candle, closed, order, position, series } from '../testing/fixtures';
 import { TIMEFRAME_ORDER } from '../models';
+import { createInitialLayoutState } from './layout/layout.models';
 
 // ---- selectChartStyle ----
 describe('selectChartStyle', () => {
@@ -105,6 +106,9 @@ describe('selectWorkspaceMetaSnapshot', () => {
       trading,
       [],
       'sess-42',
+      createInitialLayoutState().workspace,
+      createInitialLayoutState().panels,
+      {},
     );
     expect('series' in result).toBe(false);
     expect(result.files).toEqual({ H1: 'file.csv' });
@@ -124,6 +128,9 @@ describe('selectWorkspaceMetaSnapshot', () => {
       defaultTradingData(),
       [],
       null,
+      createInitialLayoutState().workspace,
+      createInitialLayoutState().panels,
+      {},
     );
     expect(result.activeSessionId).toBeNull();
   });
@@ -138,8 +145,30 @@ describe('selectWorkspaceMetaSnapshot', () => {
       defaultTradingData(),
       [],
       null,
+      createInitialLayoutState().workspace,
+      createInitialLayoutState().panels,
+      {},
     );
     expect(result.selectedTfs).toBeUndefined();
+  });
+
+  it('selectWorkspaceMetaSnapshot includes layout/panels/linkGroups (RFC-011 Task 3)', () => {
+    const snapshot = selectWorkspaceMetaSnapshot.projector(
+      {},
+      null,
+      null,
+      0,
+      [],
+      defaultTradingData(),
+      [],
+      null,
+      createInitialLayoutState().workspace,
+      createInitialLayoutState().panels,
+      {},
+    );
+    expect(snapshot.layout).toEqual(createInitialLayoutState().workspace);
+    expect(snapshot.panels).toEqual(createInitialLayoutState().panels);
+    expect(snapshot.linkGroups).toEqual({});
   });
 });
 

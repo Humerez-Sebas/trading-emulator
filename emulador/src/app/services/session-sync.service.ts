@@ -8,6 +8,7 @@ import {
   isRealSession,
   mergeByLww,
 } from './session-sync.mapping';
+import { singlePanelLayoutFor } from './session-migration';
 import type {
   CloudFolderRow,
   CloudSessionRow,
@@ -509,10 +510,21 @@ function inferRange(trading: TradingData, currentTime: number): [number, number]
  * persisted on the meta; `customTfMinutes`, `playbackSpeed` and `notes` are
  * NOT persisted locally today, so they're defaulted here (known fidelity
  * boundary — see Task 9 report).
+ *
+ * RFC-011 Task 3 interim note: `WorkspaceMeta` does not yet carry
+ * `layout`/`panels`/`linkGroups` (that IndexedDB-model extension is Task 4's
+ * scope — see plan Task 4 Step 3/4). Until Task 4 lands, this function
+ * defaults them via `singlePanelLayoutFor`/`[]` (the same pure fallback
+ * `migrateV1ToV2` and this file's `defaultView` use) purely to satisfy
+ * `SessionView`'s new required fields — a type-completeness stopgap, not a
+ * behavioral claim that per-panel layout survives a local IndexedDB
+ * round-trip yet. Task 4 replaces this with `meta.layout ?? fallback.layout`
+ * (reading the real persisted value once `WorkspaceMeta` gains the field).
  */
 function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
   const trading = meta.trading ?? defaultTradingData();
   const [startRange, endRange] = inferRange(trading, meta.currentTime);
+  const fallback = singlePanelLayoutFor(meta.symbol, meta.activeTf ?? 'M1');
 
   const active: FlattenSession | null = {
     id: meta.activeSessionId ?? null,
@@ -525,11 +537,14 @@ function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
       activeTf: meta.activeTf,
       customTfMinutes: null,
       playbackSpeed: 1,
-      drawings: meta.drawings ?? [],
+      drawings: { [meta.symbol]: { version: 1, items: meta.drawings ?? [] } },
       notes: [],
       selectedTfs: meta.selectedTfs ?? [],
       startRange,
       endRange,
+      layout: fallback.layout,
+      panels: fallback.panels,
+      linkGroups: [],
     },
     clientUpdatedAt: meta.activeClientUpdatedAt ?? Date.now(),
     lastOpenedAt: null,

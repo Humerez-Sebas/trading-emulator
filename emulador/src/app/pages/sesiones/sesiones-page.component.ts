@@ -811,7 +811,7 @@ export class SesionesPageComponent {
    */
   private async materializeAndOpen(card: SessionCard, payload: SessionPayloadV1): Promise<void> {
     if (!card.id) return;
-    const restored = fromPayload(payload);
+    const restored = fromPayload(payload, card.symbol);
     // `card.createdAt` for a cloud-only card is `Date.parse(summary.updatedAt)` —
     // the cloud version's edit time. Stamping both fields with it marks the
     // materialized local copy as "synced as of the cloud version" (not dirty).

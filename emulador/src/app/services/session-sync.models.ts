@@ -93,12 +93,15 @@ export interface PayloadInput {
   customTfMinutes: number | null;
   playbackSpeed: number;
   replayResolution?: number | null;
-  drawings: Drawing[];
+  drawings: Record<string, DrawingCollection>;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;
   endRange: number;
   requiredDatasets: DatasetRef[];
+  layout: WorkspaceLayout;
+  panels: Record<string, PanelDescriptor>;
+  linkGroups: LinkGroup[];
 }
 
 /** The live view state of the active session (the parts not inside TradingData). Unix seconds for times. */
@@ -108,11 +111,14 @@ export interface SessionView {
   customTfMinutes: number | null;
   playbackSpeed: number;
   replayResolution?: number | null;
-  drawings: Drawing[];
+  drawings: Record<string, DrawingCollection>;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;
   endRange: number;
+  layout: WorkspaceLayout;
+  panels: Record<string, PanelDescriptor>;
+  linkGroups: LinkGroup[];
 }
 
 /** One session handed to flatten. `view` is present for the active/live session; archived sessions omit it. */
@@ -150,7 +156,7 @@ export interface CloudSessionRow {
   requiredDatasets: DatasetRef[];
   winRate?: number;
   sparkline?: number[];
-  payload: SessionPayloadV1;
+  payload: SessionPayloadV1 | SessionPayloadV2;
 }
 
 export interface FlattenResult {
@@ -165,12 +171,15 @@ export interface RestoredView {
   activeTf: Timeframe | null;
   customTfMinutes: number | null;
   playbackSpeed: number;
-  drawings: Drawing[];
+  drawings: Record<string, DrawingCollection>;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;
   endRange: number;
   requiredDatasets: DatasetRef[];
+  layout: WorkspaceLayout;
+  panels: Record<string, PanelDescriptor>;
+  linkGroups: LinkGroup[];
 }
 
 export interface ReconstructedWorkspace {

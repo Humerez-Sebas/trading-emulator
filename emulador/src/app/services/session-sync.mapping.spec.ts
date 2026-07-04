@@ -14,12 +14,16 @@ import {
 } from './session-sync.mapping';
 import {
   SESSION_PAYLOAD_VERSION,
+  SESSION_PAYLOAD_VERSION_2,
   type PayloadInput,
   type SessionPayloadV1,
   type FlattenInput,
   type FlattenSession,
   type CloudSessionRow,
+  type DrawingCollection,
 } from './session-sync.models';
+import { parseSessionPayload, singlePanelLayoutFor } from './session-migration';
+import type { LinkGroup } from '../state/link-groups/link-groups.models';
 import { defaultTradingData, type TradingData } from '../state/trading/trading.models';
 import type { Drawing } from '../state/drawings/drawings.models';
 
@@ -41,28 +45,38 @@ function sampleInput(): PayloadInput {
   ];
   trading.riskPct = 2;
   trading.sessionEnd = 1700100000;
+  const { layout, panels } = singlePanelLayoutFor('EURUSD', 'H1');
   return {
     trading,
     currentTime: 1700050000,
     activeTf: 'H1',
     customTfMinutes: null,
     playbackSpeed: 4,
-    drawings: [],
+    drawings: {},
     notes: [],
     selectedTfs: ['M1', 'H1'],
     startRange: 1699000000,
     endRange: 1700200000,
     requiredDatasets: [{ symbol: 'EURUSD', timeframe: 'H1' }],
+    layout,
+    panels,
+    linkGroups: [],
   };
 }
 
 describe('toPayload / fromPayload', () => {
   it('stamps the schema version', () => {
-    expect(toPayload(sampleInput()).schemaVersion).toBe(SESSION_PAYLOAD_VERSION);
+    // RFC-011 Task 3 (D9): toPayload now writes ONLY SessionPayloadV2 — this
+    // assertion's expected value changed from SESSION_PAYLOAD_VERSION (1) to
+    // SESSION_PAYLOAD_VERSION_2 because toPayload's return type itself changed
+    // (SessionPayloadV1 -> SessionPayloadV2), not a spontaneous edit.
+    expect(toPayload(sampleInput()).schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
   });
   it('round-trips losslessly (open positions, riskPct, sessionEnd, cursor, view)', () => {
     const input = sampleInput();
-    const back = fromPayload(toPayload(input));
+    // fromPayload's new primarySymbol param is required (no default) — see
+    // session-sync.mapping.ts; every call site must pass it explicitly.
+    const back = fromPayload(toPayload(input), 'EURUSD');
     expect(back.trading).toEqual(input.trading);
     expect(back.cursor).toBe(input.currentTime);
     expect(back.activeTf).toBe(input.activeTf);
@@ -74,7 +88,7 @@ describe('toPayload / fromPayload', () => {
   it('survives a JSON serialization round-trip (storage-faithful)', () => {
     const input = sampleInput();
     const stored = JSON.parse(JSON.stringify(toPayload(input))) as SessionPayloadV1;
-    const back = fromPayload(stored);
+    const back = fromPayload(stored, 'EURUSD');
     expect(back.trading).toEqual(input.trading);
     expect(back.cursor).toBe(input.currentTime);
     expect(back.requiredDatasets).toEqual(input.requiredDatasets);
@@ -195,8 +209,8 @@ function realActiveTrading(): TradingData {
   return t;
 }
 
-function activeDrawings(): Drawing[] {
-  return [
+function activeDrawings(): Record<string, DrawingCollection> {
+  const items: Drawing[] = [
     {
       id: 'd1',
       kind: 'rect',
@@ -204,9 +218,11 @@ function activeDrawings(): Drawing[] {
       p2: { time: 1699100000, price: 1.2 },
     },
   ];
+  return { EURUSD: { version: 1, items } };
 }
 
 function realActiveSession(overrides: Partial<FlattenSession> = {}): FlattenSession {
+  const { layout, panels } = singlePanelLayoutFor('EURUSD', 'H1');
   return {
     id: null,
     name: null,
@@ -223,6 +239,9 @@ function realActiveSession(overrides: Partial<FlattenSession> = {}): FlattenSess
       selectedTfs: ['M1', 'H1'],
       startRange: 1699000000,
       endRange: 1700200000,
+      layout,
+      panels,
+      linkGroups: [],
     },
     clientUpdatedAt: 1_700_050_000_000,
     lastOpenedAt: 1_700_050_000_000,
@@ -487,5 +506,59 @@ describe('mergeByLww', () => {
     ]);
     expect(local).toEqual(localCopy);
     expect(cloud).toEqual(cloudCopy);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toPayload / fromPayload — RFC-011 V2 fields
+// ---------------------------------------------------------------------------
+
+function sampleV2Input(): PayloadInput {
+  const { layout, panels } = singlePanelLayoutFor('EURUSD', 'H1');
+  return {
+    ...sampleInput(),
+    drawings: { EURUSD: { version: 1, items: [] } },
+    layout,
+    panels,
+    linkGroups: [{ id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: false }] as LinkGroup[],
+  };
+}
+
+describe('toPayload / fromPayload — RFC-011 V2 fields', () => {
+  it('toPayload stamps schemaVersion 2 and carries layout/panels/linkGroups verbatim', () => {
+    const input = sampleV2Input();
+    const payload = toPayload(input);
+    expect(payload.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
+    expect(payload.layout).toEqual(input.layout);
+    expect(payload.panels).toEqual(input.panels);
+    expect(payload.linkGroups).toEqual(input.linkGroups);
+    expect(payload.drawings).toEqual(input.drawings);
+  });
+
+  it('fromPayload restores layout/panels/linkGroups/drawings unchanged', () => {
+    const input = sampleV2Input();
+    const payload = toPayload(input);
+    const restored = fromPayload(payload, 'EURUSD');
+    expect(restored.layout).toEqual(input.layout);
+    expect(restored.panels).toEqual(input.panels);
+    expect(restored.linkGroups).toEqual(input.linkGroups);
+    expect(restored.drawings).toEqual(input.drawings);
+  });
+
+  it('a full round trip (toPayload -> JSON serialize -> parseSessionPayload -> fromPayload) is lossless', () => {
+    const input = sampleV2Input();
+    const payload = toPayload(input);
+    const wireForm = JSON.parse(JSON.stringify(payload));
+    const parsed = parseSessionPayload(wireForm, 'EURUSD');
+    const restored = fromPayload(parsed, 'EURUSD');
+    expect(restored.layout).toEqual(input.layout);
+    expect(restored.panels).toEqual(input.panels);
+    expect(restored.linkGroups).toEqual(input.linkGroups);
+    expect(restored.drawings).toEqual(input.drawings);
+    expect(restored.trading).toEqual(input.trading);
+  });
+
+  it('assertNoCandles still passes on a V2 payload (layout/panels/linkGroups contain no candle-shaped fields)', () => {
+    expect(() => assertNoCandles(toPayload(sampleV2Input()))).not.toThrow();
   });
 });

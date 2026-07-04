@@ -18,6 +18,7 @@ import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { series, closed, workspace } from '../../testing/fixtures';
 import { emptyWorkspace } from './workspaces.models';
 import { defaultTradingData } from '../trading/trading.models';
+import { createInitialLayoutState } from '../layout/layout.models';
 
 const CURRENT_KEY = 'emulador.currentAsset';
 
@@ -40,6 +41,9 @@ describe('WorkspacesEffects', () => {
     trading: defaultTradingData(),
     sessions: [],
     activeSessionId: null,
+    layout: createInitialLayoutState().workspace,
+    panels: createInitialLayoutState().panels,
+    linkGroups: {},
   };
 
   function setupTestBed(overrideDb?: Partial<ReturnType<typeof workspaceDbStub>>) {
