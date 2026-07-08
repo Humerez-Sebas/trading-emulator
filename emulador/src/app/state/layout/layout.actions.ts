@@ -5,8 +5,8 @@ import { Timeframe } from '../../models';
 export const LayoutActions = createActionGroup({
   source: 'Layout',
   events: {
-    /** Appends a tab (template '1', one empty cell) and activates it. Ids come from the caller (reducer stays pure). */
-    'Create Tab': props<{ id: string; name: string }>(),
+    /** Appends a tab (template '1') pre-populated with the caller-supplied panel, and activates + focuses it. Ids come from the caller (reducer stays pure). */
+    'Create Tab': props<{ id: string; name: string; descriptor: PanelDescriptor }>(),
     /** Removes the tab and its panels' descriptors. Closing the last remaining tab is a no-op. */
     'Close Tab': props<{ tabId: string }>(),
     'Set Active Tab': props<{ tabId: string }>(),

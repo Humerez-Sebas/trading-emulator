@@ -56,14 +56,21 @@ export const layoutFeature = createFeature({
   name: 'layout',
   reducer: createReducer(
     createInitialLayoutState(),
-    on(LayoutActions.createTab, (state, { id, name }): LayoutState => {
-      const tab: TabLayout = { id, name, template: '1', cells: [emptyCell()] };
+    on(LayoutActions.createTab, (state, { id, name, descriptor }): LayoutState => {
+      const tab: TabLayout = {
+        id,
+        name,
+        template: '1',
+        cells: [{ panelIds: [descriptor.id], activePanelId: descriptor.id }],
+      };
       return {
         ...state,
+        panels: { ...state.panels, [descriptor.id]: descriptor },
         workspace: {
           tabs: [...state.workspace.tabs, tab],
           activeTabId: id,
         },
+        focusedPanelId: descriptor.id,
       };
     }),
     on(LayoutActions.closeTab, (state, { tabId }): LayoutState => {

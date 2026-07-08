@@ -411,10 +411,16 @@ export class WorkspaceViewportComponent implements OnDestroy {
     this.store.dispatch(LayoutActions.setActiveTab({ tabId }));
   }
 
-  /** RFC-013 (D4): appends a new tab; caller supplies the id (reducer stays pure), same convention as addPanel below. */
+  /** RFC-013 (D4): appends a new tab seeded with one active-asset panel; caller supplies both ids (reducer stays pure). */
   addTab(): void {
     const n = this.workspace().tabs.length + 1;
-    this.store.dispatch(LayoutActions.createTab({ id: crypto.randomUUID(), name: `Tab ${n}` }));
+    this.store.dispatch(
+      LayoutActions.createTab({
+        id: crypto.randomUUID(),
+        name: `Tab ${n}`,
+        descriptor: { id: crypto.randomUUID(), symbol: '', timeframe: 'M1', linkGroupId: null },
+      }),
+    );
   }
 
   /** RFC-013 (D4): closes a tab; stops propagation so the tab's own click (selectTab) doesn't also fire. Absent in the template when it is the last tab. */
