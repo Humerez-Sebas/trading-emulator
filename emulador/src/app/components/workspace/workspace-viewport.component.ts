@@ -275,6 +275,12 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
         gap: 4px;
         padding: 4px;
       }
+      .grid[hidden] {
+        display: none;
+      }
+      .cell[hidden] {
+        display: none;
+      }
       .grid[data-template='1'] {
         grid-template-columns: 1fr;
       }

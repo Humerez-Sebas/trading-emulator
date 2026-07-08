@@ -106,6 +106,9 @@ import { Timeframe } from '../../models';
         border-radius: var(--radius);
         overflow: hidden;
       }
+      :host([hidden]) {
+        display: none;
+      }
       .panel-header {
         display: flex;
         align-items: center;
