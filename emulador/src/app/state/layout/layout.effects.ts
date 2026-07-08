@@ -1,11 +1,11 @@
 import { inject, Injectable } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { Store } from '@ngrx/store';
-import { map, withLatestFrom } from 'rxjs/operators';
+import { filter, map, withLatestFrom } from 'rxjs/operators';
 import { LayoutActions } from './layout.actions';
 import { layoutFeature } from './layout.reducer';
 import { MarketActions } from '../market/market.actions';
-import { TIMEFRAME_SECONDS } from '../../models';
+import { TIMEFRAME_SECONDS, Timeframe } from '../../models';
 
 @Injectable()
 export class LayoutEffects {
@@ -20,21 +20,15 @@ export class LayoutEffects {
     this.actions$.pipe(
       ofType(LayoutActions.setFocusedPanel, LayoutActions.setActivePanel),
       withLatestFrom(this.store.select(layoutFeature.selectPanels)),
-      map(([{ panelId }, panels]) => {
-        const panel = panels[panelId];
-        if (!panel) return { type: 'noop' };
-        const tf = panel.timeframe;
+      map(([{ panelId }, panels]) => panels[panelId]?.timeframe ?? null),
+      filter((tf): tf is Timeframe => tf !== null),
+      map((tf) => {
         const standardTfs = new Set<string>(Object.keys(TIMEFRAME_SECONDS));
-        if (standardTfs.has(tf)) {
-          return MarketActions.changeTimeframe({ tf });
-        } else if (tf.startsWith('M')) {
-          const minutes = parseInt(tf.substring(1), 10);
-          if (!isNaN(minutes)) {
-            return MarketActions.changeCustomTimeframe({ minutes });
-          }
-        }
-        return { type: 'noop' };
+        if (standardTfs.has(tf)) return MarketActions.changeTimeframe({ tf });
+        const minutes = tf.startsWith('M') ? parseInt(tf.substring(1), 10) : NaN;
+        return isNaN(minutes) ? null : MarketActions.changeCustomTimeframe({ minutes });
       }),
+      filter((action): action is NonNullable<typeof action> => action !== null),
     ),
   );
 }

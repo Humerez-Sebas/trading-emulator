@@ -12,7 +12,7 @@ export const LayoutActions = createActionGroup({
     'Set Active Tab': props<{ tabId: string }>(),
     /** Renames a tab in place. No-op if tabId is unknown. */
     'Rename Tab': props<{ tabId: string; name: string }>(),
-    /** Resizes the tab's cells to the template; panels of removed cells merge into the last kept cell. */
+    /** Resizes the tab's cells to the template; non-destructive: shrinking parks (keeps, hides) the non-empty cells that no longer fit and trims only trailing empty cells, growing reveals parked cells in their original slot. */
     'Apply Grid Template': props<{ tabId: string; template: GridTemplate }>(),
     /** No-op if the tab already holds MAX_PANELS_PER_TAB panels or cellIndex is out of range. */
     'Add Panel': props<{ tabId: string; cellIndex: number; descriptor: PanelDescriptor }>(),

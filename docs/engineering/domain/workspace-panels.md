@@ -53,6 +53,27 @@ gone (panels provide their own). Per-panel timeframe selects reuse `selectSessio
 series) rather than a static timeframe list. LinkGroups UI is plain DOM (no CDK), with
 delete cascading `setPanelLinkGroup(null)` to member panels.
 
+### Template = lens, not blender (RFC-013 follow-up)
+
+`applyGridTemplate` is non-destructive: cells are a stable ordered list; the
+template only decides how many are rendered. Shrinking parks (keeps mounted +
+`[hidden]`, update-gated) the non-empty cells that no longer fit and trims only
+trailing empty cells; growing reveals parked cells in their original slot. So
+`cells.length` may exceed `GRID_TEMPLATE_CELLS[template]` — the layout invariant
+permits this (it only enforces the panel↔cell bijection). `[hidden]` genuinely
+hides only because each host declares a `[hidden]{display:none}` rule that
+out-specifies its own `display` rule — the UA rule alone loses the cascade.
+
+### Focused panel is the global-TF proxy
+
+The focused panel and the global market timeframe are two-way bound:
+focusing a panel syncs the global TF to it (`LayoutEffects.syncTimeframeOnFocus$`
+→ `MarketActions.changeTimeframe`), and the global M1/H1/D1 controls write the
+focused panel's TF (handled in `layout.reducer`). A panel's own `<select>`
+(`setPanelTimeframe`) is intentionally panel-local and does NOT move the global
+TF. `applyGridTemplate` re-focuses a rendered panel whenever the focused one is
+parked, so the global controls never target an off-screen panel.
+
 ## Persistence
 
 Layout + linkGroups + per-symbol drawings travel inside the single `SessionPayloadV2`
