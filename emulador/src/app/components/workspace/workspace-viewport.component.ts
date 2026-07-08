@@ -17,6 +17,7 @@ import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import {
+  GRID_TEMPLATE_CELLS,
   GridTemplate,
   MAX_PANELS_PER_TAB,
   PanelDescriptor,
@@ -130,7 +131,7 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
         [hidden]="tab.id !== workspace().activeTabId"
       >
         @for (cell of tab.cells; track $index; let ci = $index) {
-          <div class="cell">
+          <div class="cell" [hidden]="ci >= renderedCount(tab)">
             @if (cell.panelIds.length > 1) {
               <div class="cell-tabs" role="tablist">
                 @for (pid of cell.panelIds; track pid) {
@@ -498,6 +499,11 @@ export class WorkspaceViewportComponent implements OnDestroy {
   /** RFC-009 Task 5: true when the tab already holds MAX_PANELS_PER_TAB panels across all its cells (mirrors the reducer's own cap check). */
   tabAtCap(tab: TabLayout): boolean {
     return tab.cells.reduce((n, c) => n + c.panelIds.length, 0) >= MAX_PANELS_PER_TAB;
+  }
+
+  /** RFC-013 follow-up: number of cells the current template renders; cells past this index are parked (kept mounted, hidden). */
+  renderedCount(tab: TabLayout): number {
+    return GRID_TEMPLATE_CELLS[tab.template];
   }
 
   descriptorOf(panelId: string): PanelDescriptor | null {
