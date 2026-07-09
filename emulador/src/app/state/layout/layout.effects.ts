@@ -5,7 +5,8 @@ import { filter, map, withLatestFrom } from 'rxjs/operators';
 import { LayoutActions } from './layout.actions';
 import { layoutFeature } from './layout.reducer';
 import { MarketActions } from '../market/market.actions';
-import { TIMEFRAME_SECONDS, Timeframe } from '../../models';
+import { marketFeature } from '../market/market.reducer';
+import { Timeframe } from '../../models';
 
 @Injectable()
 export class LayoutEffects {
@@ -19,14 +20,26 @@ export class LayoutEffects {
   syncTimeframeOnFocus$ = createEffect(() =>
     this.actions$.pipe(
       ofType(LayoutActions.setFocusedPanel, LayoutActions.setActivePanel),
-      withLatestFrom(this.store.select(layoutFeature.selectPanels)),
-      map(([{ panelId }, panels]) => panels[panelId]?.timeframe ?? null),
-      filter((tf): tf is Timeframe => tf !== null),
-      map((tf) => {
-        const standardTfs = new Set<string>(Object.keys(TIMEFRAME_SECONDS));
-        if (standardTfs.has(tf)) return MarketActions.changeTimeframe({ tf });
-        const minutes = tf.startsWith('M') ? parseInt(tf.substring(1), 10) : NaN;
-        return isNaN(minutes) ? null : MarketActions.changeCustomTimeframe({ minutes });
+      withLatestFrom(
+        this.store.select(layoutFeature.selectPanels),
+        this.store.select(marketFeature.selectSeries),
+      ),
+      map(([action, panels, series]) => {
+        const tf = panels[action.panelId]?.timeframe ?? null;
+        return { tf, series };
+      }),
+      filter((info): info is { tf: Timeframe; series: typeof info.series } => info.tf !== null),
+      map(({ tf, series }) => {
+        if (series && series[tf] && series[tf]!.length > 0) {
+          return MarketActions.changeTimeframe({ tf });
+        }
+        if (tf.startsWith('M')) {
+          const minutes = parseInt(tf.substring(1), 10);
+          if (!isNaN(minutes)) {
+            return MarketActions.changeCustomTimeframe({ minutes });
+          }
+        }
+        return MarketActions.changeTimeframe({ tf });
       }),
       filter((action): action is NonNullable<typeof action> => action !== null),
     ),

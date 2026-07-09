@@ -91,6 +91,7 @@ import { Timeframe } from '../../models';
         class="panel-chart"
         (chartReady)="onChartReady($event)"
         (chartControlReady)="onChartControlReady($event)"
+        (chartFocused)="onPanelClick()"
       />
     }
   `,

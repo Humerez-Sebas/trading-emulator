@@ -26,6 +26,7 @@ import { LinkGroup } from '../../state/link-groups/link-groups.models';
 class ChartStubComponent {
   readonly chartReady = output<ChartEventBus>();
   readonly chartControlReady = output<ChartControlHandle>();
+  readonly chartFocused = output<void>();
 }
 
 const descriptor: PanelDescriptor = {
@@ -149,6 +150,16 @@ describe('ChartPanelComponent', () => {
     const registry = TestBed.inject(ChartRegistry);
     const panelHandle = registry.get('panel-1')!;
     expect(() => panelHandle.applyCrosshair(1000)).not.toThrow();
+  });
+
+  it('dispatches LayoutActions.setFocusedPanel to the store with the panel ID when chartFocused is emitted', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const stub = fixture.debugElement.query(By.directive(ChartStubComponent));
+    stub.componentInstance.chartFocused.emit();
+    expect(dispatch).toHaveBeenCalledWith(
+      LayoutActions.setFocusedPanel({ panelId: 'panel-1' }),
+    );
   });
 
   function createWithVisible(visible: boolean, desc: PanelDescriptor = descriptor) {

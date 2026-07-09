@@ -1,23 +1,37 @@
-# SDD Progress Ledger — RFC-013 Workspace UI Integration
+# SDD Progress Ledger — Workspace Panel & Layout Polish
 
-- **Plan:** `docs/superpowers/plans/2026-07-04-rfc-013-workspace-ui-integration.md`
-- **RFC:** `docs/architecture/rfcs/013-workspace-ui-integration.md`
-- **Branch:** `feature/rfc-013-workspace-ui-integration` (off develop @ 3844957 — RFC-012 PR #31 merged; 008–012 block complete)
-- **Base commit:** `3844957`
-- **RUNTIME MODE (user-directed, resource-constrained):** NO per-task Opus audits. Tasks batched into 3 Sonnet dispatches (Task 1 | Tasks 2+3 | Tasks 4+5), task-scoped commits preserved. ONE Opus whole-branch audit at the end gates the PR.
+**Plan:** `docs/superpowers/plans/2026-07-08-workspace-panel-layout-polish.md`
+**Branch:** `fix/workspace-panel-layout-polish` (target: `develop`)
+**Base commit:** `971e31b` (merge-base with develop)
+**Execution:** subagent-driven-development. Implementer = `sdd-implementer` (sonnet). Final audit = `branch-auditor` (opus).
 
-## Task Progress
+## Run notes
+- Browser/preview verification is done by the USER, not by implementers. Implementers verify via `npx ng test --watch=false` + gates only; they must SKIP the plan's `preview_*` steps.
+- Bug 1 = inactive tab/panel `[hidden]` never hides (CSS cascade). Bug 2 = destructive template shrink loses panel positions.
+- Design decisions (locked with user): non-destructive/reversible "park cells" model; new tabs seed one active-symbol chart; new cells on GROW are empty "Sin panel".
 
-Task 1 (renameTab/setPanelTimeframe actions + mono-panel default layout): complete (commit f78a692, verified 2026-07-04: 943 tests green (939+4), tsc app+spec clean, lint 0; orchestrator diff-scan verify — handlers idiomatic: identity-return no-op guards, reuses updateTab helper, value-idempotence early returns; existing 9 actions byte-untouched)
-  - D2 default change broke exactly 8 default-encoding specs in layout.reducer.spec.ts (hard-coded panel-2/'2h'/two-cell) — all fixed in place, itemized in task-1-report; repo-wide grep confirmed nothing else depends on the old demo default.
-  - Deviation (inert): new handlers grouped with related existing on()s rather than appended at file end.
-Task 2 (tab create/rename/close + GridTemplate switcher in viewport tab bar): complete (commit cf7dc97, verified 2026-07-04: 951 tests green (+8), tsc app+spec clean, lint 0; scope = viewport component + spec only)
-Task 3 (per-panel timeframe selector in panel header): complete (commit a2e4286, verified 2026-07-04: 954 tests green (+3), tsc app+spec clean, lint 0; scope = chart-panel component + spec only)
-  - TF-list source: reused `selectSessionTfs` (selectors.ts:160-165) — same selector ControlsComponent uses, already scoped to TFs with available series (implements the RFC's risk-note mitigation directly; better than the static TIMEFRAME_ORDER).
-  - Deviations (documented in task-2-report): headerLabel() left unchanged (avoids touching a pre-existing spec under the STOP rule); [selected] per-option instead of [value] on <select> (Angular native-select CD-ordering); chart-panel now injects Store + reads selectSessionTfs (plain selector, D8/D9-compliant).
-  - FINAL-AUDIT ATTENTION: Task 2's viewport diff is the run's largest UI change (165+/12- in the component) — review the rename/close/a11y interactions line-by-line there.
-Task 4 (LinkGroups manager popover + panel link chip): complete (commit 1f179bf, verified 2026-07-04: tests green, tsc clean, lint 0; new LinkGroupsMenuComponent + LINK_GROUP_PALETTE, wrap-around unused-color pick, delete cascades setPanelLinkGroup(null) to member panels; plain-DOM popovers, no CDK; syncPriceScale untouched)
-Task 5 (production swap in EmuladorPageComponent + cold-start/persistence proofs): complete (commit fbff00f, verified 2026-07-04: 980 tests green total, tsc clean, lint 0, build OK 609.10 kB — only the pre-existing budget warning, no vitest chunks; <app-chart> replaced by <app-workspace-viewport>, page-level ChartModelMapper provider removed; page spec asserts viewport-present/chart-absent/overlay flags; UI-shaped persistence e2e case folds createTab→applyGridTemplate('2x2')→addPanel×2→setPanelTimeframe→createGroup+setPanelLinkGroup through real reducers then the full toPayload→parse→fromPayload chain)
-  - Deviations (task-4-report): computed(Object.values(...)) list signals for @for over Records (mechanical); page spec adds a second describe that actually mounts the template (existing one never did); provider-removal proof reads compiled metadata (ɵcmp.providersResolver — private API in a SPEC, flagged for the final auditor); interim fixes during TDD: duplicate ChartRegistry registration in a test, unused spec imports.
-  - FINAL AUDITOR ATTENTION (from task-4-report, 5 items) + ledger-flagged: Task 2's viewport diff (165+) and Task 4's chart-panel diff (120+) are the biggest UI changes — line-by-line there; ɵcmp usage; delete-cascade ordering (removeGroup vs setPanelLinkGroup dispatch order).
-Final audit (whole branch, the ONLY audit of this run): complete (2026-07-04, Opus review develop..28ea35d: PASS — "Ship it", 0 Critical/High/Medium; 4 Lows all ruled no-fix: ɵcmp providersResolver spec assertion = acceptable test pragmatism (behavioral app-chart-absent assertion + injector grep corroborate); headerLabel TF redundancy intentional (pre-existing spec authority); '@@INIT as never' test idiom; TF-select shows first option visually when a descriptor TF is outside selectSessionTfs (documented D7 risk, data unaffected). Gates re-run by auditor: tsc app+spec 0, 980/980 tests (73 files), lint 0, build OK 609.10 kB (only pre-existing budget warning; emulador-page chunk grew to 377.74 kB — chart engine now transitively via panel path, expected). All 7 Estado Esperado ✓. Invariant greps clean: forbidden files zero-diff, no factory selectors, no CDK/new deps, syncPriceScale has no UI control, ledger hashes/progression verified (943→951→954→980). Rename blur/Enter double-dispatch defused by commitRename null-guard; LinkGroups delete-cascade ordering safe (removeGroup touches only the link-groups slice).)
+## Tasks
+- [x] Task 1: `[hidden]` CSS cascade fix (viewport + chart-panel) — no unit test (jsdom can't compute display; user verifies in browser)
+- [x] Task 2: New tab seeds one active-symbol chart (`createTab` descriptor)
+- [x] Task 3: Park-cells reducer model (`fitCells`, `applyGridTemplate` + focus repair, `selectVisiblePanelIds`)
+- [x] Task 4: Viewport renders parked cells mounted-but-hidden (`renderedCount`)
+- [x] Task 5: Effect noop→filter cleanup + docs (workspace-panels.md) + actions.ts stale-comment fix
+- [x] Task 6: Chart focus on click/interactivity bugfix
+- [x] Task 7: Derived/unloaded timeframe focus synchronization fix
+
+## Completed
+Task 1: complete (commit 971e31b..c84d9cc, review clean — Spec ✅, Quality Approved, 980/980)
+Task 2: complete (commit c84d9cc..cea238f, review clean — Spec ✅, Quality Approved, 980/980; twoTabs() helper restructured byte-identical, verified no STOP-rule violation)
+Task 3: complete (commit cea238f..9e71069, review clean — Spec ✅, Quality Approved, 984/984; fitCells cases + focus repair + selector slice verified by hand-trace, invariant test untouched)
+Task 4: complete (commit 9e71069..8db3211, review clean — Spec ✅, Quality Approved, 985/985; keep-alive @for preserved, parked cells [hidden], test non-vacuous)
+Task 5: complete (commit 8db3211..01458e4, review clean — Spec ✅, Quality Approved, 988/988; effect noop→filter + new layout.effects.spec.ts (3 tests) + docs + actions.ts comment; mapper untouched/deferred)
+Task 6: complete (commit bdce54c..4bbeae9, review clean — Spec ✅, Quality Approved, 989/989; chartFocused output decoupled store focusing)
+Task 7: complete (commit 5b4d759..f57d971, review clean — Spec ✅, Quality Approved, 992/992; syncTimeframeOnFocus check for loaded series)
+
+ALL TASKS COMPLETE.
+
+## Final audit (branch-auditor, opus) — 971e31b..f57d971
+**VERDICT: PASS.** Gates re-run personally: tsc app+spec clean; `npx ng test --watch=false` = 74 files / 992 tests passed; lint 0; build success (only the known parquet/arrow budget warning). Invariant greps all pass (no factory selectors over panel/chart state; `layout-invariants.ts` vitest-free in prod bundle; engine purity; no new deps). Named risks cleared (fitCells lossless + position-preserving round-trip; no consumer assumes cells.length===template count; no dangling focusedPanelId; persistence round-trips clean; chart canvas focus works robustly via child outputs; unloaded timeframes sync cleanly). Zero Critical/Important/Minor findings. Ready for PR → develop.
+
+## Minor findings rollup (for final audit triage)
+- Task 3 flagged: stale doc comment on `LayoutActions.applyGridTemplate` in `layout.actions.ts` still describes the old merge behavior → fold into Task 5 (docs/comments cleanup).

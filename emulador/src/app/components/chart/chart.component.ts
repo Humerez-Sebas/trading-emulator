@@ -366,6 +366,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * (chart-engine.ts) — no additional logic lives here.
    */
   readonly chartControlReady = output<ChartControlHandle>();
+  readonly chartFocused = output<void>();
 
   // --- right-click menu + interactive order placement ---
   /** Current price/risk context for placing orders from the chart. */
@@ -1141,6 +1142,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
 
   private handleClick(param: MouseEventParams<Time>): void {
+    this.chartFocused.emit();
     // an active quick ruler: the next left click dismisses the measurement
     if (this.quickRuler) {
       this.clearQuickRuler();
@@ -1237,6 +1239,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   // the object being dragged.
 
   private handleMouseDown(e: MouseEvent): void {
+    this.chartFocused.emit();
     // any interaction with the chart dismisses the context menu
     if (this.menu()) this.zone.run(() => this.menu.set(null));
     // middle button: start the ephemeral quick-ruler measurement
