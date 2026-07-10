@@ -112,7 +112,7 @@ export const layoutFeature = createFeature({
       const focusedPanelId =
         state.focusedPanelId && visible.has(state.focusedPanelId)
           ? state.focusedPanelId
-          : (rendered[0]?.activePanelId || null);
+          : rendered[0]?.activePanelId || null;
       return { ...state, workspace, focusedPanelId };
     }),
     on(LayoutActions.addPanel, (state, { tabId, cellIndex, descriptor }): LayoutState => {

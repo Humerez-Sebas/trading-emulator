@@ -108,7 +108,11 @@ describe('layoutFeature reducer', () => {
     );
     state = reducer(
       state,
-      LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
+      LayoutActions.addPanel({
+        tabId: 'tab-main',
+        cellIndex: 1,
+        descriptor: descriptor('panel-2'),
+      }),
     );
     state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
     const tab = state.workspace.tabs[0];
@@ -129,7 +133,11 @@ describe('layoutFeature reducer', () => {
     );
     state = reducer(
       state,
-      LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
+      LayoutActions.addPanel({
+        tabId: 'tab-main',
+        cellIndex: 1,
+        descriptor: descriptor('panel-2'),
+      }),
     );
     state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
     state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }));
@@ -159,7 +167,11 @@ describe('layoutFeature reducer', () => {
     );
     state = reducer(
       state,
-      LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
+      LayoutActions.addPanel({
+        tabId: 'tab-main',
+        cellIndex: 1,
+        descriptor: descriptor('panel-2'),
+      }),
     );
     // focus the right panel, then collapse to a single cell
     state = reducer(state, LayoutActions.setFocusedPanel({ panelId: 'panel-2' }));
@@ -385,7 +397,11 @@ describe('layoutFeature reducer', () => {
       );
       state = reducer(
         state,
-        LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
+        LayoutActions.addPanel({
+          tabId: 'tab-main',
+          cellIndex: 1,
+          descriptor: descriptor('panel-2'),
+        }),
       );
       state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
       const visible = selectVisiblePanelIds.projector(state.workspace);
@@ -487,7 +503,11 @@ describe('layoutFeature reducer', () => {
     it('renames the target tab and leaves others untouched', () => {
       let state = reducer(
         createInitialLayoutState(),
-        LayoutActions.createTab({ id: 'tab-2', name: 'Contexto', descriptor: descriptor('seed-4') }),
+        LayoutActions.createTab({
+          id: 'tab-2',
+          name: 'Contexto',
+          descriptor: descriptor('seed-4'),
+        }),
       );
       state = reducer(state, LayoutActions.renameTab({ tabId: 'tab-main', name: 'Renombrada' }));
       expect(state.workspace.tabs.find((t) => t.id === 'tab-main')?.name).toBe('Renombrada');
