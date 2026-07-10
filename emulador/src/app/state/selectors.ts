@@ -5,6 +5,8 @@ import { settingsFeature } from './settings/settings.reducer';
 import { drawingsFeature } from './drawings/drawings.reducer';
 import { workspacesFeature } from './workspaces/workspaces.reducer';
 import { tradingFeature } from './trading/trading.reducer';
+import { layoutFeature } from './layout/layout.reducer';
+import { linkGroupsFeature } from './link-groups/link-groups.reducer';
 import { Candle, derivePointSize, TIMEFRAME_ORDER, TIMEFRAME_SECONDS, Timeframe } from '../models';
 import {
   pickBaseSeriesTf,
@@ -110,7 +112,22 @@ export const selectWorkspaceMetaSnapshot = createSelector(
   selectTradingData,
   selectSavedSessions,
   tradingFeature.selectActiveSessionId,
-  (files, activeTf, selectedTfs, currentTime, drawings, trading, sessions, activeSessionId) => ({
+  layoutFeature.selectWorkspace,
+  layoutFeature.selectPanels,
+  linkGroupsFeature.selectGroups,
+  (
+    files,
+    activeTf,
+    selectedTfs,
+    currentTime,
+    drawings,
+    trading,
+    sessions,
+    activeSessionId,
+    layout,
+    panels,
+    linkGroups,
+  ) => ({
     files,
     activeTf,
     selectedTfs: selectedTfs ?? undefined,
@@ -121,6 +138,11 @@ export const selectWorkspaceMetaSnapshot = createSelector(
     // stable active session id (= cloud row id once synced); carried so the
     // meta snapshot round-trips it without persistMeta$ reading it back.
     activeSessionId,
+    // RFC-011 Task 3: layout/panels/linkGroups made persistable for the first
+    // time — layoutFeature/linkGroupsFeature runtime state, unaltered wiring.
+    layout,
+    panels,
+    linkGroups,
   }),
 );
 

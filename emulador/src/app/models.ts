@@ -1,11 +1,5 @@
-/** OHLC candle. `time` in unix seconds (UTC), as expected by lightweight-charts. */
-export interface Candle {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-}
+import type { Candle } from './domain/chart/render-model';
+export type { Candle } from './domain/chart/render-model';
 
 /** All MetaTrader 5 timeframes. */
 export type Timeframe =

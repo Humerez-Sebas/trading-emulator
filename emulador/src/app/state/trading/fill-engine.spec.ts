@@ -142,6 +142,34 @@ describe('processCandle — exits', () => {
     expect(r.book.history).toHaveLength(1);
     expect(r.book.history[0].outcome).toBe('sl');
   });
+
+  it('a freshly filled order ignores SL hit before the fill index', () => {
+    // Sell Stop at 4000. SL is 4010. TP is 3980.
+    // The order fills at sub-candle index 1 (when price goes below 4000).
+    // The first sub-candle (index 0) went up to 4012 (which touches SL price 4010).
+    // The parent candle has High 4012 (touches SL) and Low 3995 (touches entry but not TP).
+    const order: PendingOrder = {
+      id: 'o-sell-stop',
+      side: 'sell',
+      type: 'stop',
+      entryPrice: 4000,
+      sl: 4010,
+      tp: 3980,
+      lots: 0.1,
+      riskPct: 1,
+      riskUsd: 100,
+      createdAt: 0,
+    };
+    const b = book({ orders: [order] });
+    const sub = [
+      candle(100, 4005, 4012, 4002, 4004), // Touches SL (4012 >= 4010) but order NOT filled yet (Low 4002 > 4000)
+      candle(160, 4004, 4004, 3995, 3998), // Fills here (Low 3995 <= 4000). No SL/TP touch (High 4004 < 4010, Low 3995 > 3980)
+    ];
+    // Parent candle has High 4012, Low 3995.
+    const r = processCandle(b, candle(100, 4005, 4012, 3995, 3998), sub, CONTRACT);
+    expect(r.book.positions).toHaveLength(1); // Position should remain OPEN
+    expect(r.book.history).toHaveLength(0);   // No closed trades
+  });
 });
 
 describe('processCandle — per-entity time guards (V2.3 bug fix)', () => {

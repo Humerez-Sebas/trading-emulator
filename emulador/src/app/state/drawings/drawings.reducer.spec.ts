@@ -129,3 +129,30 @@ describe('drawings reducer: workspaceRestored', () => {
     expect(next.selectedId).toBeNull();
   });
 });
+
+describe('restoreDrawingsForSymbol (RFC-011 Task 2)', () => {
+  it('hydrates items from the record slice matching the given symbol', () => {
+    const d = {
+      id: 'd1',
+      kind: 'line' as const,
+      p1: { time: 1, price: 1 },
+      p2: { time: 2, price: 2 },
+    };
+    const drawings = { EURUSD: { version: 1, items: [d] }, GBPUSD: { version: 1, items: [] } };
+    const state = reducer(
+      initial(),
+      DrawingsActions.restoreDrawingsForSymbol({ drawings, symbol: 'EURUSD' }),
+    );
+    expect(state.items).toEqual([d]);
+    expect(state.selectedId).toBeNull();
+    expect(state.activeTool).toBe('none');
+  });
+
+  it('a symbol absent from the record restores an empty list (never throws)', () => {
+    const state = reducer(
+      initial(),
+      DrawingsActions.restoreDrawingsForSymbol({ drawings: {}, symbol: 'EURUSD' }),
+    );
+    expect(state.items).toEqual([]);
+  });
+});

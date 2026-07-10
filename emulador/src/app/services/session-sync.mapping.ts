@@ -1,9 +1,10 @@
 import type { TradingData, ClosedTrade, SavedSession } from '../state/trading/trading.models';
 import { buildRequiredDatasets, yearsInRange, type AnchorTf } from './session.service';
 import {
-  SESSION_PAYLOAD_VERSION,
+  SESSION_PAYLOAD_VERSION_2,
   type PayloadInput,
   type SessionPayloadV1,
+  type SessionPayloadV2,
   type FlattenInput,
   type FlattenSession,
   type FlattenResult,
@@ -13,10 +14,11 @@ import {
   type DatasetRef,
   type LwwMergeResult,
 } from './session-sync.models';
+import { parseSessionPayload, singlePanelLayoutFor } from './session-migration';
 
-export function toPayload(i: PayloadInput): SessionPayloadV1 {
+export function toPayload(i: PayloadInput): SessionPayloadV2 {
   return {
-    schemaVersion: SESSION_PAYLOAD_VERSION,
+    schemaVersion: SESSION_PAYLOAD_VERSION_2,
     trading: i.trading,
     currentTime: i.currentTime,
     activeTf: i.activeTf,
@@ -29,23 +31,38 @@ export function toPayload(i: PayloadInput): SessionPayloadV1 {
     startRange: i.startRange,
     endRange: i.endRange,
     requiredDatasets: i.requiredDatasets,
+    layout: i.layout,
+    panels: i.panels,
+    linkGroups: i.linkGroups,
   };
 }
 
-export function fromPayload(p: SessionPayloadV1) {
+/**
+ * `primarySymbol` is required (no default) so every call site must supply the
+ * symbol this row/session belongs to explicitly, rather than guessing it from
+ * the payload itself (V1 payloads carry no symbol field of their own — see
+ * session-migration.ts). Delegates to Task 1's `parseSessionPayload`, so a
+ * V1 input is migrated AND a structurally corrupt V2 input gets the same
+ * defensive single-panel fallback, in one call.
+ */
+export function fromPayload(p: SessionPayloadV1 | SessionPayloadV2, primarySymbol: string) {
+  const v2 = parseSessionPayload(p, primarySymbol);
   return {
-    trading: p.trading,
-    cursor: p.currentTime,
-    activeTf: p.activeTf,
-    customTfMinutes: p.customTfMinutes,
-    playbackSpeed: p.playbackSpeed,
-    replayResolution: p.replayResolution ?? null,
-    drawings: p.drawings,
-    notes: p.notes,
-    selectedTfs: p.selectedTfs,
-    startRange: p.startRange,
-    endRange: p.endRange,
-    requiredDatasets: p.requiredDatasets,
+    trading: v2.trading,
+    cursor: v2.currentTime,
+    activeTf: v2.activeTf,
+    customTfMinutes: v2.customTfMinutes,
+    playbackSpeed: v2.playbackSpeed,
+    replayResolution: v2.replayResolution ?? null,
+    drawings: v2.drawings,
+    notes: v2.notes,
+    selectedTfs: v2.selectedTfs,
+    startRange: v2.startRange,
+    endRange: v2.endRange,
+    requiredDatasets: v2.requiredDatasets,
+    layout: v2.layout,
+    panels: v2.panels,
+    linkGroups: v2.linkGroups,
   };
 }
 
@@ -122,17 +139,31 @@ export function winRateOf(t: TradingData): number | undefined {
   return wins / t.history.length;
 }
 
-const DEFAULT_VIEW: Omit<SessionView, 'cursor'> = {
-  activeTf: null,
-  customTfMinutes: null,
-  playbackSpeed: 1,
-  replayResolution: null,
-  drawings: [],
-  notes: [],
-  selectedTfs: [],
-  startRange: 0,
-  endRange: 0,
-};
+/**
+ * Default view for a session with no live `view` (archived sessions never
+ * carry one — see `FlattenSession.view` doc). `layout`/`panels`/`linkGroups`
+ * default to Task 1's own single-panel migration shape (reusing
+ * `singlePanelLayoutFor`, already audited) rather than inventing a second
+ * "empty layout" shape; `linkGroups: []` matches `migrateV1ToV2`'s default.
+ */
+function defaultView(symbol: string, cursor: number): SessionView {
+  const { layout, panels } = singlePanelLayoutFor(symbol, 'M1');
+  return {
+    cursor,
+    activeTf: null,
+    customTfMinutes: null,
+    playbackSpeed: 1,
+    replayResolution: null,
+    drawings: {},
+    notes: [],
+    selectedTfs: [],
+    startRange: 0,
+    endRange: 0,
+    layout,
+    panels,
+    linkGroups: [],
+  };
+}
 
 function autoName(symbol: string, createdAt: number): string {
   return `${symbol} · ${new Date(createdAt).toISOString().slice(0, 10)}`;
@@ -144,7 +175,7 @@ function buildRow(
   requiredDatasets: DatasetRef[],
   idOverride?: string,
 ): CloudSessionRow {
-  const view: SessionView = session.view ?? { cursor: session.cursor, ...DEFAULT_VIEW };
+  const view: SessionView = session.view ?? defaultView(symbol, session.cursor);
   const payloadInput: PayloadInput = {
     trading: session.trading,
     currentTime: view.cursor,
@@ -158,6 +189,9 @@ function buildRow(
     startRange: view.startRange,
     endRange: view.endRange,
     requiredDatasets,
+    layout: view.layout,
+    panels: view.panels,
+    linkGroups: view.linkGroups,
   };
   const payload = toPayload(payloadInput);
   assertNoCandles(payload);
@@ -170,7 +204,13 @@ function buildRow(
     symbol,
     name: session.name ?? autoName(symbol, session.createdAt),
     folderId: session.trading.folderId,
-    schemaVersion: SESSION_PAYLOAD_VERSION,
+    // RFC-011 Task 4 (folded audit fix): stamp the row with the EMBEDDED
+    // payload's own version rather than the hardcoded V1 constant — toPayload
+    // always emits SessionPayloadV2 now (D9), so the `schema_version` column
+    // must track that reality. Nothing branches on this column (mergeByLww
+    // ignores it; it's a display-only reader), so this is metadata honesty,
+    // not a behavior change.
+    schemaVersion: payload.schemaVersion,
     createdAt: session.createdAt,
     clientUpdatedAt: session.clientUpdatedAt,
     lastOpenedAt: session.lastOpenedAt ?? null,
@@ -243,7 +283,7 @@ export function reconstructWorkspaces(
       );
     }
 
-    const restored = fromPayload(activeRow.payload);
+    const restored = fromPayload(activeRow.payload, activeRow.symbol);
     const sessions: SavedSession[] = symbolRows
       .filter((r) => r.id !== activeRow!.id)
       .map((r) => ({
@@ -251,7 +291,7 @@ export function reconstructWorkspaces(
         name: r.name,
         createdAt: r.createdAt,
         currentTime: r.cursor,
-        trading: fromPayload(r.payload).trading,
+        trading: fromPayload(r.payload, r.symbol).trading,
       }));
 
     result.set(symbol, {

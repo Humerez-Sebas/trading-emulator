@@ -1,21 +1,50 @@
 # RFC 006: Auxiliary Capabilities
 
 ## Objetivo
-Extraer funcionalidades visuales secundarias, como el timer de vela actual (Countdown) y los marcadores de sesión, hacia capacidades aisladas.
+Desacoplar y modularizar las funcionalidades visuales secundarias del gráfico: el temporizador de cierre de vela (`CountdownCapability`) y el marcador del fin de sesión (`SessionCapability`) en plugins independientes (`Capability`) bajo el nuevo `ChartEngine`.
 
 ## Motivación
-Tener un motor limpio exige que las funcionalidades de conveniencia (helpers) no ensucien el código crítico. El temporizador de la vela y las líneas de sesión son excelentes ejemplos de lógicas que pueden activarse/desactivarse según la preferencia del usuario sin impactar el render principal.
+El objetivo de mantener un motor de renderizado limpio y SOLID exige que las funcionalidades de conveniencia (helpers) y los overlays secundarios no estén incrustados directamente en el `ChartComponent`. Esto evita inflar el componente y simplifica el mantenimiento. Al migrar countdown y sesión a capabilities, el `ChartEngine` actúa como un orquestador ciego de plugins independientes.
 
 ## Decisión Arquitectónica
-1. Se crean `CountdownCapability` y `SessionCapability`.
-2. Se extiende el `RenderModel` con `model.session` y `model.countdown`.
-3. El componente en Angular inyecta estas capacidades en el `ChartEngine`.
+
+1. **Creación de Capabilities**:
+   - `CountdownCapability`: Gestiona el tag del temporizador en el eje de precios.
+   - `SessionCapability`: Gestiona el renderizado de una línea vertical discontinua en el gráfico que indica visualmente el final de la sesión de trading (`sessionEnd`).
+
+2. **Ampliación del RenderModel**:
+   ```typescript
+   export interface CountdownModel {
+     price: number | null;
+     text: string | null;
+     backColor?: string;
+     textColor?: string;
+   }
+
+   export interface SessionModel {
+     sessionEnd: number | null;
+     shift: number;
+     times: number[];
+     barSpacing: number;
+     color?: string;
+   }
+
+   export interface RenderModel {
+     // ...
+     countdown?: CountdownModel;
+     session?: SessionModel;
+   }
+   ```
+
+3. **Ciclo de Vida e Integración**:
+   - Ambas capabilities se registran en `ChartEngine` durante la inicialización en `ChartComponent`.
+   - `CountdownCapability` envuelve e interactúa con `CountdownPrimitive` (el cual es reubicado a la carpeta de capabilities).
+   - `SessionCapability` crea y maneja un nuevo `SessionPrimitive` que utiliza la API de canvas 2D de `lightweight-charts` para dibujar una línea vertical en la coordenada X correspondiente al tiempo de fin de la sesión.
+   - Ambas clases manejan el flag de idempotencia `isDestroyed` y se des-asocian del gráfico correctamente al destruirse.
 
 ## Impacto
-- **Positivo:** Demuestra el poder de la arquitectura. Cualquier desarrollador puede agregar un indicador o overlay simplemente creando una nueva capability y registrándola, sin tocar el core.
+- **Positivo**: El código de `ChartComponent` y `ChartEngine` permanece cerrado a modificación. Agregar nuevos indicadores visuales o líneas de separación consistirá únicamente en crear y registrar nuevas capabilities.
+- **Rendimiento**: Se reduce la cantidad de responsabilidades del componente principal de Angular.
 
-## Riesgos
-- Mínimos. Es una refactorización de código existente (`countdown-primitive.ts`).
-
-## Estado Esperado
-- El reloj de la vela y las separaciones de sesión son plugins opcionales, completamente autónomos del engine.
+## Riesgos y Mitigaciones
+- **Fugas de Memoria**: Al igual que en RFC-005, se mitiga obligando a remover las primitivas y desuscribir eventos en el método `destroy()` de las capabilities.

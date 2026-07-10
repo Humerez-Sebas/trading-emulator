@@ -82,7 +82,9 @@
               "src/app/state/**/*.ts",
               "src/app/services/**/*.ts",
               "src/app/auth/**/*.ts",
-              "src/app/pages/**/*.ts"
+              "src/app/pages/**/*.ts",
+              "src/app/domain/**/*.ts",
+              "src/app/components/**/*.ts"
             ],
             "coverageExclude": ["**/*.spec.ts"],
             "coverageThresholds": {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IChartApi } from 'lightweight-charts';
-import { timeToLogical, xForTime } from './time-coordinates';
+import { timeToLogical, xForTime } from '../../domain/chart/time-coordinates';
 
 /**
  * Fake timeScale that mirrors the real lightweight-charts quirk: it resolves

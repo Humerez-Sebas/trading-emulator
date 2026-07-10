@@ -33,7 +33,14 @@ Thumbs.db
 .idea/
 
 # --- Claude / agent tooling local state (not app code) ---
-.claude/
+# .claude is local state EXCEPT commands/ and agents/, which are permanent repo assets
+.claude/*
+!.claude/commands/
+!.claude/agents/
 .agents/
 .impeccable/
 skills-lock.json
+
+# --- Temporary review/diff dumps ---
+diff.txt
+diff_utf8.txt

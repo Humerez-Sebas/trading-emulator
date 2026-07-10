@@ -10,6 +10,7 @@ export interface ChartColors {
   background: string;
   grid: string;
   text: string;
+  crosshair: string;
   /** Fill colors for the trade box zones (TP / SL) drawn on the chart. */
   tpZone: string;
   slZone: string;
@@ -73,6 +74,7 @@ export const DARK_CHART_COLORS: ChartColors = {
   background: '#000000',
   grid: '#1A1A1A',
   text: '#787B86',
+  crosshair: '#787B86',
   tpZone: '#089981',
   slZone: '#F23645',
 };
@@ -87,6 +89,7 @@ export const LIGHT_CHART_COLORS: ChartColors = {
   background: '#FFFFFF',
   grid: '#E0E3EB',
   text: '#787B86',
+  crosshair: '#787B86',
   tpZone: '#089981',
   slZone: '#F23645',
 };

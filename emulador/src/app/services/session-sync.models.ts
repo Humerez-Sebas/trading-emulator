@@ -2,6 +2,8 @@ import type { RequiredDataset } from './session.service';
 import type { SavedSession, TradingData } from '../state/trading/trading.models';
 import type { Drawing } from '../state/drawings/drawings.models';
 import type { Timeframe } from '../models';
+import type { WorkspaceLayout, PanelDescriptor } from '../state/layout/layout.models';
+import type { LinkGroup } from '../state/link-groups/link-groups.models';
 
 export type DatasetRef = RequiredDataset; // { symbol, timeframe: 'M1'|'H1'|'D1', year? }
 
@@ -43,6 +45,46 @@ export interface SessionPayloadV1 {
   requiredDatasets: DatasetRef[]; // self-contained copy; summary column is source of truth
 }
 
+export const SESSION_PAYLOAD_VERSION_2 = 2;
+
+/** A symbol-scoped, versioned set of drawings (R2/D3). `version` scopes the Drawing[] item format, independent of schemaVersion. */
+export interface DrawingCollection {
+  version: number;
+  items: Drawing[];
+}
+
+/**
+ * V2 extends V1 in place (D9): every V1 field except `drawings` is preserved
+ * verbatim (same name, same type, same meaning); `drawings` changes shape
+ * (R2/D3); `layout`/`panels`/`linkGroups` are new, additive, RFC-008..010
+ * runtime state made persistable for the first time.
+ */
+export interface SessionPayloadV2 {
+  schemaVersion: 2;
+  trading: TradingData;
+  currentTime: number;
+  activeTf: Timeframe | null;
+  customTfMinutes: number | null;
+  playbackSpeed: number;
+  replayResolution?: number | null;
+  /** (R2/D3) was Drawing[] in V1; now per-symbol. Session-scoped (non-goal: no cross-session sharing). */
+  drawings: Record<string, DrawingCollection>;
+  notes: unknown[];
+  selectedTfs: Timeframe[];
+  startRange: number;
+  endRange: number;
+  requiredDatasets: DatasetRef[];
+  /** (D2) tabs/grid/activeTabId only — bare panelIds in cells, no descriptors (mirrors LayoutState.workspace verbatim). */
+  layout: WorkspaceLayout;
+  /** Sibling of `layout`, not nested inside it — mirrors LayoutState's own {workspace, panels} split so hydration is a direct assignment, no reshaping. */
+  panels: Record<string, PanelDescriptor>;
+  /** (D4) [] when no groups exist (V1 payloads and fresh sessions alike). */
+  linkGroups: LinkGroup[];
+}
+
+/** Anything read from storage/Supabase that might be V1, V2, or malformed. */
+export type StoredSessionPayload = SessionPayloadV1 | SessionPayloadV2 | Record<string, unknown>;
+
 /** What `toPayload` reads from a workspace/session (unix seconds throughout). */
 export interface PayloadInput {
   trading: TradingData;
@@ -51,12 +93,15 @@ export interface PayloadInput {
   customTfMinutes: number | null;
   playbackSpeed: number;
   replayResolution?: number | null;
-  drawings: Drawing[];
+  drawings: Record<string, DrawingCollection>;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;
   endRange: number;
   requiredDatasets: DatasetRef[];
+  layout: WorkspaceLayout;
+  panels: Record<string, PanelDescriptor>;
+  linkGroups: LinkGroup[];
 }
 
 /** The live view state of the active session (the parts not inside TradingData). Unix seconds for times. */
@@ -66,11 +111,14 @@ export interface SessionView {
   customTfMinutes: number | null;
   playbackSpeed: number;
   replayResolution?: number | null;
-  drawings: Drawing[];
+  drawings: Record<string, DrawingCollection>;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;
   endRange: number;
+  layout: WorkspaceLayout;
+  panels: Record<string, PanelDescriptor>;
+  linkGroups: LinkGroup[];
 }
 
 /** One session handed to flatten. `view` is present for the active/live session; archived sessions omit it. */
@@ -108,7 +156,7 @@ export interface CloudSessionRow {
   requiredDatasets: DatasetRef[];
   winRate?: number;
   sparkline?: number[];
-  payload: SessionPayloadV1;
+  payload: SessionPayloadV1 | SessionPayloadV2;
 }
 
 export interface FlattenResult {
@@ -123,12 +171,15 @@ export interface RestoredView {
   activeTf: Timeframe | null;
   customTfMinutes: number | null;
   playbackSpeed: number;
-  drawings: Drawing[];
+  drawings: Record<string, DrawingCollection>;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;
   endRange: number;
   requiredDatasets: DatasetRef[];
+  layout: WorkspaceLayout;
+  panels: Record<string, PanelDescriptor>;
+  linkGroups: LinkGroup[];
 }
 
 export interface ReconstructedWorkspace {

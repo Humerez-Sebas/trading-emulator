@@ -18,6 +18,10 @@ import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { series, closed, workspace } from '../../testing/fixtures';
 import { emptyWorkspace } from './workspaces.models';
 import { defaultTradingData } from '../trading/trading.models';
+import { createInitialLayoutState } from '../layout/layout.models';
+import { LayoutActions } from '../layout/layout.actions';
+import { LinkGroupsActions } from '../link-groups/link-groups.actions';
+import { singlePanelLayoutFor } from '../../services/session-migration';
 
 const CURRENT_KEY = 'emulador.currentAsset';
 
@@ -40,6 +44,9 @@ describe('WorkspacesEffects', () => {
     trading: defaultTradingData(),
     sessions: [],
     activeSessionId: null,
+    layout: createInitialLayoutState().workspace,
+    panels: createInitialLayoutState().panels,
+    linkGroups: {},
   };
 
   function setupTestBed(overrideDb?: Partial<ReturnType<typeof workspaceDbStub>>) {
@@ -280,6 +287,89 @@ describe('WorkspacesEffects', () => {
         ReplayActions.changeSpeed({ msPerCandle: 100 }),
         ReplayActions.setReplayResolution({ minutes: null }),
       ]);
+    });
+
+    it('2r3. thenRestore with layout/panels/linkGroups → restoreLayout, restoreGroups (after restoreDrawings, before the TF branch) (RFC-011 Task 5)', async () => {
+      setupTestBed();
+      db.getWorkspace!.mockResolvedValue(undefined);
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+      const { layout, panels } = singlePanelLayoutFor('EURUSD', 'M1');
+      const linkGroups = [{ id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: true }];
+
+      const p = effects.switch$.pipe(take(9), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          selectedTfs: ['H1'],
+          thenLoad: [csvH1],
+          thenRestore: {
+            trading,
+            drawings: [],
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+            layout,
+            panels,
+            linkGroups,
+          },
+        }),
+      );
+
+      const result = await p;
+      expect(result).toEqual([
+        WorkspacesActions.workspaceRestored({
+          workspace: { ...emptyWorkspace(SYMBOL), selectedTfs: ['H1'] },
+        }),
+        MarketActions.csvLoaded(csvH1),
+        TradingActions.restoreSession({ trading }),
+        DrawingsActions.restoreDrawings({ drawings: [] }),
+        LayoutActions.restoreLayout({ layout, panels }),
+        LinkGroupsActions.restoreGroups({ groups: linkGroups }),
+        MarketActions.changeTimeframe({ tf: 'H1' }),
+        ReplayActions.changeSpeed({ msPerCandle: 250 }),
+        ReplayActions.setReplayResolution({ minutes: 5 }),
+      ]);
+    });
+
+    it('2r4. thenRestore without layout/panels/linkGroups (legacy .session.json export) → no restoreLayout/restoreGroups dispatched (RFC-011 Task 5)', async () => {
+      setupTestBed();
+      db.getWorkspace!.mockResolvedValue(undefined);
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          selectedTfs: ['H1'],
+          thenLoad: [csvH1],
+          thenRestore: {
+            trading,
+            drawings: [],
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+          },
+        }),
+      );
+
+      const result = await p;
+      expect(result).toEqual([
+        WorkspacesActions.workspaceRestored({
+          workspace: { ...emptyWorkspace(SYMBOL), selectedTfs: ['H1'] },
+        }),
+        MarketActions.csvLoaded(csvH1),
+        TradingActions.restoreSession({ trading }),
+        DrawingsActions.restoreDrawings({ drawings: [] }),
+        MarketActions.changeTimeframe({ tf: 'H1' }),
+        ReplayActions.changeSpeed({ msPerCandle: 250 }),
+        ReplayActions.setReplayResolution({ minutes: 5 }),
+      ]);
+      expect(result!.some((a) => a.type === LayoutActions.restoreLayout.type)).toBe(false);
+      expect(result!.some((a) => a.type === LinkGroupsActions.restoreGroups.type)).toBe(false);
     });
 
     it('3. thenImport with trades → [workspaceRestored, sessionImported, goToTime(lastClose)]', async () => {

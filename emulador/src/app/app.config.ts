@@ -13,6 +13,8 @@ import { drawingsFeature } from './state/drawings/drawings.reducer';
 import { workspacesFeature } from './state/workspaces/workspaces.reducer';
 import { tradingFeature } from './state/trading/trading.reducer';
 import { authFeature } from './state/auth/auth.reducer';
+import { layoutFeature } from './state/layout/layout.reducer';
+import { linkGroupsFeature } from './state/link-groups/link-groups.reducer';
 import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
@@ -20,6 +22,7 @@ import { WorkspacesEffects } from './state/workspaces/workspaces.effects';
 import { TradingEffects } from './state/trading/trading.effects';
 import { AuthEffects } from './state/auth/auth.effects';
 import { SessionSyncEffects } from './state/sync/session-sync.effects';
+import { LayoutEffects } from './state/layout/layout.effects';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -35,6 +38,8 @@ export const appConfig: ApplicationConfig = {
       [workspacesFeature.name]: workspacesFeature.reducer,
       [tradingFeature.name]: tradingFeature.reducer,
       [authFeature.name]: authFeature.reducer,
+      [layoutFeature.name]: layoutFeature.reducer,
+      [linkGroupsFeature.name]: linkGroupsFeature.reducer,
     }),
     provideEffects(
       MarketEffects,
@@ -44,6 +49,7 @@ export const appConfig: ApplicationConfig = {
       TradingEffects,
       AuthEffects,
       SessionSyncEffects,
+      LayoutEffects,
     ),
   ],
 };

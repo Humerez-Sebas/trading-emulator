@@ -16,7 +16,11 @@ import {
 } from '../../services/session.service';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { fromPayload } from '../../services/session-sync.mapping';
-import { SessionPayloadV1, SessionSummary } from '../../services/session-sync.models';
+import {
+  SessionPayloadV1,
+  SessionPayloadV2,
+  SessionSummary,
+} from '../../services/session-sync.models';
 import { authFeature } from '../../state/auth/auth.reducer';
 import type { DatasetRecord } from '../../services/market-data-db';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -69,7 +73,7 @@ type Density = 'card' | 'row';
  */
 type PendingDownload =
   | { kind: 'jsonImport'; session: SessionFileV1 }
-  | { kind: 'cloudOpen'; card: SessionCard; payload: SessionPayloadV1 };
+  | { kind: 'cloudOpen'; card: SessionCard; payload: SessionPayloadV1 | SessionPayloadV2 };
 
 /** One row in the folder navigator sidebar. */
 interface SidebarItem {
@@ -809,9 +813,12 @@ export class SesionesPageComponent {
    * symbol's workspace meta, reloads so the rest of the app treats it like any
    * other local card, then runs the normal open dispatch + navigation.
    */
-  private async materializeAndOpen(card: SessionCard, payload: SessionPayloadV1): Promise<void> {
+  private async materializeAndOpen(
+    card: SessionCard,
+    payload: SessionPayloadV1 | SessionPayloadV2,
+  ): Promise<void> {
     if (!card.id) return;
-    const restored = fromPayload(payload);
+    const restored = fromPayload(payload, card.symbol);
     // `card.createdAt` for a cloud-only card is `Date.parse(summary.updatedAt)` —
     // the cloud version's edit time. Stamping both fields with it marks the
     // materialized local copy as "synced as of the cloud version" (not dirty).
@@ -826,6 +833,17 @@ export class SesionesPageComponent {
     };
     const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
     meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
+    // RFC-011 gap fix: the cloud payload is the ONLY live production cloud-pull
+    // path (reconstructWorkspaces is spec-only dead code) — it must carry the
+    // multi-panel layout/panels/linkGroups across devices, not just the
+    // trading/cursor fields, or a fresh device silently falls back to the
+    // single-panel default on open. `restored.*` always comes from
+    // `parseSessionPayload` (via `fromPayload`), so these are always present
+    // and already consistency-validated — no extra guarding needed.
+    meta.layout = restored.layout;
+    meta.panels = restored.panels;
+    meta.linkGroups = restored.linkGroups;
+    meta.drawings = restored.drawings[card.symbol]?.items ?? meta.drawings ?? [];
     await this.db.putMeta(meta);
     await this.reload();
     await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });

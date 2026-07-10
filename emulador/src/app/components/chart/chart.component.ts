@@ -8,18 +8,15 @@ import {
   ViewChild,
   computed,
   inject,
+  output,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 import {
-  CandlestickSeries,
-  createChart,
-  createSeriesMarkers,
   IChartApi,
   IPriceLine,
   ISeriesApi,
-  ISeriesMarkersPluginApi,
   LineStyle,
   LogicalRange,
   MouseEventParams,
@@ -29,15 +26,10 @@ import {
 import { Candle, derivePointSize } from '../../models';
 import {
   selectActiveTfShortfall,
-  selectChartStyle,
-  selectChartView,
   selectDataRange,
-  selectSessionEnd,
-  selectTradeChartView,
   selectTradePanelView,
-  TradeBoxItem,
-  TradeMarker,
 } from '../../state/selectors';
+import { ChartModelMapper } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import {
   ChartColors,
@@ -50,32 +42,21 @@ import { DialogService } from '../ui/dialog.service';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
-import { DrawingsPrimitive } from './drawings-primitive';
-import { TradeButtonsPrimitive } from './trade-buttons-primitive';
-import { TradeBoxesPrimitive } from './trade-boxes-primitive';
-import { CountdownPrimitive } from './countdown-primitive';
+import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
+import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
+import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
+import { TradingCapability } from '../../domain/chart/capabilities/trading-capability';
 import { TradingActions } from '../../state/trading/trading.actions';
+import { lotsForRisk, OrderSide, PendingType } from '../../state/trading/trading.models';
+import { ChartEngine } from '../../domain/chart/chart-engine';
+import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import {
-  lotsForRisk,
-  OrderSide,
-  PendingOrder,
-  PendingType,
-  Position,
-} from '../../state/trading/trading.models';
-
-/** A horizontal trade level rendered as a price line on the chart. */
-interface TradeLine {
-  /** Position or pending-order id. */
-  id: string;
-  target: 'position' | 'order';
-  field: 'entry' | 'sl' | 'tp';
-  price: number;
-  draggable: boolean;
-  line: IPriceLine;
-}
-
-/** Vertical hit tolerance (px) for grabbing a trade price line. */
-const LINE_GRAB_PX = 4;
+  ChartConfig,
+  TradeBoxItem as DomainTradeBoxItem,
+  TradeMarker as DomainTradeMarker,
+  Position as DomainPosition,
+  PendingOrder as DomainPendingOrder,
+} from '../../domain/chart/render-model';
 
 /**
  * Bars painted at once on a TF switch / big jump. A full M1 history is hundreds
@@ -106,13 +87,15 @@ interface PlacingState {
   stage: 'sl' | 'tp';
 }
 
-/** '#RRGGBB' + alpha (0..1) -> 'rgba(...)'. */
-function hexToRgba(hex: string, alpha: number): string {
-  const v = hex.replace('#', '');
-  const r = parseInt(v.slice(0, 2), 16);
-  const g = parseInt(v.slice(2, 4), 16);
-  const b = parseInt(v.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+/**
+ * RFC-010: a handle the wrapping ChartPanelComponent uses to APPLY synced
+ * crosshair/range changes (as opposed to chartReady's ChartEventBus, which
+ * only reports the chart's OWN interaction events out). Pure re-export of the
+ * engine's own re-entrancy-guarded ChartApplyHandle (chart-engine.ts).
+ */
+export interface ChartControlHandle {
+  applyCrosshair(time: UTCTimestamp | null): void;
+  applyVisibleRange(range: LogicalRange | null): void;
 }
 
 @Component({
@@ -338,21 +321,25 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private destroyRef = inject(DestroyRef);
   private zone = inject(NgZone);
   private dialogs = inject(DialogService);
+  private mapper = inject(ChartModelMapper);
 
   private chart?: IChartApi;
   private series?: ISeriesApi<'Candlestick'>;
-  private drawingsPrimitive = new DrawingsPrimitive();
-  private tradeButtonsPrimitive = new TradeButtonsPrimitive();
-  private tradeBoxesPrimitive = new TradeBoxesPrimitive();
-  /** Candle-close countdown tag on the price axis (TradingView-style). */
-  private countdownPrimitive = new CountdownPrimitive();
-  private seriesMarkers?: ISeriesMarkersPluginApi<Time>;
+  private engine?: ChartEngine;
+  /** RFC-002: unsubscribe fns for the engine event-bus listeners. */
+  private busUnsubs: (() => void)[] = [];
+  /** Guards post-destroy access from global handlers (mouseup, keydown). */
+  private destroyed = false;
+  private lastConfig?: ChartConfig;
+  private get drawingsCap(): DrawingsCapability {
+    return this.engine!.getCapability('drawings') as DrawingsCapability;
+  }
 
   // --- trade overlay state ---
-  private tradeLines: TradeLine[] = [];
-  private tradeMarkers: TradeMarker[] = [];
-  private tradeBoxes: TradeBoxItem[] = [];
-  private lastTradeView: { positions: Position[]; orders: PendingOrder[] } = {
+  private tradeMarkers: DomainTradeMarker[] = [];
+  private tradeBoxes: DomainTradeBoxItem[] = [];
+
+  private lastTradeView: { positions: DomainPosition[]; orders: DomainPendingOrder[] } = {
     positions: [],
     orders: [],
   };
@@ -363,6 +350,23 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   } | null = null;
   /** Live points/lots/R readout while dragging a trade level. */
   dragInfo = signal<string | null>(null);
+
+  /**
+   * RFC-008: exposes the engine's interaction event bus so the wrapping
+   * ChartPanelComponent can forward crosshair/range events to the ChartSyncBus.
+   * Additive only — the audited render path is unchanged.
+   */
+  readonly chartReady = output<ChartEventBus>();
+
+  /**
+   * RFC-010: a second, additive output — a handle the wrapping ChartPanelComponent
+   * uses to APPLY synced crosshair/range changes (as opposed to chartReady's
+   * ChartEventBus, which only reports the chart's OWN interaction events out).
+   * Pure pass-through to the engine's own re-entrancy-guarded ChartApplyHandle
+   * (chart-engine.ts) — no additional logic lives here.
+   */
+  readonly chartControlReady = output<ChartControlHandle>();
+  readonly chartFocused = output<void>();
 
   // --- right-click menu + interactive order placement ---
   /** Current price/risk context for placing orders from the chart. */
@@ -378,7 +382,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // --- "Ir a fecha…" / "Programar fin…" dialog (context menu) ---
   private dataRange = this.store.selectSignal(selectDataRange);
-  sessionEnd = this.store.selectSignal(selectSessionEnd);
+  sessionEnd = this.mapper.sessionEnd;
   /** Non-blocking warning when the active TF's data ends before the cursor. */
   coverageBanner = signal<string | null>(null);
   dateDialog = signal<{ mode: 'goto' | 'end'; value: string } | null>(null);
@@ -474,6 +478,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // DOM listeners kept by reference so they can be removed
   private onKeyDown = (e: KeyboardEvent) => {
+    if (this.destroyed) return;
     if (e.key === 'Shift') this.shiftKey = true;
     if (e.key === 'Delete' && this.selectedId()) {
       this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected()));
@@ -491,10 +496,14 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     }
   };
   private onKeyUp = (e: KeyboardEvent) => {
+    if (this.destroyed) return;
     if (e.key === 'Shift') this.shiftKey = false;
   };
   private onMouseDown = (e: MouseEvent) => this.handleMouseDown(e);
+  /** Handles both drag movement (when a drag is active) and hover feedback. */
   private onMouseMoveDom = (e: MouseEvent) => this.handleDragMove(e);
+  /** Hover-only feedback (cursor changes); registered on the container. */
+  private onHoverFeedback = (e: MouseEvent) => this.handleHoverFeedback(e);
   private onMouseUp = () => this.endDrag();
   /** Middle-button auxclick: block paste-on-middle-click in some browsers. */
   private onAuxClick = (e: MouseEvent) => {
@@ -507,51 +516,43 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   };
 
   ngAfterViewInit(): void {
-    // Initial canvas colors come straight from the DESIGN.md tokens.
-    // lightweight-charts paints to <canvas> and can't resolve CSS var(), so we
-    // read the computed token values once here. applyColors() (store-driven)
-    // takes over on the first selectChartStyle emission for theme/user overrides.
-    const tokens = getComputedStyle(document.documentElement);
-    const token = (name: string, fallback: string): string =>
-      tokens.getPropertyValue(name).trim() || fallback;
+    // ChartEngine owns lightweight-charts init (initial canvas colors are its
+    // hardcoded defaults). applyColors() (store-driven) takes over on the first
+    // selectChartStyle emission for theme / user overrides.
+    this.engine = new ChartEngine(this.container.nativeElement);
+    this.chart = this.engine.chartApi;
+    this.series = this.engine.seriesApi;
 
-    this.chart = createChart(this.container.nativeElement, {
-      autoSize: true,
-      layout: {
-        background: { color: token('--bg', '#000000') },
-        textColor: token('--text-muted', '#787b86'),
-      },
-      grid: {
-        vertLines: { color: token('--surface-2', '#181818') },
-        horzLines: { color: token('--surface-2', '#181818') },
-      },
-      timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 8 },
-      crosshair: { mode: 0 },
-    });
-    this.series = this.chart.addSeries(CandlestickSeries, {
-      borderVisible: false,
-    });
-    this.series.attachPrimitive(this.tradeBoxesPrimitive);
-    this.series.attachPrimitive(this.drawingsPrimitive);
-    this.series.attachPrimitive(this.tradeButtonsPrimitive);
-    this.series.attachPrimitive(this.countdownPrimitive);
-    this.seriesMarkers = createSeriesMarkers(this.series, []);
+    const drawingsCap = new DrawingsCapability(this.series!);
+    this.engine.registerCapability(drawingsCap);
+
+    const countdownCap = new CountdownCapability(this.series!);
+    this.engine.registerCapability(countdownCap);
+
+    const sessionCap = new SessionCapability(this.series!);
+    this.engine.registerCapability(sessionCap);
+
+    const tradingCap = new TradingCapability(this.series!);
+    this.engine.registerCapability(tradingCap);
 
     // chart colors + grid controls (theme / user customization)
-    this.store
-      .select(selectChartStyle)
+    this.mapper.chartStyle$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ colors, gridVisible, gridOpacity, tradeBoxOpacity }) =>
         this.applyColors(colors, gridVisible, gridOpacity, tradeBoxOpacity),
       );
 
     // data + replay cursor + display time zone
-    this.store
-      .select(selectChartView)
+    this.mapper.chartView$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ tf, candles, idx, utcOffset, forming, countdown }) =>
         this.render(tf, candles, idx, utcOffset, forming, countdown),
       );
+
+    // session end indicator
+    this.mapper.sessionEnd$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.pushSession());
 
     // warn (don't silently teleport) when the active TF's coverage is shorter
     // than the replay cursor — that TF was harvested less far than another
@@ -563,39 +564,43 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       );
 
     // drawings: repaint when they change
-    this.store
-      .select(drawingsFeature.selectDrawingsState)
+    this.mapper.drawingsState$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.pushDrawings());
 
     // trade overlay: entry/SL/TP price lines + entry/exit markers
-    this.store
-      .select(selectTradeChartView)
+    this.mapper.tradeChartView$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ positions, orders, markers, boxes }) => {
         this.lastTradeView = { positions, orders };
         this.tradeMarkers = markers;
         this.tradeBoxes = boxes;
-        this.rebuildTradeLines();
-        this.applyTradeMarkers();
-        this.pushTradeButtons();
-        this.pushTradeBoxes();
+        this.pushTrading();
       });
 
     // drawing interaction. DblClick too: the quick second click of a shape
     // falls within the double-click threshold and the library suppresses it
     // from Click.
-    this.chart.subscribeClick((p) => this.zone.run(() => this.handleClick(p)));
-    this.chart.subscribeDblClick((p) => this.zone.run(() => this.handleClick(p)));
-    this.chart.subscribeCrosshairMove((p) => this.handleCrosshair(p));
-    // lazy-load older bars when scrolling near the left edge of the window
-    this.chart.timeScale().subscribeVisibleLogicalRangeChange((r) => this.maybeLoadMore(r));
+    // RFC-002: interactions now arrive via the engine's typed event bus instead
+    // of subscribing to lightweight-charts directly. NgZone semantics preserved:
+    // clicks re-enter Angular's zone; crosshair + range stay outside (high-freq).
+    this.busUnsubs.push(
+      this.engine.events.on('ChartClicked', (p) => this.zone.run(() => this.handleClick(p))),
+      this.engine.events.on('CrosshairMoved', (p) => this.handleCrosshair(p)),
+      this.engine.events.on('VisibleRangeChanged', (r) => this.maybeLoadMore(r)),
+    );
+
+    this.chartReady.emit(this.engine.events);
+    this.chartControlReady.emit({
+      applyCrosshair: (t) => this.engine!.applyCrosshair(t),
+      applyVisibleRange: (r) => this.engine!.applyVisibleRange(r),
+    });
 
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     const el = this.container.nativeElement;
     el.addEventListener('mousedown', this.onMouseDown);
-    el.addEventListener('mousemove', this.onMouseMoveDom);
+    el.addEventListener('mousemove', this.onHoverFeedback);
     el.addEventListener('contextmenu', this.onContextMenu);
     el.addEventListener('auxclick', this.onAuxClick);
     window.addEventListener('mouseup', this.onMouseUp);
@@ -608,7 +613,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    */
   private resetView(): void {
     if (!this.chart || !this.series) return;
-    this.series.priceScale().applyOptions({ autoScale: true });
+    this.engine?.resetPriceScale();
     this.chart.timeScale().scrollToRealTime();
   }
 
@@ -620,34 +625,19 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     gridOpacity: number,
     boxOpacity: TradeBoxOpacity,
   ): void {
-    this.accent = '#2962FF';
+    this.accent = CHART_ACCENT;
     this.up = c.upColor;
     this.down = c.downColor;
     this.tpZone = c.tpZone;
     this.slZone = c.slZone;
     this.boxFillAlpha = boxOpacity.fill;
     this.boxBorderAlpha = boxOpacity.border;
-    const gridColor = hexToRgba(c.grid, gridOpacity);
-    const gridLine = { color: gridColor, visible: gridVisible };
-    this.chart?.applyOptions({
-      layout: { background: { color: c.background }, textColor: c.text },
-      grid: { vertLines: gridLine, horzLines: gridLine },
-    });
-    this.series?.applyOptions({
-      upColor: c.upColor,
-      downColor: c.downColor,
-      wickUpColor: c.wickUp,
-      wickDownColor: c.wickDown,
-      borderVisible: true,
-      borderUpColor: c.borderUpColor,
-      borderDownColor: c.borderDownColor,
-    });
+    this.lastConfig = { colors: c, gridVisible, gridOpacity };
+    if (this.engine) {
+      this.engine.render({ config: this.lastConfig });
+    }
     this.pushDrawings();
-    // trade overlay uses the theme's up/down colors
-    this.rebuildTradeLines();
-    this.applyTradeMarkers();
-    this.pushTradeButtons();
-    this.pushTradeBoxes();
+    this.pushTrading();
   }
 
   private render(
@@ -663,7 +653,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (shift !== this.shiftSecs) {
       this.shiftSecs = shift;
       this.pushDrawings();
-      this.applyTradeMarkers();
+      this.pushTrading();
     }
     // Initialize spacing/precision whenever enough candle data exists — even when
     // idx === -1 (resolution mode hides the forming bucket), so overlay primitives
@@ -691,9 +681,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.renderedOffset = shift;
       if (this.renderedTimes.length) this.chart?.timeScale().scrollToRealTime();
       this.pushDrawings();
-      this.pushTradeBoxes();
+      this.pushTrading();
       this.applyForming(forming, shift);
       this.updateCountdown(forming, candles, idx, countdown);
+      this.pushSession();
       return;
     }
 
@@ -702,14 +693,18 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.renderedIdx++;
       const c = candles[this.renderedIdx];
       this.series.update({ ...c, time: (c.time + shift) as UTCTimestamp });
-      // A forming bucket may already have recorded this time (applyForming); keep
-      // renderedTimes free of duplicates so overlay coordinate lookups stay correct.
-      if (!this.renderedTimes.includes(c.time)) this.renderedTimes.push(c.time);
+      // Deduplicate by comparing with the last entry: in normal replay, times are
+      // strictly increasing. Only the forming bucket can introduce a duplicate of
+      // the most recent time. O(1) vs the previous O(n) renderedTimes.includes().
+      if (this.renderedTimes[this.renderedTimes.length - 1] !== c.time) {
+        this.renderedTimes.push(c.time);
+      }
     }
     // live trade boxes grow with the last rendered candle
-    this.pushTradeBoxes();
+    this.pushTrading();
     this.applyForming(forming, shift);
     this.updateCountdown(forming, candles, idx, countdown);
+    this.pushSession();
   }
 
   /**
@@ -728,16 +723,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       : idx >= 0 && idx < candles.length
         ? candles[idx].close
         : null;
-    if (!label || price === null) {
-      this.countdownPrimitive.setSource(null);
-      return;
-    }
-    this.countdownPrimitive.setSource({
-      price,
-      text: label,
-      backColor: '#363a45',
-      textColor: '#ffffff',
-    });
+
+    this.engine!.render({ countdown: this.mapper.buildCountdownModel(price, label) });
   }
 
   /** Paints/updates the live "forming" bar (resolution mode). */
@@ -758,7 +745,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const slice = idx >= 0 ? this.renderedCandles.slice(winStart, idx + 1) : [];
     this.winStart = winStart;
     this.renderedTimes = slice.map((c) => c.time);
-    this.series.setData(slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp })));
+    const mapped = slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp }));
+    if (this.engine) {
+      this.engine.render({ candles: mapped });
+    }
   }
 
   /**
@@ -779,7 +769,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         to: (range.to as number) + added,
       } as unknown as LogicalRange);
       this.pushDrawings();
-      this.pushTradeBoxes();
+      this.pushTrading();
     }
     this.loadingMore = false;
   }
@@ -843,7 +833,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       }
     }
     // closed trade box under the cursor: offer hide/delete of the record
-    const box = this.tradeBoxesPrimitive.hitTestBox(x, y);
+    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+    const box = tradingCap?.hitTestBox(x, y);
     this.menu.set({ x, y, options, boxId: box?.id ?? null });
   }
 
@@ -1056,110 +1047,22 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // ============ trade overlay (price lines + markers) ============
 
-  /** Recreates the entry/SL/TP price lines from the last trading state. */
-  private rebuildTradeLines(): void {
-    if (!this.series) return;
-    for (const tl of this.tradeLines) this.series.removePriceLine(tl.line);
-    this.tradeLines = [];
-
-    const add = (
-      id: string,
-      target: 'position' | 'order',
-      field: 'entry' | 'sl' | 'tp',
-      price: number,
-      color: string,
-      style: LineStyle,
-      title: string,
-      draggable: boolean,
-    ) => {
-      const line = this.series!.createPriceLine({
-        price,
-        color,
-        lineWidth: 1,
-        lineStyle: style,
-        axisLabelVisible: true,
-        title,
+  private pushTrading(): void {
+    if (this.engine) {
+      this.engine.render({
+        trading: this.mapper.buildTradingModel(
+          this.lastTradeView.positions,
+          this.lastTradeView.orders,
+          this.tradeBoxes,
+          this.tradeMarkers,
+          this.shiftSecs,
+          this.renderedTimes,
+          this.barSpacing,
+          this.lastConfig?.colors ?? DARK_CHART_COLORS,
+          { fill: this.boxFillAlpha, border: this.boxBorderAlpha },
+        ),
       });
-      this.tradeLines.push({ id, target, field, price, draggable, line });
-    };
-
-    for (const p of this.lastTradeView.positions) {
-      const sideColor = p.side === 'buy' ? this.up : this.down;
-      const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}`;
-      add(p.id, 'position', 'entry', p.entryPrice, sideColor, LineStyle.Solid, label, false);
-      add(p.id, 'position', 'sl', p.sl, this.down, LineStyle.Dashed, 'SL', true);
-      if (p.tp !== null) add(p.id, 'position', 'tp', p.tp, this.up, LineStyle.Dashed, 'TP', true);
     }
-    for (const o of this.lastTradeView.orders) {
-      const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}`;
-      add(o.id, 'order', 'entry', o.entryPrice, this.accent, LineStyle.LargeDashed, label, true);
-      add(o.id, 'order', 'sl', o.sl, this.down, LineStyle.Dashed, 'SL', true);
-      if (o.tp !== null) add(o.id, 'order', 'tp', o.tp, this.up, LineStyle.Dashed, 'TP', true);
-    }
-  }
-
-  /** Syncs the TP/SL zone boxes (one per trade) to their primitive. */
-  private pushTradeBoxes(): void {
-    this.tradeBoxesPrimitive.setSource({
-      items: this.tradeBoxes,
-      shift: this.shiftSecs,
-      times: this.renderedTimes,
-      barSpacing: this.barSpacing,
-      tpColor: this.tpZone,
-      slColor: this.slZone,
-      fillAlpha: this.boxFillAlpha,
-      borderAlpha: this.boxBorderAlpha,
-    });
-  }
-
-  /** ×-buttons on the entry line of every order/position (quick delete). */
-  private pushTradeButtons(): void {
-    this.tradeButtonsPrimitive.setSource({
-      items: [
-        ...this.lastTradeView.positions.map((p) => ({
-          id: p.id,
-          target: 'position' as const,
-          price: p.entryPrice,
-        })),
-        ...this.lastTradeView.orders.map((o) => ({
-          id: o.id,
-          target: 'order' as const,
-          price: o.entryPrice,
-        })),
-      ],
-      color: this.down,
-    });
-  }
-
-  /** Pushes entry/exit markers, applying the display time-zone shift. */
-  private applyTradeMarkers(): void {
-    this.seriesMarkers?.setMarkers(
-      this.tradeMarkers.map((m) => ({
-        time: (m.time + this.shiftSecs) as UTCTimestamp,
-        position: m.position,
-        shape: m.shape,
-        color: m.color === 'up' ? this.up : this.down,
-        text: m.text,
-      })),
-    );
-  }
-
-  /** Draggable trade line under the cursor, if any. */
-  private hitTestTradeLine(y: number): TradeLine | null {
-    if (!this.series) return null;
-    let best: TradeLine | null = null;
-    let bestDist = LINE_GRAB_PX + 1;
-    for (const tl of this.tradeLines) {
-      if (!tl.draggable) continue;
-      const ly = this.series.priceToCoordinate(tl.price);
-      if (ly === null) continue;
-      const dist = Math.abs(ly - y);
-      if (dist <= LINE_GRAB_PX && dist < bestDist) {
-        best = tl;
-        bestDist = dist;
-      }
-    }
-    return best;
   }
 
   /**
@@ -1207,7 +1110,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     price: number,
     entry: number,
     sl: number,
-    order: PendingOrder | undefined,
+    order: DomainPendingOrder | undefined,
   ): string {
     const pts = (a: number, b: number) => Math.round(Math.abs(a - b) / this.pointSize);
     if (field === 'tp') {
@@ -1217,9 +1120,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     }
     const points = field === 'entry' ? pts(price, sl) : pts(price, entry);
     if (order) {
-      // mirrors the reducer's re-sizing of pending orders (risk % constant)
+      // Use the risk % from the trade panel context, not from the order object
+      // (which belongs to the domain layer and does not carry riskPct).
       const ctx = this.tradeCtx();
-      const lots = lotsForRisk(ctx.balance, order.riskPct, entry, sl, ctx.contractSize);
+      const lots = lotsForRisk(ctx.balance, ctx.riskPct, entry, sl, ctx.contractSize);
       const label = field === 'entry' ? 'Entrada' : 'SL';
       return `${label}: ${points} pts${lots > 0 ? ` · ${lots.toFixed(2)} lotes` : ''}`;
     }
@@ -1231,13 +1135,14 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   /** Data point (real UTC) under the cursor; extrapolates into the future. */
   private pointAt(param: MouseEventParams<Time>): DrawingPoint | null {
     if (!param.point || !this.series || !this.chart) return null;
-    const time = this.drawingsPrimitive.timeForX(param.point.x);
+    const time = this.drawingsCap.timeForX(param.point.x);
     const price = this.series.coordinateToPrice(param.point.y);
     if (time === null || price === null) return null;
     return { time, price };
   }
 
   private handleClick(param: MouseEventParams<Time>): void {
+    this.chartFocused.emit();
     // an active quick ruler: the next left click dismisses the measurement
     if (this.quickRuler) {
       this.clearQuickRuler();
@@ -1254,7 +1159,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (tool === 'none') {
       // selection by click
       if (!param.point) return;
-      const hit = this.drawingsPrimitive.hitTestDrawing(param.point.x, param.point.y);
+      const hit = this.drawingsCap.hitTestDrawing(param.point.x, param.point.y);
       this.store.dispatch(DrawingsActions.selectDrawing({ id: hit }));
       return;
     }
@@ -1334,6 +1239,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   // the object being dragged.
 
   private handleMouseDown(e: MouseEvent): void {
+    this.chartFocused.emit();
     // any interaction with the chart dismisses the context menu
     if (this.menu()) this.zone.run(() => this.menu.set(null));
     // middle button: start the ephemeral quick-ruler measurement
@@ -1341,7 +1247,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       e.preventDefault(); // blocks the browser's middle-click autoscroll
       if (this.placing() || this.draftP1 || this.activeTool() !== 'none' || !this.series) return;
       const rect = this.container.nativeElement.getBoundingClientRect();
-      const time = this.drawingsPrimitive.timeForX(e.clientX - rect.left);
+      const time = this.drawingsCap.timeForX(e.clientX - rect.left);
       const price = this.series.coordinateToPrice(e.clientY - rect.top);
       if (time !== null && price !== null) this.quickRuler = { time, price };
       return;
@@ -1355,8 +1261,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+
     // ×-button on an entry line: cancel the order / close the position
-    const del = this.tradeButtonsPrimitive.hitTestDelete(x, y);
+    const del = tradingCap?.hitTestDelete(x, y);
     if (del) {
       const ctx = this.tradeCtx();
       this.zone.run(() => {
@@ -1378,77 +1286,92 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     }
 
     // resize handle of the selected drawing takes priority over moving
-    const handle = this.drawingsPrimitive.hitTestHandle(x, y);
+    const handle = this.drawingsCap.hitTestHandle(x, y);
     let id: string | null = handle ? this.selectedId() : null;
     let mode: 'move' | 'p1' | 'p2' = handle ?? 'move';
     if (!id) {
       // trade lines (SL/TP/pending entry) go before drawing bodies: they are
       // thin and would be unreachable under a large rect/fib otherwise
-      const tradeLine = this.hitTestTradeLine(y);
+      const tradeLine = tradingCap?.hitTestTradeLine(y);
       if (tradeLine) {
         this.lineDrag = { id: tradeLine.id, target: tradeLine.target, field: tradeLine.field };
-        this.chart.applyOptions({ handleScroll: false, handleScale: false });
+        window.addEventListener('mousemove', this.onMouseMoveDom);
+        this.engine?.setInteractivity(false);
         e.preventDefault();
         return;
       }
       // live trade-box edge (SL/TP): same drag pipeline as the price lines
-      const edge = this.tradeBoxesPrimitive.hitTestEdge(x, y);
+      const edge = tradingCap?.hitTestEdge(x, y);
       if (edge) {
         this.lineDrag = {
           id: edge.id,
           target: edge.status === 'pending' ? 'order' : 'position',
           field: edge.field,
         };
-        this.chart.applyOptions({ handleScroll: false, handleScale: false });
+        window.addEventListener('mousemove', this.onMouseMoveDom);
+        this.engine?.setInteractivity(false);
         e.preventDefault();
         return;
       }
-      id = this.drawingsPrimitive.hitTestDrawing(x, y);
+      id = this.drawingsCap.hitTestDrawing(x, y);
       mode = 'move';
     }
     if (!id) return;
     const d = this.drawings().find((it) => it.id === id);
     if (!d) return;
 
-    const x1 = this.drawingsPrimitive.xForTime(d.p1.time);
-    const x2 = this.drawingsPrimitive.xForTime(d.p2.time);
+    const x1 = this.drawingsCap.xForTime(d.p1.time);
+    const x2 = this.drawingsCap.xForTime(d.p2.time);
     const y1 = this.series.priceToCoordinate(d.p1.price);
     const y2 = this.series.priceToCoordinate(d.p2.price);
     if (x1 === null || x2 === null || y1 === null || y2 === null) return;
 
     this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ id })));
     this.drag = { id, mode, startX: x, startY: y, x1, y1, x2, y2 };
+    // Capture mousemove globally so drags work even outside the chart area
+    window.addEventListener('mousemove', this.onMouseMoveDom);
     // freeze chart panning/zooming while dragging an object
-    this.chart.applyOptions({ handleScroll: false, handleScale: false });
+    this.engine?.setInteractivity(false);
     e.preventDefault();
   }
 
+  /**
+   * Hover feedback handler (registered on the container element): updates
+   * the cursor style based on the element under the pointer.
+   */
+  private handleHoverFeedback(e: MouseEvent): void {
+    if (this.destroyed || !this.chart || !this.series) return;
+    if (this.drag || this.lineDrag) return; // drag handler runs on window
+    if (this.activeTool() !== 'none') return;
+    const rect = this.container.nativeElement.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+    if (tradingCap?.hitTestDelete(x, y)) {
+      this.container.nativeElement.style.cursor = 'pointer';
+    } else {
+      const over = tradingCap?.hitTestTradeLine(y) ?? tradingCap?.hitTestEdge(x, y);
+      this.container.nativeElement.style.cursor = over ? 'ns-resize' : '';
+    }
+  }
+
+  /**
+   * Drag-move handler (registered on window only during an active drag):
+   * processes drawing drags and trade-line drags.
+   */
   private handleDragMove(e: MouseEvent): void {
-    if (!this.chart || !this.series) return;
+    if (this.destroyed || !this.chart || !this.series) return;
     const rect = this.container.nativeElement.getBoundingClientRect();
     if (this.lineDrag) {
       this.dragTradeLine(e.clientY - rect.top);
       return;
     }
-    // hover feedback: pointer over a ×-button, ns-resize over a trade line
-    if (!this.drag) {
-      if (this.activeTool() === 'none') {
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        if (this.tradeButtonsPrimitive.hitTestDelete(x, y)) {
-          this.container.nativeElement.style.cursor = 'pointer';
-        } else {
-          const over = this.hitTestTradeLine(y) ?? this.tradeBoxesPrimitive.hitTestEdge(x, y);
-          this.container.nativeElement.style.cursor = over ? 'ns-resize' : '';
-        }
-      }
-      return;
-    }
+    if (!this.drag) return;
     const dx = e.clientX - rect.left - this.drag.startX;
     const dy = e.clientY - rect.top - this.drag.startY;
 
     const pointFor = (sx: number, sy: number): DrawingPoint | null => {
-      const time = this.drawingsPrimitive.timeForX(sx + dx);
+      const time = this.drawingsCap.timeForX(sx + dx);
       const price = this.series!.coordinateToPrice(sy + dy);
       return time !== null && price !== null ? { time, price } : null;
     };
@@ -1477,12 +1400,14 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
 
   private endDrag(): void {
-    if (!this.drag && !this.lineDrag) return;
+    if (this.destroyed || (!this.drag && !this.lineDrag)) return;
+    // Release the global drag capture
+    window.removeEventListener('mousemove', this.onMouseMoveDom);
     this.drag = null;
     this.lineDrag = null;
     this.zone.run(() => this.dragInfo.set(null));
     // restore chart panning/zooming
-    this.chart?.applyOptions({ handleScroll: true, handleScale: true });
+    this.engine?.setInteractivity(true);
   }
 
   /** Removes the ephemeral middle-click measurement from the chart. */
@@ -1494,29 +1419,46 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** Syncs the current state to the primitive and forces a repaint. */
   private pushDrawings(): void {
-    this.drawingsPrimitive.setSource({
-      items: this.drawings(),
-      draft: this.draft,
-      selectedId: this.selectedId(),
-      shift: this.shiftSecs,
-      times: this.renderedTimes,
-      barSpacing: this.barSpacing,
-      pointSize: this.pointSize,
-      accent: this.accent,
-      up: this.up,
-      down: this.down,
+    this.engine!.render({
+      drawings: this.mapper.buildDrawingsModel(
+        this.drawings(),
+        this.activeTool(),
+        this.selectedId(),
+        this.draft,
+        this.shiftSecs,
+        this.renderedTimes,
+        this.barSpacing,
+        this.pointSize,
+        { accent: this.accent, up: this.up, down: this.down },
+      ),
+    });
+  }
+
+  private pushSession(): void {
+    this.engine!.render({
+      session: this.mapper.buildSessionModel(
+        this.mapper.sessionEnd(),
+        this.shiftSecs,
+        this.renderedTimes,
+        this.barSpacing,
+      ),
     });
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     const el = this.container.nativeElement;
     el.removeEventListener('mousedown', this.onMouseDown);
-    el.removeEventListener('mousemove', this.onMouseMoveDom);
+    el.removeEventListener('mousemove', this.onHoverFeedback);
+    // Also remove the global drag capture in case destroy happens mid-drag
+    window.removeEventListener('mousemove', this.onMouseMoveDom);
     el.removeEventListener('contextmenu', this.onContextMenu);
     el.removeEventListener('auxclick', this.onAuxClick);
     window.removeEventListener('mouseup', this.onMouseUp);
-    this.chart?.remove();
+    this.busUnsubs.forEach((off) => off());
+    this.busUnsubs = [];
+    this.engine?.destroy();
   }
 }

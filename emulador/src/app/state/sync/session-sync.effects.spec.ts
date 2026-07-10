@@ -13,6 +13,7 @@ import { TradingActions } from '../trading/trading.actions';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { defaultTradingData } from '../trading/trading.models';
+import { createInitialLayoutState } from '../layout/layout.models';
 
 describe('SessionSyncEffects', () => {
   let actions$: Subject<any>;
@@ -38,6 +39,9 @@ describe('SessionSyncEffects', () => {
     trading: defaultTradingData(),
     sessions: [],
     activeSessionId: null,
+    layout: createInitialLayoutState().workspace,
+    panels: createInitialLayoutState().panels,
+    linkGroups: {},
   };
 
   function setupTestBed() {

@@ -8,12 +8,14 @@ import {
   isRealSession,
   mergeByLww,
 } from './session-sync.mapping';
+import { singlePanelLayoutFor } from './session-migration';
 import type {
   CloudFolderRow,
   CloudSessionRow,
   FlattenInput,
   FlattenSession,
   SessionPayloadV1,
+  SessionPayloadV2,
   SessionSummary,
 } from './session-sync.models';
 import { WorkspaceDbService } from './workspace-db.service';
@@ -78,15 +80,22 @@ export class SessionSyncService {
     });
   }
 
-  /** Fetches the full lossless payload for one session (the column `listSummaries` deliberately omits). */
-  async fetchPayload(id: string): Promise<SessionPayloadV1> {
+  /**
+   * Fetches the full lossless payload for one session (the column
+   * `listSummaries` deliberately omits). Widened to `SessionPayloadV1 |
+   * SessionPayloadV2` (RFC-011 Task 4 audit fix, type-only): the cloud column
+   * legitimately holds either version — a row written before this RFC is
+   * still V1 — and callers already route the result through
+   * `parseSessionPayload`/`fromPayload`, which accept both.
+   */
+  async fetchPayload(id: string): Promise<SessionPayloadV1 | SessionPayloadV2> {
     const { data, error } = await this.client
       .from('sessions')
       .select('payload')
       .eq('id', id)
       .single();
     if (error) throw new Error(error.message);
-    return (data as { payload: SessionPayloadV1 }).payload;
+    return (data as { payload: SessionPayloadV1 | SessionPayloadV2 }).payload;
   }
 
   /**
@@ -509,10 +518,18 @@ function inferRange(trading: TradingData, currentTime: number): [number, number]
  * persisted on the meta; `customTfMinutes`, `playbackSpeed` and `notes` are
  * NOT persisted locally today, so they're defaulted here (known fidelity
  * boundary — see Task 9 report).
+ *
+ * RFC-011 Task 4: `WorkspaceMeta` now carries `layout`/`panels`/`linkGroups`
+ * (see workspaces.models.ts). They are read straight off the meta when
+ * present; `singlePanelLayoutFor`/`[]` remain the fallback for a legacy
+ * pre-RFC-011 meta record that predates these fields (mirrors
+ * `migrateV1ToV2`'s own default, so a never-persisted-layout asset still
+ * gets a valid single-panel layout rather than `undefined`).
  */
 function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
   const trading = meta.trading ?? defaultTradingData();
   const [startRange, endRange] = inferRange(trading, meta.currentTime);
+  const fallback = singlePanelLayoutFor(meta.symbol, meta.activeTf ?? 'M1');
 
   const active: FlattenSession | null = {
     id: meta.activeSessionId ?? null,
@@ -525,11 +542,14 @@ function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
       activeTf: meta.activeTf,
       customTfMinutes: null,
       playbackSpeed: 1,
-      drawings: meta.drawings ?? [],
+      drawings: { [meta.symbol]: { version: 1, items: meta.drawings ?? [] } },
       notes: [],
       selectedTfs: meta.selectedTfs ?? [],
       startRange,
       endRange,
+      layout: meta.layout ?? fallback.layout,
+      panels: meta.panels ?? fallback.panels,
+      linkGroups: meta.linkGroups ?? [],
     },
     clientUpdatedAt: meta.activeClientUpdatedAt ?? Date.now(),
     lastOpenedAt: null,

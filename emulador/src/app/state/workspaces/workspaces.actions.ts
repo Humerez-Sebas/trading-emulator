@@ -3,6 +3,8 @@ import { Candle, Timeframe } from '../../models';
 import { ClosedTrade, TradingData } from '../trading/trading.models';
 import { Drawing } from '../drawings/drawings.models';
 import { AssetMeta, Workspace } from './workspaces.models';
+import { WorkspaceLayout, PanelDescriptor } from '../layout/layout.models';
+import { LinkGroup } from '../link-groups/link-groups.models';
 
 /**
  * Full live-state restore payload carried by `switchAsset` for the
@@ -19,6 +21,10 @@ export interface PendingSessionRestore {
   playbackSpeed: number;
   /** Replay resolution in MINUTES; null = full candle. */
   replayResolution: number | null;
+  /** RFC-011: optional — absent for a pre-RFC-011 `.session.json` export; the dispatch step defaults via singlePanelLayoutFor when absent. */
+  layout?: WorkspaceLayout;
+  panels?: Record<string, PanelDescriptor>;
+  linkGroups?: LinkGroup[];
 }
 
 export interface PendingCsv {
