@@ -4,6 +4,16 @@
 El objetivo de este proyecto es construir un **emulador profesional de trading para uso personal** enfocado en replay de mercado, backtesting manual y entrenamiento. No pretende ser una plataforma comercial (no live trading, no broker adapters).
 Para asegurar que el proyecto mantenga fluidez, rendimiento y facilidad de mantenimiento durante los próximos cinco años, el monolito actual (`ChartComponent`) debe transformarse en un motor ligero (`ChartEngine`) extendido mediante *Capabilities*.
 
+> **North Star Update (2026-07).** The final product of the emulator is not the
+> accumulation of simulated transactions but the acquisition of mastery: the
+> progressive amendment of the trader's Playbook, supported by conserved physical
+> evidence. The system observes and conserves; the trader interprets. The
+> foundational model is
+> [TRADER_KNOWLEDGE_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRADER_KNOWLEDGE_MODEL.md);
+> the development sequence that realizes it is the **Mastery Block** at the end of
+> this document, which supersedes the RFC-014/015/016 numbering previously sketched
+> in `strategic_audit.md` Part 8.
+
 ## Principios Arquitectónicos
 1. **Framework Independence:** `ChartEngine` (Vanilla TS) nunca dependerá de Angular.
 2. **Store Independence:** `ChartEngine` no conocerá NgRx. La comunicación fluye a través de un `RenderModel` inmutable.
@@ -14,7 +24,7 @@ Para asegurar que el proyecto mantenga fluidez, rendimiento y facilidad de mante
 7. **Performance First:** Fluidez de replay y render por encima de todo.
 8. **Incremental Evolution & Small PRs:** Cada paso debe ser compilable, testeable y funcional.
 
-## Fases de Evolución (Ramas de Integración)
+## Fases de Evolución (Ramas de Integración) — bloque RFC-001..013, COMPLETADO
 
 | Fase | RFC | Rama | Propósito |
 |---|---|---|---|
@@ -39,3 +49,26 @@ que funciona como resumen ejecutivo y mapa de decisiones arquitectónicas congel
 
 Cada una de estas fases cuenta con su respectivo Implementation Plan en `docs/superpowers/plans/`.
 Cualquier agente inteligente puede (y debe) ejecutar cada plan de manera secuencial, haciendo un Pull Request a la rama respectiva.
+
+---
+
+## Mastery Block: Phases 0-3 (the next development sequence)
+
+The completed block above delivered the multi-chart replay platform. This block
+reorients development around knowledge conservation
+([TRADER_KNOWLEDGE_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRADER_KNOWLEDGE_MODEL.md)):
+the emulator is a neutral flight recorder during practice and a reflection
+instrument afterwards; the deliverable of training is the amended Playbook.
+(Section in English per the architecture-corpus language directive of 2026-07.)
+
+| Phase | Artifact / RFC | Purpose |
+|---|---|---|
+| **0** (current) | [TRADER_KNOWLEDGE_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRADER_KNOWLEDGE_MODEL.md) | Foundational definition of knowledge: the ontology (Trade Record, Session, Reflective Scene, Permanent Lesson), the black-box telemetry register, the Reflection Cabin, the permanent knowledge schema, and the excluded-metrics doctrine. |
+| **1** | RFC-014: High-Fidelity Simulation & Behavioral Telemetry Engine | Base-resolution (M1) execution with bid/ask, spread and real costs, PLUS invisible physical telemetry (seeks, elapsed-time-before-order, intrabar MAE/MFE, dynamic mark-to-market). Merges the previously separate RFC-014 and RFC-015 drafts: execution physics and the black box are one clean mathematical refactor of the same engine loop. |
+| **2** | RFC-015: Playbook & Rule Adherence Domain | The Playbook (the rules the trader decides to train) as a first-class permanent domain; optional single-keystroke declaration of the rule being executed when opening a trade. The system records the declaration as a fact; it never scores adherence. |
+| **3** | RFC-016: The Playbook Amendment Journal | The training journal: reconstructs Reflective Scenes (Entry, Exit, Maximum Tension) from telemetry, presents uninterpreted physical facts, and lets the trader author cold self-critique and permanent Playbook amendments, offline-first. |
+
+Drafts for the three RFCs:
+[RFC-014_AND_BEYOND.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/RFC-014_AND_BEYOND.md).
+Each RFC graduates to `docs/architecture/rfcs/` on acceptance and follows the
+`feature/rfc-XXX-*` -> `develop` workflow.

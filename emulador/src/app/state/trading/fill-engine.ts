@@ -97,10 +97,8 @@ function resolveExit(
   const sl = slHit(p, candle);
   const tp = tpHit(p, candle);
   if (!sl && !tp) return null;
-  if (sl && !tp) return { outcome: 'sl', price: p.sl, ambiguous: false };
-  if (tp && !sl) return { outcome: 'tp', price: p.tp!, ambiguous: false };
 
-  // both inside the candle: disambiguate with the lower series if we can
+  // Walk the sub-candles from the fill index onward when available
   if (subCandles && subCandles.length) {
     for (let i = Math.max(0, fromSubIdx); i < subCandles.length; i++) {
       const sub = subCandles[i];
@@ -110,7 +108,19 @@ function resolveExit(
       if (s) return { outcome: 'sl', price: p.sl, ambiguous: false };
       if (t) return { outcome: 'tp', price: p.tp!, ambiguous: false };
     }
+    // If no sub-candles from the fill index onward hit SL or TP, the trade remains open
+    // (the parent candle's touch occurred before the fill index)
+    return null;
   }
+
+  // Fallback when no sub-candles are available
+  if (fromSubIdx > 0) {
+    // Freshly filled in this candle but no sub-candles to disambiguate sequence: treat as ambiguous SL
+    return { outcome: 'sl', price: p.sl, ambiguous: true };
+  }
+
+  if (sl && !tp) return { outcome: 'sl', price: p.sl, ambiguous: false };
+  if (tp && !sl) return { outcome: 'tp', price: p.tp!, ambiguous: false };
   return { outcome: 'sl', price: p.sl, ambiguous: true };
 }
 
