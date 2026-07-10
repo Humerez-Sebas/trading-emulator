@@ -60,10 +60,19 @@ describe('costPresetFor', () => {
     }
   });
 
-  it('BTCUSD (crypto-prefixed) → Cripto preset', () => {
+  it('BTCUSD (crypto-prefixed) → Cripto preset with crypto pointSize (1)', () => {
     const c = costPresetFor('BTCUSD');
-    expect(c.spreadPoints).toBe(COST_PRESETS.Cripto.spreadPoints);
-    expect(c.slippagePoints).toBe(COST_PRESETS.Cripto.slippagePoints);
+    expect(c).toEqual({ ...COST_PRESETS.Cripto, pointSize: 1 });
+  });
+
+  it('other crypto symbols (ETHUSD, XRPUSD, LTCUSD, SOLUSD) → Cripto preset with pointSize: 1', () => {
+    for (const sym of ['ETHUSD', 'XRPUSD', 'LTCUSD', 'SOLUSD']) {
+      const c = costPresetFor(sym);
+      expect(c.pointSize).toBe(1);
+      expect(c.spreadPoints).toBe(COST_PRESETS.Cripto.spreadPoints);
+      expect(c.slippagePoints).toBe(COST_PRESETS.Cripto.slippagePoints);
+      expect(c.commissionPerLot).toBe(COST_PRESETS.Cripto.commissionPerLot);
+    }
   });
 
   it('an unrecognized symbol resolves to ZERO_COSTS, not a guessed class', () => {

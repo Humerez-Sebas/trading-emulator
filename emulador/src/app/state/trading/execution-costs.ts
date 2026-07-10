@@ -58,13 +58,22 @@ export const COST_PRESETS: Record<AssetClass, ExecutionCosts> = {
  * symbol-prefix classification — a static default from the symbol string,
  * NOT derived from candle data (that idiom, `derivePointSize`, needs a loaded
  * series and lives in the selectors layer for display purposes only).
+ *
+ * Resolves asset class via `assetClassOf` to ensure crypto symbols (e.g.
+ * BTCUSD, ETHUSD) correctly resolve to pointSize: 1 instead of being
+ * misclassified by the 6-letter forex regex.
  */
 function pointSizeFor(symbol: string): number {
   const s = symbol.toUpperCase();
+  // Metals: XAU/XAG have fine-grained point sizes (differ within the class)
   if (s.startsWith('XAU')) return 0.01;
   if (s.startsWith('XAG')) return 0.001;
-  if (/^[A-Z]{6}$/.test(s)) return 0.00001;
-  return 1; // indices/crypto/other CFDs: whole-point quoting by convention here
+
+  // For all other assets, classify by asset class and return its point size
+  const cls = assetClassOf(symbol);
+  if (cls === 'Forex') return 0.00001;
+  // Cripto, Índices, and unrecognized all use 1 (whole-point convention)
+  return 1;
 }
 
 /** Symbol → asset class, mirroring `contractSizeFor`'s prefix/shape checks. Unrecognized → null. */
