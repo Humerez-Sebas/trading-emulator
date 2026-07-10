@@ -1,4 +1,4 @@
-import { createSelector } from '@ngrx/store';
+import { createSelector, MemoizedSelector } from '@ngrx/store';
 import { marketFeature } from './market/market.reducer';
 import { replayFeature } from './replay/replay.reducer';
 import { settingsFeature } from './settings/settings.reducer';
@@ -21,6 +21,7 @@ import {
   Position,
   SavedSession,
   TradingData,
+  TradingState,
 } from './trading/trading.models';
 import {
   computeSessionStats,
@@ -582,12 +583,93 @@ export const selectReplayLowerSeries = createSelector(
   (series, seconds): Candle[] | null => lowerSeriesForSeconds(series, seconds),
 );
 
+/** Finest loaded series across ALL timeframes, no threshold (see `lowerSeriesForSeconds`). */
+function finestLoadedSeries(series: Partial<Record<Timeframe, Candle[]>>): Candle[] | null {
+  for (const tf of TIMEFRAME_ORDER) {
+    const candles = series[tf];
+    if (candles?.length) return candles;
+  }
+  return null;
+}
+
+/**
+ * The execution series (RFC-014 §1, D14.A): the finest loaded series for the
+ * session's symbol (M1 ground truth when loaded). The fill engine always
+ * walks this series, independent of the displayed TF and the Replay
+ * Resolution — session creation already guarantees the anchor datasets are
+ * present locally, so this is a plain IndexedDB-backed read, never a network one.
+ */
+export const selectExecutionSeries = createSelector(
+  selectSeries,
+  (series): Candle[] | null => finestLoadedSeries(series),
+);
+
+/**
+ * Placement reveal horizon (D14.B): the time of the LAST REVEALED base candle
+ * at the cursor's replay-resolution bucket `[cursorTime, cursorTime + tfSeconds)`
+ * — the whole bucket is already displayed fully formed, so `PendingOrder.createdAt`
+ * is stamped here instead of the raw cursor time (this is what makes the
+ * engine's `c.time > o.createdAt` exclusion, refined to base grain, still hold
+ * without hindsight — see RFC-014 §1.3). Falls back to the cursor time when no
+ * base series is loaded, or when the base series does not reach this bucket yet.
+ * At base-grain stepping (resolution === base) this equals the cursor time
+ * exactly, matching today's semantics unchanged.
+ */
+export const selectPlacementTime = createSelector(
+  selectExecutionSeries,
+  selectCurrentTime,
+  selectReplayTfSeconds,
+  (base, cursorTime, tfSeconds): number => {
+    if (!base || !base.length || tfSeconds <= 0) return cursorTime;
+    const idx = lastIndexAtOrBefore(base, cursorTime + tfSeconds - 1);
+    return idx >= 0 ? base[idx].time : cursorTime;
+  },
+);
+
+/**
+ * Shape of {@link selectFillContext}. `base` is declared OPTIONAL (not just
+ * nullable) on purpose: pre-existing effect specs mock this context by hand
+ * without a `base` key at all (the STOP rule bars editing them), and that
+ * omission must typecheck as the legacy path, not just behave like one.
+ */
+export interface FillContext {
+  candles: Candle[];
+  idx: number;
+  tfSeconds: number;
+  lower: Candle[] | null;
+  contractSize: number;
+  trading: TradingState;
+  base?: Candle[] | null;
+}
+
+/** Backward-compatible shape of {@link selectFillContext}'s `.projector` (see below). */
+type FillContextProjector = (
+  candles: Candle[],
+  idx: number,
+  tfSeconds: number,
+  lower: Candle[] | null,
+  contractSize: number,
+  trading: TradingState,
+  base?: Candle[] | null,
+) => FillContext;
+
 /**
  * Context the fill effect needs to evaluate a freshly revealed candle. Exposes
  * the active candle DURATION and the finer "lower" series directly (instead of
  * a Timeframe string), so fills work for custom timeframes too. Derived from
  * the replay-aware selectors so fills evaluate over the resolution series when
- * active (identical to the display series in full-candle mode).
+ * active (identical to the display series in full-candle mode). `base` (D14.A)
+ * is the execution series: when non-empty, effects take the base-grain path;
+ * otherwise (pre-existing specs, which never mock this input) they fall back
+ * to the legacy per-resolution-candle behavior, byte-identical to today.
+ *
+ * The `as MemoizedSelector<...>` re-types `.projector` with `base` OPTIONAL:
+ * NgRx's `createSelector` overloads always expose `.projector` with exactly N
+ * required params for N selector inputs, regardless of an optional TS
+ * annotation on the projector function itself (verified empirically) — so
+ * without this cast, the pre-existing `selectors.spec.ts` 6-arg `.projector`
+ * call (STOP rule: that file is never edited) would fail to typecheck even
+ * though it is behaviorally exactly the legacy path.
  */
 export const selectFillContext = createSelector(
   selectReplaySeries,
@@ -596,15 +678,17 @@ export const selectFillContext = createSelector(
   selectReplayLowerSeries,
   selectContractSize,
   tradingFeature.selectTradingState,
-  (candles, idx, tfSeconds, lower, contractSize, trading) => ({
+  selectExecutionSeries,
+  (candles, idx, tfSeconds, lower, contractSize, trading, base): FillContext => ({
     candles,
     idx,
     tfSeconds,
     lower,
     contractSize,
     trading,
+    base,
   }),
-);
+) as MemoizedSelector<object, FillContext, FillContextProjector>;
 
 /** Finest loaded series whose candle duration is strictly below `activeSeconds`. */
 export function lowerSeriesForSeconds(

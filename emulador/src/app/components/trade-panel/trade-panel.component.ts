@@ -4,7 +4,7 @@ import { Store } from '@ngrx/store';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { lotsForRisk, OrderSide, OrderType } from '../../state/trading/trading.models';
-import { selectTradePanelView } from '../../state/selectors';
+import { selectPlacementTime, selectTradePanelView } from '../../state/selectors';
 import { ButtonDirective } from '../ui/button.directive';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
@@ -35,6 +35,8 @@ export class TradePanelComponent {
   private store = inject(Store);
 
   view = this.store.selectSignal(selectTradePanelView);
+  /** D14.B: pending-order placement stamps createdAt at the reveal horizon, not the raw cursor. */
+  private placementTime = this.store.selectSignal(selectPlacementTime);
 
   // --- order form state ---
   side = signal<OrderSide>('buy');
@@ -162,15 +164,16 @@ export class TradePanelComponent {
       sl: this.sl()!,
       tp: this.tp(),
       riskPct: this.riskPct()!,
-      time: v.time,
       contractSize: v.contractSize,
     };
     if (this.orderType() === 'market') {
-      this.store.dispatch(TradingActions.openMarket({ ...common, price: v.price! }));
+      // Market orders keep cursor-time semantics (out of scope for D14.B).
+      this.store.dispatch(TradingActions.openMarket({ ...common, time: v.time, price: v.price! }));
     } else {
       this.store.dispatch(
         TradingActions.placeOrder({
           ...common,
+          time: this.placementTime(),
           orderType: this.orderType() as 'limit' | 'stop',
           entryPrice: this.entryRef()!,
         }),

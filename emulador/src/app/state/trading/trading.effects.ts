@@ -29,16 +29,33 @@ export class TradingEffects {
         if (ctx.trading.sessionEnded) return false;
         return ctx.trading.orders.length > 0 || ctx.trading.positions.length > 0;
       }),
-      map(([, ctx]) => {
+      mergeMap(([, ctx]) => {
         const candle = ctx.candles[ctx.idx];
+        // Base-resolution execution loop (D14.A): when the execution series is
+        // present, walk it candle-by-candle across the landing interval instead
+        // of treating the resolution candle as one atom — orders can fill on a
+        // later base candle of the same interval without hindsight (D14.B).
+        // Legacy single-candle path when `base` is absent (pre-existing specs).
+        if (ctx.base && ctx.base.length) {
+          const baseCandles = sliceRange(ctx.base, candle.time, candle.time + ctx.tfSeconds);
+          return baseCandles.map((c) =>
+            TradingActions.processCandle({
+              candle: c,
+              subCandles: null,
+              contractSize: ctx.contractSize,
+            }),
+          );
+        }
         const subCandles = ctx.lower
           ? sliceRange(ctx.lower, candle.time, candle.time + ctx.tfSeconds)
           : null;
-        return TradingActions.processCandle({
-          candle,
-          subCandles,
-          contractSize: ctx.contractSize,
-        });
+        return [
+          TradingActions.processCandle({
+            candle,
+            subCandles,
+            contractSize: ctx.contractSize,
+          }),
+        ];
       }),
     ),
   );
