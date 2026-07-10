@@ -1,5 +1,6 @@
 import { Candle } from '../../models';
-import { ClosedTrade, PendingOrder, Position, TradeOutcome } from './trading.models';
+import { ClosedTrade, OrderSide, PendingOrder, Position, TradeOutcome } from './trading.models';
+import { ExecutionCosts, pointsToPrice } from './execution-costs';
 
 /** Mutable book the engine works on; a subset of TradingData. */
 export interface TradingBook {
@@ -20,6 +21,29 @@ function profitOf(p: Position, exitPrice: number, contractSize: number): number 
   return (exitPrice - p.entryPrice) * dir * p.lots * contractSize;
 }
 
+/**
+ * Ask(t) = Bid(t) + spreadPoints·pointSize (RFC-014 D14.D) — the single
+ * conversion point every sided predicate/price that needs the Ask side goes
+ * through. Absent costs (or zero spread) degrade to `bid` unchanged (V-1).
+ */
+function toAsk(bid: number, costs?: ExecutionCosts): number {
+  if (!costs || !costs.spreadPoints) return bid;
+  return bid + pointsToPrice(costs.spreadPoints, costs.pointSize);
+}
+
+/**
+ * Deterministic adverse slippage (RFC-014 §2): shifts `price` against the
+ * trader in the direction of `action` — a 'buy' action (opening long via a
+ * buy stop, or covering a short at its SL) pays MORE; a 'sell' action
+ * (opening short via a sell stop, or exiting a long at its SL) receives
+ * LESS. Absent costs (or zero slippage) leave `price` unchanged (V-1).
+ */
+function slip(price: number, action: OrderSide, costs?: ExecutionCosts): number {
+  if (!costs || !costs.slippagePoints) return price;
+  const delta = pointsToPrice(costs.slippagePoints, costs.pointSize);
+  return action === 'buy' ? price + delta : price - delta;
+}
+
 export function closeTrade(
   p: Position,
   exitPrice: number,
@@ -27,14 +51,27 @@ export function closeTrade(
   outcome: TradeOutcome,
   contractSize: number,
   ambiguous = false,
+  costs?: ExecutionCosts,
 ): ClosedTrade {
-  const profit = profitOf(p, exitPrice, contractSize);
+  // Manual/session-end closes receive a market BID price from the caller;
+  // covering a short is a buy action, which executes at the derived Ask
+  // (D14.D). SL/TP exits already carry the correctly side-denominated level
+  // (see resolveExit's slip() call), so no further conversion happens here.
+  const executedExit =
+    (outcome === 'manual' || outcome === 'session-end') && p.side === 'sell'
+      ? toAsk(exitPrice, costs)
+      : exitPrice;
+
+  const grossProfit = profitOf(p, executedExit, contractSize);
+  const commission = costs ? costs.commissionPerLot * p.lots : 0;
+  const profit = grossProfit - commission;
+
   return {
     id: p.id,
     side: p.side,
     origin: p.origin,
     entryPrice: p.entryPrice,
-    exitPrice,
+    exitPrice: executedExit,
     sl: p.sl,
     tp: p.tp,
     lots: p.lots,
@@ -46,6 +83,8 @@ export function closeTrade(
     profit,
     rMultiple: p.riskUsd > 0 ? profit / p.riskUsd : 0,
     ambiguous,
+    grossProfit,
+    commission,
   };
 }
 
@@ -54,23 +93,29 @@ export function closeTrade(
  * Only candles AFTER the placement candle count: this makes reprocessing a
  * candle idempotent (stepping back and forth) and prevents hindsight fills
  * on the candle the user was looking at when placing the order.
+ *
+ * Sided (RFC-014 §2): buys execute at Ask, so a buy limit/stop compares
+ * against the Ask-derived candle; sells execute at Bid, unchanged. The
+ * recorded entry price stays the order's level either way — the spread is
+ * paid implicitly via the trigger, not by shifting the stored price.
  */
-function orderFills(o: PendingOrder, c: Candle): boolean {
+function orderFills(o: PendingOrder, c: Candle, costs?: ExecutionCosts): boolean {
   if (c.time <= o.createdAt) return false;
   if (o.type === 'limit') {
-    return o.side === 'buy' ? c.low <= o.entryPrice : c.high >= o.entryPrice;
+    return o.side === 'buy' ? toAsk(c.low, costs) <= o.entryPrice : c.high >= o.entryPrice;
   }
   // stop: triggers when price crosses the entry in the breakout direction
-  return o.side === 'buy' ? c.high >= o.entryPrice : c.low <= o.entryPrice;
+  return o.side === 'buy' ? toAsk(c.high, costs) >= o.entryPrice : c.low <= o.entryPrice;
 }
 
-function slHit(p: Position, c: Candle): boolean {
-  return p.side === 'buy' ? c.low <= p.sl : c.high >= p.sl;
+/** Long SL/TP are Bid (sell action, spread-invariant); short SL/TP are Ask (buy-to-cover). */
+function slHit(p: Position, c: Candle, costs?: ExecutionCosts): boolean {
+  return p.side === 'buy' ? c.low <= p.sl : toAsk(c.high, costs) >= p.sl;
 }
 
-function tpHit(p: Position, c: Candle): boolean {
+function tpHit(p: Position, c: Candle, costs?: ExecutionCosts): boolean {
   if (p.tp === null) return false;
-  return p.side === 'buy' ? c.high >= p.tp : c.low <= p.tp;
+  return p.side === 'buy' ? c.high >= p.tp : toAsk(c.low, costs) <= p.tp;
 }
 
 interface ExitDecision {
@@ -93,19 +138,26 @@ function resolveExit(
   candle: Candle,
   subCandles: Candle[] | null,
   fromSubIdx: number,
+  costs?: ExecutionCosts,
 ): ExitDecision | null {
-  const sl = slHit(p, candle);
-  const tp = tpHit(p, candle);
+  const sl = slHit(p, candle, costs);
+  const tp = tpHit(p, candle, costs);
   if (!sl && !tp) return null;
+
+  // SL exits are stop-type (deterministic adverse slippage); TP exits stay
+  // clean at the exact level (RFC-014 §2). The closing action is the
+  // OPPOSITE of the position's side (closing a long = sell, a short = buy).
+  const closingAction: OrderSide = p.side === 'buy' ? 'sell' : 'buy';
+  const slPrice = slip(p.sl, closingAction, costs);
 
   // Walk the sub-candles from the fill index onward when available
   if (subCandles && subCandles.length) {
     for (let i = Math.max(0, fromSubIdx); i < subCandles.length; i++) {
       const sub = subCandles[i];
-      const s = slHit(p, sub);
-      const t = tpHit(p, sub);
-      if (s && t) return { outcome: 'sl', price: p.sl, ambiguous: true };
-      if (s) return { outcome: 'sl', price: p.sl, ambiguous: false };
+      const s = slHit(p, sub, costs);
+      const t = tpHit(p, sub, costs);
+      if (s && t) return { outcome: 'sl', price: slPrice, ambiguous: true };
+      if (s) return { outcome: 'sl', price: slPrice, ambiguous: false };
       if (t) return { outcome: 'tp', price: p.tp!, ambiguous: false };
     }
     // If no sub-candles from the fill index onward hit SL or TP, the trade remains open
@@ -116,19 +168,19 @@ function resolveExit(
   // Fallback when no sub-candles are available
   if (fromSubIdx > 0) {
     // Freshly filled in this candle but no sub-candles to disambiguate sequence: treat as ambiguous SL
-    return { outcome: 'sl', price: p.sl, ambiguous: true };
+    return { outcome: 'sl', price: slPrice, ambiguous: true };
   }
 
-  if (sl && !tp) return { outcome: 'sl', price: p.sl, ambiguous: false };
+  if (sl && !tp) return { outcome: 'sl', price: slPrice, ambiguous: false };
   if (tp && !sl) return { outcome: 'tp', price: p.tp!, ambiguous: false };
-  return { outcome: 'sl', price: p.sl, ambiguous: true };
+  return { outcome: 'sl', price: slPrice, ambiguous: true };
 }
 
 /** First lower candle (>= fromIdx) that touches the order's entry price. */
-function fillSubIndex(o: PendingOrder, subCandles: Candle[] | null): number {
+function fillSubIndex(o: PendingOrder, subCandles: Candle[] | null, costs?: ExecutionCosts): number {
   if (!subCandles) return 0;
   for (let i = 0; i < subCandles.length; i++) {
-    if (orderFills(o, subCandles[i])) return i;
+    if (orderFills(o, subCandles[i], costs)) return i;
   }
   return 0;
 }
@@ -150,6 +202,7 @@ export function processCandle(
   candle: Candle,
   subCandles: Candle[] | null,
   contractSize: number,
+  costs?: ExecutionCosts,
 ): ProcessResult {
   let changed = false;
 
@@ -159,11 +212,15 @@ export function processCandle(
   /** sub-candle index from which each freshly filled position is evaluated */
   const fillIdx = new Map<string, number>();
   for (const o of book.orders) {
-    if (orderFills(o, candle)) {
+    if (orderFills(o, candle, costs)) {
+      // Stop entries slip against the trader (RFC-014 §2); limit entries stay
+      // a clean fill at the exact level. The recorded entry never shifts by
+      // spread — that cost is paid implicitly via the sided trigger above.
+      const entryPrice = o.type === 'stop' ? slip(o.entryPrice, o.side, costs) : o.entryPrice;
       positions.push({
         id: o.id,
         side: o.side,
-        entryPrice: o.entryPrice,
+        entryPrice,
         sl: o.sl,
         tp: o.tp,
         lots: o.lots,
@@ -172,7 +229,7 @@ export function processCandle(
         openTime: candle.time,
         origin: o.type,
       });
-      fillIdx.set(o.id, fillSubIndex(o, subCandles));
+      fillIdx.set(o.id, fillSubIndex(o, subCandles, costs));
       changed = true;
     } else {
       remaining.push(o);
@@ -190,7 +247,7 @@ export function processCandle(
       stillOpen.push(p);
       continue;
     }
-    const exit = resolveExit(p, candle, subCandles, fillIdx.get(p.id) ?? 0);
+    const exit = resolveExit(p, candle, subCandles, fillIdx.get(p.id) ?? 0, costs);
     if (exit) {
       const trade = closeTrade(
         p,
@@ -199,6 +256,7 @@ export function processCandle(
         exit.outcome,
         contractSize,
         exit.ambiguous,
+        costs,
       );
       closed.push(trade);
       balance += trade.profit;
@@ -222,17 +280,20 @@ export function processCandle(
 
 /**
  * Ends the session: open positions are closed at `price` (last visible
- * close) as 'session-end' and pending orders are discarded.
+ * close) as 'session-end' and pending orders are discarded. `price` is a
+ * market BID price (the last visible close); shorts convert to Ask inside
+ * `closeTrade` when `costs` is present.
  */
 export function closeSession(
   book: TradingBook,
   price: number,
   time: number,
   contractSize: number,
+  costs?: ExecutionCosts,
 ): TradingBook {
   let balance = book.balance;
   const closed = book.positions.map((p) => {
-    const trade = closeTrade(p, price, time, 'session-end', contractSize);
+    const trade = closeTrade(p, price, time, 'session-end', contractSize, false, costs);
     balance += trade.profit;
     return trade;
   });

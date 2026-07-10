@@ -191,7 +191,20 @@ export const tradingFeature = createFeature({
     on(TradingActions.closePosition, (state, { id, price, time, contractSize }): TradingState => {
       const position = state.positions.find((p) => p.id === id);
       if (!position) return state;
-      const trade = closeTrade(position, price, time, 'manual', contractSize);
+      // RFC-014 §2: the reducer owns the trading slice, so it reads its own
+      // executionCosts and passes them to the engine explicitly (I-10) — the
+      // action payload stays untouched (pre-existing effect specs assert it).
+      // `?? undefined`: TradingState's field is required-but-nullable (NgRx
+      // feature-state rule), the engine's optional arg is `T | undefined`.
+      const trade = closeTrade(
+        position,
+        price,
+        time,
+        'manual',
+        contractSize,
+        false,
+        state.executionCosts ?? undefined,
+      );
       return {
         ...state,
         positions: state.positions.filter((p) => p.id !== id),
@@ -206,13 +219,19 @@ export const tradingFeature = createFeature({
         // fill after their createdAt, exits only from the position's openTime
         // on), so reprocessing a candle is idempotent. A global gate blocked
         // all fills after importing a session or stepping the replay back.
-        const result = processCandle(state, candle, subCandles, contractSize);
+        const result = processCandle(
+          state,
+          candle,
+          subCandles,
+          contractSize,
+          state.executionCosts ?? undefined,
+        );
         if (!result.changed) return { ...state, lastProcessedTime: candle.time };
         return { ...state, ...result.book, lastProcessedTime: candle.time };
       },
     ),
     on(TradingActions.endSession, (state, { price, time, contractSize }): TradingState => {
-      const book = closeSession(state, price, time, contractSize);
+      const book = closeSession(state, price, time, contractSize, state.executionCosts ?? undefined);
       return { ...state, ...book, sessionEnded: true, summaryOpen: true };
     }),
     on(TradingActions.setInitialBalance, (state, { balance }): TradingState => {

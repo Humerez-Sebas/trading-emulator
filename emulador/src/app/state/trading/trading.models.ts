@@ -1,3 +1,5 @@
+import { ExecutionCosts } from './execution-costs';
+
 export type OrderSide = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit' | 'stop';
 export type PendingType = Exclude<OrderType, 'market'>;
@@ -54,15 +56,32 @@ export interface ClosedTrade {
   openTime: number;
   closeTime: number;
   outcome: TradeOutcome;
-  /** Profit in account currency (clean price, no spread/commission). */
+  /**
+   * Profit in account currency. NET of commission when execution costs are
+   * present: `profit = grossProfit - commission` (RFC-014 §2). With absent
+   * costs it equals `grossProfit` and reduces to today's exact numbers (V-1).
+   */
   profit: number;
-  /** Profit measured in R (profit / riskUsd). */
+  /** Profit measured in R (profit / riskUsd), now over the NET profit above. */
   rMultiple: number;
   /**
    * SL and TP were both inside the same candle and no lower-TF series was
    * available to disambiguate: resolved pessimistically (SL first).
    */
   ambiguous: boolean;
+  /**
+   * Profit at executed prices (spread/slippage already baked into
+   * entry/exit), BEFORE commission (RFC-014 §2). Optional/additive: only
+   * legacy-absent when a trade predates this field (old persisted history).
+   * `closeTrade` always sets it; with zero/absent costs it equals `profit`.
+   */
+  grossProfit?: number;
+  /**
+   * Commission charged once at close (`commissionPerLot * lots`), already
+   * subtracted from `grossProfit` to get `profit`. Optional/additive, same
+   * legacy-absence rule as {@link grossProfit}; 0 with zero/absent costs.
+   */
+  commission?: number;
   /** The historical trade box is hidden on the chart (user toggle). */
   boxHidden?: boolean;
   /** The historical trade box was deleted from the chart (irreversible). */
@@ -95,6 +114,15 @@ export interface TradingData {
   sessionName: string | null;
   /** Folder the session belongs to (null = "Sin carpeta"). Org-only. */
   folderId: string | null;
+  /**
+   * Session's effective execution costs (RFC-014 §2). `null` (the legacy
+   * default) = zero-cost session (V-1) — no UI sets this yet (Task 6); the
+   * fill engine/reducer plumbing is dormant until a preset is assigned. A
+   * required-but-nullable field (not `?:`), matching `sessionEnd`/
+   * `sessionName`/`folderId` above: NgRx's `createFeature` rejects optional
+   * properties on the feature state type (`TradingState extends TradingData`).
+   */
+  executionCosts: ExecutionCosts | null;
 }
 
 /**
@@ -160,6 +188,7 @@ export function pickTradingData(t: TradingData): TradingData {
     sessionEnd: t.sessionEnd,
     sessionName: t.sessionName,
     folderId: t.folderId,
+    executionCosts: t.executionCosts,
   };
 }
 
@@ -178,6 +207,7 @@ export function defaultTradingData(initialBalance = DEFAULT_BALANCE): TradingDat
     sessionEnd: null,
     sessionName: null,
     folderId: null,
+    executionCosts: null,
   };
 }
 
