@@ -157,9 +157,7 @@ describe('ChartPanelComponent', () => {
     const dispatch = vi.spyOn(store, 'dispatch');
     const stub = fixture.debugElement.query(By.directive(ChartStubComponent));
     stub.componentInstance.chartFocused.emit();
-    expect(dispatch).toHaveBeenCalledWith(
-      LayoutActions.setFocusedPanel({ panelId: 'panel-1' }),
-    );
+    expect(dispatch).toHaveBeenCalledWith(LayoutActions.setFocusedPanel({ panelId: 'panel-1' }));
   });
 
   function createWithVisible(visible: boolean, desc: PanelDescriptor = descriptor) {

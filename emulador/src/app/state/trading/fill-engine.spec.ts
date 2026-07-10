@@ -168,7 +168,7 @@ describe('processCandle — exits', () => {
     // Parent candle has High 4012, Low 3995.
     const r = processCandle(b, candle(100, 4005, 4012, 3995, 3998), sub, CONTRACT);
     expect(r.book.positions).toHaveLength(1); // Position should remain OPEN
-    expect(r.book.history).toHaveLength(0);   // No closed trades
+    expect(r.book.history).toHaveLength(0); // No closed trades
   });
 });
 
