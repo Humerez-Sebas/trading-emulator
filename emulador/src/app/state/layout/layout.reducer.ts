@@ -17,24 +17,20 @@ import { Timeframe } from '../../models';
 const emptyCell = (): GridCell => ({ panelIds: [], activePanelId: '' });
 
 /**
- * Resizes a tab's cell list to `count`. Growing appends empty cells; shrinking
- * merges the panels of the removed cells into the last kept cell so no panel
- * (and no descriptor) is ever lost by a template change.
+ * Fits a tab's cell list to the template's cell count WITHOUT losing panels.
+ * Growing appends empty cells. Shrinking drops only TRAILING EMPTY cells; a
+ * non-empty cell beyond `need` is retained ("parked") so template changes are
+ * non-destructive and reversible — the template is a lens over a stable cell
+ * list, not a blender. Never returns fewer than `need` cells, nor fewer than
+ * the number of non-empty cells.
  */
-function normalizeCells(cells: GridCell[], count: number): GridCell[] {
-  if (cells.length === count) return cells;
-  if (cells.length < count) {
-    return [...cells, ...Array.from({ length: count - cells.length }, emptyCell)];
+function fitCells(cells: GridCell[], need: number): GridCell[] {
+  if (cells.length < need) {
+    return [...cells, ...Array.from({ length: need - cells.length }, emptyCell)];
   }
-  const kept = cells.slice(0, count);
-  const orphaned = cells.slice(count).flatMap((c) => c.panelIds);
-  if (!orphaned.length) return kept;
-  const last = kept[count - 1];
-  const merged: GridCell = {
-    panelIds: [...last.panelIds, ...orphaned],
-    activePanelId: last.activePanelId || orphaned[0],
-  };
-  return [...kept.slice(0, count - 1), merged];
+  let end = cells.length;
+  while (end > need && cells[end - 1].panelIds.length === 0) end--;
+  return end === cells.length ? cells : cells.slice(0, end);
 }
 
 function countPanelsInTab(tab: TabLayout): number {
@@ -56,14 +52,21 @@ export const layoutFeature = createFeature({
   name: 'layout',
   reducer: createReducer(
     createInitialLayoutState(),
-    on(LayoutActions.createTab, (state, { id, name }): LayoutState => {
-      const tab: TabLayout = { id, name, template: '1', cells: [emptyCell()] };
+    on(LayoutActions.createTab, (state, { id, name, descriptor }): LayoutState => {
+      const tab: TabLayout = {
+        id,
+        name,
+        template: '1',
+        cells: [{ panelIds: [descriptor.id], activePanelId: descriptor.id }],
+      };
       return {
         ...state,
+        panels: { ...state.panels, [descriptor.id]: descriptor },
         workspace: {
           tabs: [...state.workspace.tabs, tab],
           activeTabId: id,
         },
+        focusedPanelId: descriptor.id,
       };
     }),
     on(LayoutActions.closeTab, (state, { tabId }): LayoutState => {
@@ -92,14 +95,25 @@ export const layoutFeature = createFeature({
     }),
     on(LayoutActions.applyGridTemplate, (state, { tabId, template }): LayoutState => {
       if (!state.workspace.tabs.some((t) => t.id === tabId)) return state;
-      return {
-        ...state,
-        workspace: updateTab(state.workspace, tabId, (tab) => ({
-          ...tab,
-          template,
-          cells: normalizeCells(tab.cells, GRID_TEMPLATE_CELLS[template]),
-        })),
-      };
+      const need = GRID_TEMPLATE_CELLS[template];
+      const workspace = updateTab(state.workspace, tabId, (tab) => ({
+        ...tab,
+        template,
+        cells: fitCells(tab.cells, need),
+      }));
+      // Only the active tab drives focus; a background template change leaves focus alone.
+      if (tabId !== workspace.activeTabId) return { ...state, workspace };
+      // Focus follows visibility: if the focused panel is now parked (in a cell beyond
+      // the rendered count), fall back to the first rendered cell's active panel so the
+      // global timeframe controls always target a panel the user can see.
+      const tab = workspace.tabs.find((t) => t.id === tabId)!;
+      const rendered = tab.cells.slice(0, need);
+      const visible = new Set(rendered.map((c) => c.activePanelId).filter(Boolean));
+      const focusedPanelId =
+        state.focusedPanelId && visible.has(state.focusedPanelId)
+          ? state.focusedPanelId
+          : (rendered[0]?.activePanelId || null);
+      return { ...state, workspace, focusedPanelId };
     }),
     on(LayoutActions.addPanel, (state, { tabId, cellIndex, descriptor }): LayoutState => {
       const tab = state.workspace.tabs.find((t) => t.id === tabId);
@@ -281,8 +295,9 @@ export const selectVisiblePanelIds = createSelector(
   (ws): Record<string, true> => {
     const active = ws.tabs.find((t) => t.id === ws.activeTabId);
     if (!active) return {};
+    const rendered = GRID_TEMPLATE_CELLS[active.template];
     const visible: Record<string, true> = {};
-    for (const cell of active.cells) {
+    for (const cell of active.cells.slice(0, rendered)) {
       if (cell.activePanelId) visible[cell.activePanelId] = true;
     }
     return visible;

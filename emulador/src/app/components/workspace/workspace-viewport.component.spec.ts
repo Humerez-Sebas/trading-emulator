@@ -215,6 +215,36 @@ describe('WorkspaceViewportComponent', () => {
     expect(after).toBe(before); // identity preserved: keep-alive, not re-creation
   });
 
+  it('keeps parked cells mounted but hidden when the template shrinks below their index', () => {
+    // Tab shrunk to template '1' (renders 1 cell) but still holds 2 non-empty
+    // cells — the reducer never removes non-empty cells on shrink (Task 3).
+    const shrunkState: LayoutState = {
+      workspace: {
+        tabs: [
+          {
+            id: 'tab-a',
+            name: 'Principal',
+            template: '1',
+            cells: [
+              { panelIds: ['p1'], activePanelId: 'p1' },
+              { panelIds: ['p2'], activePanelId: 'p2' },
+            ],
+          },
+        ],
+        activeTabId: 'tab-a',
+      },
+      panels: { p1: desc('p1'), p2: desc('p2') },
+      focusedPanelId: 'p1',
+    };
+    store.setState({ layout: shrunkState });
+    const fixture = create();
+    const grid = fixture.nativeElement.querySelector('.grid:not([hidden])');
+    const cells = grid.querySelectorAll('.cell');
+    expect(cells).toHaveLength(2); // both mounted (keep-alive), cell 1 parked
+    expect(cells[0].hasAttribute('hidden')).toBe(false);
+    expect(cells[1].hasAttribute('hidden')).toBe(true); // cell index 1 >= renderedCount('1') === 1
+  });
+
   it('a "+" button renders per cell and dispatches addPanel targeting that (tabId, cellIndex)', () => {
     const fixture = create();
     const dispatch = vi.spyOn(store, 'dispatch');

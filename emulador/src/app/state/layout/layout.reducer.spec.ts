@@ -35,23 +35,25 @@ describe('layoutFeature reducer', () => {
     expect(state.panels['panel-1'].timeframe).toBe('M1');
   });
 
-  it('createTab appends a single-cell tab and activates it', () => {
+  it('createTab appends a single-cell tab pre-populated with the given panel and focuses it', () => {
     const state = reducer(
       createInitialLayoutState(),
-      LayoutActions.createTab({ id: 'tab-2', name: 'Contexto' }),
+      LayoutActions.createTab({ id: 'tab-2', name: 'Tab 2', descriptor: descriptor('p-new') }),
     );
     expect(state.workspace.tabs).toHaveLength(2);
-    const tab = state.workspace.tabs[1];
-    expect(tab.id).toBe('tab-2');
-    expect(tab.template).toBe('1');
-    expect(tab.cells).toEqual([{ panelIds: [], activePanelId: '' }]);
     expect(state.workspace.activeTabId).toBe('tab-2');
+    const tab = state.workspace.tabs[1];
+    expect(tab.template).toBe('1');
+    expect(tab.cells).toEqual([{ panelIds: ['p-new'], activePanelId: 'p-new' }]);
+    expect(state.panels['p-new']).toEqual(descriptor('p-new'));
+    expect(state.focusedPanelId).toBe('p-new');
+    assertLayoutConsistent(state);
   });
 
   it('closeTab removes the tab, drops its descriptors, and re-activates a neighbor', () => {
     let state = reducer(
       createInitialLayoutState(),
-      LayoutActions.createTab({ id: 'tab-2', name: 'Contexto' }),
+      LayoutActions.createTab({ id: 'tab-2', name: 'Contexto', descriptor: descriptor('seed-2') }),
     );
     // active is tab-2; close it -> tab-main becomes active again
     state = reducer(state, LayoutActions.closeTab({ tabId: 'tab-2' }));
@@ -64,11 +66,7 @@ describe('layoutFeature reducer', () => {
   it('closeTab drops the descriptors owned by the closed tab', () => {
     let state = reducer(
       createInitialLayoutState(),
-      LayoutActions.createTab({ id: 'tab-2', name: 'Contexto' }),
-    );
-    state = reducer(
-      state,
-      LayoutActions.addPanel({ tabId: 'tab-2', cellIndex: 0, descriptor: descriptor('p-x') }),
+      LayoutActions.createTab({ id: 'tab-2', name: 'Contexto', descriptor: descriptor('p-x') }),
     );
     state = reducer(state, LayoutActions.closeTab({ tabId: 'tab-2' }));
     expect(state.panels['p-x']).toBeUndefined();
@@ -83,7 +81,7 @@ describe('layoutFeature reducer', () => {
   it('setActiveTab switches; unknown tab id is a no-op', () => {
     let state = reducer(
       createInitialLayoutState(),
-      LayoutActions.createTab({ id: 'tab-2', name: 'Contexto' }),
+      LayoutActions.createTab({ id: 'tab-2', name: 'Contexto', descriptor: descriptor('seed-3') }),
     );
     state = reducer(state, LayoutActions.setActiveTab({ tabId: 'tab-main' }));
     expect(state.workspace.activeTabId).toBe('tab-main');
@@ -103,26 +101,70 @@ describe('layoutFeature reducer', () => {
     expect(tab.cells[3]).toEqual({ panelIds: [], activePanelId: '' });
   });
 
-  it('applyGridTemplate shrink merges orphaned panels into the last kept cell', () => {
+  it('applyGridTemplate shrink parks non-empty cells instead of merging (positions preserved)', () => {
     let state = reducer(
       createInitialLayoutState(),
       LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }),
     );
     state = reducer(
       state,
-      LayoutActions.addPanel({
-        tabId: 'tab-main',
-        cellIndex: 1,
-        descriptor: descriptor('panel-2'),
-      }),
+      LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
     );
     state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
     const tab = state.workspace.tabs[0];
-    expect(tab.cells).toHaveLength(1);
-    expect(tab.cells[0].panelIds).toEqual(['panel-1', 'panel-2']);
-    expect(tab.cells[0].activePanelId).toBe('panel-1');
-    // no descriptor is lost on a shrink
+    expect(tab.template).toBe('1');
+    // panel-2 stays in its OWN cell (index 1), parked — never merged into cell 0
+    expect(tab.cells).toEqual([
+      { panelIds: ['panel-1'], activePanelId: 'panel-1' },
+      { panelIds: ['panel-2'], activePanelId: 'panel-2' },
+    ]);
     expect(state.panels['panel-2']).toBeDefined();
+    assertLayoutConsistent(state);
+  });
+
+  it('applyGridTemplate grow reveals parked cells in their original slot (reversible)', () => {
+    let state = reducer(
+      createInitialLayoutState(),
+      LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }),
+    );
+    state = reducer(
+      state,
+      LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
+    );
+    state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
+    state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }));
+    const tab = state.workspace.tabs[0];
+    expect(tab.cells[0].panelIds).toEqual(['panel-1']);
+    expect(tab.cells[1].panelIds).toEqual(['panel-2']); // back on the right, not stacked left
+    assertLayoutConsistent(state);
+  });
+
+  it('applyGridTemplate shrink trims TRAILING EMPTY cells (no ghost slots accumulate)', () => {
+    let state = reducer(
+      createInitialLayoutState(),
+      LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }),
+    );
+    // cell 1 left empty on purpose
+    state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
+    const tab = state.workspace.tabs[0];
+    expect(tab.cells).toHaveLength(1);
+    expect(tab.cells[0].panelIds).toEqual(['panel-1']);
+    assertLayoutConsistent(state);
+  });
+
+  it('applyGridTemplate re-focuses a rendered panel when the focused panel gets parked', () => {
+    let state = reducer(
+      createInitialLayoutState(),
+      LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }),
+    );
+    state = reducer(
+      state,
+      LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
+    );
+    // focus the right panel, then collapse to a single cell
+    state = reducer(state, LayoutActions.setFocusedPanel({ panelId: 'panel-2' }));
+    state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
+    expect(state.focusedPanelId).toBe('panel-1'); // panel-2 is parked → focus falls to the rendered cell
   });
 
   it('addPanel stores the descriptor and activates it in the target cell', () => {
@@ -194,17 +236,14 @@ describe('layoutFeature reducer', () => {
   });
 
   describe('movePanel + lifecycle invariants (RFC-009)', () => {
-    const twoTabs = (): LayoutState => {
-      let s = reducer(
+    // createTab now seeds the tab's sole cell with the given descriptor directly
+    // (this task), so 'p-ctx' is supplied to createTab itself rather than added
+    // afterward via a separate addPanel — same resulting fixture as before.
+    const twoTabs = (): LayoutState =>
+      reducer(
         createInitialLayoutState(),
-        LayoutActions.createTab({ id: 'tab-2', name: 'Contexto' }),
+        LayoutActions.createTab({ id: 'tab-2', name: 'Contexto', descriptor: descriptor('p-ctx') }),
       );
-      s = reducer(
-        s,
-        LayoutActions.addPanel({ tabId: 'tab-2', cellIndex: 0, descriptor: descriptor('p-ctx') }),
-      );
-      return s;
-    };
 
     // tab-main starts mono-panel (RFC-013 D2); grow it to '2h' and add panel-2
     // into the second cell so these specs still exercise a two-cell tab-main.
@@ -322,11 +361,7 @@ describe('layoutFeature reducer', () => {
     it('marks visible exactly the active panel of each cell of the active tab', () => {
       let s = reducer(
         createInitialLayoutState(),
-        LayoutActions.createTab({ id: 'tab-2', name: 'B' }),
-      );
-      s = reducer(
-        s,
-        LayoutActions.addPanel({ tabId: 'tab-2', cellIndex: 0, descriptor: descriptor('p-b') }),
+        LayoutActions.createTab({ id: 'tab-2', name: 'B', descriptor: descriptor('p-b') }),
       );
       // active tab is tab-2 after createTab
       expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-b': true });
@@ -341,6 +376,20 @@ describe('layoutFeature reducer', () => {
       );
       // p-3 was added into tab-main's only cell and became its activePanelId
       expect(selectVisiblePanelIds.projector(s.workspace)).toEqual({ 'p-3': true });
+    });
+
+    it('selectVisiblePanelIds excludes parked cells (beyond the template cell count)', () => {
+      let state = reducer(
+        createInitialLayoutState(),
+        LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '2h' }),
+      );
+      state = reducer(
+        state,
+        LayoutActions.addPanel({ tabId: 'tab-main', cellIndex: 1, descriptor: descriptor('panel-2') }),
+      );
+      state = reducer(state, LayoutActions.applyGridTemplate({ tabId: 'tab-main', template: '1' }));
+      const visible = selectVisiblePanelIds.projector(state.workspace);
+      expect(visible).toEqual({ 'panel-1': true }); // panel-2 parked → update-gated
     });
   });
 
@@ -438,7 +487,7 @@ describe('layoutFeature reducer', () => {
     it('renames the target tab and leaves others untouched', () => {
       let state = reducer(
         createInitialLayoutState(),
-        LayoutActions.createTab({ id: 'tab-2', name: 'Contexto' }),
+        LayoutActions.createTab({ id: 'tab-2', name: 'Contexto', descriptor: descriptor('seed-4') }),
       );
       state = reducer(state, LayoutActions.renameTab({ tabId: 'tab-main', name: 'Renombrada' }));
       expect(state.workspace.tabs.find((t) => t.id === 'tab-main')?.name).toBe('Renombrada');

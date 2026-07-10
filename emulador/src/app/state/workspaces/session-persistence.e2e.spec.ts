@@ -137,7 +137,11 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
     let layoutState = layoutFeature.reducer(undefined, { type: '@@INIT' } as never);
     layoutState = layoutFeature.reducer(
       layoutState,
-      LayoutActions.createTab({ id: 'tab-ui', name: 'UI Tab' }),
+      LayoutActions.createTab({
+        id: 'tab-ui',
+        name: 'UI Tab',
+        descriptor: { id: 'tab-ui-seed', symbol: '', timeframe: 'M1', linkGroupId: null },
+      }),
     );
     layoutState = layoutFeature.reducer(
       layoutState,

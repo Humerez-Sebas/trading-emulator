@@ -17,6 +17,7 @@ import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import {
+  GRID_TEMPLATE_CELLS,
   GridTemplate,
   MAX_PANELS_PER_TAB,
   PanelDescriptor,
@@ -130,7 +131,7 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
         [hidden]="tab.id !== workspace().activeTabId"
       >
         @for (cell of tab.cells; track $index; let ci = $index) {
-          <div class="cell">
+          <div class="cell" [hidden]="ci >= renderedCount(tab)">
             @if (cell.panelIds.length > 1) {
               <div class="cell-tabs" role="tablist">
                 @for (pid of cell.panelIds; track pid) {
@@ -275,6 +276,12 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
         gap: 4px;
         padding: 4px;
       }
+      .grid[hidden] {
+        display: none;
+      }
+      .cell[hidden] {
+        display: none;
+      }
       .grid[data-template='1'] {
         grid-template-columns: 1fr;
       }
@@ -405,10 +412,16 @@ export class WorkspaceViewportComponent implements OnDestroy {
     this.store.dispatch(LayoutActions.setActiveTab({ tabId }));
   }
 
-  /** RFC-013 (D4): appends a new tab; caller supplies the id (reducer stays pure), same convention as addPanel below. */
+  /** RFC-013 (D4): appends a new tab seeded with one active-asset panel; caller supplies both ids (reducer stays pure). */
   addTab(): void {
     const n = this.workspace().tabs.length + 1;
-    this.store.dispatch(LayoutActions.createTab({ id: crypto.randomUUID(), name: `Tab ${n}` }));
+    this.store.dispatch(
+      LayoutActions.createTab({
+        id: crypto.randomUUID(),
+        name: `Tab ${n}`,
+        descriptor: { id: crypto.randomUUID(), symbol: '', timeframe: 'M1', linkGroupId: null },
+      }),
+    );
   }
 
   /** RFC-013 (D4): closes a tab; stops propagation so the tab's own click (selectTab) doesn't also fire. Absent in the template when it is the last tab. */
@@ -486,6 +499,11 @@ export class WorkspaceViewportComponent implements OnDestroy {
   /** RFC-009 Task 5: true when the tab already holds MAX_PANELS_PER_TAB panels across all its cells (mirrors the reducer's own cap check). */
   tabAtCap(tab: TabLayout): boolean {
     return tab.cells.reduce((n, c) => n + c.panelIds.length, 0) >= MAX_PANELS_PER_TAB;
+  }
+
+  /** RFC-013 follow-up: number of cells the current template renders; cells past this index are parked (kept mounted, hidden). */
+  renderedCount(tab: TabLayout): number {
+    return GRID_TEMPLATE_CELLS[tab.template];
   }
 
   descriptorOf(panelId: string): PanelDescriptor | null {

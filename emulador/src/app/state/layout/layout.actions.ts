@@ -5,14 +5,14 @@ import { Timeframe } from '../../models';
 export const LayoutActions = createActionGroup({
   source: 'Layout',
   events: {
-    /** Appends a tab (template '1', one empty cell) and activates it. Ids come from the caller (reducer stays pure). */
-    'Create Tab': props<{ id: string; name: string }>(),
+    /** Appends a tab (template '1') pre-populated with the caller-supplied panel, and activates + focuses it. Ids come from the caller (reducer stays pure). */
+    'Create Tab': props<{ id: string; name: string; descriptor: PanelDescriptor }>(),
     /** Removes the tab and its panels' descriptors. Closing the last remaining tab is a no-op. */
     'Close Tab': props<{ tabId: string }>(),
     'Set Active Tab': props<{ tabId: string }>(),
     /** Renames a tab in place. No-op if tabId is unknown. */
     'Rename Tab': props<{ tabId: string; name: string }>(),
-    /** Resizes the tab's cells to the template; panels of removed cells merge into the last kept cell. */
+    /** Resizes the tab's cells to the template; non-destructive: shrinking parks (keeps, hides) the non-empty cells that no longer fit and trims only trailing empty cells, growing reveals parked cells in their original slot. */
     'Apply Grid Template': props<{ tabId: string; template: GridTemplate }>(),
     /** No-op if the tab already holds MAX_PANELS_PER_TAB panels or cellIndex is out of range. */
     'Add Panel': props<{ tabId: string; cellIndex: number; descriptor: PanelDescriptor }>(),

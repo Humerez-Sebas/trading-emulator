@@ -91,6 +91,7 @@ import { Timeframe } from '../../models';
         class="panel-chart"
         (chartReady)="onChartReady($event)"
         (chartControlReady)="onChartControlReady($event)"
+        (chartFocused)="onPanelClick()"
       />
     }
   `,
@@ -105,6 +106,9 @@ import { Timeframe } from '../../models';
         border: 1px solid var(--border);
         border-radius: var(--radius);
         overflow: hidden;
+      }
+      :host([hidden]) {
+        display: none;
       }
       .panel-header {
         display: flex;
