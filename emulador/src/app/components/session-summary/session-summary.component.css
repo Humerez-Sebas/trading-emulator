@@ -34,6 +34,56 @@
 .down {
   color: var(--down);
 }
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.excursion-summary {
+  padding: 0 18px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.excursion-summary .metrics {
+  padding: 0;
+}
+
+.costs {
+  margin: 0 18px 12px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.costs > .label {
+  display: block;
+}
+.costs-grid {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.cost-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cost-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.cost-label[title] {
+  cursor: help;
+}
+.costs-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0;
+}
 
 .equity {
   padding: 0 18px 10px;

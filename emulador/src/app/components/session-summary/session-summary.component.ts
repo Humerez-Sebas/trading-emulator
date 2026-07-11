@@ -27,6 +27,7 @@ import { TrashIconComponent } from '../icons/trash-icon.component';
 import { DialogService } from '../ui/dialog.service';
 import { ModalComponent } from '../ui/modal.component';
 import { ButtonDirective } from '../ui/button.directive';
+import { computeExcursionAggregates, excursionR, formatExcursionR } from './excursion-stats';
 
 /** The only timeframes a session may reference (anchors). */
 const ANCHOR_TFS: readonly AnchorTf[] = ['M1', 'H1', 'D1'];
@@ -70,6 +71,15 @@ export class SessionSummaryComponent {
 
   /** History sorted by close time, as shown in the table. */
   trades = computed(() => [...this.history()].sort((a, b) => a.closeTime - b.closeTime));
+
+  /** Session's effective execution costs (RFC-014 §2); null = legacy zero-cost session. */
+  executionCosts = computed(() => this.tradingData().executionCosts);
+
+  /** Physical MAE_R/MFE_R aggregates over the closed-trade history (RFC-014 G4). */
+  excursionAggregates = computed(() => computeExcursionAggregates(this.trades()));
+
+  /** Bound for template use: formats an excursion-R value, "—" when absent (G4). */
+  protected readonly formatExcursionR = formatExcursionR;
 
   /** Equity curve as SVG polyline points in a 220x56 viewBox. */
   sparkline = computed(() => {
@@ -149,6 +159,16 @@ export class SessionSummaryComponent {
     });
     if (!confirmed) return;
     this.store.dispatch(TradingActions.deleteTradeBox({ id: t.id }));
+  }
+
+  /** Trade's max adverse excursion in R units (display-time derivation, G4); null renders as "—". */
+  maeR(t: ClosedTrade): number | null {
+    return excursionR(t.mae, t.entryPrice, t.sl);
+  }
+
+  /** Trade's max favorable excursion in R units, analogous to {@link maeR}. */
+  mfeR(t: ClosedTrade): number | null {
+    return excursionR(t.mfe, t.entryPrice, t.sl);
   }
 
   outcomeLabel(t: ClosedTrade): string {
