@@ -3,9 +3,11 @@ import { TradeOutcome } from './trading.models';
 /**
  * Reified domain facts (RFC-014 Task 4b): the engine's fill/close events,
  * turned into first-class, serializable records instead of only being
- * implicit in the resulting book/history diff. Consumed by the Task-5
- * telemetry observer (a `dispatch:false` effect reading `TradingState.
- * lastFacts` via `concatLatestFrom`, since effects run after reducers).
+ * implicit in the resulting book/history diff. Emitted as
+ * `ProcessResult.facts` — a reserved extension point with no production
+ * reader yet (D14.F: state surfacing proved type-impossible; the telemetry
+ * observer instead derives equivalent events by diffing post-reducer
+ * `positions[]`/`history[]` — see `telemetry-facts.ts`).
  *
  * Pure data — no behavior, no framework imports (I-10 idiom extended to
  * this sibling module, matching `simulation-domain.ts`).
