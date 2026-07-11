@@ -121,6 +121,21 @@ go-to-date gap).
 
 ALL 7 TASKS COMPLETE. Final test count: 1278/1278 (102 files), baseline was 993/74.
 
+## Final audit (branch-auditor, opus) — cee5fa9..a3c0a03
+**VERDICT: PASS — "Ship it".** Gates re-run personally: tsc app+spec clean; ng test
+1278/1278 (102 files); lint 0; `npm run build` exit 0 (known 623 kB budget warning only,
+NO vitest sentinel chunks). Invariant greps all clean: no new deps (package.json/lock
+untouched), engine purity (7 pure modules framework-free), no spec-util/vitest in app code,
+D8 no factory selectors, N-1 only benign pre-existing hits, ProcessResult.facts verified
+reserved-unread, assertNoCandles guards telemetry batches, syncPriceScale still
+reserved-unimplemented, STOP verified (only trading.reducer.spec.ts modified = D14.E,
+28 spec files newly added). Ledger arithmetic corroborated independently (74+28=102 files).
+All six attention flags reviewed line-by-line: sound. Money path deep-reviewed: sided
+predicates consistent, V-1 degeneration preserved, costs round-trip lossless, no third
+placement site. Zero Critical/High/Medium. One Low (T7-m1 stale domain-facts.ts comment)
+fixed post-audit in 51e2249 (comment-only; tsc app + lint re-verified). Remaining rollup
+minors ruled no-fix with written reasons (see audit report / PHILOSOPHY §3.5).
+
 ## Minor findings rollup (for final audit triage)
 
 - T1-m1 (theoretical): base-candle walk slices only within resolution-candle intervals
