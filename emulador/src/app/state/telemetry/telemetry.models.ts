@@ -49,14 +49,20 @@ export interface ReplaySeekPayload {
 }
 
 /**
- * Multi-candle jump. `grain` distinguishes the two jump commands: `'fold'`
- * for `Jump Forward` (processes fills for every crossed candle) vs.
- * `'review'` for `Jump Back` (pure navigation, no fills).
+ * Multi-candle jump/fold landing (`jumpForward`, `jumpBack`, `advanceDisplay`).
+ * `grain` is the replay-resolution candle duration in seconds at the moment
+ * of capture (`selectReplayTfSeconds` — resolution when set, else the
+ * display TF) — RESOLVED (T5b-i) from T5a's flagged open question: RFC §4
+ * names the field without a type; "grain" reads as the granularity of the
+ * jump (the candle duration being stepped over), not a `'fold' | 'review'`
+ * discriminant of which command caused it — that distinction is already
+ * implicit in `TelemetryEvent.kind` (`ReplayJump` is only ever emitted for
+ * the fold/jump family, never for a plain single-candle advance).
  */
 export interface ReplayJumpPayload {
   fromTime: number;
   toTime: number;
-  grain: 'fold' | 'review';
+  grain: number;
 }
 
 export interface PlaybackToggledPayload {
