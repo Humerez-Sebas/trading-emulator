@@ -14,7 +14,13 @@ import {
 } from '../selectors';
 import { tradingFeature } from '../trading/trading.reducer';
 import { drawingsFeature } from '../drawings/drawings.reducer';
-import { captureOrderClock, withPlaybackToggled, withSeekAnchor, type OrderClock } from './telemetry-anchors';
+import {
+  captureOrderClock,
+  freshOrderClock,
+  withPlaybackToggled,
+  withSeekAnchor,
+  type OrderClock,
+} from './telemetry-anchors';
 import { diffDomainFacts, resolveOrderRef, type TradingSnapshot } from './telemetry-facts';
 import { snapshotDrawings } from './telemetry-drawings';
 
@@ -260,6 +266,40 @@ export class TelemetryEffects {
           this.capture(sessionId, 'SpeedChanged', marketTime, {
             msPerCandle: action.msPerCandle,
           });
+        }),
+      ),
+    { dispatch: false },
+  );
+
+  /**
+   * Stamps a fresh `'sessionStart'` `orderClock` the MOMENT a session
+   * becomes active (including the very first session of the app's
+   * lifetime) — `activeSessionId$` is `distinctUntilChanged` internally
+   * (built into `store.select`), so this fires exactly once per session,
+   * immediately.
+   *
+   * Why this exists instead of relying on `OrderClock`'s own lazy
+   * first-touch initialization (`ensureSession` in `telemetry-anchors.ts`,
+   * which every entry point falls back to when `orderClock` is `null`):
+   * lazy init would stamp `'sessionStart'`'s `lastTransitionWallClockMs` at
+   * WHATEVER moment the clock happens to be first touched (the first
+   * seek/play/pause/order of the session) — losing any paused (or playing)
+   * time BEFORE that first touch entirely (e.g. a user idling for minutes
+   * before their first order would read `pausedMs: 0` for it, when the RFC
+   * asks for wall-clock time "since the anchor", and the anchor IS session
+   * start here). Proactively stamping on the session-id transition itself
+   * fixes that gap; `ensureSession`'s lazy fallback remains as a defensive
+   * no-op in the (in production, unreachable — this effect always runs
+   * first) case where something reads the clock before this has fired.
+   */
+  private sessionAnchorReset$ = createEffect(
+    () =>
+      this.activeSessionId$.pipe(
+        distinctUntilChanged(),
+        withLatestFrom(this.store.select(selectReplayIndex), this.store.select(selectPlaying)),
+        tap(([sessionId, replayIndex, playing]) => {
+          this.orderClock =
+            sessionId == null ? null : freshOrderClock(sessionId, 'sessionStart', Date.now(), replayIndex, playing);
         }),
       ),
     { dispatch: false },
