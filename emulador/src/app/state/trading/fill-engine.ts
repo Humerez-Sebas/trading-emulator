@@ -1,6 +1,7 @@
 import { Candle } from '../../models';
 import { ClosedTrade, OrderSide, PendingOrder, Position, TradeOutcome } from './trading.models';
 import { ExecutionCosts, pointsToPrice } from './execution-costs';
+import { DomainFact } from './domain-facts';
 
 /** Mutable book the engine works on; a subset of TradingData. */
 export interface TradingBook {
@@ -30,6 +31,19 @@ export interface ProcessResult {
    * at all this is always false, so the truly-idle case is unaffected.
    */
   excursionsMoved?: boolean;
+  /**
+   * Reified domain facts (RFC-014 Task 4b) built during THIS SAME walk: one
+   * {@link OrderFilled} per order filled this candle, one
+   * {@link PositionClosed} per engine SL/TP exit — pushed in the order the
+   * walk produces them (fills from step 1 before exits from step 2, so a
+   * same-candle fill+exit yields `[OrderFilled, PositionClosed]` for the
+   * same `tradeId`). Deterministic, additive, pure (I-10) — no new engine
+   * state, no IO. Always a concrete array, never `undefined`: empty when
+   * nothing fills/exits this candle (mirrors `changed`'s fills/exits-only
+   * scope, NOT `excursionsMoved` — an excursion-only candle still yields
+   * `facts: []`).
+   */
+  facts: DomainFact[];
 }
 
 function profitOf(p: Position, exitPrice: number, contractSize: number): number {
@@ -282,6 +296,9 @@ export function processCandle(
 ): ProcessResult {
   let changed = false;
   let excursionsMoved = false;
+  // RFC-014 Task 4b: reified facts, pushed in walk order (fills below, then
+  // exits further down) — see `ProcessResult.facts`'s doc comment.
+  const facts: DomainFact[] = [];
 
   // 1) fills of pending orders
   const remaining: PendingOrder[] = [];
@@ -308,6 +325,12 @@ export function processCandle(
       });
       fillIdx.set(o.id, fillSubIndex(o, subCandles, costs));
       changed = true;
+      facts.push({
+        kind: 'OrderFilled',
+        tradeId: o.id,
+        executedPrice: entryPrice,
+        marketTime: candle.time,
+      });
     } else {
       remaining.push(o);
     }
@@ -348,6 +371,14 @@ export function processCandle(
       closed.push(trade);
       balance += trade.profit;
       changed = true;
+      facts.push({
+        kind: 'PositionClosed',
+        tradeId: trade.id,
+        outcome: trade.outcome,
+        ambiguous: trade.ambiguous,
+        executedPrice: trade.exitPrice,
+        marketTime: trade.closeTime,
+      });
     } else {
       stillOpen.push(p);
     }
@@ -369,6 +400,7 @@ export function processCandle(
     },
     changed,
     excursionsMoved,
+    facts,
   };
 }
 
