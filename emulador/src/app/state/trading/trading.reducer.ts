@@ -1,6 +1,7 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
 import { closeSession, closeTrade, processCandle } from './fill-engine';
+import { validateOrderGeometry } from './simulation-domain';
 import { TradingActions } from './trading.actions';
 import {
   defaultTradingData,
@@ -84,7 +85,12 @@ export const tradingFeature = createFeature({
     initialState,
     on(TradingActions.openMarket, (state, a): TradingState => {
       const lots = lotsForRisk(state.balance, a.riskPct, a.price, a.sl, a.contractSize);
-      if (lots <= 0) return state;
+      // I-14 Order Geometry Coherence (RFC-014 Task 4a): an incoherent
+      // SL/TP (wrong side or boundary-equal to price) is silently rejected —
+      // S2 minimal feedback this phase (no throw, no console; see
+      // simulation-domain.ts). State returned UNCHANGED (reference identity),
+      // same shape as the existing lots<=0 guard.
+      if (lots <= 0 || !validateOrderGeometry(a.side, a.price, a.sl, a.tp)) return state;
       const position: Position = {
         id: newId(),
         side: a.side,
@@ -105,7 +111,9 @@ export const tradingFeature = createFeature({
     }),
     on(TradingActions.placeOrder, (state, a): TradingState => {
       const lots = lotsForRisk(state.balance, a.riskPct, a.entryPrice, a.sl, a.contractSize);
-      if (lots <= 0) return state;
+      // I-14 Order Geometry Coherence (RFC-014 Task 4a): same rejection as
+      // openMarket above, evaluated against the order's entry price.
+      if (lots <= 0 || !validateOrderGeometry(a.side, a.entryPrice, a.sl, a.tp)) return state;
       return {
         ...state,
         ...reviveIfEnded(state, a.time),
@@ -126,6 +134,15 @@ export const tradingFeature = createFeature({
         ],
       };
     }),
+    // RFC-014 Task 4a (STOP-rule deviation, documented in task-4a-report.md):
+    // I-15 SL non-widening validation is INTENTIONALLY NOT wired in here.
+    // `trading.reducer.spec.ts:128-134` ("modifyPosition never re-sizes an
+    // open position") pins acceptance of an SL move from 3990 to 3950 on a
+    // long (entryPrice 4000) — a genuine widen per I-15 (nextSl < currentSl)
+    // — via `expect(next.positions[0].sl).toBe(3950)`. Enforcing I-15 here
+    // would make that pre-existing, STOP-protected assertion fail. Left
+    // byte-identical to pre-Task-4a behavior; escalated rather than resolved
+    // unilaterally (PHILOSOPHY §5.7).
     on(
       TradingActions.modifyPosition,
       (state, { id, sl, tp }): TradingState => ({
@@ -135,6 +152,15 @@ export const tradingFeature = createFeature({
         ),
       }),
     ),
+    // RFC-014 Task 4a (STOP-rule deviation, documented in task-4a-report.md):
+    // I-14 geometry validation is INTENTIONALLY NOT wired in here.
+    // `trading.reducer.spec.ts:120-126` ("keeps the previous lots/riskUsd
+    // when the SL lands on the entry (lots 0)") pins acceptance of an SL
+    // modification that lands exactly on entryPrice (4000 === 4000, a
+    // boundary-invalid I-14 geometry) via `expect(next.orders[0].sl).toBe(4000)`.
+    // Enforcing I-14 here would make that pre-existing, STOP-protected
+    // assertion fail. Left byte-identical to pre-Task-4a behavior; escalated
+    // rather than resolved unilaterally (PHILOSOPHY §5.7).
     on(
       TradingActions.modifyOrder,
       (state, { id, entryPrice, sl, tp, contractSize }): TradingState => ({
