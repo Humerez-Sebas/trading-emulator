@@ -297,13 +297,16 @@ export const tradingFeature = createFeature({
     // ---- sessions ----
     on(
       TradingActions.newSession,
-      (state, { currentCursor }): TradingState => ({
+      (state, { currentCursor, executionCosts }): TradingState => ({
         ...defaultTradingData(state.initialBalance),
         riskPct: state.riskPct,
         summaryOpen: false,
         savedSessions: archiveActive(state, currentCursor),
         // fresh blank session → fresh identity
         activeSessionId: newId(),
+        // RFC-014 G1: absent/undefined ⇒ null, same as defaultTradingData's
+        // own default (legacy zero-cost session, V-1 anchor unaffected).
+        executionCosts: executionCosts ?? null,
       }),
     ),
     on(

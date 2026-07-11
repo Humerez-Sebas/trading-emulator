@@ -107,3 +107,33 @@ export function costPresetFor(symbol: string): ExecutionCosts {
 export function pointsToPrice(points: number, pointSize: number): number {
   return points * pointSize;
 }
+
+/**
+ * A partial user override of the three editable cost fields (new-session
+ * dialog, RFC-014 G1). `null` on a field means "use the resolved preset's
+ * value for it" — `pointSize` is intentionally absent: it is never
+ * user-editable (D14.D), always resolved from the symbol.
+ */
+export interface CostOverride {
+  spreadPoints: number | null;
+  commissionPerLot: number | null;
+  slippagePoints: number | null;
+}
+
+/**
+ * Merges a partial override on top of a resolved preset (RFC-014 G1: "el
+ * diálogo de nueva sesión muestra el preset resuelto y permite modificarlo").
+ * Each editable field uses the override when it is a finite number >= 0
+ * (sensible constraint — an invalid entry silently falls back to the preset
+ * rather than persisting garbage); `pointSize` always comes from the preset.
+ */
+export function effectiveCosts(preset: ExecutionCosts, override: CostOverride): ExecutionCosts {
+  const pick = (value: number | null, fallback: number): number =>
+    value !== null && Number.isFinite(value) && value >= 0 ? value : fallback;
+  return {
+    spreadPoints: pick(override.spreadPoints, preset.spreadPoints),
+    commissionPerLot: pick(override.commissionPerLot, preset.commissionPerLot),
+    slippagePoints: pick(override.slippagePoints, preset.slippagePoints),
+    pointSize: preset.pointSize,
+  };
+}

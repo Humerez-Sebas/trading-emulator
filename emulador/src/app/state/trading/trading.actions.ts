@@ -1,5 +1,6 @@
 import { createActionGroup, emptyProps, props } from '@ngrx/store';
 import { Candle } from '../../models';
+import { ExecutionCosts } from './execution-costs';
 import { ClosedTrade, OrderSide, PendingType, TradingData } from './trading.models';
 
 export const TradingActions = createActionGroup({
@@ -66,8 +67,12 @@ export const TradingActions = createActionGroup({
     /**
      * Archives the active session (if it has any activity) and starts a
      * fresh one. `currentCursor` = replay position to store with it.
+     * `executionCosts` (RFC-014 G1, optional) seeds the fresh session's
+     * effective cost config — the new-session dialog's resolved preset or
+     * user override; absent/undefined ⇒ `null` (legacy zero-cost session,
+     * V-1 anchor unaffected).
      */
-    'New Session': props<{ currentCursor: number }>(),
+    'New Session': props<{ currentCursor: number; executionCosts?: ExecutionCosts | null }>(),
     /** Names the ACTIVE session (kept when it gets archived). */
     'Set Session Name': props<{ name: string | null }>(),
     /** Archives the active session and restores a saved one. */
