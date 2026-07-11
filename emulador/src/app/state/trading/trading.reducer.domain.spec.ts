@@ -1,23 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { tradingFeature } from './trading.reducer';
 import { TradingActions } from './trading.actions';
-import { tradingState } from '../../testing/fixtures';
+import { order, position, tradingState } from '../../testing/fixtures';
 
 // ---- RFC-014 Task 4a: SimulationDomain reducer integration ----
 //
-// Covers ONLY the reducer paths that do NOT collide with a pre-existing,
-// STOP-protected spec: `placeOrder`/`openMarket` reject I-14-incoherent
-// geometry with REFERENCE identity (no mutation), and valid placements still
-// apply end-to-end after the new guard.
+// `placeOrder`/`openMarket` reject I-14-incoherent geometry with REFERENCE
+// identity (no mutation); valid placements still apply end-to-end.
 //
 // `modifyPosition` (I-15 SL non-widening) and `modifyOrder` (I-14 on
-// modification) are INTENTIONALLY NOT covered here: both would require
-// rejecting scenarios that `trading.reducer.spec.ts` (lines 120-134) already
-// pins as ACCEPTED — a genuine pre-existing-spec collision, documented in
-// `trading.reducer.ts` at each `on(...)` handler and in task-4a-report.md.
-// Per the STOP rule, that spec is authority and was left untouched; the
-// corresponding reducer behavior was left byte-identical rather than
-// resolved unilaterally.
+// modification) were initially blocked by a genuine collision with
+// `trading.reducer.spec.ts` (lines 120-134 as they stood pre-D14.E): the
+// STOP rule was escalated rather than resolved unilaterally, and the user
+// granted a punctual, ledger-recorded exception (D14.E) to minimally edit
+// those two fixtures (intent preserved — see the "Completion wave" section
+// of task-4a-report.md). The modification-path coverage below was added in
+// that same completion wave.
 
 const reducer = tradingFeature.reducer;
 
@@ -171,5 +169,65 @@ describe('trading reducer: placeOrder rejects I-14-incoherent geometry', () => {
     expect(next).not.toBe(s);
     expect(next.orders).toHaveLength(1);
     expect(next.orders[0].tp).toBeNull();
+  });
+});
+
+// ---- D14.E completion wave: modification-path coverage ----
+
+describe('trading reducer: modifyPosition rejects I-15 widening', () => {
+  it('long: widen (sl decreases, further from entry) is rejected — sl unchanged', () => {
+    const s = tradingState({ positions: [position({ side: 'buy', entryPrice: 4000, sl: 3990 })] });
+    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 3950 }));
+    expect(next.positions[0].sl).toBe(3990);
+  });
+
+  it('short: widen (sl increases, further from entry) is rejected — sl unchanged', () => {
+    const s = tradingState({ positions: [position({ side: 'sell', entryPrice: 4000, sl: 4010 })] });
+    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 4020 }));
+    expect(next.positions[0].sl).toBe(4010);
+  });
+
+  it('long: tighten (sl increases, toward entry) is accepted', () => {
+    const s = tradingState({ positions: [position({ side: 'buy', entryPrice: 4000, sl: 3990 })] });
+    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 3995 }));
+    expect(next.positions[0].sl).toBe(3995);
+  });
+
+  it('short: tighten (sl decreases, toward entry) is accepted', () => {
+    const s = tradingState({ positions: [position({ side: 'sell', entryPrice: 4000, sl: 4010 })] });
+    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 4005 }));
+    expect(next.positions[0].sl).toBe(4005);
+  });
+
+  it('mixed SL-widen + TP-change: applies the TP, rejects the SL (apply-the-valid-part)', () => {
+    const s = tradingState({
+      positions: [position({ side: 'buy', entryPrice: 4000, sl: 3990, tp: 4020 })],
+    });
+    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 3950, tp: 4050 }));
+    expect(next.positions[0].sl).toBe(3990); // widen rejected
+    expect(next.positions[0].tp).toBe(4050); // TP change applies unconditionally
+  });
+});
+
+describe('trading reducer: modifyOrder rejects I-14-incoherent geometry on modification', () => {
+  it('sl moved to the wrong side (above entry) for a buy: order unchanged (reference identity)', () => {
+    const s = tradingState({ orders: [order({ side: 'buy', entryPrice: 4000, sl: 3990, tp: 4020 })] });
+    const next = reducer(s, TradingActions.modifyOrder({ id: 'o1', sl: 4005, contractSize: 100 }));
+    expect(next.orders[0]).toBe(s.orders[0]);
+    expect(next.orders[0].sl).toBe(3990);
+    expect(next.orders[0].lots).toBe(0.1);
+    expect(next.orders[0].riskUsd).toBe(100);
+  });
+
+  it('valid entry+sl re-placement is accepted and re-sizes lots (pending, no I-15 constraint)', () => {
+    const s = tradingState({ orders: [order({ side: 'buy', entryPrice: 4000, sl: 3990, tp: 4020 })] });
+    const next = reducer(
+      s,
+      TradingActions.modifyOrder({ id: 'o1', entryPrice: 4010, sl: 3995, contractSize: 100 }),
+    );
+    expect(next.orders[0]).not.toBe(s.orders[0]);
+    expect(next.orders[0].entryPrice).toBe(4010);
+    expect(next.orders[0].sl).toBe(3995);
+    expect(next.orders[0].lots).toBeGreaterThan(0);
   });
 });

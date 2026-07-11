@@ -117,18 +117,26 @@ describe('trading reducer: modifyOrder re-sizing (pending = risk % constant)', (
     expect(next.orders[0].riskUsd).toBe(100);
   });
 
-  it('keeps the previous lots/riskUsd when the SL lands on the entry (lots 0)', () => {
+  // RFC-014 Task 4a (D14.E authorized STOP exception): SL landing exactly on
+  // the entry is boundary-invalid I-14 geometry (strict `sl < entryPrice`
+  // for a buy) — the modification is now rejected outright, not merely
+  // "resized to 0". Retitled to reflect the new, intended behavior.
+  it('rejects an SL landing on the entry (invalid I-14 geometry)', () => {
     const s = state({ orders: [order()] });
     const next = reducer(s, TradingActions.modifyOrder({ id: 'o1', sl: 4000, contractSize: 100 }));
-    expect(next.orders[0].sl).toBe(4000);
+    expect(next.orders[0].sl).toBe(3990);
     expect(next.orders[0].lots).toBe(0.1);
     expect(next.orders[0].riskUsd).toBe(100);
   });
 
+  // RFC-014 Task 4a (D14.E authorized STOP exception): the fixture's SL move
+  // is now a TIGHTEN (3990 → 3995, toward entry) instead of the original
+  // widen (→ 3950), so it is accepted under I-15 — the "never re-sizes"
+  // intent (lots/riskUsd stay untouched by modifyPosition) is unchanged.
   it('modifyPosition never re-sizes an open position', () => {
     const s = state({ positions: [position()] });
-    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 3950 }));
-    expect(next.positions[0].sl).toBe(3950);
+    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 3995 }));
+    expect(next.positions[0].sl).toBe(3995);
     expect(next.positions[0].lots).toBe(0.1);
     expect(next.positions[0].riskUsd).toBe(100);
   });

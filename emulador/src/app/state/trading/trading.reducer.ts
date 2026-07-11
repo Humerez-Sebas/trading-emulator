@@ -1,7 +1,7 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
 import { closeSession, closeTrade, processCandle } from './fill-engine';
-import { validateOrderGeometry } from './simulation-domain';
+import { validateOrderGeometry, validateSlModification } from './simulation-domain';
 import { TradingActions } from './trading.actions';
 import {
   defaultTradingData,
@@ -134,33 +134,34 @@ export const tradingFeature = createFeature({
         ],
       };
     }),
-    // RFC-014 Task 4a (STOP-rule deviation, documented in task-4a-report.md):
-    // I-15 SL non-widening validation is INTENTIONALLY NOT wired in here.
-    // `trading.reducer.spec.ts:128-134` ("modifyPosition never re-sizes an
-    // open position") pins acceptance of an SL move from 3990 to 3950 on a
-    // long (entryPrice 4000) — a genuine widen per I-15 (nextSl < currentSl)
-    // — via `expect(next.positions[0].sl).toBe(3950)`. Enforcing I-15 here
-    // would make that pre-existing, STOP-protected assertion fail. Left
-    // byte-identical to pre-Task-4a behavior; escalated rather than resolved
-    // unilaterally (PHILOSOPHY §5.7).
+    // RFC-014 Task 4a (D14.E — user-authorized punctual STOP exception,
+    // ledger-recorded; see task-4a-report.md "Completion wave"): I-15 SL
+    // Non-Widening. A widening SL move is rejected (position keeps its
+    // current sl); a tightening/equal move applies. TP is free (I-15's own
+    // scope, validateSlModification's doc) and always applies regardless of
+    // the SL decision — a mixed widen-SL + valid-TP action still applies the
+    // TP (apply-the-valid-part).
     on(
       TradingActions.modifyPosition,
       (state, { id, sl, tp }): TradingState => ({
         ...state,
-        positions: state.positions.map((p) =>
-          p.id === id ? { ...p, sl: sl ?? p.sl, tp: tp === undefined ? p.tp : tp } : p,
-        ),
+        positions: state.positions.map((p) => {
+          if (p.id !== id) return p;
+          const nextSl = sl ?? p.sl;
+          const nextTp = tp === undefined ? p.tp : tp;
+          const slAccepted = validateSlModification(p.side, p.sl, nextSl);
+          return { ...p, sl: slAccepted ? nextSl : p.sl, tp: nextTp };
+        }),
       }),
     ),
-    // RFC-014 Task 4a (STOP-rule deviation, documented in task-4a-report.md):
-    // I-14 geometry validation is INTENTIONALLY NOT wired in here.
-    // `trading.reducer.spec.ts:120-126` ("keeps the previous lots/riskUsd
-    // when the SL lands on the entry (lots 0)") pins acceptance of an SL
-    // modification that lands exactly on entryPrice (4000 === 4000, a
-    // boundary-invalid I-14 geometry) via `expect(next.orders[0].sl).toBe(4000)`.
-    // Enforcing I-14 here would make that pre-existing, STOP-protected
-    // assertion fail. Left byte-identical to pre-Task-4a behavior; escalated
-    // rather than resolved unilaterally (PHILOSOPHY §5.7).
+    // RFC-014 Task 4a (D14.E — user-authorized punctual STOP exception,
+    // ledger-recorded; see task-4a-report.md "Completion wave"): I-14 Order
+    // Geometry Coherence on modification. Pending orders are NOT subject to
+    // I-15 non-widening (nothing is at risk yet, so the SL is freely
+    // re-placeable) — only geometric coherence is enforced. An invalid
+    // resulting geometry rejects the WHOLE modification for this order
+    // (state unchanged for it, same reference-identity idiom as
+    // placeOrder/openMarket), evaluated BEFORE the re-sizing block below.
     on(
       TradingActions.modifyOrder,
       (state, { id, entryPrice, sl, tp, contractSize }): TradingState => ({
@@ -173,9 +174,13 @@ export const tradingFeature = createFeature({
             sl: sl ?? o.sl,
             tp: tp === undefined ? o.tp : tp,
           };
+          if (!validateOrderGeometry(o.side, next.entryPrice, next.sl, next.tp)) return o;
           // Pending = nothing is at risk yet: re-size the lots so the risk %
           // stays constant when the entry/SL distance changes. Once filled
           // (a Position) the sizing is locked in and never recalculated.
+          // This guard has a live path independent of the I-14 check above:
+          // a valid geometry (positive entry/SL distance) can still yield
+          // lots <= 0 when the account balance or riskPct is non-positive.
           if (entryPrice !== undefined || sl !== undefined) {
             const lots = lotsForRisk(
               state.balance,
