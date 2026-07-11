@@ -1,5 +1,6 @@
 import { createActionGroup, props } from '@ngrx/store';
 import { Candle, Timeframe } from '../../models';
+import { ExecutionCosts } from '../trading/execution-costs';
 import { ClosedTrade, TradingData } from '../trading/trading.models';
 import { Drawing } from '../drawings/drawings.models';
 import { AssetMeta, Workspace } from './workspaces.models';
@@ -59,6 +60,14 @@ export const WorkspacesActions = createActionGroup({
       thenRestore?: PendingSessionRestore;
       /** Start a fresh trading session after the switch (wizard flow). */
       thenNewSession?: { name: string | null };
+      /**
+       * RFC-014 G1 (T6b): the wizard's resolved cost preset (or user
+       * override) to seed into the fresh session's `executionCosts`. Only
+       * meaningful together with `thenNewSession`; a TOP-LEVEL field (not
+       * nested inside `thenNewSession`) so pre-existing exact-shape
+       * assertions on `thenNewSession` stay unaffected.
+       */
+      executionCosts?: ExecutionCosts | null;
       /** Open this archived session after the switch (sessions page flow). */
       thenOpenSession?: string;
       /** Place the replay cursor here once the data is in (epoch seconds). */

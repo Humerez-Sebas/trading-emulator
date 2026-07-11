@@ -16,6 +16,7 @@ import { MarketActions } from '../market/market.actions';
 import { loadedTfForMinutes } from '../market/custom-timeframe';
 import { ReplayActions } from '../replay/replay.actions';
 import { TradingActions } from '../trading/trading.actions';
+import { ExecutionCosts } from '../trading/execution-costs';
 import { DrawingsActions } from '../drawings/drawings.actions';
 import { LayoutActions } from '../layout/layout.actions';
 import { LinkGroupsActions } from '../link-groups/link-groups.actions';
@@ -165,6 +166,7 @@ export class WorkspacesEffects {
       thenImport?: PendingSessionImport;
       thenRestore?: PendingSessionRestore;
       thenNewSession?: { name: string | null };
+      executionCosts?: ExecutionCosts | null;
       thenOpenSession?: string;
       thenGoTo?: number;
       thenSessionEnd?: number;
@@ -177,6 +179,7 @@ export class WorkspacesEffects {
       thenImport,
       thenRestore,
       thenNewSession,
+      executionCosts,
       thenOpenSession,
       thenGoTo,
       thenSessionEnd,
@@ -264,7 +267,9 @@ export class WorkspacesEffects {
     // 5) wizard flow: archive any previous activity into a fresh session…
     if (thenNewSession) {
       const restored = ws ?? emptyWorkspace(symbol);
-      actions.push(TradingActions.newSession({ currentCursor: restored.currentTime }));
+      actions.push(
+        TradingActions.newSession({ currentCursor: restored.currentTime, executionCosts }),
+      );
       if (thenNewSession.name) {
         actions.push(TradingActions.setSessionName({ name: thenNewSession.name }));
       }
