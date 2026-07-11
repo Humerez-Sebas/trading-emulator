@@ -1,12 +1,22 @@
 import { inject, Injectable } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { Store } from '@ngrx/store';
-import { pairwise, tap, withLatestFrom } from 'rxjs/operators';
+import { distinctUntilChanged, map, pairwise, tap, withLatestFrom } from 'rxjs/operators';
 import { TelemetryDbService, type TelemetryAppendInput } from '../../services/telemetry-db.service';
 import type { TelemetryEventKindV1 } from './telemetry.models';
 import { ReplayActions } from '../replay/replay.actions';
-import { selectCurrentTime, selectReplayTfSeconds } from '../selectors';
+import {
+  selectCurrentTime,
+  selectExecutionSeries,
+  selectPlaying,
+  selectReplayIndex,
+  selectReplayTfSeconds,
+} from '../selectors';
 import { tradingFeature } from '../trading/trading.reducer';
+import { drawingsFeature } from '../drawings/drawings.reducer';
+import { captureOrderClock, withPlaybackToggled, withSeekAnchor, type OrderClock } from './telemetry-anchors';
+import { diffDomainFacts, resolveOrderRef, type TradingSnapshot } from './telemetry-facts';
+import { snapshotDrawings } from './telemetry-drawings';
 
 /**
  * Passive navigation observer (RFC-014 §4 — La Caja Negra).
@@ -18,19 +28,32 @@ import { tradingFeature } from '../trading/trading.reducer';
  * behavior is byte-identical whether or not `TelemetryEffects` is
  * registered in `provideEffects(...)`.
  *
- * Scope (T5b-i): navigation events only — `ReplaySeek`, `ReplayJump`,
- * `PlaybackToggled`, `SpeedChanged`. The trading-side events
- * (`TimeElapsedBeforeOrder`, `DrawingSnapshot`, the `OrderFilled`/
- * `PositionClosed` facts) and the V-8 frame-budget measurement are T5b-ii, a
- * separate later dispatch: add them as NEW effect properties (+ new private
- * helpers if needed) below `speedChanged$`. Nothing here needs to change to
- * accommodate them — `capture()` is already the shared envelope/session-scope
- * choke point every future observer should go through.
+ * Scope (T5b-i, navigation): `ReplaySeek`, `ReplayJump`, `PlaybackToggled`,
+ * `SpeedChanged`.
  *
- * Session scoping: every capture reads the active session id
- * (`TradingState.activeSessionId` via `tradingFeature.selectActiveSessionId`)
- * and is a no-op when it is `null` — no active session, nothing to record
- * against.
+ * Scope (T5b-ii, trading — this addition): `TimeElapsedBeforeOrder` +
+ * `DrawingSnapshot` at order placement (`orderPlacement$`), the reified
+ * `OrderFilled`/`PositionClosed` facts + `DrawingSnapshot` at position close
+ * (`facts$`), fed by a shared `tradingPairs$` pairwise stream. See D14.F in
+ * `task-5-brief.md`: facts are DERIVED from post-reducer state diffs (pure
+ * logic lives in `telemetry-facts.ts`), not read off a reified engine
+ * result — `ProcessResult.facts` exists at the engine level but has no state
+ * surfacing. `TimeElapsedBeforeOrder`'s anchor/paused/playing/candles
+ * bookkeeping is a small effect-local mutable `OrderClock` (pure transitions
+ * in `telemetry-anchors.ts`, same "one mutable field + a pure reducer
+ * function" idiom as `pendingJumpOrigin` below). `DrawingSnapshot`'s
+ * copy-on-write mapping lives in `telemetry-drawings.ts`.
+ *
+ * Session scoping: every capture reads the active session id. Navigation
+ * events read it via `activeSessionId$` (`tradingFeature.selectActiveSessionId`)
+ * and are a no-op when it is `null`. Trading events read it from the SAME
+ * atomic snapshot they diff (`TradingSnapshot.sessionId`, inside
+ * `tradingPairs$`) — self-consistent with the diff itself, no separate
+ * selector to go stale relative to it — and are ALSO a no-op across a
+ * session switch (`prev.sessionId !== curr.sessionId`): the pairwise
+ * baseline simply resets for the NEXT transition without emitting anything
+ * for this one, so an incoming session's pre-existing positions/orders/
+ * history never look like "new" facts.
  */
 @Injectable()
 export class TelemetryEffects {
@@ -52,6 +75,53 @@ export class TelemetryEffects {
    * recovers the value from immediately before this transition instead.
    */
   private cursorPairs$ = this.store.select(selectCurrentTime).pipe(pairwise());
+
+  /**
+   * `[prev, current]` pairs of the trading-relevant slice (session id +
+   * orders/positions/history), shared by `facts$` and `orderPlacement$`.
+   *
+   * Built on `tradingFeature.selectTradingState` (the WHOLE feature slice,
+   * `(state) => state.trading`) rather than three separate field selectors
+   * so a single atomic snapshot backs both `sessionId` and the three arrays
+   * — no risk of `sessionId` and `orders`/`positions`/`history` drifting
+   * out of sync across a fast sequence of dispatches. The custom
+   * `distinctUntilChanged` (comparing each field by reference, NOT the
+   * wrapper object `map()` just built) is what makes `pairwise()` skip
+   * reducer no-ops — `openMarket`/`placeOrder` return the SAME `state`
+   * reference unchanged when I-14 geometry validation rejects the action
+   * (see `trading.reducer.ts`), so a rejected placement produces NO new
+   * pair here at all; `resolveOrderRef`/`diffDomainFacts` never even see it
+   * (this is what makes correlating "the entity THIS action just added"
+   * safe without a separate stale-pair guard — a naive `ofType(placeOrder)`
+   * + `withLatestFrom` on an action-gated pairwise would re-read the SAME
+   * stale pair on a rejected retry and misattribute an earlier accepted
+   * placement's id to it; being fully state-driven instead sidesteps that).
+   *
+   * A reference-churning-but-id-preserving change (e.g. `modifyPosition`'s
+   * `.map()`, which always returns a NEW positions array even when the I-15
+   * guard rejects the SL move) DOES still produce a pair here, but that is
+   * harmless: `diffDomainFacts`/`resolveOrderRef` key off ID SET
+   * membership, not array identity, so an all-same-ids pair diffs to
+   * nothing.
+   */
+  private tradingPairs$ = this.store.select(tradingFeature.selectTradingState).pipe(
+    map(
+      (t): TradingSnapshot => ({
+        sessionId: t.activeSessionId,
+        orders: t.orders,
+        positions: t.positions,
+        history: t.history,
+      }),
+    ),
+    distinctUntilChanged(
+      (a, b) =>
+        a.sessionId === b.sessionId &&
+        a.orders === b.orders &&
+        a.positions === b.positions &&
+        a.history === b.history,
+    ),
+    pairwise(),
+  );
 
   /**
    * Origin cursor for an in-flight jump/fold command (`jumpForward`,
@@ -92,6 +162,16 @@ export class TelemetryEffects {
     ReplayActions.jumpBack.type,
     ReplayActions.advanceDisplay.type,
   ]);
+
+  /**
+   * Effect-local rolling clock backing `TimeElapsedBeforeOrder` (RFC-014
+   * §4) — see `telemetry-anchors.ts` for the pure transition functions.
+   * `null` = no clock yet for the current session (first-touch lazily
+   * starts a `'sessionStart'` anchor; see `ensureSession` in that module).
+   * Updated by `orderClockOnSeek$`/`orderClockOnPlayback$` (anchor-adjacent
+   * events) and settled + re-anchored by `orderPlacement$` on each capture.
+   */
+  private orderClock: OrderClock | null = null;
 
   /** Scrubber teleport (frozen semantics: registered, never simulated). */
   replaySeek$ = createEffect(
@@ -179,6 +259,130 @@ export class TelemetryEffects {
         tap(([action, marketTime, sessionId]) => {
           this.capture(sessionId, 'SpeedChanged', marketTime, {
             msPerCandle: action.msPerCandle,
+          });
+        }),
+      ),
+    { dispatch: false },
+  );
+
+  /**
+   * Keeps `orderClock` in sync with the scrubber teleport (`ReplaySeek`):
+   * a hard reset to a `'lastSeek'` anchor (see `withSeekAnchor`). Does NOT
+   * itself call `capture()` — `replaySeek$` above already records the
+   * `ReplaySeek` event; this is purely `TimeElapsedBeforeOrder` bookkeeping,
+   * a second independent subscriber to the SAME `seekTo` action.
+   */
+  private orderClockOnSeek$ = createEffect(
+    () =>
+      this.actions$.pipe(
+        ofType(ReplayActions.seekTo),
+        withLatestFrom(this.activeSessionId$, this.store.select(selectReplayIndex), this.store.select(selectPlaying)),
+        tap(([, sessionId, replayIndex, playing]) => {
+          if (sessionId == null) return;
+          this.orderClock = withSeekAnchor(this.orderClock, sessionId, Date.now(), replayIndex, playing);
+        }),
+      ),
+    { dispatch: false },
+  );
+
+  /**
+   * Keeps `orderClock` in sync with play/pause: settles the elapsed window
+   * into paused/playingMs and flips `playing`, WITHOUT moving the anchor
+   * (see `withPlaybackToggled` — play/pause is not an anchor-resetting
+   * event per the RFC's anchor list). A second independent subscriber to
+   * the SAME `play`/`pause` actions `playbackToggled$` already records.
+   */
+  private orderClockOnPlayback$ = createEffect(
+    () =>
+      this.actions$.pipe(
+        ofType(ReplayActions.play, ReplayActions.pause),
+        withLatestFrom(this.activeSessionId$, this.store.select(selectReplayIndex)),
+        tap(([action, sessionId, replayIndex]) => {
+          if (sessionId == null) return;
+          this.orderClock = withPlaybackToggled(
+            this.orderClock,
+            sessionId,
+            action.type === ReplayActions.play.type,
+            Date.now(),
+            replayIndex,
+          );
+        }),
+      ),
+    { dispatch: false },
+  );
+
+  /**
+   * The reified Task-4b facts (`OrderFilled`/`PositionClosed`, D14.F —
+   * derived from state diffing, see the class doc comment), plus a
+   * `DrawingSnapshot` alongside every `PositionClosed` (G3: captured at
+   * position close, `eventRef` = the trade id). State-driven (see
+   * `tradingPairs$`'s doc comment for why), not gated to any specific
+   * action type — whatever caused positions/history to change (a fill via
+   * `processCandle`, a manual `closePosition`, `endSession`, ...) is
+   * diffed identically.
+   */
+  facts$ = createEffect(
+    () =>
+      this.tradingPairs$.pipe(
+        withLatestFrom(
+          this.store.select(selectExecutionSeries),
+          this.store.select(drawingsFeature.selectItems),
+        ),
+        tap(([[prev, curr], base, drawings]) => {
+          if (curr.sessionId == null || prev.sessionId !== curr.sessionId) return; // no session, or a session switch: reset baseline, no spurious facts
+          for (const fact of diffDomainFacts(prev, curr, base)) {
+            this.capture(curr.sessionId, fact.kind, fact.marketTime, fact.payload);
+            if (fact.kind === 'PositionClosed') {
+              this.capture(curr.sessionId, 'DrawingSnapshot', fact.marketTime, {
+                eventRef: fact.payload.tradeId,
+                drawings: snapshotDrawings(drawings),
+              });
+            }
+          }
+        }),
+      ),
+    { dispatch: false },
+  );
+
+  /**
+   * `TimeElapsedBeforeOrder` + `DrawingSnapshot` at order placement
+   * (`placeOrder`/`openMarket`). State-driven off the SAME `tradingPairs$`
+   * as `facts$`: `resolveOrderRef` finds the id the reducer just minted (a
+   * new pending order, or a new `origin: 'market'` position — a pending-
+   * order FILL, which also adds to `positions[]` but with `origin: 'limit'
+   * | 'stop'`, is deliberately excluded there so a fill is never mistaken
+   * for a placement). `undefined` means this transition was not an
+   * accepted placement (nothing to correlate against) — most commonly
+   * because it was some OTHER kind of trading-state change entirely, since
+   * a genuinely REJECTED placement (I-14 guard) never produces a pair here
+   * at all (see `tradingPairs$`'s doc comment).
+   */
+  orderPlacement$ = createEffect(
+    () =>
+      this.tradingPairs$.pipe(
+        withLatestFrom(
+          this.store.select(selectReplayIndex),
+          this.store.select(selectCurrentTime),
+          this.store.select(selectPlaying),
+          this.store.select(drawingsFeature.selectItems),
+        ),
+        tap(([[prev, curr], replayIndex, marketTime, playing, drawings]) => {
+          if (curr.sessionId == null || prev.sessionId !== curr.sessionId) return;
+          const orderRef = resolveOrderRef(prev, curr);
+          if (orderRef == null) return;
+
+          const clockCapture = captureOrderClock(this.orderClock, curr.sessionId, Date.now(), replayIndex, playing);
+          this.orderClock = clockCapture.nextClock;
+          this.capture(curr.sessionId, 'TimeElapsedBeforeOrder', marketTime, {
+            orderRef,
+            anchorKind: clockCapture.anchorKind,
+            pausedMs: clockCapture.pausedMs,
+            playingMs: clockCapture.playingMs,
+            candlesRevealed: clockCapture.candlesRevealed,
+          });
+          this.capture(curr.sessionId, 'DrawingSnapshot', marketTime, {
+            eventRef: orderRef,
+            drawings: snapshotDrawings(drawings),
           });
         }),
       ),
