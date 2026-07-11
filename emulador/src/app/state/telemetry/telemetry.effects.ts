@@ -5,6 +5,7 @@ import { distinctUntilChanged, map, pairwise, tap, withLatestFrom } from 'rxjs/o
 import { TelemetryDbService, type TelemetryAppendInput } from '../../services/telemetry-db.service';
 import type { TelemetryEventKindV1 } from './telemetry.models';
 import { ReplayActions } from '../replay/replay.actions';
+import { TradingActions } from '../trading/trading.actions';
 import {
   selectCurrentTime,
   selectExecutionSeries,
@@ -133,11 +134,59 @@ export class TelemetryEffects {
    * Origin cursor for an in-flight jump/fold command (`jumpForward`,
    * `jumpBack`, `advanceDisplay`), captured BEFORE it lands. `null` means
    * the next `goToTime` this effect sees should NOT be recorded as a
-   * `ReplayJump` (a plain autoplay `advanceCandle` step or a `stepBack`
-   * snap — both also funnel through `goToTime`).
+   * `ReplayJump`.
    *
-   * FINAL-AUDIT ATTENTION — correctness here rests on one @ngrx/store
-   * internal guarantee, so it is spelled out: `State` (ngrx-store's internal
+   * FINAL-AUDIT ATTENTION — REVIEW FIX (RFC-014 T5 review, wave 1): the
+   * original design cleared this field only on a hand-maintained list of
+   * actions (`advanceCandle`, `stepBack`) known to also funnel through
+   * `goToTime`. That list was provably incomplete: `goToTime` is ALSO
+   * dispatched directly, with NO other store action anywhere near it, from
+   * the go-to-date dialog (`chart.component.ts`'s `confirmDateDialog`),
+   * session/workspace restore (`workspaces.effects.ts`), and CSV start
+   * (`csv-start-dialog.component.ts`). None of those arm or clear this
+   * field. A `jumpForward`/`jumpBack`/`advanceDisplay` that no-ops at a
+   * session/data boundary (no `goToTime` follows AT ALL) used to leave a
+   * stale origin that a LATER, wholly unrelated `goToTime` from any of
+   * those call sites would be misattributed to (reviewer finding).
+   *
+   * Fixed structurally instead of by growing that action list further, with
+   * TWO independent invalidation paths, both owned entirely by
+   * `syncJumpOrigin$` below (no `goToTime` producer, present or future,
+   * needs to arm or clear anything):
+   *
+   * 1. SYNCHRONOUS: `syncJumpOrigin$` subscribes to `this.actions$` with NO
+   *    `ofType` filter — i.e. every action dispatched anywhere in the app —
+   *    and nulls this field out on any action that is neither one of the
+   *    three arm types NOR `TradingActions.processCandle` (the one action
+   *    `ReplayEffects.foldForwardFills` dispatches BETWEEN an arm and its
+   *    own terminal `goToTime` when a jump/fold spans more than one candle
+   *    — excluded so a real multi-candle fold can't invalidate its own
+   *    in-flight arm) NOR `goToTime` itself (left for `replayJump$` to
+   *    read/clear). This is what makes the OLD regression test below
+   *    (`advanceCandle` intervening) pass without needing any timer, and
+   *    now generalizes to literally any other action, not just those two.
+   * 2. TIME-BASED: arming ALSO schedules a same-macrotask-scoped
+   *    `setTimeout(…, 0)` that nulls this field back out, compared by
+   *    reference identity so a newer arm made in the meantime is never
+   *    clobbered. This is the only thing that can catch the pathological
+   *    case (1) can't: a `goToTime` dispatched with LITERALLY NOTHING else
+   *    in between (e.g. `chart.component.ts`'s `confirmDateDialog` — see
+   *    the regression test below) — no OTHER action ever fires to trigger
+   *    path 1's clear, so the field would stay armed indefinitely without
+   *    this. `goToTime` and the whole jumpForward/jumpBack/advanceDisplay →
+   *    `processCandle`* → `goToTime` fold it can trigger are ALL driven
+   *    through @ngrx/store's `queueScheduler` trampoline and RxJS's
+   *    synchronous array-flattening of `mergeMap`'s returned `Action[]`
+   *    (see below) — a LEGITIMATE landing always reaches `replayJump$`
+   *    within the SAME synchronous JS turn the arming action was dispatched
+   *    in, strictly before a macrotask-deferred `setTimeout(0)` can fire.
+   *
+   * Together these two paths mean: a `goToTime` with NO fresh preceding arm
+   * NEVER emits `ReplayJump`, regardless of what intervenes (path 1) or how
+   * much real time elapses with nothing intervening at all (path 2) — and
+   * regardless of what new `goToTime` call sites get added later.
+   *
+   * The scheduling argument path 2 rests on: `State` (ngrx-store's internal
    * reducer runner) feeds every dispatch through `observeOn(queueScheduler)`
    * before applying the reducer, and effects (`Actions`, built on
    * `ScannedActionsSubject`) are only notified of an action AFTER its
@@ -145,29 +194,14 @@ export class TelemetryEffects {
    * `store.dispatch()` triggered from INSIDE another dispatch's own effect
    * notification (e.g. `ReplayEffects.jumpForward$`'s `mergeMap`
    * re-dispatching its folded `processCandle`s and terminal `goToTime`) is
-   * QUEUED, not run reentrantly. That means ALL subscribers of the
-   * ORIGINATING action — including `syncJumpOrigin$` below, regardless of
-   * `TelemetryEffects`'s position in `provideEffects(...)` relative to
-   * `ReplayEffects` — finish running before any action IT caused is
-   * processed. That is what makes "record the origin on the cause action,
-   * read it on the landing action" safe here, independent of effect
-   * registration order.
-   *
-   * `syncJumpOrigin$` also listens to `advanceCandle`/`stepBack` (the other
-   * two actions that can themselves lead to a `goToTime`) purely to CLEAR a
-   * stale origin: `jumpForward`/`jumpBack`/`advanceDisplay` are no-ops in
-   * `ReplayEffects` at a session/data boundary (no `goToTime` follows at
-   * all), and without this, a later UNRELATED `goToTime` would be
-   * misattributed to the stale jump. Re-syncing on every `goToTime`-capable
-   * cause immediately before it fires closes that gap.
+   * QUEUED, not run reentrantly, but still runs SYNCHRONOUSLY as part of
+   * draining that queue — no microtask or macrotask boundary is crossed.
+   * That is what makes "record the origin on the cause action, expire it on
+   * a real timer, read/consume it on the landing action" safe here,
+   * independent of effect registration order and of how many intermediate
+   * actions (`processCandle`) the fold dispatches.
    */
   private pendingJumpOrigin: { fromTime: number } | null = null;
-
-  private static readonly JUMP_FAMILY = new Set<string>([
-    ReplayActions.jumpForward.type,
-    ReplayActions.jumpBack.type,
-    ReplayActions.advanceDisplay.type,
-  ]);
 
   /**
    * Effect-local rolling clock backing `TimeElapsedBeforeOrder` (RFC-014
@@ -196,26 +230,43 @@ export class TelemetryEffects {
     { dispatch: false },
   );
 
+  private static readonly JUMP_FAMILY = new Set<string>([
+    ReplayActions.jumpForward.type,
+    ReplayActions.jumpBack.type,
+    ReplayActions.advanceDisplay.type,
+  ]);
+
   /**
-   * Re-syncs `pendingJumpOrigin` immediately before every action that can
-   * itself lead to a `goToTime` dispatch (see that field's doc comment for
-   * why this ordering is safe regardless of effect registration).
+   * Owns BOTH invalidation paths documented on `pendingJumpOrigin` above.
+   * Deliberately subscribes to `this.actions$` with NO `ofType` filter —
+   * every action in the app passes through here — because path 1 (clear on
+   * any non-pass-through action) can only invalidate a stale arm if it
+   * actually SEES the actions that should invalidate it, and the whole
+   * point of this fix is that this effect no longer needs a hand-maintained
+   * list of which those are.
    */
   private syncJumpOrigin$ = createEffect(
     () =>
       this.actions$.pipe(
-        ofType(
-          ReplayActions.jumpForward,
-          ReplayActions.jumpBack,
-          ReplayActions.advanceDisplay,
-          ReplayActions.advanceCandle,
-          ReplayActions.stepBack,
-        ),
         withLatestFrom(this.store.select(selectCurrentTime)),
         tap(([action, fromTime]) => {
-          this.pendingJumpOrigin = TelemetryEffects.JUMP_FAMILY.has(action.type)
-            ? { fromTime }
-            : null;
+          if (TelemetryEffects.JUMP_FAMILY.has(action.type)) {
+            const origin = { fromTime };
+            this.pendingJumpOrigin = origin;
+            // Path 2 (time-based expiry) — see `pendingJumpOrigin`'s doc comment.
+            setTimeout(() => {
+              if (this.pendingJumpOrigin === origin) this.pendingJumpOrigin = null;
+            }, 0);
+            return;
+          }
+          // Path 1 (synchronous invalidation): everything except the two
+          // pass-through types below invalidates a stale arm immediately.
+          if (
+            action.type !== ReplayActions.goToTime.type &&
+            action.type !== TradingActions.processCandle.type
+          ) {
+            this.pendingJumpOrigin = null;
+          }
         }),
       ),
     { dispatch: false },

@@ -231,6 +231,34 @@ describe('TelemetryEffects — navigation observer (RFC-014 T5b-i)', () => {
       expect(telemetryDb.append).not.toHaveBeenCalled();
       sub.unsubscribe();
     });
+
+    it('REVIEW FIX (T5 review, wave 1): a jumpForward that never lands, followed — after the arm has expired — by a goToTime with NO observable preceding cause (as dispatched directly by the go-to-date dialog, workspace restore, or CSV start), does not misattribute a spurious ReplayJump', async () => {
+      arm('sess-1', 1000, 60);
+      const sub = subscribeAll();
+
+      // jumpForward arms pendingJumpOrigin, but — as would happen when
+      // ReplayEffects.jumpForward$'s own guard trips (already at the data
+      // end) — NO goToTime ever follows it.
+      actions$.next(ReplayActions.jumpForward());
+      await Promise.resolve();
+
+      // Let the arm's own same-macrotask-scoped setTimeout(0) expiry run.
+      // This is the real-world gap between the no-op jump and the user
+      // later opening the go-to-date dialog and confirming — a gap with NO
+      // intervening store action at all, unlike the stepBack/advanceCandle
+      // regression above. Nothing short of this real timer elapsing can
+      // model that gap.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // A bare goToTime, exactly as chart.component.ts's confirmDateDialog
+      // dispatches it: no jump-family action, no advanceCandle/stepBack —
+      // nothing — precedes it.
+      actions$.next(ReplayActions.goToTime({ time: 1600 }));
+      await Promise.resolve();
+
+      expect(telemetryDb.append).not.toHaveBeenCalled();
+      sub.unsubscribe();
+    });
   });
 
   // ─── playbackToggled$ ───────────────────────────────────────────────────

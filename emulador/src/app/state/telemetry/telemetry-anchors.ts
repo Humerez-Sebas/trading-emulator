@@ -18,7 +18,9 @@ import type { TimeElapsedAnchorKind } from './telemetry.models';
  * routes every relevant navigation/order event through the pure functions
  * below, swapping in the returned clock — the same "effect holds one mutable
  * field, a pure function computes its next value" idiom as
- * `pendingJumpOrigin`/`JUMP_FAMILY` in `telemetry.effects.ts` (T5b-i).
+ * `pendingJumpOrigin` in `telemetry.effects.ts` (T5b-i; its arm/expiry
+ * mechanism was revised in the T5 review fix — see that field's doc
+ * comment).
  */
 export interface OrderClock {
   /** Session this clock belongs to; a session switch starts a fresh clock (see `ensureSession`). */
