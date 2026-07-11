@@ -12,8 +12,24 @@ export interface TradingBook {
 
 export interface ProcessResult {
   book: TradingBook;
-  /** True if anything changed (fills or exits happened). */
+  /**
+   * True if anything changed (fills or exits happened). Position excursion
+   * (mae/mfe, RFC-014 §3) accumulation does NOT set this — `book` always
+   * reflects the latest excursion values regardless of this flag; see
+   * `updateExcursion`'s doc comment for why the two are decoupled.
+   */
   changed: boolean;
+  /**
+   * True when at least one still-open position's mae/mfe/tMae/tMfe advanced
+   * this candle (RFC-014 §3) even though `changed` stayed false (nothing
+   * filled or exited). Optional/additive: absent behaves as false, so any
+   * caller written before this field existed is unaffected. Exists so a
+   * caller that short-circuits on `!changed` — e.g. the trading reducer's
+   * idle path — can still tell whether `book.positions` needs adopting,
+   * without deep-comparing the book itself. When there are no open positions
+   * at all this is always false, so the truly-idle case is unaffected.
+   */
+  excursionsMoved?: boolean;
 }
 
 function profitOf(p: Position, exitPrice: number, contractSize: number): number {
@@ -26,7 +42,7 @@ function profitOf(p: Position, exitPrice: number, contractSize: number): number 
  * conversion point every sided predicate/price that needs the Ask side goes
  * through. Absent costs (or zero spread) degrade to `bid` unchanged (V-1).
  */
-function toAsk(bid: number, costs?: ExecutionCosts): number {
+export function toAsk(bid: number, costs?: ExecutionCosts): number {
   if (!costs || !costs.spreadPoints) return bid;
   return bid + pointsToPrice(costs.spreadPoints, costs.pointSize);
 }
@@ -85,6 +101,66 @@ export function closeTrade(
     ambiguous,
     grossProfit,
     commission,
+    // RFC-014 §3: seal the position's running excursion accumulators as of
+    // this close (on an engine SL/TP exit, `p` already carries THIS candle's
+    // contribution — see `updateExcursion`'s call site in `processCandle`,
+    // which runs before the exit check). A position never walked by a candle
+    // (mae/mfe/tMae/tMfe all undefined, e.g. a market order closed manually
+    // before any replay advance) seals as a zero excursion at the open
+    // instant rather than staying undefined — undefined is reserved for
+    // trades persisted before this field existed (see the doc on
+    // `ClosedTrade.mae`).
+    mae: p.mae ?? 0,
+    mfe: p.mfe ?? 0,
+    tMae: p.tMae ?? p.openTime,
+    tMfe: p.tMfe ?? p.openTime,
+  };
+}
+
+/**
+ * Excursion update (RFC-014 §3): the running max adverse/favorable price
+ * distance from entry, evaluated over `candle`'s own high/low — whatever
+ * grain the caller is walking (base candles in production, the coarser
+ * parent candle in the legacy no-execution-series path; see D14.A). Reuses
+ * `toAsk` (D14.D) for the short side's spread-adjusted extremes; the long
+ * side is spread-invariant (Bid-denominated). Strict `>` (not `>=`): a later
+ * candle that only EQUALS the running max does not move its timestamp — the
+ * FIRST candle to reach a given max wins.
+ *
+ * Deliberately decoupled from `ProcessResult.changed` (fills/exits only,
+ * RFC-014 Task 2's pre-existing contract, STOP-protected by
+ * `fill-engine.sided.spec.ts`): a position's very first accumulation always
+ * "moves" its mae/mfe from undefined to a concrete value, which would flip
+ * `changed` to true on candles where no fill or exit occurs. Returning
+ * `moved` separately lets the caller decide.
+ */
+function updateExcursion(
+  p: Position,
+  candle: Candle,
+  costs?: ExecutionCosts,
+): { position: Position; moved: boolean } {
+  const E = p.entryPrice;
+  let adverse: number;
+  let favorable: number;
+  if (p.side === 'buy') {
+    adverse = Math.max(0, E - candle.low);
+    favorable = Math.max(0, candle.high - E);
+  } else {
+    adverse = Math.max(0, toAsk(candle.high, costs) - E);
+    favorable = Math.max(0, E - toAsk(candle.low, costs));
+  }
+  const maeUp = p.mae === undefined || adverse > p.mae;
+  const mfeUp = p.mfe === undefined || favorable > p.mfe;
+  if (!maeUp && !mfeUp) return { position: p, moved: false };
+  return {
+    position: {
+      ...p,
+      mae: maeUp ? adverse : p.mae,
+      tMae: maeUp ? candle.time : p.tMae,
+      mfe: mfeUp ? favorable : p.mfe,
+      tMfe: mfeUp ? candle.time : p.tMfe,
+    },
+    moved: true,
   };
 }
 
@@ -205,6 +281,7 @@ export function processCandle(
   costs?: ExecutionCosts,
 ): ProcessResult {
   let changed = false;
+  let excursionsMoved = false;
 
   // 1) fills of pending orders
   const remaining: PendingOrder[] = [];
@@ -242,11 +319,21 @@ export function processCandle(
   const stillOpen: Position[] = [];
   const closed: ClosedTrade[] = [];
   let balance = book.balance;
-  for (const p of positions) {
-    if (candle.time < p.openTime) {
-      stillOpen.push(p);
+  for (const p0 of positions) {
+    if (candle.time < p0.openTime) {
+      stillOpen.push(p0);
       continue;
     }
+    // RFC-014 §3: excursions accumulate for EVERY candle the position is
+    // open for, INCLUDING the one it exits on (an SL exit's own candle is
+    // what typically sets its MAE) — evaluated before the exit check so this
+    // candle's extremes are already folded into `p` by the time it closes.
+    // `updateExcursion`'s `moved` flag is intentionally NOT wired into
+    // `changed` (see its doc comment) — it feeds `excursionsMoved` instead,
+    // so a caller gating on `!changed` can still detect it.
+    const excursionUpdate = updateExcursion(p0, candle, costs);
+    const p = excursionUpdate.position;
+    if (excursionUpdate.moved) excursionsMoved = true;
     const exit = resolveExit(p, candle, subCandles, fillIdx.get(p.id) ?? 0, costs);
     if (exit) {
       const trade = closeTrade(
@@ -266,7 +353,13 @@ export function processCandle(
     }
   }
 
-  if (!changed) return { book, changed: false };
+  // Always return a freshly built book (no `!changed` short-circuit to the
+  // original `book` reference): excursion accumulation must survive candles
+  // where no fill/exit occurs, and `changed` no longer implies "nothing in
+  // `stillOpen` differs from `positions`" now that excursions update inside
+  // this same loop. `changed` itself keeps its exact pre-existing meaning
+  // (fills or exits only) — callers that gate on it (STOP-protected specs)
+  // are unaffected.
   return {
     book: {
       balance,
@@ -274,7 +367,8 @@ export function processCandle(
       positions: stillOpen,
       history: [...book.history, ...closed],
     },
-    changed: true,
+    changed,
+    excursionsMoved,
   };
 }
 

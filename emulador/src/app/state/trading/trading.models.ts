@@ -39,6 +39,26 @@ export interface Position {
   openTime: number;
   /** Order type that originated the position. */
   origin: OrderType;
+  /**
+   * Running max adverse excursion in price units (RFC-014 §3): for a long,
+   * `max_k (entryPrice - low_k)+`; for a short, `max_k (high_k + s - entryPrice)+`
+   * (`s` = spread). Accumulated by `processCandle` over every candle the
+   * position is open for, including its fill and exit candles. Optional/
+   * additive: undefined until the position has been walked by at least one
+   * candle — pre-existing specs construct `Position` literals directly and
+   * never set this, so they behave identically (V-1, the field simply stays
+   * absent).
+   */
+  mae?: number;
+  /**
+   * Running max favorable excursion, analogous to {@link mae}: long
+   * `max_k (high_k - entryPrice)+`, short `max_k (entryPrice - low_k - s)+`.
+   */
+  mfe?: number;
+  /** UTC seconds of the FIRST candle that reached the current `mae` (strict `>`: a later candle merely equaling it does not move this). */
+  tMae?: number;
+  /** UTC seconds of the FIRST candle that reached the current `mfe`, analogous to {@link tMae}. */
+  tMfe?: number;
 }
 
 /** A finished trade, kept in the session history. */
@@ -86,6 +106,19 @@ export interface ClosedTrade {
   boxHidden?: boolean;
   /** The historical trade box was deleted from the chart (irreversible). */
   boxDeleted?: boolean;
+  /**
+   * Sealed running excursion accumulators from the closed {@link Position}
+   * (RFC-014 §3). `closeTrade` always sets these four fields — `mae`/`mfe`
+   * default to 0 and `tMae`/`tMfe` default to `openTime` when the position
+   * was never walked by a candle (e.g. a market order closed manually before
+   * any replay advance), the same "collapses to the open instant" idiom used
+   * elsewhere; optional only so trades persisted BEFORE this field existed
+   * still parse (legacy-absent), matching {@link grossProfit}/{@link commission}.
+   */
+  mae?: number;
+  mfe?: number;
+  tMae?: number;
+  tMfe?: number;
 }
 
 /**

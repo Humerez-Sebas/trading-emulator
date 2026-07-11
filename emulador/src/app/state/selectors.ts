@@ -27,6 +27,7 @@ import {
   computeSessionStats,
   firstIndexAtOrAfter,
   lastIndexAtOrBefore,
+  toAsk,
 } from './trading/fill-engine';
 
 export const selectActiveTf = marketFeature.selectActiveTf;
@@ -765,5 +766,63 @@ export const selectFloatingPnl = createSelector(
   (positions, candle, contractSize): number | null => {
     if (!positions.length || !candle) return null;
     return positions.reduce((sum, p) => sum + floatingPnl(p, candle.close, contractSize), 0);
+  },
+);
+
+/**
+ * Base-grain "current candle" for mark-to-market (RFC-014 §3), mirroring
+ * `selectPlacementTime`'s reveal-horizon math (D14.B): the last BASE candle
+ * revealed within the cursor's replay-resolution bucket
+ * `[cursorTime, cursorTime + tfSeconds)`. Null with no base series loaded, or
+ * before it reaches this bucket — the caller falls back to
+ * {@link selectCurrentReplayCandle} in that case.
+ */
+function currentBaseCandle(
+  base: Candle[] | null | undefined,
+  cursorTime: number,
+  tfSeconds: number,
+): Candle | null {
+  if (!base || !base.length || tfSeconds <= 0) return null;
+  const idx = lastIndexAtOrBefore(base, cursorTime + tfSeconds - 1);
+  return idx >= 0 ? base[idx] : null;
+}
+
+/**
+ * Floating equity (RFC-014 §3): `balance + Σ floatingPnL` of open positions,
+ * valuing longs at the current base candle's Bid close and shorts at its
+ * derived Ask close (`close + s`, D14.D via {@link toAsk}) — unlike
+ * {@link selectFloatingPnl} (untouched, single uniform price for both sides),
+ * this is sided. Prices off the execution series' current base candle when
+ * loaded, falling back to {@link selectCurrentReplayCandle} otherwise. NOT
+ * persisted (read model only); no factory selector (D8).
+ */
+export const selectFloatingEquity = createSelector(
+  tradingFeature.selectBalance,
+  tradingFeature.selectPositions,
+  tradingFeature.selectExecutionCosts,
+  selectExecutionSeries,
+  selectCurrentTime,
+  selectReplayTfSeconds,
+  selectCurrentReplayCandle,
+  selectContractSize,
+  (
+    balance,
+    positions,
+    executionCosts,
+    base,
+    cursorTime,
+    tfSeconds,
+    fallbackCandle,
+    contractSize,
+  ): number => {
+    if (!positions.length) return balance;
+    const candle = currentBaseCandle(base, cursorTime, tfSeconds) ?? fallbackCandle;
+    if (!candle) return balance;
+    const costs = executionCosts ?? undefined;
+    const floating = positions.reduce((sum, p) => {
+      const val = p.side === 'buy' ? candle.close : toAsk(candle.close, costs);
+      return sum + floatingPnl(p, val, contractSize);
+    }, 0);
+    return balance + floating;
   },
 );

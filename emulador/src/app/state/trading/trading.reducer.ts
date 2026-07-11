@@ -226,7 +226,21 @@ export const tradingFeature = createFeature({
           contractSize,
           state.executionCosts ?? undefined,
         );
-        if (!result.changed) return { ...state, lastProcessedTime: candle.time };
+        if (!result.changed) {
+          // RFC-014 §3: `changed` only covers fills/exits — a still-open
+          // position's mae/mfe excursion accumulators can advance on a
+          // candle where nothing fills or exits (the common case, almost
+          // every candle). `excursionsMoved` tells us exactly that; adopt
+          // the engine's updated `positions` array so the accumulators
+          // survive in the real store, without touching anything else. With
+          // NO open positions `excursionsMoved` is always false, so the
+          // truly-idle path keeps today's single-field short-circuit — no
+          // new array reference, no selector churn.
+          if (result.excursionsMoved) {
+            return { ...state, positions: result.book.positions, lastProcessedTime: candle.time };
+          }
+          return { ...state, lastProcessedTime: candle.time };
+        }
         return { ...state, ...result.book, lastProcessedTime: candle.time };
       },
     ),
