@@ -136,6 +136,16 @@ placement site. Zero Critical/High/Medium. One Low (T7-m1 stale domain-facts.ts 
 fixed post-audit in 51e2249 (comment-only; tsc app + lint re-verified). Remaining rollup
 minors ruled no-fix with written reasons (see audit report / PHILOSOPHY §3.5).
 
+## Post-audit polish wave (2026-07-12, user-directed)
+User-directed cleanup after PR #37 opened: T6-m2 (cost-label→label dedup, both components)
+and T6-m3 (commission copy symmetry "Comisión ($/lote)") fixed; docs/architecture/
+walkthrough.md replaced with the RFC-014 closure walkthrough (old content in git history);
+DOMAIN_MODEL §8 gains "Deviations recorded by RFC-014" (items 5-6: dedicated
+emulador-telemetry DB, goToTime capture gap). Executed by a sonnet subagent (killed by
+session limit pre-commit; orchestrator reviewed, restored the [title] cursor:help rule
+lost to a literal instruction, re-ran all four gates personally: 1278/1278, tsc+lint
+clean) and committed by the orchestrator.
+
 ## Minor findings rollup (for final audit triage)
 
 - T1-m1 (theoretical): base-candle walk slices only within resolution-candle intervals

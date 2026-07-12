@@ -481,6 +481,29 @@ scheduled work (see `RFC-014_AND_BEYOND.md`), not drive-by fixes:
    collision, confirming ambiguity narrows to an irreducible floor rather than
    vanishing.
 
+### Deviations recorded by RFC-014 (implementation, not further model limitations)
+
+Two additional deviations from RFC-014's literal spec were recorded at closure
+(RFC-014, "Desviaciones registradas", 2026-07-11) and are logged here so no future
+document "discovers" them either. Unlike items 1-4 above, these are implementation
+choices, not gaps in the trading model itself:
+
+5. **Telemetry store lives in a DEDICATED IndexedDB database
+   (`emulador-telemetry`), not the `emulador-workspaces` store RFC-014 §4 names
+   literally.** Joining the telemetry object store to the shared
+   `emulador-workspaces` database would have required bumping its `DB_VERSION`,
+   breaking a STOP-protected exact-object-store-count assertion in
+   `workspace-db.service.spec.ts`. A dedicated database
+   (`services/telemetry-db.service.ts`) leaves that spec untouched; `assertNoCandles`
+   (I-13) is still enforced independently on every telemetry batch.
+6. **Programmatic time-jumps fall outside telemetry capture.** The "go to date"
+   teleport (and other programmatic restores — session/CSV-start loads) dispatch
+   `goToTime` directly, bypassing both `seekTo` and the
+   `jumpForward`/`jumpBack`/`advanceDisplay` arming path. These jumps are therefore
+   captured neither as `ReplaySeek` nor as `ReplayJump` by the black box (RFC-014
+   §4, Caja Negra), and do not reset its anchors. A known, disclosed gap — not fixed
+   in this closure — tracked as future telemetry work, not hidden behavior.
+
 ---
 
 ## 9. References
