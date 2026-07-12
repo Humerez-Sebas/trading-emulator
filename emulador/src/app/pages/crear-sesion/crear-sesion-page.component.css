@@ -238,13 +238,13 @@ h2 {
   gap: 4px;
   min-width: 120px;
 }
-.cost-label {
+.label {
   color: var(--text-muted);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
-.cost-label[title] {
+.label[title] {
   cursor: help;
 }
 .cost-field input {
