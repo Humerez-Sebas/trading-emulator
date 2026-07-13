@@ -268,6 +268,7 @@ export class ChartModelMapper {
     lots: p.lots,
     openTime: p.openTime,
     origin: p.origin,
+    declaredRuleId: p.declaredRuleId ?? null,
   }));
   private mapOrders = this.memoizeMap((o: StatePendingOrder) => ({
     id: o.id,
@@ -277,6 +278,7 @@ export class ChartModelMapper {
     sl: o.sl,
     tp: o.tp,
     lots: o.lots,
+    declaredRuleId: o.declaredRuleId ?? null,
   }));
   private mapMarkers = this.memoizeMap((m: StateTradeMarker) => ({
     time: m.time,
@@ -442,6 +444,7 @@ export class ChartModelMapper {
     barSpacing: number,
     colors: ChartColors,
     opacity: TradeBoxOpacity,
+    ruleSlotMap?: Record<string, number | null>,
   ): TradingModel {
     return {
       positions,
@@ -453,6 +456,7 @@ export class ChartModelMapper {
       barSpacing,
       colors,
       opacity,
+      ruleSlotMap,
     };
   }
 

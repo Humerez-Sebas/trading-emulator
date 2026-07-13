@@ -30,6 +30,7 @@ import {
   selectPlacementTime,
   selectTradePanelView,
 } from '../../state/selectors';
+import { selectRuleSlotMap } from '../../state/playbook/playbook.selectors';
 import { ChartModelMapper } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import {
@@ -374,6 +375,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private tradeCtx = this.store.selectSignal(selectTradePanelView);
   /** D14.B: pending-order placement stamps createdAt at the reveal horizon, not the raw cursor. */
   private placementTime = this.store.selectSignal(selectPlacementTime);
+  private ruleSlotMap = this.store.selectSignal(selectRuleSlotMap);
   menu = signal<{
     x: number;
     y: number;
@@ -1063,6 +1065,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
           this.barSpacing,
           this.lastConfig?.colors ?? DARK_CHART_COLORS,
           { fill: this.boxFillAlpha, border: this.boxBorderAlpha },
+          this.ruleSlotMap(),
         ),
       });
     }

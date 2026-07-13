@@ -15,6 +15,16 @@ import { TradeBoxesPrimitive } from './trade-boxes-primitive';
 import { TradeButtonsPrimitive, TradeButton } from './trade-buttons-primitive';
 const CHART_ACCENT = '#2962FF';
 
+function ruleTagSuffix(
+  declaredRuleId: string | null | undefined,
+  ruleSlotMap: Record<string, number | null> | undefined,
+): string {
+  if (!declaredRuleId || !ruleSlotMap) return '';
+  if (!(declaredRuleId in ruleSlotMap)) return '';
+  const slot = ruleSlotMap[declaredRuleId];
+  return slot !== null ? ` [R${slot}]` : ' [R]';
+}
+
 export interface TradeLine {
   id: string;
   target: 'position' | 'order';
@@ -127,7 +137,7 @@ export class TradingCapability implements Capability {
 
       for (const p of t.positions) {
         const sideColor = p.side === 'buy' ? t.colors.upColor : t.colors.downColor;
-        const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}`;
+        const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}${ruleTagSuffix(p.declaredRuleId, t.ruleSlotMap)}`;
         addPriceLine(
           p.id,
           'position',
@@ -162,7 +172,7 @@ export class TradingCapability implements Capability {
         }
       }
       for (const o of t.pendingOrders) {
-        const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}`;
+        const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}${ruleTagSuffix(o.declaredRuleId, t.ruleSlotMap)}`;
         addPriceLine(
           o.id,
           'order',
