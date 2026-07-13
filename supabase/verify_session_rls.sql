@@ -88,3 +88,42 @@ begin
   delete from public.folders where id = fid;  -- cleanup
   raise notice 'RLS PASS (folders): cross-user isolation holds';
 end $$;
+
+-- ===== playbook_rules (RFC-015 Task 4) =====
+-- Requires supabase/playbook_rules.sql applied first (id/client_updated_at have
+-- no server-side defaults, so both are supplied explicitly in the insert below,
+-- unlike sessions/folders above).
+do $$
+declare a uuid; b uuid := gen_random_uuid(); rid uuid; cnt int; tt text;
+begin
+  select id into a from auth.users limit 1;
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a::text)::text, true);
+
+  insert into public.playbook_rules (id, user_id, title, statement, client_updated_at)
+    values (gen_random_uuid(), a, 'rls-rule', 'texto opaco', now())
+    returning id into rid;
+  select count(*) into cnt from public.playbook_rules where id = rid;
+  if cnt <> 1 then raise exception 'SETUP FAIL: A cannot see own playbook rule (cnt=%)', cnt; end if;
+
+  -- user B
+  perform set_config('request.jwt.claims', json_build_object('sub', b::text)::text, true);
+  select count(*) into cnt from public.playbook_rules where id = rid;
+  if cnt <> 0 then raise exception 'RLS FAIL: B can SELECT A playbook rule (cnt=%)', cnt; end if;
+  update public.playbook_rules set title = 'hacked-by-B', client_updated_at = now() where id = rid;
+  get diagnostics cnt = row_count;
+  if cnt <> 0 then raise exception 'RLS FAIL: B can UPDATE A playbook rule (rows=%)', cnt; end if;
+  delete from public.playbook_rules where id = rid;
+  get diagnostics cnt = row_count;
+  if cnt <> 0 then raise exception 'RLS FAIL: B can DELETE A playbook rule (rows=%)', cnt; end if;
+
+  -- back to A: positive control + unmutated
+  perform set_config('request.jwt.claims', json_build_object('sub', a::text)::text, true);
+  select count(*) into cnt from public.playbook_rules where id = rid;
+  if cnt <> 1 then raise exception 'RLS FAIL: A lost access to own playbook rule (cnt=%)', cnt; end if;
+  select title into tt from public.playbook_rules where id = rid;
+  if tt <> 'rls-rule' then raise exception 'RLS FAIL: A playbook rule mutated by B (title=%)', tt; end if;
+
+  delete from public.playbook_rules where id = rid;  -- cleanup
+  raise notice 'RLS PASS (playbook_rules): cross-user isolation holds';
+end $$;
