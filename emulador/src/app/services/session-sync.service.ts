@@ -22,6 +22,7 @@ import { WorkspaceDbService } from './workspace-db.service';
 import type { SavedSession, TradingData } from '../state/trading/trading.models';
 import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import { defaultTradingData } from '../state/trading/trading.models';
+import type { PlaybookRule, PlaybookRuleStatus } from '../state/playbook/playbook.models';
 
 /**
  * Supabase CRUD boundary for session sync (Task 8). Pure I/O — no merge/LWW
@@ -168,6 +169,44 @@ export class SessionSyncService {
   async deleteFolder(id: string): Promise<void> {
     const { error } = await this.client.from('folders').delete().eq('id', id);
     if (error) throw new Error(error.message);
+  }
+
+  // ---------------------------------------------------------------------
+  // RFC-015 Task 4: playbook_rules push/pull. Same client, same error idiom
+  // as folders above. Pure I/O only — dirty filtering (isPlaybookRuleDirty)
+  // and LWW merge (mergePlaybookPull) are the caller's (PlaybookEffects')
+  // responsibility, kept as pure functions at the bottom of this file so the
+  // spec needs no network (see playbook-sync.spec.ts).
+  // ---------------------------------------------------------------------
+
+  /**
+   * Upserts every given rule as-is (no internal dirty filtering — the caller
+   * decides what's dirty via `isPlaybookRuleDirty`). Any single failed
+   * upsert rejects the whole call so the caller does not stamp `rulesSynced`
+   * for a partially-pushed batch; retried whole on the next debounce cycle
+   * (safe: upsert is idempotent and the `lww_guard` trigger no-ops a retry
+   * that resends the same `client_updated_at`).
+   */
+  async pushPlaybookRules(rules: PlaybookRule[]): Promise<void> {
+    if (!rules.length) return;
+    const userId = await this.currentUserId();
+    for (const rule of rules) {
+      const dbRow = ruleToDbRow(rule, userId);
+      const { error } = await this.client.from('playbook_rules').upsert(dbRow, { onConflict: 'id' });
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  /** Lists every playbook rule owned by the current user (RLS-scoped server-side). */
+  async pullPlaybookRules(): Promise<PlaybookRule[]> {
+    const { data, error } = await this.client
+      .from('playbook_rules')
+      .select(
+        'id,title,statement,status,shortcut_slot,sort_order,amendments,created_at,client_updated_at',
+      );
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as DbPlaybookRuleRow[];
+    return rows.map(dbRowToRule);
   }
 
   // ---------------------------------------------------------------------
@@ -484,6 +523,127 @@ export class SessionSyncService {
 /** dirty ⇔ clientUpdatedAt > (syncedAt ?? 0). Absent clientUpdatedAt is treated as never-dirty (0 > 0 is false). */
 function isDirty(clientUpdatedAt: number | undefined, syncedAt: number | undefined): boolean {
   return (clientUpdatedAt ?? 0) > (syncedAt ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+// RFC-015 Task 4: playbook_rules mapping + LWW merge. Pure, no DI/IO — kept
+// as plain exported functions (mirrors isDirty above) so playbook-sync.spec.ts
+// needs no network. Placement: session-sync.service.ts per the design spec
+// (§3) and task brief, rather than a sibling playbook-sync.service.ts — the
+// surface added here (two mapping fns + one merge fn + two thin CRUD methods
+// on the class) is small enough that a second file would only fragment the
+// "same client, same error idiom as folders" pattern this mirrors.
+// ---------------------------------------------------------------------------
+
+/** Raw Postgres row shape for public.playbook_rules (snake_case, ISO timestamps). */
+export interface DbPlaybookRuleRow {
+  id: string;
+  user_id: string;
+  title: string;
+  statement: string;
+  status: PlaybookRuleStatus;
+  shortcut_slot: number | null;
+  sort_order: number;
+  amendments: string[];
+  created_at: string; // ISO
+  client_updated_at: string; // ISO
+}
+
+/** dirty ⇔ clientUpdatedAt > (syncedAt ?? 0), applied to a full PlaybookRule (Task 4 spec §2). */
+export function isPlaybookRuleDirty(rule: PlaybookRule): boolean {
+  return isDirty(rule.clientUpdatedAt, rule.syncedAt);
+}
+
+/**
+ * Domain PlaybookRule -> Postgres row. `userId` is the auth.uid() owner, set
+ * explicitly (mirrors owner_id/folder_id above — never relies on the column
+ * default so RLS's `with check (auth.uid() = user_id)` always sees an
+ * explicit match). A rule that has never been locally stamped falls back to
+ * its own `createdAt` for `client_updated_at` (a rule that has never been
+ * edited was, by definition, last written at creation time).
+ */
+export function ruleToDbRow(rule: PlaybookRule, userId: string): DbPlaybookRuleRow {
+  return {
+    id: rule.id,
+    user_id: userId,
+    title: rule.title,
+    statement: rule.statement,
+    status: rule.status,
+    shortcut_slot: rule.shortcutSlot,
+    sort_order: rule.sortOrder,
+    amendments: rule.amendments,
+    created_at: new Date(rule.createdAt).toISOString(),
+    client_updated_at: new Date(rule.clientUpdatedAt ?? rule.createdAt).toISOString(),
+  };
+}
+
+/**
+ * Postgres row -> domain PlaybookRule. `syncedAt` is stamped equal to the
+ * row's own `clientUpdatedAt` — a row just read from the cloud is, by
+ * definition, in sync with the cloud as of that timestamp (same reasoning as
+ * the folders cloud-won write-back in `pullAndMergeFolders`).
+ */
+export function dbRowToRule(row: DbPlaybookRuleRow): PlaybookRule {
+  const clientUpdatedAt = new Date(row.client_updated_at).getTime();
+  return {
+    id: row.id,
+    title: row.title,
+    statement: row.statement,
+    createdAt: new Date(row.created_at).getTime(),
+    status: row.status,
+    shortcutSlot: row.shortcut_slot,
+    sortOrder: row.sort_order,
+    amendments: row.amendments,
+    clientUpdatedAt,
+    syncedAt: clientUpdatedAt,
+  };
+}
+
+/**
+ * Pure per-row LWW merge of a local playbook set against a cloud pull.
+ * Deliberately simpler than `mergeByLww` (no delete branch): a pull NEVER
+ * deletes locally — a local-dirty row absent from the cloud (never pushed
+ * yet, or pushed from a device that is now offline) is always KEPT, because
+ * losing a trader's rule/knowledge on a stale pull would violate P-3.
+ *  - id present on both sides: whichever `clientUpdatedAt` is newer wins;
+ *    equal timestamps keep local (no-op).
+ *  - id local-only: kept as-is (not queued for a local write — it's already
+ *    there; pushing it to the cloud is `PlaybookEffects`' push cycle's job).
+ *  - id cloud-only: inserted into the merged set and queued for a local
+ *    IndexedDB write (`toUpsertLocally`).
+ */
+export function mergePlaybookPull(
+  local: PlaybookRule[],
+  remote: PlaybookRule[],
+): { rules: PlaybookRule[]; toUpsertLocally: PlaybookRule[] } {
+  const remoteById = new Map(remote.map((r) => [r.id, r]));
+  const localIds = new Set(local.map((r) => r.id));
+
+  const rules: PlaybookRule[] = [];
+  const toUpsertLocally: PlaybookRule[] = [];
+
+  for (const l of local) {
+    const r = remoteById.get(l.id);
+    if (!r) {
+      rules.push(l); // remote-missing local row: never deleted by pull
+      continue;
+    }
+    if ((r.clientUpdatedAt ?? 0) > (l.clientUpdatedAt ?? 0)) {
+      rules.push(r);
+      toUpsertLocally.push(r);
+    } else {
+      rules.push(l); // local newer, or a tie: local survives
+    }
+  }
+
+  for (const r of remote) {
+    if (!localIds.has(r.id)) {
+      rules.push(r);
+      toUpsertLocally.push(r);
+    }
+  }
+
+  return { rules, toUpsertLocally };
 }
 
 /** Min/max over the active session's cursor + its trading activity, in unix seconds. Both 0 when there's no activity. */
