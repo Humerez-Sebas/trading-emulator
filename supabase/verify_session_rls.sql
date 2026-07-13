@@ -89,12 +89,17 @@ begin
   raise notice 'RLS PASS (folders): cross-user isolation holds';
 end $$;
 
--- ===== playbook_rules (RFC-015 Task 4) =====
+-- ===== playbook_rules (RFC-015 Task 4 + D15.F review hardening) =====
 -- Requires supabase/playbook_rules.sql applied first (id/client_updated_at have
 -- no server-side defaults, so both are supplied explicitly in the insert below,
--- unlike sessions/folders above).
+-- unlike sessions/folders above). Also asserts the review-added UPDATE
+-- `with check (auth.uid() = user_id)` rejects A reassigning its own row's
+-- user_id to B (a deviation from the design spec's verbatim SQL — see the
+-- comment in playbook_rules.sql).
 do $$
-declare a uuid; b uuid := gen_random_uuid(); rid uuid; cnt int; tt text;
+declare
+  a uuid; b uuid := gen_random_uuid(); rid uuid; cnt int; tt text;
+  reassigned boolean := false; ownerid uuid;
 begin
   select id into a from auth.users limit 1;
   perform set_config('role', 'authenticated', true);
@@ -124,6 +129,26 @@ begin
   select title into tt from public.playbook_rules where id = rid;
   if tt <> 'rls-rule' then raise exception 'RLS FAIL: A playbook rule mutated by B (title=%)', tt; end if;
 
+  -- A cannot reassign its own row's user_id to B (UPDATE with check hardening).
+  -- Postgres raises a hard error when a WITH CHECK fails on UPDATE (unlike a
+  -- bare USING filter, which just silently affects 0 rows), so the attempt is
+  -- wrapped in its own sub-block; the actual assertion is raised OUTSIDE that
+  -- sub-block so it is never accidentally swallowed by its own handler.
+  begin
+    update public.playbook_rules set user_id = b, client_updated_at = now() where id = rid;
+    reassigned := true; -- only reached if the update did NOT raise
+  exception
+    when others then
+      reassigned := false; -- expected: WITH CHECK violation
+  end;
+  if reassigned then
+    raise exception 'RLS FAIL: A could reassign a playbook rule''s user_id to B';
+  end if;
+  select user_id into ownerid from public.playbook_rules where id = rid;
+  if ownerid <> a then
+    raise exception 'RLS FAIL: playbook rule user_id changed despite rejection (owner=%)', ownerid;
+  end if;
+
   delete from public.playbook_rules where id = rid;  -- cleanup
-  raise notice 'RLS PASS (playbook_rules): cross-user isolation holds';
+  raise notice 'RLS PASS (playbook_rules): cross-user isolation holds, including update-reassignment rejection';
 end $$;
