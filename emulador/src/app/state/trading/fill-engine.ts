@@ -128,6 +128,10 @@ export function closeTrade(
     mfe: p.mfe ?? 0,
     tMae: p.tMae ?? p.openTime,
     tMfe: p.tMfe ?? p.openTime,
+    // RFC-015: the identity chain's final link — sealed verbatim from the
+    // closing Position (same "absent → null" idiom as the copy point in
+    // `processCandle`'s order→position fill above).
+    declaredRuleId: p.declaredRuleId ?? null,
   };
 }
 
@@ -322,6 +326,7 @@ export function processCandle(
         riskUsd: o.riskUsd,
         openTime: candle.time,
         origin: o.type,
+        declaredRuleId: o.declaredRuleId ?? null,
       });
       fillIdx.set(o.id, fillSubIndex(o, subCandles, costs));
       changed = true;

@@ -22,6 +22,8 @@ export interface PendingOrder {
   riskUsd: number;
   /** Candle time (UTC seconds) when the order was placed. */
   createdAt: number;
+  /** Opaque Playbook rule declared for this trade (RFC-015). Absent/null = undeclared. */
+  declaredRuleId?: string | null;
 }
 
 /** An open position. */
@@ -59,6 +61,8 @@ export interface Position {
   tMae?: number;
   /** UTC seconds of the FIRST candle that reached the current `mfe`, analogous to {@link tMae}. */
   tMfe?: number;
+  /** Opaque Playbook rule declared for this trade (RFC-015). Absent/null = undeclared. */
+  declaredRuleId?: string | null;
 }
 
 /** A finished trade, kept in the session history. */
@@ -119,6 +123,8 @@ export interface ClosedTrade {
   mfe?: number;
   tMae?: number;
   tMfe?: number;
+  /** Opaque Playbook rule declared for this trade (RFC-015). Absent/null = undeclared. */
+  declaredRuleId?: string | null;
 }
 
 /**
