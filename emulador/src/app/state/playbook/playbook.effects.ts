@@ -85,18 +85,19 @@ export class PlaybookEffects {
   );
 
   /**
-   * RFC-015 Task 4: debounced push of dirty rules to the cloud after any
-   * mutation (`rulesSynced` itself excluded from the trigger list — it is
-   * push's own result, not a new local edit, so including it would loop).
+   * RFC-015 Task 4 (D15.F): debounced push of dirty rows to the cloud after
+   * any mutation (`rulesSynced` itself excluded from the trigger list — it
+   * is push's own result, not a new local edit, so including it would loop).
    * `auditTime(2000)` mirrors the folders/sessions cycle's `debounceTime`
    * coalescing (see `SessionSyncEffects.flushOnEdit$`), letting a burst of
-   * edits settle into one push. Rules with no `clientUpdatedAt` yet (never
-   * locally stamped — see PlaybookRule doc) or never synced are treated as
-   * dirty and stamped with a fresh timestamp here, BEFORE push, so the same
-   * value is written to the cloud row and back into local state — keeping
-   * both sides of the LWW clock consistent. `{ dispatch: false }`: the
-   * resulting `rulesSynced` is dispatched manually on success, not emitted
-   * by this effect's own stream.
+   * edits settle into one push. Dirtiness is the literal predicate alone
+   * (`isPlaybookRuleDirty`) — D15.F fixed the reducer to stamp
+   * `clientUpdatedAt` at every mutation (including `createRule`), so this no
+   * longer needs to widen the selection to "never synced" or mint a
+   * timestamp here; the value pushed is always whatever the reducer already
+   * stamped. `{ dispatch: false }`: the resulting `rulesSynced` is
+   * dispatched manually on success (see `pushDirtyRules`), not emitted by
+   * this effect's own stream.
    */
   pushDirty$ = createEffect(
     () =>
@@ -121,15 +122,23 @@ export class PlaybookEffects {
     { dispatch: false },
   );
 
+  /**
+   * Pushes exactly the dirty subset of `rules` and, on success, stamps
+   * `syncedAt` (ONLY `syncedAt` — D15.F/IMPORTANT 1) to the `clientUpdatedAt`
+   * value that was actually pushed for each row, snapshotted here BEFORE the
+   * network call. If an edit lands on a row after this snapshot but before
+   * `rulesSynced` is dispatched, the reducer's `rulesSynced` handler never
+   * touches `clientUpdatedAt`, so the row is still `clientUpdatedAt >
+   * syncedAt` afterward — still dirty, picked up by the next push cycle
+   * (mid-flight-edit safety, verified in playbook.effects.spec.ts).
+   */
   private async pushDirtyRules(rules: PlaybookRule[]): Promise<void> {
-    const now = Date.now();
-    const dirty = rules.filter((r) => isPlaybookRuleDirty(r) || r.syncedAt == null);
+    const dirty = rules.filter(isPlaybookRuleDirty);
     if (!dirty.length) return;
-    const stamped = dirty.map((r) => ({ ...r, clientUpdatedAt: r.clientUpdatedAt ?? now }));
-    await this.sync.pushPlaybookRules(stamped);
+    await this.sync.pushPlaybookRules(dirty);
     this.store.dispatch(
       PlaybookActions.rulesSynced({
-        stamps: stamped.map((r) => ({ id: r.id, clientUpdatedAt: r.clientUpdatedAt!, syncedAt: now })),
+        stamps: dirty.map((r) => ({ id: r.id, syncedAt: r.clientUpdatedAt! })),
       }),
     );
   }
@@ -139,23 +148,38 @@ export class PlaybookEffects {
    * trigger the folders/sessions pull uses (`SessionSyncEffects.login$`) —
    * both `sessionResolved` (app start) and `authSuccess` (mid-session
    * login), non-null user only. `exhaustMap` ignores a second trigger while
-   * one pull is in flight (same rationale as `login$`). Of the two Task 4
-   * effects, this is the merge dispatch (returns `hydrated`); `pushDirty$`
-   * is `{ dispatch: false }` and dispatches `rulesSynced` manually instead.
+   * one pull is in flight (same rationale as `login$`). `{ dispatch: false
+   * }`: `pullAndMergeRules` dispatches `hydrated` (the merge) and then
+   * `rulesSynced` (the post-merge push, IMPORTANT 2 below) manually, in
+   * that order, rather than relying on this effect's own emission — the
+   * push step needs the already-merged `rules` array as its input, not a
+   * fresh store read.
    */
-  pullOnAuth$ = createEffect(() =>
-    this.actions$.pipe(
-      ofType(AuthActions.sessionResolved, AuthActions.authSuccess),
-      filter((action) => action.user != null),
-      exhaustMap(() => from(this.pullAndMergeRules()).pipe(catchError(() => EMPTY))),
-    ),
+  pullOnAuth$ = createEffect(
+    () =>
+      this.actions$.pipe(
+        ofType(AuthActions.sessionResolved, AuthActions.authSuccess),
+        filter((action) => action.user != null),
+        exhaustMap(() => from(this.pullAndMergeRules()).pipe(catchError(() => EMPTY))),
+      ),
+    { dispatch: false },
   );
 
-  private async pullAndMergeRules() {
+  /**
+   * Pull, LWW-merge against local, persist the merge, hydrate the store,
+   * THEN flush any local-newer survivors back to the cloud (folders parity:
+   * `SessionSyncService.pullAndMerge` → `flushDirty()`, IMPORTANT 2). This
+   * matters most right after app start: a rule edited last session that
+   * never got pushed (closed before the debounce fired, or offline) has no
+   * NEW mutation action to re-trigger `pushDirty$` — only this post-merge
+   * flush notices it's still dirty and re-pushes it.
+   */
+  private async pullAndMergeRules(): Promise<void> {
     const remote = await this.sync.pullPlaybookRules();
     const local = await this.db.loadAll();
     const { rules, toUpsertLocally } = mergePlaybookPull(local, remote);
     if (toUpsertLocally.length) await this.db.upsertMany(toUpsertLocally);
-    return PlaybookActions.hydrated({ rules });
+    this.store.dispatch(PlaybookActions.hydrated({ rules }));
+    await this.pushDirtyRules(rules);
   }
 }

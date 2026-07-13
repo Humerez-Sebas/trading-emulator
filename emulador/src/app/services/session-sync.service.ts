@@ -197,12 +197,18 @@ export class SessionSyncService {
     }
   }
 
-  /** Lists every playbook rule owned by the current user (RLS-scoped server-side). */
+  /**
+   * Lists every playbook rule owned by the current user (RLS-scoped
+   * server-side). The select string names every field of `DbPlaybookRuleRow`
+   * (including `user_id`, which `dbRowToRule` itself never reads) so the
+   * `as DbPlaybookRuleRow[]` cast below is honest — it doesn't claim a
+   * column that wasn't actually selected.
+   */
   async pullPlaybookRules(): Promise<PlaybookRule[]> {
     const { data, error } = await this.client
       .from('playbook_rules')
       .select(
-        'id,title,statement,status,shortcut_slot,sort_order,amendments,created_at,client_updated_at',
+        'id,user_id,title,statement,status,shortcut_slot,sort_order,amendments,created_at,client_updated_at',
       );
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as DbPlaybookRuleRow[];

@@ -17,59 +17,71 @@ export const playbookFeature = createFeature({
           id, title, statement, createdAt,
           status: 'active', shortcutSlot: null,
           sortOrder: state.rules.length, amendments: [],
+          // D15.F: a rule has never been edited at creation, so its LWW clock
+          // starts at its own creation time (no clock read here — the value
+          // is just `createdAt`, already payload data).
+          clientUpdatedAt: createdAt,
         },
       ],
     })),
-    on(PlaybookActions.updateRule, (state, { id, title, statement }): PlaybookState => {
+    on(PlaybookActions.updateRule, (state, { id, title, statement, clientUpdatedAt }): PlaybookState => {
       const target = state.rules.find((r) => r.id === id);
       if (!target) return state;
       return {
         ...state,
         rules: state.rules.map((r) =>
           r.id === id
-            ? { ...r, title: title ?? r.title, statement: statement ?? r.statement }
+            ? { ...r, title: title ?? r.title, statement: statement ?? r.statement, clientUpdatedAt }
             : r,
         ),
       };
     }),
-    on(PlaybookActions.setRuleStatus, (state, { id, status }): PlaybookState => {
+    on(PlaybookActions.setRuleStatus, (state, { id, status, clientUpdatedAt }): PlaybookState => {
       const target = state.rules.find((r) => r.id === id);
       if (!target) return state;
       return {
         ...state,
         rules: state.rules.map((r) =>
           r.id === id
-            ? { ...r, status, shortcutSlot: status === 'retired' ? null : r.shortcutSlot }
+            ? { ...r, status, shortcutSlot: status === 'retired' ? null : r.shortcutSlot, clientUpdatedAt }
             : r,
         ),
       };
     }),
-    on(PlaybookActions.assignSlot, (state, { id, slot }): PlaybookState => {
+    on(PlaybookActions.assignSlot, (state, { id, slot, clientUpdatedAt }): PlaybookState => {
       const target = state.rules.find((r) => r.id === id);
       if (!target) return state;
       return {
         ...state,
         rules: state.rules.map((r) => {
-          if (r.id === id) return { ...r, shortcutSlot: slot };
-          // one owner per slot: free the previous holder
-          if (slot !== null && r.shortcutSlot === slot) return { ...r, shortcutSlot: null };
+          if (r.id === id) return { ...r, shortcutSlot: slot, clientUpdatedAt };
+          // one owner per slot: free the previous holder. It is touched too
+          // (its shortcutSlot changed), so it gets the SAME clientUpdatedAt
+          // stamp — otherwise the freed rule's cleared slot would never be
+          // recognized as dirty and would never sync to the cloud.
+          if (slot !== null && r.shortcutSlot === slot) {
+            return { ...r, shortcutSlot: null, clientUpdatedAt };
+          }
           return r;
         }),
       };
     }),
-    on(PlaybookActions.reorderRule, (state, { id, sortOrder }): PlaybookState => {
+    on(PlaybookActions.reorderRule, (state, { id, sortOrder, clientUpdatedAt }): PlaybookState => {
       const target = state.rules.find((r) => r.id === id);
       if (!target) return state;
       return {
         ...state,
-        rules: state.rules.map((r) => (r.id === id ? { ...r, sortOrder } : r)),
+        rules: state.rules.map((r) => (r.id === id ? { ...r, sortOrder, clientUpdatedAt } : r)),
       };
     }),
+    // D15.F: sync advances ONLY syncedAt — clientUpdatedAt is never rewritten
+    // here, so an edit that lands after a push was snapshotted (but before
+    // this action is dispatched) keeps the rule dirty for the next cycle.
     on(PlaybookActions.rulesSynced, (state, { stamps }): PlaybookState => ({
       ...state,
       rules: state.rules.map((r) => {
         const s = stamps.find((x) => x.id === r.id);
-        return s ? { ...r, clientUpdatedAt: s.clientUpdatedAt, syncedAt: s.syncedAt } : r;
+        return s ? { ...r, syncedAt: s.syncedAt } : r;
       }),
     })),
   ),
