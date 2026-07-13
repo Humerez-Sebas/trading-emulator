@@ -41,7 +41,6 @@ describe('TelemetryEffects — navigation observer (RFC-014 T5b-i)', () => {
    * `replayJump$` alive to observe the arm→consume sequence. */
   function subscribeAll(): Subscription {
     const sub = new Subscription();
-    sub.add(effects.replaySeek$.subscribe());
     sub.add((effects as unknown as { syncJumpOrigin$: { subscribe: () => Subscription } })[
       'syncJumpOrigin$'
     ].subscribe());
@@ -57,60 +56,6 @@ describe('TelemetryEffects — navigation observer (RFC-014 T5b-i)', () => {
     store.overrideSelector(selectReplayTfSeconds, tfSeconds);
     store.refreshState();
   }
-
-  // ─── replaySeek$ ────────────────────────────────────────────────────────
-
-  describe('replaySeek$', () => {
-    it('captures ReplaySeek with fromTime/toTime/direction=forward on seekTo', async () => {
-      arm('sess-1', 100);
-      const sub = subscribeAll();
-
-      store.overrideSelector(selectCurrentTime, 250);
-      store.refreshState();
-      actions$.next(ReplayActions.seekTo({ time: 250 }));
-      await Promise.resolve();
-
-      expect(telemetryDb.append).toHaveBeenCalledTimes(1);
-      expect(telemetryDb.append).toHaveBeenCalledWith('sess-1', [
-        expect.objectContaining({
-          kind: 'ReplaySeek',
-          marketTime: 250,
-          payload: { fromTime: 100, toTime: 250, direction: 'forward' },
-        }),
-      ]);
-      sub.unsubscribe();
-    });
-
-    it('direction=backward when toTime < fromTime', async () => {
-      arm('sess-1', 500);
-      const sub = subscribeAll();
-
-      store.overrideSelector(selectCurrentTime, 200);
-      store.refreshState();
-      actions$.next(ReplayActions.seekTo({ time: 200 }));
-      await Promise.resolve();
-
-      expect(telemetryDb.append).toHaveBeenCalledWith('sess-1', [
-        expect.objectContaining({
-          payload: { fromTime: 500, toTime: 200, direction: 'backward' },
-        }),
-      ]);
-      sub.unsubscribe();
-    });
-
-    it('does not capture when there is no active session', async () => {
-      arm(null, 100);
-      const sub = subscribeAll();
-
-      store.overrideSelector(selectCurrentTime, 250);
-      store.refreshState();
-      actions$.next(ReplayActions.seekTo({ time: 250 }));
-      await Promise.resolve();
-
-      expect(telemetryDb.append).not.toHaveBeenCalled();
-      sub.unsubscribe();
-    });
-  });
 
   // ─── replayJump$ (+ syncJumpOrigin$) ───────────────────────────────────
 
@@ -346,8 +291,6 @@ describe('TelemetryEffects — navigation observer (RFC-014 T5b-i)', () => {
       const dispatchSpy = vi.spyOn(store, 'dispatch');
       const sub = subscribeAll();
 
-      actions$.next(ReplayActions.seekTo({ time: 1200 }));
-      await Promise.resolve();
       actions$.next(ReplayActions.jumpForward());
       await Promise.resolve();
       actions$.next(ReplayActions.goToTime({ time: 1600 }));

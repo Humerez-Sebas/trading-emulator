@@ -8,11 +8,10 @@ import type { TimeElapsedAnchorKind } from './telemetry.models';
  * `fill-engine.ts`/`simulation-domain.ts`).
  *
  * Anchor rule (RFC-014 §4): the anchor is the most recent of
- * {session start, last seek, last order event}. Notably NOT in that list:
+ * {session start, last order event}. Notably NOT in that list:
  * play/pause toggles (they only split the elapsed window into paused/playing
  * buckets, they never move the anchor itself) and `ReplayJump` (multi-candle
- * fold/jump navigation — deliberately excluded per the brief; only the
- * scrubber teleport, `ReplaySeek`, resets the anchor).
+ * fold/jump navigation — deliberately excluded per the brief).
  *
  * `TelemetryEffects` holds exactly one mutable `OrderClock | null` field and
  * routes every relevant navigation/order event through the pure functions
@@ -36,7 +35,7 @@ export interface OrderClock {
   playingMs: number;
 }
 
-/** A brand-new clock anchored right now — the shared shape every reset (session/seek/order) collapses to. */
+/** A brand-new clock anchored right now — the shared shape every reset (session/order) collapses to. */
 export function freshOrderClock(
   sessionId: string,
   anchorKind: TimeElapsedAnchorKind,
@@ -59,8 +58,8 @@ export function freshOrderClock(
  * A session switch (or the very first event of a session) starts a fresh
  * `'sessionStart'` anchor — this is the ONLY place `'sessionStart'` is ever
  * produced. No separate "session changed" subscription is needed anywhere:
- * every entry point below (`withPlaybackToggled`, `withSeekAnchor`,
- * `captureOrderClock`) calls this first, so the reset happens lazily on
+ * every entry point below (`withPlaybackToggled`, `captureOrderClock`)
+ * calls this first, so the reset happens lazily on
  * whichever event touches the clock first after the switch.
  */
 function ensureSession(
@@ -101,22 +100,6 @@ export function withPlaybackToggled(
   return { ...accumulate(base, wallClockMs), playing };
 }
 
-/**
- * Scrubber teleport (`ReplaySeek`): a hard reset of the whole window — frozen
- * navigation semantics (a seek is a teleport, not something to accumulate
- * elapsed time through), so this discards any partial accumulation rather
- * than folding it in first.
- */
-export function withSeekAnchor(
-  clock: OrderClock | null,
-  sessionId: string,
-  wallClockMs: number,
-  replayIndex: number,
-  playing: boolean,
-): OrderClock {
-  return freshOrderClock(sessionId, 'lastSeek', wallClockMs, replayIndex, playing);
-}
-
 /** Result of capturing a `TimeElapsedBeforeOrder` at order placement. */
 export interface OrderClockCapture {
   anchorKind: TimeElapsedAnchorKind;
@@ -137,9 +120,9 @@ export interface OrderClockCapture {
  * `'lastOrderEvent'` anchor for the NEXT order.
  *
  * `candlesRevealed` is clamped to >= 0: a `jumpBack`/`stepBack` between the
- * anchor and this order (neither resets the anchor — only `ReplaySeek` and
- * order events do, per the RFC's anchor list) can leave the current index
- * BELOW the anchor's index; that must not fabricate a negative reveal count.
+ * anchor and this order (neither resets the anchor — only order events do,
+ * per the RFC's anchor list) can leave the current index BELOW the anchor's
+ * index; that must not fabricate a negative reveal count.
  */
 export function captureOrderClock(
   clock: OrderClock | null,

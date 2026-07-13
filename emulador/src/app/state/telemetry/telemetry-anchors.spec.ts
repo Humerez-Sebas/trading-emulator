@@ -3,7 +3,6 @@ import {
   captureOrderClock,
   freshOrderClock,
   withPlaybackToggled,
-  withSeekAnchor,
   type OrderClock,
 } from './telemetry-anchors';
 
@@ -46,7 +45,7 @@ describe('telemetry-anchors (RFC-014 T5b-ii) — pure OrderClock helpers', () =>
     });
 
     it('folds elapsed time into playingMs while playing, then flips to paused', () => {
-      const playing = freshOrderClock('sess-1', 'lastSeek', 1000, 10, true);
+      const playing = freshOrderClock('sess-1', 'lastOrderEvent', 1000, 10, true);
       const next = withPlaybackToggled(playing, 'sess-1', false, 1300, 10);
       expect(next.playingMs).toBe(300);
       expect(next.pausedMs).toBe(0);
@@ -73,30 +72,6 @@ describe('telemetry-anchors (RFC-014 T5b-ii) — pure OrderClock helpers', () =>
     });
   });
 
-  describe('withSeekAnchor', () => {
-    it('hard-resets to a lastSeek anchor, discarding any partial accumulation', () => {
-      const clock = freshOrderClock('sess-1', 'sessionStart', 1000, 10, true);
-      const withAccum = withPlaybackToggled(clock, 'sess-1', false, 4000, 10); // 3000ms playing accrued
-      const seeked = withSeekAnchor(withAccum, 'sess-1', 4500, 77, false);
-      expect(seeked).toEqual({
-        sessionId: 'sess-1',
-        anchorKind: 'lastSeek',
-        anchorReplayIndex: 77,
-        playing: false,
-        lastTransitionWallClockMs: 4500,
-        pausedMs: 0,
-        playingMs: 0,
-      });
-    });
-
-    it('resets on a session switch too (same as any other entry point)', () => {
-      const stale = freshOrderClock('sess-1', 'lastOrderEvent', 1000, 50, true);
-      const next = withSeekAnchor(stale, 'sess-2', 6000, 3, true);
-      expect(next.sessionId).toBe('sess-2');
-      expect(next.anchorKind).toBe('lastSeek');
-    });
-  });
-
   describe('captureOrderClock', () => {
     it('anchorKind=sessionStart on the first-ever order of a session (no clock yet)', () => {
       const result = captureOrderClock(null, 'sess-1', 2000, 20, false);
@@ -104,15 +79,6 @@ describe('telemetry-anchors (RFC-014 T5b-ii) — pure OrderClock helpers', () =>
       expect(result.candlesRevealed).toBe(0); // anchor == now, no reveal yet
       expect(result.nextClock.anchorKind).toBe('lastOrderEvent');
       expect(result.nextClock.anchorReplayIndex).toBe(20);
-    });
-
-    it('anchorKind=lastSeek when the most recent qualifying event was a seek', () => {
-      const seeked = withSeekAnchor(null, 'sess-1', 1000, 30, false);
-      const result = captureOrderClock(seeked, 'sess-1', 1800, 33, false);
-      expect(result.anchorKind).toBe('lastSeek');
-      expect(result.candlesRevealed).toBe(3); // 33 - 30
-      expect(result.pausedMs).toBe(800); // paused the whole window
-      expect(result.playingMs).toBe(0);
     });
 
     it('anchorKind=lastOrderEvent when a PRIOR order placement is the most recent qualifying event', () => {

@@ -32,7 +32,6 @@ export interface TelemetryEvent {
 
 /** The v1 event kinds (RFC-014 §4 table). */
 export type TelemetryEventKindV1 =
-  | 'ReplaySeek'
   | 'ReplayJump'
   | 'PlaybackToggled'
   | 'SpeedChanged'
@@ -40,13 +39,6 @@ export type TelemetryEventKindV1 =
   | 'DrawingSnapshot'
   | 'OrderFilled'
   | 'PositionClosed';
-
-/** Scrubber teleport (registered, never simulated — frozen navigation semantics). */
-export interface ReplaySeekPayload {
-  fromTime: number;
-  toTime: number;
-  direction: 'forward' | 'backward';
-}
 
 /**
  * Multi-candle jump/fold landing (`jumpForward`, `jumpBack`, `advanceDisplay`).
@@ -75,9 +67,9 @@ export interface SpeedChangedPayload {
 
 /**
  * Anchor for elapsed-time accounting at order placement: the most recent of
- * {session start, last seek, last order event}.
+ * {session start, last order event}.
  */
-export type TimeElapsedAnchorKind = 'sessionStart' | 'lastSeek' | 'lastOrderEvent';
+export type TimeElapsedAnchorKind = 'sessionStart' | 'lastOrderEvent';
 
 export interface TimeElapsedBeforeOrderPayload {
   orderRef: string;
@@ -108,7 +100,6 @@ export type PositionClosedPayload = Omit<PositionClosedFact, 'kind'>;
 
 /** Discriminated union tying each v1 kind to its exact payload shape. */
 export type TelemetryEventV1 =
-  | { kind: 'ReplaySeek'; payload: ReplaySeekPayload }
   | { kind: 'ReplayJump'; payload: ReplayJumpPayload }
   | { kind: 'PlaybackToggled'; payload: PlaybackToggledPayload }
   | { kind: 'SpeedChanged'; payload: SpeedChangedPayload }
