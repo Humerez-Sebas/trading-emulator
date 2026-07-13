@@ -296,6 +296,25 @@ describe('SessionSyncService.pullPlaybookRules', () => {
     expect(result).toEqual([dbRowToRule(row)]);
   });
 
+  it('selects user_id (D15.F review: the DbPlaybookRuleRow cast must be honest, not claim an unselected column)', async () => {
+    let capturedCols: string | undefined;
+    const client = {
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      from: () => ({
+        select: (cols: string) => {
+          capturedCols = cols;
+          return Promise.resolve({ data: [], error: null });
+        },
+      }),
+    };
+    const service = makeService(client);
+
+    await service.pullPlaybookRules();
+
+    expect(capturedCols).toBeDefined();
+    expect(capturedCols!.split(',')).toContain('user_id');
+  });
+
   it('throws Error(error.message) on a DB error', async () => {
     const client = {
       auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
