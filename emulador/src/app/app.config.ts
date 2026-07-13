@@ -25,6 +25,7 @@ import { AuthEffects } from './state/auth/auth.effects';
 import { SessionSyncEffects } from './state/sync/session-sync.effects';
 import { LayoutEffects } from './state/layout/layout.effects';
 import { TelemetryEffects } from './state/telemetry/telemetry.effects';
+import { PlaybookEffects } from './state/playbook/playbook.effects';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -54,6 +55,7 @@ export const appConfig: ApplicationConfig = {
       SessionSyncEffects,
       LayoutEffects,
       TelemetryEffects,
+      PlaybookEffects,
     ),
   ],
 };
