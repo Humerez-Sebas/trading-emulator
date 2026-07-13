@@ -1,8 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { provideMockActions } from '@ngrx/effects/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
-import { Subscription, Subject } from 'rxjs';
+import { Subscription, Subject, firstValueFrom } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ROOT_EFFECTS_INIT } from '@ngrx/effects';
 import { PlaybookEffects } from './playbook.effects';
 import { PlaybookActions } from './playbook.actions';
 import { PlaybookDbService } from '../../services/playbook-db.service';
@@ -58,6 +59,14 @@ describe('PlaybookEffects', () => {
     sub.add(effects.persist$.subscribe());
     return sub;
   }
+
+  describe('bootstrapHydrate$', () => {
+    it('dispatches hydrate on ROOT_EFFECTS_INIT', async () => {
+      const p = firstValueFrom(effects.bootstrapHydrate$);
+      actions$.next({ type: ROOT_EFFECTS_INIT });
+      expect(await p).toEqual(PlaybookActions.hydrate());
+    });
+  });
 
   describe('hydrate$', () => {
     it('dispatches hydrated with rules from the DB on hydrate action', async () => {

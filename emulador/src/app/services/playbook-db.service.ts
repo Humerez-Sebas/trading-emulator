@@ -25,7 +25,16 @@ export class PlaybookDbService {
           req.result.createObjectStore(STORE, { keyPath: 'id' });
         }
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        // if another tab/context upgrades or deletes the DB, release our
+        // connection so it is not blocked forever (mirrors WorkspaceDbService)
+        db.onversionchange = () => {
+          db.close();
+          this.dbPromise = null;
+        };
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
     });
     return this.dbPromise;
