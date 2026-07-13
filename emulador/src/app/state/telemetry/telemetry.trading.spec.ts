@@ -56,7 +56,6 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
     sub.add(priv['sessionAnchorReset$'].subscribe());
     sub.add(effects.facts$.subscribe());
     sub.add(effects.orderPlacement$.subscribe());
-    sub.add(priv['orderClockOnSeek$'].subscribe());
     sub.add(priv['orderClockOnPlayback$'].subscribe());
     return sub;
   }
@@ -345,23 +344,6 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       await Promise.resolve();
 
       expect(calls('TimeElapsedBeforeOrder')).toHaveLength(0);
-      sub.unsubscribe();
-    });
-
-    it('anchorKind=lastSeek when a ReplaySeek happened since session start', async () => {
-      vi.spyOn(Date, 'now').mockReturnValue(1000);
-      arm(trading(), { replayIndex: 10, currentTime: 500 });
-      const sub = subscribeAll();
-
-      actions$.next(ReplayActions.seekTo({ time: 900 }));
-      await Promise.resolve();
-
-      vi.spyOn(Date, 'now').mockReturnValue(1800);
-      arm(trading({ orders: [order({ id: 'o1' })] }), { replayIndex: 16, currentTime: 900 });
-      await Promise.resolve();
-
-      const call = calls('TimeElapsedBeforeOrder')[0];
-      expect(call[1][0].payload).toMatchObject({ anchorKind: 'lastSeek', candlesRevealed: 6 }); // 16 - 10
       sub.unsubscribe();
     });
 

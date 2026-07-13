@@ -19,7 +19,6 @@ import {
   captureOrderClock,
   freshOrderClock,
   withPlaybackToggled,
-  withSeekAnchor,
   type OrderClock,
 } from './telemetry-anchors';
 import { diffDomainFacts, resolveOrderRef, type TradingSnapshot } from './telemetry-facts';
@@ -35,8 +34,7 @@ import { snapshotDrawings } from './telemetry-drawings';
  * behavior is byte-identical whether or not `TelemetryEffects` is
  * registered in `provideEffects(...)`.
  *
- * Scope (T5b-i, navigation): `ReplaySeek`, `ReplayJump`, `PlaybackToggled`,
- * `SpeedChanged`.
+ * Scope (T5b-i, navigation): `ReplayJump`, `PlaybackToggled`, `SpeedChanged`.
  *
  * Scope (T5b-ii, trading — this addition): `TimeElapsedBeforeOrder` +
  * `DrawingSnapshot` at order placement (`orderPlacement$`), the reified
@@ -69,19 +67,6 @@ export class TelemetryEffects {
   private telemetryDb = inject(TelemetryDbService);
 
   private activeSessionId$ = this.store.select(tradingFeature.selectActiveSessionId);
-
-  /**
-   * `[prev, current]` pairs of the replay cursor. `ReplayActions.seekTo`
-   * updates `ReplayState.currentTime` in ITS OWN reducer case (see
-   * `replay.reducer.ts`), and @ngrx/store always runs a dispatch's reducer
-   * before notifying effects of that same action (`TradingEffects
-   * .processFills$` already relies on this: it reads `ctx.candles[ctx.idx]`
-   * assuming the just-dispatched `goToTime` has already landed). So a plain
-   * `withLatestFrom(selectCurrentTime)` on `ofType(seekTo)` would read the
-   * POST-seek value, not the pre-seek one `fromTime` needs. `pairwise()`
-   * recovers the value from immediately before this transition instead.
-   */
-  private cursorPairs$ = this.store.select(selectCurrentTime).pipe(pairwise());
 
   /**
    * `[prev, current]` pairs of the trading-relevant slice (session id +
@@ -208,27 +193,10 @@ export class TelemetryEffects {
    * §4) — see `telemetry-anchors.ts` for the pure transition functions.
    * `null` = no clock yet for the current session (first-touch lazily
    * starts a `'sessionStart'` anchor; see `ensureSession` in that module).
-   * Updated by `orderClockOnSeek$`/`orderClockOnPlayback$` (anchor-adjacent
-   * events) and settled + re-anchored by `orderPlacement$` on each capture.
+   * Updated by `orderClockOnPlayback$` (anchor-adjacent events) and settled
+   * + re-anchored by `orderPlacement$` on each capture.
    */
   private orderClock: OrderClock | null = null;
-
-  /** Scrubber teleport (frozen semantics: registered, never simulated). */
-  replaySeek$ = createEffect(
-    () =>
-      this.actions$.pipe(
-        ofType(ReplayActions.seekTo),
-        withLatestFrom(this.cursorPairs$, this.activeSessionId$),
-        tap(([, [fromTime, toTime], sessionId]) => {
-          this.capture(sessionId, 'ReplaySeek', toTime, {
-            fromTime,
-            toTime,
-            direction: toTime >= fromTime ? 'forward' : 'backward',
-          });
-        }),
-      ),
-    { dispatch: false },
-  );
 
   private static readonly JUMP_FAMILY = new Set<string>([
     ReplayActions.jumpForward.type,
@@ -351,26 +319,6 @@ export class TelemetryEffects {
         tap(([sessionId, replayIndex, playing]) => {
           this.orderClock =
             sessionId == null ? null : freshOrderClock(sessionId, 'sessionStart', Date.now(), replayIndex, playing);
-        }),
-      ),
-    { dispatch: false },
-  );
-
-  /**
-   * Keeps `orderClock` in sync with the scrubber teleport (`ReplaySeek`):
-   * a hard reset to a `'lastSeek'` anchor (see `withSeekAnchor`). Does NOT
-   * itself call `capture()` — `replaySeek$` above already records the
-   * `ReplaySeek` event; this is purely `TimeElapsedBeforeOrder` bookkeeping,
-   * a second independent subscriber to the SAME `seekTo` action.
-   */
-  private orderClockOnSeek$ = createEffect(
-    () =>
-      this.actions$.pipe(
-        ofType(ReplayActions.seekTo),
-        withLatestFrom(this.activeSessionId$, this.store.select(selectReplayIndex), this.store.select(selectPlaying)),
-        tap(([, sessionId, replayIndex, playing]) => {
-          if (sessionId == null) return;
-          this.orderClock = withSeekAnchor(this.orderClock, sessionId, Date.now(), replayIndex, playing);
         }),
       ),
     { dispatch: false },

@@ -36,7 +36,7 @@ import type { Candle } from '../../models';
  * open positions (25 pending-order fills into `positions[]`, immediately
  * followed by 25 closes into `history[]` — each transition individually
  * diffed by `facts$`, matching how one real `processCandle` dispatch would
- * land) plus a fold's worth of navigation events (5 `ReplaySeek`, 5
+ * land) plus a fold's worth of navigation events (5
  * `ReplayJump`-shaped jump+landing pairs, 4 play/pause toggles) and 5 order
  * placements (`orderPlacement$` + `TimeElapsedBeforeOrder` + a
  * `DrawingSnapshot` copy of 8 drawings each placement/close).
@@ -82,14 +82,12 @@ describe('TelemetryEffects — V-8 frame-budget evidence (RFC-014 T5b-ii, jump-5
     const sub = new Subscription();
     const priv = effects as unknown as Record<string, { subscribe: () => Subscription }>;
     sub.add(priv['sessionAnchorReset$'].subscribe());
-    sub.add(effects.replaySeek$.subscribe());
     sub.add(priv['syncJumpOrigin$'].subscribe());
     sub.add(effects.replayJump$.subscribe());
     sub.add(effects.playbackToggled$.subscribe());
     sub.add(effects.speedChanged$.subscribe());
     sub.add(effects.facts$.subscribe());
     sub.add(effects.orderPlacement$.subscribe());
-    sub.add(priv['orderClockOnSeek$'].subscribe());
     sub.add(priv['orderClockOnPlayback$'].subscribe());
     return sub;
   }
@@ -207,11 +205,7 @@ describe('TelemetryEffects — V-8 frame-budget evidence (RFC-014 T5b-ii, jump-5
       arm(state, 25 + i, (25 + i) * 60);
     }
 
-    // A fold's worth of navigation events: 5 seeks, 5 jump+landing pairs, 4 play/pause toggles.
-    for (let i = 0; i < 5; i++) {
-      arm(state, 50 + i, (50 + i) * 60);
-      actions$.next(ReplayActions.seekTo({ time: (55 + i) * 60 }));
-    }
+    // A fold's worth of navigation events: 5 jump+landing pairs, 4 play/pause toggles.
     for (let i = 0; i < 5; i++) {
       arm(state, 55 + i, (55 + i) * 60);
       actions$.next(ReplayActions.jumpForward());

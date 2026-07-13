@@ -65,13 +65,6 @@ describe('replay reducer — navegación', () => {
     const next = reducer(init, ReplayActions.setJumpSize({ size: 50 }));
     expect(next.jumpSize).toBe(50);
   });
-
-  it('seekTo mueve el cursor sin tocar playing', () => {
-    const playing = reducer(init, ReplayActions.play());
-    const next = reducer(playing, ReplayActions.seekTo({ time: 12345 }));
-    expect(next.currentTime).toBe(12345);
-    expect(next.playing).toBe(true);
-  });
 });
 
 describe('replay reducer — resolution', () => {

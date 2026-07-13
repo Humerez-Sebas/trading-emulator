@@ -48,7 +48,6 @@ export const replayFeature = createFeature({
       (state, { msPerCandle }): ReplayState => ({ ...state, msPerCandle }),
     ),
     on(ReplayActions.setJumpSize, (state, { size }): ReplayState => ({ ...state, jumpSize: size })),
-    on(ReplayActions.seekTo, (state, { time }): ReplayState => ({ ...state, currentTime: time })),
     on(
       ReplayActions.setReplayResolution,
       (state, { minutes }): ReplayState => ({ ...state, resolutionMinutes: minutes }),
