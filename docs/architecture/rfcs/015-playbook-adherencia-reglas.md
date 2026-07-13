@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| Estado | Propuesto (pendiente de aprobación del owner) |
+| Estado | Implementado (2026-07-13) |
 | Fecha | 2026-07-12 |
 | Bloque | Mastery Block — Fase 2 ([ROADMAP.md](../ROADMAP.md)) |
 | Rama de implementación | `feature/rfc-015-playbook-adherencia` → PR a `develop` |
@@ -193,6 +193,12 @@ PlaybookRule := { id, title, statement,                    // texto del trader, 
    el label → cierre → tag desaparece → `declaredRuleId` en el historial.
 6. Documentación actualizada (DOMAIN_MODEL, UBIQUITOUS_LANGUAGE, este RFC a
    Implementado) + walkthrough de cierre.
+
+## Desviaciones registradas
+
+Sin desviaciones del spec original. Los seis pasos del plan de aterrizaje se
+implementaron conforme a la especificación; P-1..P-7 tienen detectores ejecutables
+o greps documentados en el informe de cierre (`.superpowers/sdd/task-7-report.md`).
 
 ## Referencias
 
