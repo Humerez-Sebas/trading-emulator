@@ -175,8 +175,22 @@ The finest-grained series available for a symbol, used for execution truth. M1 i
 pipeline ground truth; H1/D1 are pipeline conveniences; all other TFs derive client-side.
 *Technical implication:* **the realism invariant** — fills, SL, and TP always evaluate at
 base resolution, never at the displayed timeframe, because an intra-candle spike must
-not be averaged away. Enforced today by `processCandle(book, candle, subCandles, …)`
-walking `subCandles`; strengthened by RFC-014 (see `RFC-014_AND_BEYOND.md`).
+not be averaged away. Implemented by RFC-014 as the **Execution Series** below;
+`processCandle(book, candle, subCandles, …)`'s `subCandles` walk survives only as the
+legacy fallback (no execution series loaded) and for STOP-protected pre-existing specs.
+
+**Execution Series** (RFC-014 D14.A).
+The finest LOADED series for the session's `primarySymbol` — the runtime instance of
+Base Resolution. Always fed to the fill engine, independent of the displayed
+timeframe and the chosen Replay Resolution; session creation already guarantees the
+anchor datasets (`requiredDatasets`) are present locally, so resolving it is a plain
+IndexedDB read, never a network one.
+*Technical implication:* `selectExecutionSeries` (`state/selectors.ts`).
+`foldForwardFills`/`processFills$` dispatch exactly one `Process Candle` per base
+candle strictly crossed, in chronological order, with `subCandles: null`, when it's
+loaded; Last Processed Time (Section 4) advances base-granular as a result. Falls
+back to the legacy per-resolution-candle path only when unloaded (mock-only sessions
+in practice).
 
 **Sub-candle.**
 A candle of a lower timeframe contained within the interval of a displayed (parent)
@@ -241,7 +255,9 @@ candle, sub-candle series, and book.
 
 **Last Processed Time.**
 High-water mark of candle time already evaluated by the fill engine; the idempotence
-anchor that makes stepping back and forth safe.
+anchor that makes stepping back and forth safe. BASE-GRANULAR since RFC-014 (see
+Execution Series, Section 3): it advances one base candle at a time, independent of
+the displayed TF or Replay Resolution.
 *Technical implication:* `TradingData.lastProcessedTime`; together with
 placement-candle exclusion (`c.time <= o.createdAt`) and open-time guards
 (`candle.time < p.openTime` skips), re-processing a candle never time-travels fills or
@@ -272,19 +288,75 @@ type that created it) and `openTime`.
 
 **Fill.**
 The event of a pending order converting into a position because the revealed candle's
-range touches its entry under the order-type rule (buy limit: `low <= entry`; stop:
-cross in the breakout direction). Fills are *clean*: execution exactly at entry, no
-slippage or spread (a known fidelity gap; see the RFC-014 draft in
-`RFC-014_AND_BEYOND.md`).
-*Technical implication:* `orderFills(o, c)` in `fill-engine.ts`.
+range touches its entry under the order-type rule, SIDED per RFC-014 §2: buy
+limit/stop compare against the derived Ask, sell limit/stop stay Bid (see Ask
+Derivation, below). Limit fills are clean (execution exactly at the recorded entry
+level); stop fills additionally slip against the trader (deterministic, RFC-014 §2).
+With `ExecutionCosts` absent or `{0,0,0,1}` every fill degenerates bit-for-bit to the
+pre-RFC-014 clean-fill behavior (V-1).
+*Technical implication:* `orderFills(o, c, costs)` in `fill-engine.ts`; stop-entry
+slippage applied via `slip()`.
 
 **Placement-Candle Exclusion.**
 Rule: an order can only fill on candles strictly after its placement candle
 (`c.time <= o.createdAt` returns false). Rationale: idempotent reprocessing and
 prevention of hindsight fills on the candle the trader was looking at.
-*Technical implication:* known fidelity trade-off — same-candle retrace-and-fill
-dynamics are deferred to the next interval. Revisited by RFC-014; until then this is
-the defined semantics, not a bug.
+*Technical implication:* `o.createdAt` is no longer the raw replay cursor time — see
+**Reveal Horizon** below (RFC-014 D14.B). At base-grain stepping the two coincide, so
+the pre-RFC-014 semantics hold unchanged in that mode; RFC-014 resolves the
+same-candle-latency fidelity gap this entry used to disclose.
+
+**Reveal Horizon** (placement horizon).
+The time of the LAST base candle actually revealed to the trader within the cursor's
+current replay-resolution bucket `[cursorTime, cursorTime + tfSeconds)` — the point
+at which `PendingOrder.createdAt` is stamped (RFC-014 D14.B), instead of the raw
+replay cursor. FORCED by the no-hindsight half of the Placement-Candle Exclusion once
+execution runs at Base Resolution: stamping the raw cursor would let an order fill on
+base candles inside the SAME still-forming display candle the trader has not yet
+seen. Coincides with the cursor time exactly at base-grain stepping (resolution ===
+base), reducing to pre-RFC-014 semantics unchanged in that mode.
+*Technical implication:* `selectPlacementTime` (`state/selectors.ts`), composed from
+`selectExecutionSeries`/`selectCurrentTime`/`selectReplayTfSeconds`; falls back to
+the raw cursor time when no execution series is loaded or it has not reached the
+current bucket yet.
+
+**Execution Costs.**
+The per-trade cost model applied by the engine: Bid/Ask spread (in points), a flat
+per-lot round-turn commission, and deterministic adverse slippage on stop-type
+executions (RFC-014 §2). A value object, threaded explicitly into
+`processCandle`/`closeTrade` — the engine never reads config (I-10).
+*Technical implication:* `ExecutionCosts` (`state/trading/execution-costs.ts`):
+`{spreadPoints, commissionPerLot, slippagePoints, pointSize}`. `ZERO_COSTS`
+(`{0,0,0,1}`) degenerates every sided predicate/price to the pre-RFC-014 behavior
+bit-for-bit (V-1 anchor). `COST_PRESETS` gives starting defaults per asset class
+(Forex/Índices/Metales/Cripto — STARTING DEFAULTS, not a live broker feed);
+`costPresetFor(symbol)` resolves one (unclassifiable symbols get `ZERO_COSTS`, never
+a guess), `effectiveCosts(preset, override)` merges the new-session dialog's
+per-field override (`pointSize` is never user-editable — always symbol-resolved).
+`TradingData.executionCosts: ExecutionCosts | null` persists the session's effective
+costs (`null` = legacy zero-cost session; NgRx `createFeature` rejects optional
+feature-state props, so this is required-but-nullable, the same idiom as
+`sessionEnd`/`sessionName`/`folderId`).
+
+**Ask Derivation.**
+Series are stored Bid (MT5 bar convention). The Ask side is derived, never stored:
+`Ask(t) = Bid(t) + spreadPoints·pointSize`. Buys execute at the derived Ask; sells
+execute at Bid (spread-invariant).
+*Technical implication:* `toAsk(bid, costs)` (`state/trading/fill-engine.ts`) is the
+SINGLE conversion point every sided predicate/price in the engine goes through
+(fills, SL/TP exits, MAE/MFE excursions, Floating Equity's mark-to-market). Costs
+absent or zero spread returns `bid` unchanged.
+
+**SimulationDomain.**
+The order-lifecycle law as a pure named module (RFC-014 Task 4a): I-14 Order
+Geometry Coherence and I-15 SL Non-Widening, extracted so the reducers invoke a
+named, independently testable function instead of embedding the check inline — no
+new framework concepts, a named home for logic that used to live inline.
+*Technical implication:* `state/trading/simulation-domain.ts`
+(`validateOrderGeometry`, `validateSlModification`); wired into
+`openMarket`/`placeOrder`/`modifyOrder` (I-14, the RESULTING geometry) and
+`modifyPosition` (I-15) in `trading.reducer.ts`. An invalid action returns
+reference-identity state (no mutation, no throw, no modal) — S2 minimal feedback.
 
 **Exit Decision.**
 The resolution of whether and how an open position leaves the market within a candle:
@@ -354,9 +426,20 @@ The derived performance summary of a session: totals, win rate over *decided* tr
 net profit, total R, profit factor, max drawdown (absolute and fractional), realized
 equity curve, ambiguous count.
 *Technical implication:* `computeSessionStats(history, initialBalance)`
-(`fill-engine.ts`). Note: `balance` and the equity curve are **realized-only**; the
-emulator does not maintain per-candle mark-to-market equity. Documents must not use
-"equity" as if floating P/L were included.
+(`fill-engine.ts`). Note: `balance` and the equity curve remain **realized-only** —
+`computeSessionStats` never reads floating P/L. RFC-014 §3 adds a SEPARATE,
+explicitly-named **Floating Equity** read model (below) alongside these; unqualified
+"equity" in documents still means the realized figures here, never floating P/L
+(Section 11).
+
+**Floating Equity.**
+`balance + Σ floatingPnL` of currently open positions, valued SIDED at the current
+Base Resolution candle (long: Bid close; short: derived Ask close, Ask Derivation
+above) — mark-to-market, unlike the realized-only `balance`/equity curve above. A
+read model only: never persisted, never fed back into `balance`.
+*Technical implication:* `selectFloatingEquity` (`state/selectors.ts`); no factory
+selector (D8). Prices off the Execution Series' current base candle when loaded,
+falling back to `selectCurrentReplayCandle` otherwise.
 
 ---
 
@@ -554,10 +637,58 @@ adherence is never scored by the system.
 **Black Box** (Raw Telemetry Register).
 The append-only, session-scoped, local-only log of neutral physical events captured
 passively during practice; outside `SessionPayloadV2` (D9 untouched), candle-free.
+Per-session capped (drop-newest on overflow); writes are batched off the hot path
+(N-2 passivity).
+*Technical implication:* a DEDICATED IndexedDB database, `emulador-telemetry`
+(`services/telemetry-db.service.ts`). **Deviation from the RFC-014 §4 text**, which
+names the conceptual store `emulador-workspaces`: joining the shared database was
+tried first and reverted, because `workspace-db.service.spec.ts` (pre-existing,
+STOP-protected) hard-asserts the exact object-store count of that database. Keyed
+`[sessionId, seq]`, append-only. Captured by `dispatch: false` NgRx effects
+(`state/telemetry/telemetry.effects.ts`) — the audited sync-effect pattern, adding
+zero domain behavior or write paths to trading state. Candle-Free Payload's
+`assertNoCandles` (Section 8) is reused over the new store (V-9). V-8 (16 ms/frame
+budget, N-2) measured 8.1–13.0 ms for a 69-event jump-50 burst in the test harness —
+comfortably under budget (the jsdom test environment is itself a slower ~50 ms
+bound).
+
+**Telemetry Envelope.**
+The uniform wrapper every captured fact is stored as:
+`TelemetryEvent := { seq, wallClockMs, marketTime, kind, payload }`. `kind`/
+`payload` are loosely typed at the storage boundary (`kind: string`, `payload:
+object`) so the store's schema stays closed to modification — a new event kind is a
+wider discriminated union at the call site, never a storage-layer change.
+*Technical implication:* `TelemetryEvent`/`TelemetryEventV1`
+(`state/telemetry/telemetry.models.ts`). The v1 kinds are `ReplaySeek`, `ReplayJump`,
+`PlaybackToggled`, `SpeedChanged`, `TimeElapsedBeforeOrder`, `DrawingSnapshot`
+(RFC-014 §4 table) plus `OrderFilled`/`PositionClosed` (the Reified Domain Facts,
+below — the v1 set's natural completion, same envelope, no schema change).
+
+**Reified Domain Fact.**
+A fill or close event turned into a first-class, serializable record instead of
+staying implicit in the resulting book/history diff — `OrderFilled` and
+`PositionClosed` (RFC-014 Task 4b), closing EVENT_STORMING §8's points 1-2.
+*Technical implication:* `DomainFact` union (`state/trading/domain-facts.ts`), built
+by the engine during the walk as `ProcessResult.facts` (`state/trading/
+fill-engine.ts`) — pure, additive (I-10), no new engine state. **D14.F
+(binding):** `ProcessResult.facts` has NO state surfacing (`TradingState` carries no
+facts field — NgRx `createFeature` rejects optional feature-state properties, and a
+required field would break protected action-payload literals); it is a RESERVED
+extension point (zero production read sites) for Fases 2-3. The telemetry observer
+independently derives the same fact shapes by pairwise-diffing consecutive
+`positions[]`/`history[]` snapshots (`diffDomainFacts`,
+`state/telemetry/telemetry-facts.ts`), not by reading `ProcessResult.facts`.
 
 **ReplaySeek** (telemetry fact).
 `{fromTime, toTime, direction}` — the objective record of a scrubber teleport. The
 register stores geometry, never labels (no `isBacktrack`, no honesty fields).
+*Technical implication:* captured by `TelemetryEffects.replaySeek$` on
+`ReplayActions.seekTo` only. **Known capture gap (RFC-014 closure deviation):** the
+"go to date" teleport, and programmatic session-restore/CSV-start jumps, dispatch
+`ReplayActions.goToTime` directly, bypassing `seekTo` — captured as neither
+`ReplaySeek` nor a jump-arm-based `ReplayJump` (Jump, Section 4), and it does not
+reset the `TimeElapsedBeforeOrder` order-clock anchor. Not fixed in the RFC-014
+closure task; a future telemetry pass should widen the capture surface.
 
 **TimeElapsedBeforeOrder.**
 `{anchorKind, pausedMs, playingMs, candlesRevealed}` — the physical timing context
@@ -565,10 +696,25 @@ of an order placement, anchored at the most recent of session start, last seek, 
 last order event.
 
 **MAE / MFE.**
-Maximum Adverse / Favorable Excursion of a position over base-resolution candles,
-with timestamps `tMAE`/`tMFE` and R-normalized forms (`MAE_R = MAE / |entry - sl|`).
-Physical efficiency diagnostics for stop and target slack; interpretation belongs
-to the trader.
+Maximum Adverse / Favorable Excursion of a position, accumulated over every Base
+Resolution candle it is open for — long: adverse = `entry - low`, favorable =
+`high - entry` (Bid extremes); short: sided via Ask Derivation — with first-reach
+timestamps `tMae`/`tMfe` (strict `>`: a later candle merely equaling the running
+max does not move the timestamp) and R-normalized forms `MAE_R = MAE / d`,
+`MFE_R = MFE / d`. **Divisor property:** `d` is the trade's FINAL `sl` distance AT
+CLOSE (`|entry - sl|`, the RFC-014 §3 formula) — since Asymmetric Trade Management
+(I-15) lets SL tighten after placement, `d` can diverge from the entry-time 1R (the
+Risk Invariant's `riskUsd` distance, Section 5) once the SL has moved. MAE_R/MFE_R
+are therefore a DISTINCT normalization from `rMultiple`, not interchangeable with
+it. Physical efficiency diagnostics for stop and target slack; interpretation
+belongs to the trader (S1).
+*Technical implication:* `Position.{mae,mfe,tMae,tMfe}` (optional, accumulated via
+`updateExcursion` in `fill-engine.ts`); sealed into `ClosedTrade` on every close
+path — a position never walked by a candle (e.g. a market order closed manually
+before any replay advance) seals `mae=0, mfe=0, tMae=tMfe=openTime` rather than
+staying undefined. Rendered as `MAE_R`/`MFE_R` columns in the trade history
+(display-time derivation; "—" for legacy trades missing the fields) plus
+mean/max aggregates in the session summary (G4).
 
 **Reflection Cabin** (The Mirror).
 The end-of-session / on-demand reconstruction surface: Reflective Scenes plus
@@ -614,7 +760,7 @@ anti-pattern itself):
 | Bullish/Bearish bias | Directional Hypothesis | Strategy-neutral; admits trend, mean-reversion, volume, oscillator framings |
 | Lot size as user input | Derived lot size (Risk Invariant) | Lot size is a computed dependent variable of SL geometry; a free input violates the risk invariant |
 | Tick data / tick simulation | Sub-candle at Base Resolution | No tick data exists in the system; claiming tick fidelity misstates the simulation's resolution |
-| Equity (implying floating P/L) | Realized balance / realized equity curve | The engine tracks realized results only; unqualified "equity" overstates the model |
+| Equity, unqualified | Realized balance / realized equity curve (session totals, Section 5's Session Statistics); Floating Equity (RFC-014 §3 mark-to-market read model, Section 5) when floating P/L is meant | Two distinct concepts now exist since RFC-014; unqualified "equity" is ambiguous — documents must say which one, never let bare "equity" imply floating P/L is folded into the realized figures |
 | Backend / server (for the app runtime) | Cloud persistence (Supabase) + object storage (R2) | There is deliberately no application server; the term smuggles in architecture that does not exist |
 | Guest mode / offline mode (as login state) | (none — removed) | Login is required; guest/offline mode was deliberately removed in Supabase Phase 3 |
 | Factory selector (per-panel views) | Local per-instance `ChartModelMapper` | Banned implementation pattern (D8): single-slot memoization thrashes at N panels |

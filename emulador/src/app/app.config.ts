@@ -23,6 +23,7 @@ import { TradingEffects } from './state/trading/trading.effects';
 import { AuthEffects } from './state/auth/auth.effects';
 import { SessionSyncEffects } from './state/sync/session-sync.effects';
 import { LayoutEffects } from './state/layout/layout.effects';
+import { TelemetryEffects } from './state/telemetry/telemetry.effects';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -50,6 +51,7 @@ export const appConfig: ApplicationConfig = {
       AuthEffects,
       SessionSyncEffects,
       LayoutEffects,
+      TelemetryEffects,
     ),
   ],
 };

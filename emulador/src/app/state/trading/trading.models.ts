@@ -1,3 +1,5 @@
+import { ExecutionCosts } from './execution-costs';
+
 export type OrderSide = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit' | 'stop';
 export type PendingType = Exclude<OrderType, 'market'>;
@@ -37,6 +39,26 @@ export interface Position {
   openTime: number;
   /** Order type that originated the position. */
   origin: OrderType;
+  /**
+   * Running max adverse excursion in price units (RFC-014 §3): for a long,
+   * `max_k (entryPrice - low_k)+`; for a short, `max_k (high_k + s - entryPrice)+`
+   * (`s` = spread). Accumulated by `processCandle` over every candle the
+   * position is open for, including its fill and exit candles. Optional/
+   * additive: undefined until the position has been walked by at least one
+   * candle — pre-existing specs construct `Position` literals directly and
+   * never set this, so they behave identically (V-1, the field simply stays
+   * absent).
+   */
+  mae?: number;
+  /**
+   * Running max favorable excursion, analogous to {@link mae}: long
+   * `max_k (high_k - entryPrice)+`, short `max_k (entryPrice - low_k - s)+`.
+   */
+  mfe?: number;
+  /** UTC seconds of the FIRST candle that reached the current `mae` (strict `>`: a later candle merely equaling it does not move this). */
+  tMae?: number;
+  /** UTC seconds of the FIRST candle that reached the current `mfe`, analogous to {@link tMae}. */
+  tMfe?: number;
 }
 
 /** A finished trade, kept in the session history. */
@@ -54,19 +76,49 @@ export interface ClosedTrade {
   openTime: number;
   closeTime: number;
   outcome: TradeOutcome;
-  /** Profit in account currency (clean price, no spread/commission). */
+  /**
+   * Profit in account currency. NET of commission when execution costs are
+   * present: `profit = grossProfit - commission` (RFC-014 §2). With absent
+   * costs it equals `grossProfit` and reduces to today's exact numbers (V-1).
+   */
   profit: number;
-  /** Profit measured in R (profit / riskUsd). */
+  /** Profit measured in R (profit / riskUsd), now over the NET profit above. */
   rMultiple: number;
   /**
    * SL and TP were both inside the same candle and no lower-TF series was
    * available to disambiguate: resolved pessimistically (SL first).
    */
   ambiguous: boolean;
+  /**
+   * Profit at executed prices (spread/slippage already baked into
+   * entry/exit), BEFORE commission (RFC-014 §2). Optional/additive: only
+   * legacy-absent when a trade predates this field (old persisted history).
+   * `closeTrade` always sets it; with zero/absent costs it equals `profit`.
+   */
+  grossProfit?: number;
+  /**
+   * Commission charged once at close (`commissionPerLot * lots`), already
+   * subtracted from `grossProfit` to get `profit`. Optional/additive, same
+   * legacy-absence rule as {@link grossProfit}; 0 with zero/absent costs.
+   */
+  commission?: number;
   /** The historical trade box is hidden on the chart (user toggle). */
   boxHidden?: boolean;
   /** The historical trade box was deleted from the chart (irreversible). */
   boxDeleted?: boolean;
+  /**
+   * Sealed running excursion accumulators from the closed {@link Position}
+   * (RFC-014 §3). `closeTrade` always sets these four fields — `mae`/`mfe`
+   * default to 0 and `tMae`/`tMfe` default to `openTime` when the position
+   * was never walked by a candle (e.g. a market order closed manually before
+   * any replay advance), the same "collapses to the open instant" idiom used
+   * elsewhere; optional only so trades persisted BEFORE this field existed
+   * still parse (legacy-absent), matching {@link grossProfit}/{@link commission}.
+   */
+  mae?: number;
+  mfe?: number;
+  tMae?: number;
+  tMfe?: number;
 }
 
 /**
@@ -95,6 +147,15 @@ export interface TradingData {
   sessionName: string | null;
   /** Folder the session belongs to (null = "Sin carpeta"). Org-only. */
   folderId: string | null;
+  /**
+   * Session's effective execution costs (RFC-014 §2). `null` (the legacy
+   * default) = zero-cost session (V-1) — no UI sets this yet (Task 6); the
+   * fill engine/reducer plumbing is dormant until a preset is assigned. A
+   * required-but-nullable field (not `?:`), matching `sessionEnd`/
+   * `sessionName`/`folderId` above: NgRx's `createFeature` rejects optional
+   * properties on the feature state type (`TradingState extends TradingData`).
+   */
+  executionCosts: ExecutionCosts | null;
 }
 
 /**
@@ -160,6 +221,7 @@ export function pickTradingData(t: TradingData): TradingData {
     sessionEnd: t.sessionEnd,
     sessionName: t.sessionName,
     folderId: t.folderId,
+    executionCosts: t.executionCosts,
   };
 }
 
@@ -178,6 +240,7 @@ export function defaultTradingData(initialBalance = DEFAULT_BALANCE): TradingDat
     sessionEnd: null,
     sessionName: null,
     folderId: null,
+    executionCosts: null,
   };
 }
 

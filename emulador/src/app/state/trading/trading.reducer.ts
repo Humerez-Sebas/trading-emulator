@@ -1,6 +1,7 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
 import { closeSession, closeTrade, processCandle } from './fill-engine';
+import { validateOrderGeometry, validateSlModification } from './simulation-domain';
 import { TradingActions } from './trading.actions';
 import {
   defaultTradingData,
@@ -84,7 +85,12 @@ export const tradingFeature = createFeature({
     initialState,
     on(TradingActions.openMarket, (state, a): TradingState => {
       const lots = lotsForRisk(state.balance, a.riskPct, a.price, a.sl, a.contractSize);
-      if (lots <= 0) return state;
+      // I-14 Order Geometry Coherence (RFC-014 Task 4a): an incoherent
+      // SL/TP (wrong side or boundary-equal to price) is silently rejected —
+      // S2 minimal feedback this phase (no throw, no console; see
+      // simulation-domain.ts). State returned UNCHANGED (reference identity),
+      // same shape as the existing lots<=0 guard.
+      if (lots <= 0 || !validateOrderGeometry(a.side, a.price, a.sl, a.tp)) return state;
       const position: Position = {
         id: newId(),
         side: a.side,
@@ -105,7 +111,9 @@ export const tradingFeature = createFeature({
     }),
     on(TradingActions.placeOrder, (state, a): TradingState => {
       const lots = lotsForRisk(state.balance, a.riskPct, a.entryPrice, a.sl, a.contractSize);
-      if (lots <= 0) return state;
+      // I-14 Order Geometry Coherence (RFC-014 Task 4a): same rejection as
+      // openMarket above, evaluated against the order's entry price.
+      if (lots <= 0 || !validateOrderGeometry(a.side, a.entryPrice, a.sl, a.tp)) return state;
       return {
         ...state,
         ...reviveIfEnded(state, a.time),
@@ -126,15 +134,34 @@ export const tradingFeature = createFeature({
         ],
       };
     }),
+    // RFC-014 Task 4a (D14.E — user-authorized punctual STOP exception,
+    // ledger-recorded; see task-4a-report.md "Completion wave"): I-15 SL
+    // Non-Widening. A widening SL move is rejected (position keeps its
+    // current sl); a tightening/equal move applies. TP is free (I-15's own
+    // scope, validateSlModification's doc) and always applies regardless of
+    // the SL decision — a mixed widen-SL + valid-TP action still applies the
+    // TP (apply-the-valid-part).
     on(
       TradingActions.modifyPosition,
       (state, { id, sl, tp }): TradingState => ({
         ...state,
-        positions: state.positions.map((p) =>
-          p.id === id ? { ...p, sl: sl ?? p.sl, tp: tp === undefined ? p.tp : tp } : p,
-        ),
+        positions: state.positions.map((p) => {
+          if (p.id !== id) return p;
+          const nextSl = sl ?? p.sl;
+          const nextTp = tp === undefined ? p.tp : tp;
+          const slAccepted = validateSlModification(p.side, p.sl, nextSl);
+          return { ...p, sl: slAccepted ? nextSl : p.sl, tp: nextTp };
+        }),
       }),
     ),
+    // RFC-014 Task 4a (D14.E — user-authorized punctual STOP exception,
+    // ledger-recorded; see task-4a-report.md "Completion wave"): I-14 Order
+    // Geometry Coherence on modification. Pending orders are NOT subject to
+    // I-15 non-widening (nothing is at risk yet, so the SL is freely
+    // re-placeable) — only geometric coherence is enforced. An invalid
+    // resulting geometry rejects the WHOLE modification for this order
+    // (state unchanged for it, same reference-identity idiom as
+    // placeOrder/openMarket), evaluated BEFORE the re-sizing block below.
     on(
       TradingActions.modifyOrder,
       (state, { id, entryPrice, sl, tp, contractSize }): TradingState => ({
@@ -147,9 +174,13 @@ export const tradingFeature = createFeature({
             sl: sl ?? o.sl,
             tp: tp === undefined ? o.tp : tp,
           };
+          if (!validateOrderGeometry(o.side, next.entryPrice, next.sl, next.tp)) return o;
           // Pending = nothing is at risk yet: re-size the lots so the risk %
           // stays constant when the entry/SL distance changes. Once filled
           // (a Position) the sizing is locked in and never recalculated.
+          // This guard has a live path independent of the I-14 check above:
+          // a valid geometry (positive entry/SL distance) can still yield
+          // lots <= 0 when the account balance or riskPct is non-positive.
           if (entryPrice !== undefined || sl !== undefined) {
             const lots = lotsForRisk(
               state.balance,
@@ -191,7 +222,20 @@ export const tradingFeature = createFeature({
     on(TradingActions.closePosition, (state, { id, price, time, contractSize }): TradingState => {
       const position = state.positions.find((p) => p.id === id);
       if (!position) return state;
-      const trade = closeTrade(position, price, time, 'manual', contractSize);
+      // RFC-014 §2: the reducer owns the trading slice, so it reads its own
+      // executionCosts and passes them to the engine explicitly (I-10) — the
+      // action payload stays untouched (pre-existing effect specs assert it).
+      // `?? undefined`: TradingState's field is required-but-nullable (NgRx
+      // feature-state rule), the engine's optional arg is `T | undefined`.
+      const trade = closeTrade(
+        position,
+        price,
+        time,
+        'manual',
+        contractSize,
+        false,
+        state.executionCosts ?? undefined,
+      );
       return {
         ...state,
         positions: state.positions.filter((p) => p.id !== id),
@@ -206,13 +250,33 @@ export const tradingFeature = createFeature({
         // fill after their createdAt, exits only from the position's openTime
         // on), so reprocessing a candle is idempotent. A global gate blocked
         // all fills after importing a session or stepping the replay back.
-        const result = processCandle(state, candle, subCandles, contractSize);
-        if (!result.changed) return { ...state, lastProcessedTime: candle.time };
+        const result = processCandle(
+          state,
+          candle,
+          subCandles,
+          contractSize,
+          state.executionCosts ?? undefined,
+        );
+        if (!result.changed) {
+          // RFC-014 §3: `changed` only covers fills/exits — a still-open
+          // position's mae/mfe excursion accumulators can advance on a
+          // candle where nothing fills or exits (the common case, almost
+          // every candle). `excursionsMoved` tells us exactly that; adopt
+          // the engine's updated `positions` array so the accumulators
+          // survive in the real store, without touching anything else. With
+          // NO open positions `excursionsMoved` is always false, so the
+          // truly-idle path keeps today's single-field short-circuit — no
+          // new array reference, no selector churn.
+          if (result.excursionsMoved) {
+            return { ...state, positions: result.book.positions, lastProcessedTime: candle.time };
+          }
+          return { ...state, lastProcessedTime: candle.time };
+        }
         return { ...state, ...result.book, lastProcessedTime: candle.time };
       },
     ),
     on(TradingActions.endSession, (state, { price, time, contractSize }): TradingState => {
-      const book = closeSession(state, price, time, contractSize);
+      const book = closeSession(state, price, time, contractSize, state.executionCosts ?? undefined);
       return { ...state, ...book, sessionEnded: true, summaryOpen: true };
     }),
     on(TradingActions.setInitialBalance, (state, { balance }): TradingState => {
@@ -233,13 +297,16 @@ export const tradingFeature = createFeature({
     // ---- sessions ----
     on(
       TradingActions.newSession,
-      (state, { currentCursor }): TradingState => ({
+      (state, { currentCursor, executionCosts }): TradingState => ({
         ...defaultTradingData(state.initialBalance),
         riskPct: state.riskPct,
         summaryOpen: false,
         savedSessions: archiveActive(state, currentCursor),
         // fresh blank session → fresh identity
         activeSessionId: newId(),
+        // RFC-014 G1: absent/undefined ⇒ null, same as defaultTradingData's
+        // own default (legacy zero-cost session, V-1 anchor unaffected).
+        executionCosts: executionCosts ?? null,
       }),
     ),
     on(

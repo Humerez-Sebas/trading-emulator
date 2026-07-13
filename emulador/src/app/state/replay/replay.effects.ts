@@ -26,6 +26,8 @@ interface ForwardFoldContext {
   tfSeconds: number;
   lower: Candle[] | null;
   contractSize: number;
+  /** Execution series (D14.A). Non-empty ⇒ base-grain fold; absent ⇒ legacy path. */
+  base?: Candle[] | null;
 }
 
 @Injectable()
@@ -171,12 +173,24 @@ export class ReplayEffects {
    * across data gaps. Shared by forward Display Navigation and the jump.
    */
   private foldForwardFills(ctx: ForwardFoldContext, targetTime: number): Action[] {
-    const { candles, idx, tfSeconds, lower, contractSize } = ctx;
+    const { candles, idx, tfSeconds, lower, contractSize, base } = ctx;
     const actions: Action[] = [];
     for (let i = idx + 1; i < candles.length && candles[i].time < targetTime; i++) {
       const candle = candles[i];
-      const subCandles = lower ? sliceRange(lower, candle.time, candle.time + tfSeconds) : null;
-      actions.push(TradingActions.processCandle({ candle, subCandles, contractSize }));
+      // Base-resolution execution loop (D14.A): one processCandle per base
+      // candle of this resolution interval instead of one for the whole
+      // interval. Legacy path (subCandles from `lower`) when `base` is absent.
+      if (base && base.length) {
+        const baseCandles = sliceRange(base, candle.time, candle.time + tfSeconds);
+        for (const c of baseCandles) {
+          actions.push(
+            TradingActions.processCandle({ candle: c, subCandles: null, contractSize }),
+          );
+        }
+      } else {
+        const subCandles = lower ? sliceRange(lower, candle.time, candle.time + tfSeconds) : null;
+        actions.push(TradingActions.processCandle({ candle, subCandles, contractSize }));
+      }
     }
     actions.push(ReplayActions.goToTime({ time: targetTime }));
     return actions;

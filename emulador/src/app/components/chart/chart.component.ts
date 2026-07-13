@@ -27,6 +27,7 @@ import { Candle, derivePointSize } from '../../models';
 import {
   selectActiveTfShortfall,
   selectDataRange,
+  selectPlacementTime,
   selectTradePanelView,
 } from '../../state/selectors';
 import { ChartModelMapper } from './chart-model-mapper.service';
@@ -371,6 +372,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   // --- right-click menu + interactive order placement ---
   /** Current price/risk context for placing orders from the chart. */
   private tradeCtx = this.store.selectSignal(selectTradePanelView);
+  /** D14.B: pending-order placement stamps createdAt at the reveal horizon, not the raw cursor. */
+  private placementTime = this.store.selectSignal(selectPlacementTime);
   menu = signal<{
     x: number;
     y: number;
@@ -1022,7 +1025,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         sl: placing.sl,
         tp,
         riskPct: ctx.riskPct,
-        time: ctx.time,
+        time: this.placementTime(), // D14.B: reveal horizon, not the raw cursor
         contractSize: ctx.contractSize,
       }),
     );
