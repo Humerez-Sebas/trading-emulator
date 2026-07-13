@@ -15,6 +15,7 @@ import { tradingFeature } from './state/trading/trading.reducer';
 import { authFeature } from './state/auth/auth.reducer';
 import { layoutFeature } from './state/layout/layout.reducer';
 import { linkGroupsFeature } from './state/link-groups/link-groups.reducer';
+import { playbookFeature } from './state/playbook/playbook.reducer';
 import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
@@ -41,6 +42,7 @@ export const appConfig: ApplicationConfig = {
       [authFeature.name]: authFeature.reducer,
       [layoutFeature.name]: layoutFeature.reducer,
       [linkGroupsFeature.name]: linkGroupsFeature.reducer,
+      [playbookFeature.name]: playbookFeature.reducer,
     }),
     provideEffects(
       MarketEffects,
