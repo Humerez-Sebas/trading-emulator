@@ -22,7 +22,7 @@
 
 ## Tasks
 - [x] Task 1: Telemetry — management events (`OrderModified`/`PositionModified`) + `lastJump` anchor (D16.B)
-- [ ] Task 2: Lesson domain + `lessons` NgRx slice + `emulador-lessons` DB
+- [x] Task 2: Lesson domain + `lessons` NgRx slice + `emulador-lessons` DB
 - [ ] Task 3: Cloud sync — `lessons` SQL + per-row LWW cycle
 - [ ] Task 4: Pure scene/waypoint computation + `sharpe` in `computeSessionStats`
 - [ ] Task 5: Journal — routes, read models, sections, tables
@@ -45,3 +45,18 @@ boundary pinned by tests at 3000/2999); press-memory clearing structural via
 sessionStart/lastOrderEvent anchor); jumpForward/jumpBack non-participation gated by
 ofType(advanceDisplay) and proven with interleaved-jump test. N-1/seek/purity greps
 clean; payloads carry exactly {ref, field, from, to}.
+
+Task 2: complete (commits 8d1a145+a5605a7+5996a79+49bd8c9 + 34d60e8 review-fix;
+implementer haiku (mechanical mirror), review opus: APPROVED, 0 Critical/High/Medium,
+3 Low — Finding 1 (banned "seeks" in scene-spec.ts:36 comment) fixed by orchestrator in
+34d60e8 (comment-only, tsc app + lint re-verified, remaining hit is the ban-documentation
+itself, reviewer-sanctioned); Findings 2-3 (two effects tests that don't force the error
+branch) ruled no-fix — verbatim mirrors of audited PlaybookEffects, test pragmatism per
+decision-frameworks §6; 1400→1434 tests / 114→119 files, reviewer re-ran gates
+personally). Documented inert deviations: SceneSpec lives in domain/reflection/
+(component-architecture §3.5, pre-authorized), amendRule added to playbook.effects.ts
+persist$/pushDirty$ trigger lists (necessary for P-7 amendments persistence+sync, plan
+table omitted it), drawingSet = type-only import of DrawingSnapshotEntry from
+telemetry.models, MAX_EVIDENCE_SCENES=5 lives in scene-spec.ts. P-7 status: amendments
+now has its first sanctioned WRITER (amendRule); production READERS arrive in Task 7;
+detector update in Task 8.
