@@ -194,3 +194,9 @@ clean) and committed by the orchestrator.
 - T7-m1 (stale comment, this-branch): domain-facts.ts:6-8 still describes the abandoned
   TradingState.lastFacts surfacing; actual mechanism is diffDomainFacts state diffing
   (D14.F). One-line comment fix candidate for the final fix wave.
+
+Task 5: complete (commits 2da7d87..4353103, review clean — Approved)
+
+Task 6: complete (commits 88485cf..a9b60d5, review Approved — CSS token alignment noted for final review)
+
+Task 7: complete (commits b123ced..d3f6214, review Approved — clean)
