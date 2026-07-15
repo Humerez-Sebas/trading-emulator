@@ -30,5 +30,12 @@ export const PlaybookActions = createActionGroup({
      * dirty (`clientUpdatedAt > syncedAt`) and due for the next push cycle.
      */
     'Rules Synced': props<{ stamps: { id: string; syncedAt: number }[] }>(),
+    /**
+     * RFC-016 P-7 first writer: a lesson amends this rule by adding its
+     * lessonId to the rule's `amendments` array. `clientUpdatedAt` MUST be
+     * provided and is stamped to mark the rule dirty for sync (D15.F).
+     * The amendment must dirty the rule so it syncs to the cloud.
+     */
+    'Amend Rule': props<{ ruleId: string; lessonId: string; clientUpdatedAt: number }>(),
   },
 });

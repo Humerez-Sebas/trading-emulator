@@ -84,5 +84,20 @@ export const playbookFeature = createFeature({
         return s ? { ...r, syncedAt: s.syncedAt } : r;
       }),
     })),
+    on(PlaybookActions.amendRule, (state, { ruleId, lessonId, clientUpdatedAt }): PlaybookState => {
+      const target = state.rules.find((r) => r.id === ruleId);
+      if (!target) return state;
+      // Idempotence: if this lessonId is already in amendments, return state
+      // unchanged (same reference) — do not add a duplicate.
+      if (target.amendments.includes(lessonId)) return state;
+      return {
+        ...state,
+        rules: state.rules.map((r) =>
+          r.id === ruleId
+            ? { ...r, amendments: [...r.amendments, lessonId], clientUpdatedAt }
+            : r,
+        ),
+      };
+    }),
   ),
 });
