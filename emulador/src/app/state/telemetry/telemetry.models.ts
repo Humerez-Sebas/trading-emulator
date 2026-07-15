@@ -30,7 +30,7 @@ export interface TelemetryEvent {
   payload: object;
 }
 
-/** The v1 event kinds (RFC-014 §4 table). */
+/** The v1 event kinds (RFC-014 §4 table; RFC-016 §1 adds the management-event pair). */
 export type TelemetryEventKindV1 =
   | 'ReplayJump'
   | 'PlaybackToggled'
@@ -38,7 +38,9 @@ export type TelemetryEventKindV1 =
   | 'TimeElapsedBeforeOrder'
   | 'DrawingSnapshot'
   | 'OrderFilled'
-  | 'PositionClosed';
+  | 'PositionClosed'
+  | 'OrderModified'
+  | 'PositionModified';
 
 /**
  * Multi-candle jump/fold landing (`jumpForward`, `jumpBack`, `advanceDisplay`).
@@ -67,9 +69,15 @@ export interface SpeedChangedPayload {
 
 /**
  * Anchor for elapsed-time accounting at order placement: the most recent of
- * {session start, last order event}.
+ * {session start, last order event, last qualifying `+1`} (RFC-016 D16.B
+ * adds `'lastJump'` — a `+1` (`advanceDisplay`) press that follows a
+ * qualifying pause (>= 3000 ms paused since the PREVIOUS `+1` press) resets
+ * the anchor retroactively to that previous press's instant; see
+ * `withDisplayAdvance` in `telemetry-anchors.ts`). The scrubber's own anchor
+ * kind was removed pre-RFC-016 (D16.A, dead code — the scrubber was never
+ * built).
  */
-export type TimeElapsedAnchorKind = 'sessionStart' | 'lastOrderEvent';
+export type TimeElapsedAnchorKind = 'sessionStart' | 'lastOrderEvent' | 'lastJump';
 
 export interface TimeElapsedBeforeOrderPayload {
   orderRef: string;
@@ -98,6 +106,29 @@ export type OrderFilledPayload = Omit<OrderFilledFact, 'kind'>;
 /** Mirrors the Task-4 reified fact, minus the discriminant (redundant with the envelope's `kind`). */
 export type PositionClosedPayload = Omit<PositionClosedFact, 'kind'>;
 
+/**
+ * A "management event" (RFC-016 §1): a physical SL/TP/entry modification of
+ * a LIVE pending order. Exactly the changed field's `from`/`to` — no
+ * direction/judgment (tighten/widen) field: that is read-side geometry,
+ * derivable by comparing `from`/`to` against the order's side, never stored
+ * (N-1). `entry`/`sl` mirror `PendingOrder.entryPrice`/`sl` (always
+ * numbers); `tp` mirrors `PendingOrder.tp` (`number | null` — setting or
+ * clearing a TP is itself a management event).
+ */
+export type OrderModifiedPayload =
+  | { orderRef: string; field: 'sl' | 'entry'; from: number; to: number }
+  | { orderRef: string; field: 'tp'; from: number | null; to: number | null };
+
+/**
+ * A "management event" (RFC-016 §1) on a LIVE position. Same neutrality
+ * rule as {@link OrderModifiedPayload}: no direction/judgment field. `sl`
+ * mirrors `Position.sl` (always a number); `tp` mirrors `Position.tp`
+ * (`number | null`).
+ */
+export type PositionModifiedPayload =
+  | { positionRef: string; field: 'sl'; from: number; to: number }
+  | { positionRef: string; field: 'tp'; from: number | null; to: number | null };
+
 /** Discriminated union tying each v1 kind to its exact payload shape. */
 export type TelemetryEventV1 =
   | { kind: 'ReplayJump'; payload: ReplayJumpPayload }
@@ -106,4 +137,6 @@ export type TelemetryEventV1 =
   | { kind: 'TimeElapsedBeforeOrder'; payload: TimeElapsedBeforeOrderPayload }
   | { kind: 'DrawingSnapshot'; payload: DrawingSnapshotPayload }
   | { kind: 'OrderFilled'; payload: OrderFilledPayload }
-  | { kind: 'PositionClosed'; payload: PositionClosedPayload };
+  | { kind: 'PositionClosed'; payload: PositionClosedPayload }
+  | { kind: 'OrderModified'; payload: OrderModifiedPayload }
+  | { kind: 'PositionModified'; payload: PositionModifiedPayload };

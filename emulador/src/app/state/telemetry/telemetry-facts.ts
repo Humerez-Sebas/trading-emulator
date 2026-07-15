@@ -1,7 +1,12 @@
 import { lastIndexAtOrBefore } from '../trading/fill-engine';
 import type { ClosedTrade, PendingOrder, Position } from '../trading/trading.models';
 import type { Candle } from '../../models';
-import type { OrderFilledPayload, PositionClosedPayload } from './telemetry.models';
+import type {
+  OrderFilledPayload,
+  OrderModifiedPayload,
+  PositionClosedPayload,
+  PositionModifiedPayload,
+} from './telemetry.models';
 
 /**
  * Pure post-reducer state-diffing for the Task-4b reified facts
@@ -154,4 +159,88 @@ export function resolveOrderRef(
     (p) => !prevPositionIds.has(p.id) && p.origin === 'market',
   );
   return newMarketPosition?.id;
+}
+
+/** One management event ready to hand to `TelemetryEffects.capture()` (RFC-016 §1). */
+export type ManagementEventEmission =
+  | { kind: 'OrderModified'; payload: OrderModifiedPayload }
+  | { kind: 'PositionModified'; payload: PositionModifiedPayload };
+
+/**
+ * Diffs `prev` -> `curr` (same session-scoping contract as
+ * {@link diffDomainFacts} — callers must check `prev.sessionId ===
+ * curr.sessionId` themselves; a session switch resets the baseline, never
+ * gets diffed) and returns a `OrderModified`/`PositionModified` event for
+ * every `sl`/`tp`(/`entryPrice` for orders) field that changed VALUE, by
+ * id, for entities present in BOTH snapshots.
+ *
+ * Comparing by VALUE (not array/object identity) is what makes this
+ * automatically exclude:
+ * - **Rejected modifications** (RFC-016 §1, I-14/I-15 guards in
+ *   `trading.reducer.ts`): both `modifyOrder` (returns the entity
+ *   UNCHANGED for a rejected id) and `modifyPosition` (returns a NEW
+ *   object via spread, but with the SAME `sl` value, when the I-15 widen
+ *   guard rejects — "apply-the-valid-part": a genuinely-changed `tp`
+ *   alongside a rejected `sl` still emits its own event) leave the
+ *   compared field's VALUE unchanged either way.
+ * - **Fills/placements/closes**: an id present in only one snapshot is
+ *   never compared at all (the loops only visit ids present in `curr`
+ *   AND looked up in `prev`).
+ * - **MAE/MFE accumulator churn**: only `sl`/`tp`/`entryPrice` are ever
+ *   read; the running excursion fields are not.
+ *
+ * Order changes are checked `sl` then `tp` then `entry` (matching the
+ * field union's declaration order); position changes `sl` then `tp` — a
+ * single `modifyOrder({sl, tp})`/`modifyPosition({sl, tp})` call that
+ * moves both fields emits TWO events, in that order.
+ */
+export function diffManagementEvents(
+  prev: Pick<TradingSnapshot, 'orders' | 'positions'>,
+  curr: Pick<TradingSnapshot, 'orders' | 'positions'>,
+): ManagementEventEmission[] {
+  const emissions: ManagementEventEmission[] = [];
+
+  const prevOrders = new Map(prev.orders.map((o) => [o.id, o] as const));
+  for (const order of curr.orders) {
+    const before = prevOrders.get(order.id);
+    if (!before) continue; // placement, not a modification
+    if (before.sl !== order.sl) {
+      emissions.push({
+        kind: 'OrderModified',
+        payload: { orderRef: order.id, field: 'sl', from: before.sl, to: order.sl },
+      });
+    }
+    if (before.tp !== order.tp) {
+      emissions.push({
+        kind: 'OrderModified',
+        payload: { orderRef: order.id, field: 'tp', from: before.tp, to: order.tp },
+      });
+    }
+    if (before.entryPrice !== order.entryPrice) {
+      emissions.push({
+        kind: 'OrderModified',
+        payload: { orderRef: order.id, field: 'entry', from: before.entryPrice, to: order.entryPrice },
+      });
+    }
+  }
+
+  const prevPositions = new Map(prev.positions.map((p) => [p.id, p] as const));
+  for (const position of curr.positions) {
+    const before = prevPositions.get(position.id);
+    if (!before) continue; // fill, not a modification
+    if (before.sl !== position.sl) {
+      emissions.push({
+        kind: 'PositionModified',
+        payload: { positionRef: position.id, field: 'sl', from: before.sl, to: position.sl },
+      });
+    }
+    if (before.tp !== position.tp) {
+      emissions.push({
+        kind: 'PositionModified',
+        payload: { positionRef: position.id, field: 'tp', from: before.tp, to: position.tp },
+      });
+    }
+  }
+
+  return emissions;
 }
