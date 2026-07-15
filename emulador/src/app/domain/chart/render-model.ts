@@ -51,6 +51,7 @@ export interface Position {
   lots: number;
   openTime: number;
   origin: string;
+  declaredRuleId?: string | null;
 }
 
 export interface PendingOrder {
@@ -61,6 +62,7 @@ export interface PendingOrder {
   sl: number;
   tp: number | null;
   lots: number;
+  declaredRuleId?: string | null;
 }
 
 export interface TradeBoxItem {
@@ -132,6 +134,7 @@ export interface TradingModel {
   barSpacing: number;
   colors: ChartColors;
   opacity: TradeBoxOpacity;
+  ruleSlotMap?: Record<string, number | null>;
 }
 
 export interface RenderModel {

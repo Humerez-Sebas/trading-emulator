@@ -7,6 +7,7 @@ import {
   defaultTradingData,
   lotsForRisk,
   pickTradingData,
+  PendingOrder,
   Position,
   SavedSession,
   TradingState,
@@ -154,6 +155,41 @@ export const tradingFeature = createFeature({
         }),
       }),
     ),
+    on(TradingActions.tagTrade, (state, { ruleId }): TradingState => {
+      // G2/D15.A: tag the MOST RECENTLY placed active entity; toggle on repeat;
+      // absolute no-op (reference identity) when nothing is active.
+      const lastOrder = state.orders.reduce<PendingOrder | null>(
+        (m, o) => (m === null || o.createdAt >= m.createdAt ? o : m),
+        null,
+      );
+      const lastPos = state.positions.reduce<Position | null>(
+        (m, p) => (m === null || p.openTime >= m.openTime ? p : m),
+        null,
+      );
+      if (!lastOrder && !lastPos) return state;
+      const target =
+        lastOrder && lastPos
+          ? lastPos.openTime >= lastOrder.createdAt
+            ? { kind: 'pos' as const, id: lastPos.id }
+            : { kind: 'ord' as const, id: lastOrder.id }
+          : lastPos
+            ? { kind: 'pos' as const, id: lastPos.id }
+            : { kind: 'ord' as const, id: lastOrder!.id };
+      const next = (cur: string | null | undefined) => (cur === ruleId ? null : ruleId);
+      return target.kind === 'pos'
+        ? {
+            ...state,
+            positions: state.positions.map((p) =>
+              p.id === target.id ? { ...p, declaredRuleId: next(p.declaredRuleId) } : p,
+            ),
+          }
+        : {
+            ...state,
+            orders: state.orders.map((o) =>
+              o.id === target.id ? { ...o, declaredRuleId: next(o.declaredRuleId) } : o,
+            ),
+          };
+    }),
     // RFC-014 Task 4a (D14.E — user-authorized punctual STOP exception,
     // ledger-recorded; see task-4a-report.md "Completion wave"): I-14 Order
     // Geometry Coherence on modification. Pending orders are NOT subject to

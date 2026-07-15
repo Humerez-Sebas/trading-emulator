@@ -38,7 +38,7 @@ export const TRADE_BOX_FILL_RANGE = { min: 0.05, max: 0.5 };
 export const TRADE_BOX_BORDER_RANGE = { min: 0.1, max: 1 };
 
 /** Tabs of the right-side dock panel ('sessions' moved to the /sesiones page in V2.6). */
-export type SidePanelTab = 'trade' | 'settings';
+export type SidePanelTab = 'trade' | 'settings' | 'playbook';
 
 export interface SidePanelState {
   tab: SidePanelTab;

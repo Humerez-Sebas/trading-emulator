@@ -1,0 +1,95 @@
+<aside class="panel">
+  <header class="head">
+    <h3>Playbook</h3>
+    <button appButton variant="subtle" (click)="exportPlaybook()">Exportar playbook</button>
+  </header>
+
+  <section class="create-form">
+    <label>
+      Título
+      <input
+        type="text"
+        placeholder="Nombre corto de la regla"
+        [value]="newTitle()"
+        (input)="onTitleInput($event)"
+      />
+    </label>
+    <label>
+      Regla
+      <textarea
+        rows="3"
+        placeholder="Describe la regla que vas a entrenar"
+        [value]="newStatement()"
+        (input)="onStatementInput($event)"
+      ></textarea>
+    </label>
+    <button
+      class="submit"
+      [disabled]="!newTitle().trim()"
+      (click)="createRule()"
+    >
+      Crear regla
+    </button>
+  </section>
+
+  @if (rules().length === 0) {
+    <ui-empty-state
+      [compact]="true"
+      title="Sin reglas todavía"
+      hint="Crea la primera regla que vas a entrenar."
+    >
+      <svg
+        icon
+        viewBox="0 0 24 24"
+        width="30"
+        height="30"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+        aria-hidden="true"
+      >
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+      </svg>
+    </ui-empty-state>
+  } @else {
+    <section class="rules-list">
+      @for (rule of rules(); track rule.id) {
+        <div class="rule-card" [class.retired]="rule.status === 'retired'">
+          <div class="rule-header">
+            <span class="rule-title">{{ rule.title }}</span>
+            @if (rule.shortcutSlot !== null) {
+              <span class="slot-badge">R{{ rule.shortcutSlot }}</span>
+            }
+          </div>
+          @if (rule.statement) {
+            <p class="rule-statement">{{ rule.statement }}</p>
+          }
+          <div class="rule-actions">
+            <label class="slot-select">
+              Atajo
+              <select
+                [value]="rule.shortcutSlot ?? ''"
+                (change)="onSlotChange(rule, $event)"
+              >
+                <option value="">—</option>
+                @for (opt of slotOptions; track opt.value) {
+                  @if (opt.value !== null) {
+                    <option [value]="opt.value">{{ opt.label }}</option>
+                  }
+                }
+              </select>
+            </label>
+            <button
+              appButton
+              [variant]="rule.status === 'active' ? 'danger' : 'subtle'"
+              (click)="toggleStatus(rule)"
+            >
+              {{ rule.status === 'active' ? 'Retirar' : 'Reactivar' }}
+            </button>
+          </div>
+        </div>
+      }
+    </section>
+  }
+</aside>

@@ -626,6 +626,39 @@ The trader's explicit set of rules under training. Trader-authored and opaque to
 the system (never parsed, validated, or scored); permanent knowledge tier
 (RFC-015 domain).
 
+**PlaybookRule.**
+One trader-authored rule inside the Playbook aggregate: `{id, title, statement,
+createdAt, status, shortcutSlot, sortOrder, amendments}`. `statement` is opaque
+free text (P-2: the system never parses or evaluates it); `amendments` is a
+reserved extension point for RFC-016 (P-7: zero read sites).
+*Technical implication:* `PlaybookRule` (`state/playbook/playbook.models.ts`);
+persisted in the dedicated `emulador-playbook` IndexedDB database and synced to
+Supabase `playbook_rules` (RLS per user, LWW per row).
+
+**declaredRuleId / declaración.**
+An optional opaque stamp (`string | null`) on `PendingOrder`, `Position`, and
+`ClosedTrade` linking a trade to the Playbook rule the trader was training at
+placement time. Travels the identity chain (P-4); set post-placement via shortcut
+slot, sealed onto `ClosedTrade` at close. The system records the fact; adherence
+is never scored (S1).
+*Technical implication:* `declaredRuleId?: string | null` on all three trading
+entities (`state/trading/trading.models.ts`).
+
+**slot de atajo** (shortcut slot).
+An integer `1..9` assigned to a `PlaybookRule` (`shortcutSlot`), binding a
+keyboard digit to that rule for post-placement trade tagging (G2, D15.D). Unique
+among active rules; pressing the digit tags the most recent active order/position
+(D15.A). The digit namespace is reserved and verified free of other bindings.
+*Technical implication:* `PlaybookRule.shortcutSlot`; listener in
+`playbook-hotkeys.directive.ts`.
+
+**`emulador-playbook`.**
+The dedicated IndexedDB database for Playbook persistence (D15.B). Isolated from
+`emulador-workspaces` and `emulador-telemetry` so its version and lifecycle are
+independent; survives deletion of both (P-3/N-4).
+*Technical implication:* `PlaybookDbService` (`services/playbook-db.service.ts`);
+single object store `rules`, keyPath `id`, candle-free by construction.
+
 **Rule Declaration.**
 Optional single-keystroke tagging of an opaque `declaredRuleId` onto the ACTIVE
 order or position — post-placement, while the trade lives (Grill decision G2,

@@ -4,6 +4,12 @@
       @case ('trade') {
         <app-trade-panel animate.enter="tab-enter" animate.leave="tab-leave"></app-trade-panel>
       }
+      @case ('playbook') {
+        <app-playbook-panel
+          animate.enter="tab-enter"
+          animate.leave="tab-leave"
+        ></app-playbook-panel>
+      }
       @case ('settings') {
         <app-settings-panel
           animate.enter="tab-enter"
@@ -42,6 +48,20 @@
             <path d="M16 3v4" />
             <rect x="14" y="7" width="4" height="6" rx="1" />
             <path d="M16 13v6" />
+          </svg>
+        }
+        @case ('playbook') {
+          <!-- book -->
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
           </svg>
         }
         @case ('settings') {

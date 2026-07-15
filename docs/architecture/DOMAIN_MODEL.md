@@ -62,7 +62,10 @@ TradingBook (Aggregate Root)                          fill-engine.ts
 - **Entity lifecycle.** `PendingOrder --fill--> Position --exit--> ClosedTrade`. The
   identity (`id`) is continuous across the whole lifecycle: the position keeps the
   order's id and the closed trade keeps the position's id. A trade is one identity
-  observed in three phases.
+  observed in three phases. An optional opaque stamp, `declaredRuleId?: string | null`,
+  travels the same chain (RFC-015 P-4): set post-placement on the order or position,
+  sealed onto `ClosedTrade` at close. The system never reads its value (P-2); it is
+  a trader-authored fact, not a system judgment.
 - **Persistence shape.** The book is embedded in `TradingData`
   (`trading.models.ts`), which adds session-scoped fields (`initialBalance`,
   `lastProcessedTime`, `sessionEnded`, `riskPct`, `sessionEnd`, `sessionName`,
@@ -396,6 +399,24 @@ to live inline:
   makes invalid (e.g. a boundary-equal SL) — a punctual, user-authorized exception
   to the STOP rule; the specs' intent was preserved and only their fixture geometry
   adjusted to valid values (Task 4a ledger).
+
+### I-16 Playbook Invariants (RFC-015)
+
+The Playbook domain (`state/playbook/`) introduces seven invariants protecting the
+opacity and survival of trader-authored rules:
+
+| Id | Invariant | Detector |
+| :--- | :--- | :--- |
+| P-1 | Declaration is optional on EVERY placement path | Pre-existing placement suite green without `declaredRuleId` |
+| P-2 | Rule content is opaque: no code reads `statement` except display/edit | Grep audit (zero parsers/matchers) |
+| P-3 | Playbook survives all session/telemetry deletion | Cross-DB survival test (`playbook-db.service.spec.ts`) |
+| P-4 | Identity chain: `declaredRuleId` travels order → position → closed trade | Round-trip through engine + payload mapping (`playbook-invariants.spec.ts`) |
+| P-5 | N-1 on new schemas: zero interpretive vocabulary | Grep of forbidden terms over `state/playbook/**` and SQL |
+| P-6 | N-5: new store is candle-free | `assertNoCandles` on every DB write (`playbook-db.service.spec.ts`) |
+| P-7 | `amendments` reserved: zero read sites in production | Grep audit |
+
+Additionally, `declaredRuleId?: string | null` is noted on the §3.1 identity chain
+(`PendingOrder → Position → ClosedTrade`) as an additive, opaque stamp.
 
 ---
 

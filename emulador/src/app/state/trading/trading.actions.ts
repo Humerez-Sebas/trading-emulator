@@ -43,6 +43,14 @@ export const TradingActions = createActionGroup({
       contractSize: number;
     }>(),
     'Cancel Order': props<{ id: string }>(),
+    /**
+     * Declares (or clears/overwrites) a Playbook rule on the MOST RECENTLY
+     * placed active entity — an open position if it is newer than the
+     * newest pending order, otherwise that order (RFC-015 G2/D15.A). Tagging
+     * the entity's current rule again toggles the tag off. No active entity
+     * ⇒ no-op (reference identity).
+     */
+    'Tag Trade': props<{ ruleId: string }>(),
     /** Shows/hides the historical trade box of a closed trade. */
     'Set Trade Box Hidden': props<{ id: string; hidden: boolean }>(),
     /** Removes the historical trade box of a closed trade (irreversible). */
