@@ -33,7 +33,7 @@ export interface SceneSpec {
   /** Vector primitives present at the moment (frozen copy-on-write snapshot). */
   drawingSet: DrawingSnapshotEntry[];
   /**
-   * Telemetry markers in the window (seeks, elapsed times, tMAE/tMFE).
+   * Telemetry markers in the window (management events, elapsed times, tMAE/tMFE).
    * OPAQUE structure; the read-side consumes this for event timeline
    * construction (D16.D, RFC-016 §4). Per D16.A, the term "seek" is BANNED:
    * the domain terms are "management event" (OrderModified, PositionModified)
