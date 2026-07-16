@@ -24,7 +24,7 @@
 - [x] Task 1: Telemetry — management events (`OrderModified`/`PositionModified`) + `lastJump` anchor (D16.B)
 - [x] Task 2: Lesson domain + `lessons` NgRx slice + `emulador-lessons` DB
 - [x] Task 3: Cloud sync — `lessons` SQL + per-row LWW cycle
-- [ ] Task 4: Pure scene/waypoint computation + `sharpe` in `computeSessionStats`
+- [x] Task 4: Pure scene/waypoint computation + `sharpe` in `computeSessionStats`
 - [ ] Task 5: Journal — routes, read models, sections, tables
 - [ ] Task 6: Journal visualizations — scatter, bubble, heatmap (SVG)
 - [ ] Task 7: Reflection Cabin — timeline, frozen scene, lesson form, circular flow
@@ -96,3 +96,20 @@ DO block live (project nfcgfrsxvdvuasbgrxdy) → RLS PASS (playbook_rules), no
 exception, self-cleaned. 55d78a5 is RFC-015-scoped maintenance riding this branch
 (user-directed follow-up execution) — OUT of Task 4's review range, sanctioned;
 final audit should treat it as reviewed-here, not an unaudited stray.
+
+Task 4: complete (commits b10191a+273285c waypoints/scene + 456b588 sharpe + 62e1876
+specs, range 4a7762e..62e1876; implementer haiku (pure/mechanical), review opus:
+APPROVED "Ship it", 0 Critical/High/Medium, 2 Low no-fix-ruled — L-1 second "seek"
+ban-reference comment in build-scene-spec.ts:117 (sanctioned ban-doc pattern, optional
+reword), L-2 two tautological telemetryMarkers tests over an explicitly opaque
+structure (filter verified correct by reviewer reading; strengthen when Task 5/7 gives
+markers a real consumer); 1465→1544 tests / 121→124 files (+79/+3), reviewer re-ran
+gates + all greps personally, hand-checked sharpe vectors and merge boundary. Key
+verified semantics: fixed slots 1-5 without recompaction; merge boundary half-open
+(tMae > closeTime − baseTfSeconds; exactly-one-candle stays separate); never-walked
+trades produce Entry/Exit only with no merge artifact; merged MAE/MFE facts ride Exit;
+management sub-events ref-matched AND windowed [openTime, closeTime] (pre-fill
+order mods excluded — documented, RFC-closure doc candidate); Entry shows no future
+facts; sharpe = mean(R)/sampleStdDev(R) (n−1), null on n<2 or stddev 0, ALL trades
+included (totalR parity); fill-engine diff strictly additive; engine boundary
+untouched. FINAL-AUDIT ATTENTION: none beyond the two no-fixed Lows.
