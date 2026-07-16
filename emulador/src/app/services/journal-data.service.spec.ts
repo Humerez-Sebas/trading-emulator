@@ -220,7 +220,69 @@ describe('JournalDataService', () => {
     expect(model.datasetRefs.sort()).toEqual(['XAUUSD|H1|all', 'XAUUSD|M1|2024']);
   });
 
-  it('baseTfSeconds is the M1 execution granularity (60), independent of the session\'s display TF', async () => {
+  // ---- baseTfSeconds (review Finding 1 fix): derived, not hardcoded ----
+
+  it('baseTfSeconds is 60 (M1) when the session\'s selectedTfs includes M1 (finest wins)', async () => {
+    create({
+      currentAsset: 'XAUUSD',
+      liveActiveSessionId: 'a1',
+      db: {
+        listMetas: vi
+          .fn()
+          .mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD', selectedTfs: ['M1', 'H1', 'D1'] })]),
+      },
+    });
+    const model = await service.loadSessionReadModel('a1');
+    expect(model.baseTfSeconds).toBe(60);
+  });
+
+  it('baseTfSeconds is 3600 (H1) for an H1-only session — NOT hardcoded to M1 (review Finding 1)', async () => {
+    create({
+      currentAsset: 'XAUUSD',
+      liveActiveSessionId: 'a1',
+      db: {
+        listMetas: vi
+          .fn()
+          .mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD', selectedTfs: ['H1'] })]),
+      },
+    });
+    const model = await service.loadSessionReadModel('a1');
+    expect(model.baseTfSeconds).toBe(3600);
+  });
+
+  it('baseTfSeconds is 86400 (D1) for a D1-only session', async () => {
+    create({
+      currentAsset: 'XAUUSD',
+      liveActiveSessionId: 'a1',
+      db: {
+        listMetas: vi
+          .fn()
+          .mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD', selectedTfs: ['D1'] })]),
+      },
+    });
+    const model = await service.loadSessionReadModel('a1');
+    expect(model.baseTfSeconds).toBe(86400);
+  });
+
+  it('falls back to the finest LOCALLY-CACHED dataset TF when selectedTfs is absent', async () => {
+    create({
+      currentAsset: 'XAUUSD',
+      liveActiveSessionId: 'a1',
+      db: {
+        listMetas: vi.fn().mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD' })]), // no selectedTfs (legacy meta)
+        listDatasets: vi.fn().mockResolvedValue([
+          dataset({ id: 'XAUUSD|D1|all', symbol: 'XAUUSD', timeframe: 'D1', year: 'all' }),
+          dataset({ id: 'XAUUSD|H1|all', symbol: 'XAUUSD', timeframe: 'H1', year: 'all' }),
+          // a different symbol's finer dataset must not leak in
+          dataset({ id: 'EURUSD|M1|2024', symbol: 'EURUSD', timeframe: 'M1', year: '2024' }),
+        ]),
+      },
+    });
+    const model = await service.loadSessionReadModel('a1');
+    expect(model.baseTfSeconds).toBe(3600); // H1, the finest of XAUUSD's cached datasets
+  });
+
+  it('falls back to M1 (60) as the last resort when neither selectedTfs nor datasets are determinable', async () => {
     create({
       currentAsset: 'XAUUSD',
       liveActiveSessionId: 'a1',

@@ -1,9 +1,10 @@
 import { inject, Injectable } from '@angular/core';
 import { Store } from '@ngrx/store';
-import { TIMEFRAME_SECONDS } from '../models';
+import { TIMEFRAME_SECONDS, type Timeframe } from '../models';
 import { computeSessionStats } from '../state/trading/fill-engine';
 import type { ClosedTrade } from '../state/trading/trading.models';
 import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
+import type { DatasetRecord } from './market-data-db';
 import type { JournalSessionModel, JournalRuleRef } from '../state/journal/journal-read.models';
 import { selectCurrentAsset, selectSavedSessions, selectTradingData } from '../state/selectors';
 import { tradingFeature } from '../state/trading/trading.reducer';
@@ -13,11 +14,58 @@ import { WorkspaceDbService } from './workspace-db.service';
 import { TelemetryDbService } from './telemetry-db.service';
 
 /**
- * The fill engine's execution granularity (D14.A "one processCandle per base
- * candle") is always M1 — NOT the session's active/display timeframe. Used
- * for the waypoint merge boundary (Task 4/7) and the bubble's duration axis.
+ * Last-resort default when neither the session's `WorkspaceMeta.selectedTfs`
+ * nor its symbol's locally-cached datasets can determine a base TF (see
+ * {@link finestTimeframeSeconds}/{@link resolveBaseTfSeconds}). NOT a claim
+ * that the execution base is "always M1" — review Finding 1 (task-5-review.md)
+ * verified that is false: the fill engine's execution base is
+ * `selectExecutionSeries` = the finest LOADED series (`selectors.ts`'s own
+ * comment: "M1 ground truth **when loaded**"), and a session's anchors are a
+ * per-session `M1 | H1 | D1` selection — a user can create an H1/D1-only
+ * session (`crear-sesion-page.component.ts`'s `toggleTf` only guards
+ * non-empty, not "M1 present"). M1 is only the FALLBACK when the session's
+ * real anchor selection is undeterminable.
  */
-const BASE_TIMEFRAME_SECONDS = TIMEFRAME_SECONDS.M1;
+const FALLBACK_BASE_TIMEFRAME_SECONDS = TIMEFRAME_SECONDS.M1;
+
+/** The finest (smallest-duration) TF's seconds among `tfs`, or `null` when
+ * `tfs` is empty/absent or none of its entries is a recognized {@link Timeframe}. */
+function finestTimeframeSeconds(tfs: readonly string[] | undefined): number | null {
+  if (!tfs?.length) return null;
+  let best: number | null = null;
+  for (const tf of tfs) {
+    const seconds = TIMEFRAME_SECONDS[tf as Timeframe];
+    if (seconds === undefined) continue;
+    if (best === null || seconds < best) best = seconds;
+  }
+  return best;
+}
+
+/**
+ * Derives the session's base execution TF, in seconds (RFC-016 review
+ * Finding 1 fix). Priority, each strictly more accurate than the next:
+ * 1. `meta.selectedTfs` — the session's OWN anchor selection (set once at
+ *    creation/`switchAsset`, doesn't churn per-trade — safe to read from the
+ *    persisted meta even for the live/current asset).
+ * 2. The finest TF among the symbol's locally-cached `datasets` (already
+ *    loaded by `load()` for `datasetRefs`) — used when `selectedTfs` is
+ *    absent (legacy meta) or empty.
+ * 3. {@link FALLBACK_BASE_TIMEFRAME_SECONDS} (M1) only when neither source
+ *    yields a determinable TF.
+ */
+function resolveBaseTfSeconds(
+  meta: WorkspaceMeta | undefined,
+  symbol: string,
+  datasets: readonly DatasetRecord[],
+): number {
+  const fromSelectedTfs = finestTimeframeSeconds(meta?.selectedTfs);
+  if (fromSelectedTfs !== null) return fromSelectedTfs;
+  const fromDatasets = finestTimeframeSeconds(
+    datasets.filter((d) => d.symbol === symbol).map((d) => d.timeframe),
+  );
+  if (fromDatasets !== null) return fromDatasets;
+  return FALLBACK_BASE_TIMEFRAME_SECONDS;
+}
 
 /** Thrown by {@link JournalDataService.loadSessionReadModel} when `sessionId`
  * resolves to no local session (deleted, never existed, or cloud-only —
@@ -132,6 +180,7 @@ export class JournalDataService {
     }
 
     const datasetRefs = datasets.filter((d) => d.symbol === resolved.symbol).map((d) => d.id);
+    const meta = metas.find((m) => m.symbol === resolved.symbol);
 
     return {
       sessionId,
@@ -145,7 +194,7 @@ export class JournalDataService {
       rules,
       lessonByTradeRef,
       datasetRefs,
-      baseTfSeconds: BASE_TIMEFRAME_SECONDS,
+      baseTfSeconds: resolveBaseTfSeconds(meta, resolved.symbol, datasets),
     };
   }
 
