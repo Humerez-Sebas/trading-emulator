@@ -25,7 +25,7 @@
 - [x] Task 2: Lesson domain + `lessons` NgRx slice + `emulador-lessons` DB
 - [x] Task 3: Cloud sync — `lessons` SQL + per-row LWW cycle
 - [x] Task 4: Pure scene/waypoint computation + `sharpe` in `computeSessionStats`
-- [ ] Task 5: Journal — routes, read models, sections, tables
+- [x] Task 5: Journal — routes, read models, sections, tables
 - [ ] Task 6: Journal visualizations — scatter, bubble, heatmap (SVG)
 - [ ] Task 7: Reflection Cabin — timeline, frozen scene, lesson form, circular flow
 - [ ] Task 8: Invariant detectors + documentation closure
@@ -113,3 +113,26 @@ order mods excluded — documented, RFC-closure doc candidate); Entry shows no f
 facts; sharpe = mean(R)/sampleStdDev(R) (n−1), null on n<2 or stddev 0, ALL trades
 included (totalR parity); fill-engine diff strictly additive; engine boundary
 untouched. FINAL-AUDIT ATTENTION: none beyond the two no-fixed Lows.
+
+Task 5: complete (commits 714a432 read-models/service + 9e5b62e page/sections +
+c0c6653 route/buttons + 108104e specs + 9a7b3d5 review-fix; implementer sonnet, review
+opus: CHANGES REQUESTED → 1 Medium fixed → APPROVED "ship it"; 1544→1640→1644 tests /
+124→135 files, reviewer re-ran gates personally both passes). The Medium:
+baseTfSeconds hardcoded to M1 was WRONG for sessions anchored only on H1/D1 (execution
+base = finest LOADED series, not always M1) — would have inflated bubble durations 60×
+and mis-sized Task-7 scene windows; fixed in 9a7b3d5 (`resolveBaseTfSeconds`: finest
+selectedTfs → finest cached dataset for the symbol → M1 last resort; leak-check test
+against cross-symbol datasets; reviewer verified precedence + fixtures passthrough
+behavior-preserving via grep — no pre-existing spec passes selectedTfs). Design
+conformance verified verbatim by reviewer (§1.8 state copy character-exact, §2.3
+compact density block, zone tokens = DESIGN_SYSTEM §2.1/§4.1 documented values, zero
+digit listeners, focus-on-h1, caption/th-scope). styles.css gained the §2.1/§4.1 zone
++ rule + viz tokens (sanctioned base-token addition, first consumer). J-5/J-6/D8/N-1
+greps clean (reviewer-run). Notable adjudicated decisions: cloud-only session ⇒ error
+state this phase (pre-authorized); datasetRefs = DatasetRecord.id composite keys;
+buildBehaviorFacts ships 2 counts not the design spec's 3 (telemetry JUMP_FAMILY
+structurally cannot distinguish +1 from jumps — Task 8 doc-closure candidate); "Sin
+declarar" row ≥1-gated; Trades section deliberately unzoned; English section headers
+(domain proper nouns). FINAL-AUDIT ATTENTION: Task-6 must close the §6.5 checklist's
+two deferred items (viz clickability, IA hierarchy); behavior-counts doc note in
+Task 8; Lows — drawdown "-0.0%" cosmetic (no-fix).
