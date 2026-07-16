@@ -115,7 +115,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', b::text)::text, true);
   select count(*) into cnt from public.playbook_rules where id = rid;
   if cnt <> 0 then raise exception 'RLS FAIL: B can SELECT A playbook rule (cnt=%)', cnt; end if;
-  update public.playbook_rules set title = 'hacked-by-B', client_updated_at = now() where id = rid;
+  update public.playbook_rules set title = 'hacked-by-B', client_updated_at = now() + interval '1 second' where id = rid;
   get diagnostics cnt = row_count;
   if cnt <> 0 then raise exception 'RLS FAIL: B can UPDATE A playbook rule (rows=%)', cnt; end if;
   delete from public.playbook_rules where id = rid;
@@ -135,7 +135,7 @@ begin
   -- wrapped in its own sub-block; the actual assertion is raised OUTSIDE that
   -- sub-block so it is never accidentally swallowed by its own handler.
   begin
-    update public.playbook_rules set user_id = b, client_updated_at = now() where id = rid;
+    update public.playbook_rules set user_id = b, client_updated_at = now() + interval '1 second' where id = rid;
     reassigned := true; -- only reached if the update did NOT raise
   exception
     when others then
@@ -169,9 +169,9 @@ end $$;
 -- evaluated — with an equal timestamp the reassignment attempt below is
 -- no-opped by the trigger, no error raises, and the block false-fails with
 -- "A could reassign" even though RLS is sound. Hence `now() + interval '1
--- second'` on the updates. (The playbook_rules block above shares this
--- latent false-fail on its reassignment sub-test; flagged in the RFC-016
--- run ledger, left untouched here — it belongs to RFC-015.)
+-- second'` on the updates. (The playbook_rules block above shared this latent
+-- false-fail; fixed via the same now() + interval '1 second' pattern in the
+-- same pathspec commit.)
 -- LAST VERIFIED 2026-07-15 against project nfcgfrsxvdvuasbgrxdy:
 --   RLS PASS (lessons), lessons_rows=0 after (self-cleaned).
 do $$
