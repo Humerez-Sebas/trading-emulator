@@ -7,10 +7,12 @@
     <p class="insufficient-data">Se necesitan al menos 3 trades para esta visualización.</p>
   } @else {
     <div class="viz-row">
-      <!-- MOUNT: BubbleDurationRComponent (RFC-016 Task 6). Inputs ready: `bubbles()`. -->
-      <div class="viz-mount" data-viz="bubble-duration-r" aria-hidden="true"></div>
-      <!-- MOUNT: HeatmapTradeCalendarComponent (RFC-016 Task 6). Inputs ready: `cells()`. -->
-      <div class="viz-mount" data-viz="heatmap-trade-calendar" aria-hidden="true"></div>
+      <div class="viz-mount" data-viz="bubble-duration-r">
+        <app-bubble-duration-r [bubbles]="bubbles()" (tradeSelected)="tradeSelected.emit($event)" />
+      </div>
+      <div class="viz-mount" data-viz="heatmap-trade-calendar">
+        <app-heatmap-trade-calendar [cells]="cells()" (tradeSelected)="tradeSelected.emit($event)" />
+      </div>
     </div>
   }
 

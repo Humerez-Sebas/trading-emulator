@@ -5,8 +5,8 @@
   @if (insufficientData()) {
     <p class="insufficient-data">Se necesitan al menos 3 trades para esta visualización.</p>
   } @else {
-    <!-- MOUNT: ScatterMaeMfeComponent (RFC-016 Task 6). Inputs ready: `points()`.
-         Output ready: `tradeSelected` (re-emit the child's `tradeSelected`). -->
-    <div class="viz-mount" data-viz="scatter-mae-mfe" aria-hidden="true"></div>
+    <div class="viz-mount" data-viz="scatter-mae-mfe">
+      <app-scatter-mae-mfe [points]="points()" (tradeSelected)="tradeSelected.emit($event)" />
+    </div>
   }
 </section>
