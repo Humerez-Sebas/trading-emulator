@@ -306,10 +306,23 @@
                     </span>
                     <span class="num muted">{{ card.trades }}</span>
                     <span class="muted">{{ card.createdAt | date: 'dd MMM yyyy' }}</span>
-                    <ng-container
-                      [ngTemplateOutlet]="actionMenu"
-                      [ngTemplateOutletContext]="{ card }"
-                    />
+                    <div class="row-actions">
+                      <a appButton variant="subtle" size="sm" [routerLink]="['/journal', journalId(card)]">
+                        Journal
+                      </a>
+                      <a
+                        appButton
+                        variant="subtle"
+                        size="sm"
+                        [routerLink]="['/journal', journalId(card), 'reflect']"
+                      >
+                        Reflect
+                      </a>
+                      <ng-container
+                        [ngTemplateOutlet]="actionMenu"
+                        [ngTemplateOutletContext]="{ card }"
+                      />
+                    </div>
                   </div>
                 }
               </div>
@@ -413,6 +426,22 @@
                           <button appButton variant="subtle" size="sm" (click)="open(card)">
                             Abrir
                           </button>
+                          <a
+                            appButton
+                            variant="subtle"
+                            size="sm"
+                            [routerLink]="['/journal', journalId(card)]"
+                          >
+                            Journal
+                          </a>
+                          <a
+                            appButton
+                            variant="subtle"
+                            size="sm"
+                            [routerLink]="['/journal', journalId(card), 'reflect']"
+                          >
+                            Reflect
+                          </a>
                           <ng-container
                             [ngTemplateOutlet]="actionMenu"
                             [ngTemplateOutletContext]="{ card }"

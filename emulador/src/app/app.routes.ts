@@ -36,5 +36,15 @@ export const routes: Routes = [
         (m) => m.CrearSesionPageComponent,
       ),
   },
+  {
+    // RFC-016 D16.E: read-side session analysis, no r2Onboarding guard —
+    // the Journal loads a session by id without opening the practice
+    // workspace (J-6), so a first-time user with no datasets isn't
+    // redirected away from it the way the root route is.
+    path: 'journal/:sessionId',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/journal/journal-page.component').then((m) => m.JournalPageComponent),
+  },
   { path: '**', redirectTo: '' },
 ];
