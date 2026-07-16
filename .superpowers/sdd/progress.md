@@ -75,3 +75,17 @@ BEFORE any network I/O (pinned by test); pull never deletes; mid-flight-edit saf
 driven through the real reducer. Reviewer non-blocking observation for final audit: an
 explicit cloud session-deletion survival round-trip is structurally guaranteed (no FK)
 — revisit at closure only if an FK ever appears.
+
+Task 3 coordination (orchestrator, 2026-07-15): `lessons.sql` APPLIED to live project
+nfcgfrsxvdvuasbgrxdy via Supabase MCP (`apply_migration`, name
+`rfc016_lessons_table_rls_lww`). RLS verify: first run FALSE-FAILED on the
+reassignment sub-test — root-caused to `lww_guard` returning NULL for non-newer
+`client_updated_at` (transaction-stable `now()`) BEFORE the RLS WITH CHECK evaluates;
+NOT an RLS hole. Fixed the lessons verify block to use strictly-newer timestamps
+(`now() + interval '1 second'`, commit b57a827 with full explanatory comment);
+re-run → RLS PASS (lessons), cross-user isolation + reassignment rejection hold,
+lessons_rows=0 after (self-cleaned). DoD 3 (RLS verificada) satisfied for lessons.
+REQUIRES-ATTENTION (pre-existing, RFC-015 scope, NOT touched): the playbook_rules
+verify block shares the same latent false-fail on its reassignment sub-test —
+flagged to the owner as a spawned follow-up task and noted in the lessons block
+comment; final audit should not re-litigate it as an RFC-016 defect.
