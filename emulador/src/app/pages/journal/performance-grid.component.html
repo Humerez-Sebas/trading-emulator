@@ -1,0 +1,99 @@
+<section class="performance-grid" role="list" aria-label="Métricas de rendimiento de la sesión">
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">Profit factor</span>
+    <strong class="metric-value" [attr.aria-label]="'Profit factor: ' + profitFactorLabel()">
+      {{ profitFactorLabel() }}
+    </strong>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">Win rate</span>
+    <strong
+      class="metric-value"
+      [attr.aria-label]="'Win rate: ' + (stats().winRate | percent: '1.0-0')"
+    >
+      {{ stats().winRate | percent: '1.0-0' }}
+    </strong>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">R acumulado</span>
+    <strong
+      class="metric-value"
+      [class.up]="stats().totalR >= 0"
+      [class.down]="stats().totalR < 0"
+      [attr.aria-label]="'R acumulado: ' + (stats().totalR >= 0 ? '+' : '') + (stats().totalR | number: '1.2-2') + 'R'"
+    >
+      {{ stats().totalR >= 0 ? '+' : '' }}{{ stats().totalR | number: '1.2-2' }}R
+    </strong>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">Balance</span>
+    <strong
+      class="metric-value"
+      [attr.aria-label]="'Balance: ' + (stats().balance | number: '1.2-2') + ' $'"
+    >
+      {{ stats().balance | number: '1.2-2' }} $
+    </strong>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">Drawdown</span>
+    <strong
+      class="metric-value"
+      [class.down]="stats().drawdownPct > 0"
+      [attr.aria-label]="'Drawdown: -' + (stats().drawdownPct | percent: '1.1-1')"
+    >
+      -{{ stats().drawdownPct | percent: '1.1-1' }}
+    </strong>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">Sharpe</span>
+    <strong class="metric-value" [attr.aria-label]="'Sharpe: ' + sharpeLabel()">
+      {{ sharpeLabel() }}
+    </strong>
+    <span class="metric-sublabel">por-trade, sin anualizar</span>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">MAE_R media</span>
+    <strong
+      class="metric-value"
+      [attr.aria-label]="'MAE_R media: ' + excursionLabel(stats().maeRMean)"
+    >
+      {{ excursionLabel(stats().maeRMean) }}
+    </strong>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">MFE_R media</span>
+    <strong
+      class="metric-value"
+      [attr.aria-label]="'MFE_R media: ' + excursionLabel(stats().mfeRMean)"
+    >
+      {{ excursionLabel(stats().mfeRMean) }}
+    </strong>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">Trades</span>
+    <strong
+      class="metric-value"
+      [attr.aria-label]="'Trades: ' + stats().tradesCount"
+    >
+      {{ stats().tradesCount }}
+    </strong>
+  </div>
+
+  <div class="metric-card" role="listitem">
+    <span class="metric-label">Costes</span>
+    <strong
+      class="metric-value"
+      [attr.aria-label]="'Costes: ' + (stats().costsTotal | number: '1.2-2') + ' $'"
+    >
+      {{ stats().costsTotal | number: '1.2-2' }} $
+    </strong>
+  </div>
+</section>

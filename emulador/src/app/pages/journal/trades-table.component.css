@@ -1,0 +1,112 @@
+.section {
+  padding: var(--density-pad);
+  border: 1px solid var(--border);
+  border-radius: var(--density-radius);
+  /* Trades is deliberately UNZONED (design spec §1.1 lists only 5 zoned
+     sections; Trades is not one of them) — neutral accent, no --zone-*. */
+  border-inline-start: 3px solid var(--border-strong);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--density-gap);
+}
+.section-header h2 {
+  margin: 0;
+  font-size: var(--density-heading);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+.filter-note {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--density-font);
+}
+thead {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+th {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+}
+th.num {
+  text-align: right;
+}
+td {
+  padding: var(--space-1) var(--space-2);
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+td.num {
+  text-align: right;
+}
+td.up {
+  color: var(--up);
+}
+td.down {
+  color: var(--down);
+}
+
+.row {
+  cursor: pointer;
+  border-inline-start: 2px solid transparent;
+}
+.row:hover {
+  background: var(--surface);
+}
+.row:active {
+  background: var(--surface-2);
+}
+.row.selected {
+  background: var(--surface-2);
+  border-inline-start-color: var(--accent);
+}
+
+.rule-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+.rule-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+.reflection-mark {
+  margin-inline-start: var(--space-1);
+  color: var(--accent);
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--density-font);
+}

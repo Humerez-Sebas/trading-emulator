@@ -136,6 +136,36 @@
   --duration-fast: 120ms;
   --duration-base: 180ms;
   --duration-slow: 240ms;
+
+  /* ---- DESIGN_SYSTEM.md §2.1 semantic zone colors ----
+     One value each (not theme-split): DESIGN_SYSTEM.md specifies a single
+     hex per zone, contrast-verified against --surface/--bg (§5.1) for the
+     dark theme these values were authored against. RFC-016 Task 5 (Journal)
+     is the first consumer; base-token addition per component-architecture
+     §2.3's "flagged in the task report" pattern — flagged in task-5-report.md.
+     Zone colors tint headers/icons/left-borders ONLY, never body text (§2.1). */
+  --zone-performance: #10b981;
+  --zone-execution: #4a7dff;
+  --zone-behavior: #8b5cf6;
+  --zone-risk: #f59e0b;
+  --zone-temporal: #06b6d4;
+  --zone-rules: #eab308;
+  --zone-reflection: #a8a29e;
+
+  /* ---- DESIGN_SYSTEM.md §2.1 rule-identity palette (scatter/bubble/heatmap/badges) ---- */
+  --rule-1: #5470c6;
+  --rule-2: #91cc75;
+  --rule-3: #fac858;
+  --rule-4: #ee6666;
+  --rule-5: #73c0de;
+  --rule-6: #3ba272;
+  --rule-7: #fc8452;
+  --rule-8: #9a60b4;
+  --rule-9: #ea7ccc;
+
+  /* ---- DESIGN_SYSTEM.md §4.1 data-visualization canvas tokens ---- */
+  --viz-grid: #1a1a1a;
+  --viz-axis: #333333;
 }
 
 html,

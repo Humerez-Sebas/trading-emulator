@@ -1,0 +1,85 @@
+/* DESIGN_SYSTEM §2.3 — exact `compact` density block for the Journal. */
+.journal-page {
+  --density-gap: var(--space-2);
+  --density-pad: var(--space-2);
+  --density-font: var(--text-xs);
+  --density-metric: var(--text-sm);
+  --density-heading: var(--text-md);
+  --density-radius: var(--radius-xs);
+
+  display: block;
+  padding: var(--space-6) var(--space-8);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.page-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-8) 0;
+  color: var(--text);
+}
+.page-state p {
+  margin: 0;
+  color: var(--text-muted);
+  max-width: 65ch;
+}
+.page-state h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* ---- loading skeletons (design spec §1.8: never a spinner) ---- */
+.skeleton-header {
+  height: 48px;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 37%, var(--surface) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+.skeleton-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.skeleton-section {
+  height: 160px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 37%, var(--surface) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-header,
+  .skeleton-section {
+    animation-duration: 0.01ms !important;
+  }
+}

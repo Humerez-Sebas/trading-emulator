@@ -1,0 +1,12 @@
+<section class="section" data-zone="execution" aria-labelledby="execution-heading">
+  <header class="section-header">
+    <h2 id="execution-heading">Execution</h2>
+  </header>
+  @if (insufficientData()) {
+    <p class="insufficient-data">Se necesitan al menos 3 trades para esta visualización.</p>
+  } @else {
+    <!-- MOUNT: ScatterMaeMfeComponent (RFC-016 Task 6). Inputs ready: `points()`.
+         Output ready: `tradeSelected` (re-emit the child's `tradeSelected`). -->
+    <div class="viz-mount" data-viz="scatter-mae-mfe" aria-hidden="true"></div>
+  }
+</section>

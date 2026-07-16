@@ -1,0 +1,59 @@
+<section class="section" data-zone="rules" aria-labelledby="rule-performance-heading">
+  <header class="section-header">
+    <h2 id="rule-performance-heading">Rule Performance</h2>
+  </header>
+
+  @if (rows().length) {
+    <table>
+      <caption class="sr-only">
+        Rendimiento por regla del Playbook en esta sesión
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Regla</th>
+          <th scope="col" class="num">Trades</th>
+          <th scope="col" class="num">Win rate</th>
+          <th scope="col" class="num">R acumulado</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.ruleId ?? 'undeclared') {
+          @if (row.ruleId !== null) {
+            <tr
+              class="clickable"
+              [class.active]="isActive(row.ruleId)"
+              tabindex="0"
+              role="button"
+              [attr.aria-pressed]="isActive(row.ruleId)"
+              [attr.aria-label]="'Filtrar la tabla de trades por ' + row.title"
+              (click)="toggle(row.ruleId)"
+              (keydown.enter)="toggle(row.ruleId)"
+              (keydown.space)="$event.preventDefault(); toggle(row.ruleId)"
+            >
+              <td>
+                <span class="rule-swatch" [style.background]="row.colorToken" aria-hidden="true"></span>
+                {{ row.title }}
+              </td>
+              <td class="num">{{ row.trades }}</td>
+              <td class="num">{{ row.winRate | percent: '1.0-0' }}</td>
+              <td class="num" [class.up]="row.totalR >= 0" [class.down]="row.totalR < 0">
+                {{ row.totalR >= 0 ? '+' : '' }}{{ row.totalR | number: '1.2-2' }}R
+              </td>
+            </tr>
+          } @else {
+            <tr class="undeclared-row">
+              <td>{{ row.title }}</td>
+              <td class="num">{{ row.trades }}</td>
+              <td class="num">{{ row.winRate | percent: '1.0-0' }}</td>
+              <td class="num" [class.up]="row.totalR >= 0" [class.down]="row.totalR < 0">
+                {{ row.totalR >= 0 ? '+' : '' }}{{ row.totalR | number: '1.2-2' }}R
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  } @else {
+    <p class="empty">Sin reglas declaradas en esta sesión.</p>
+  }
+</section>
