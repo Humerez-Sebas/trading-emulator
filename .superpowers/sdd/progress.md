@@ -26,7 +26,7 @@
 - [x] Task 3: Cloud sync — `lessons` SQL + per-row LWW cycle
 - [x] Task 4: Pure scene/waypoint computation + `sharpe` in `computeSessionStats`
 - [x] Task 5: Journal — routes, read models, sections, tables
-- [ ] Task 6: Journal visualizations — scatter, bubble, heatmap (SVG)
+- [x] Task 6: Journal visualizations — scatter, bubble, heatmap (SVG)
 - [ ] Task 7: Reflection Cabin — timeline, frozen scene, lesson form, circular flow
 - [ ] Task 8: Invariant detectors + documentation closure
 
@@ -136,3 +136,23 @@ declarar" row ≥1-gated; Trades section deliberately unzoned; English section h
 (domain proper nouns). FINAL-AUDIT ATTENTION: Task-6 must close the §6.5 checklist's
 two deferred items (viz clickability, IA hierarchy); behavior-counts doc note in
 Task 8; Lows — drawdown "-0.0%" cosmetic (no-fix).
+
+Task 6: complete (commits a3c29c1 specs + e91300c components + ca6494b mounts +
+5da4ac5 review-fix; implementer haiku (mechanical SVG), review opus: CHANGES REQUESTED
+→ 1 Medium fixed → APPROVED "Ship it"; 1644→1692→1712 tests / 135→138 files, reviewer
+re-ran gates personally both passes; reviewer session was killed mid-review by a usage
+limit and resumed from transcript — no evidence lost). The Medium: scatter used a
+symmetric [-3,+3] fixed domain although MAE_R/MFE_R are provably ≥0 (fill-engine
+clamp), crushing all points into one quadrant with the zero-axis drawn at the frame;
+fixed in 5da4ac5 (independent non-negative data-fit domains, zero-axes at
+scaleX(0)/scaleY(0), true (v,v) identity line; reviewer hand-verified the old code
+FAILS 4 of the 6 new coordinate pins — pins genuinely constrain the mapping). Fix wave
+also applied reviewer-recommended Lows: focus-triggered tooltips + enriched Spanish
+aria-labels (F2), stroke-based SVG focus rings replacing unreliable CSS outline (F3).
+No-fix-ruled (do not re-litigate): tooltip edge clipping (F5, cosmetic), heatmap
+tooltip omits rule (F6 — HeatmapCellView carries no rule field; Task 8 doc note
+candidate), heatmap intensity max(...,1) floor (F7, doc-accuracy). color-mix browser
+floor and fixed-viewBox responsiveness adjudicated NON-ISSUES (baseline already uses
+color-mix; preserveAspectRatio contains the canvas). FINAL-AUDIT ATTENTION: F3 stroke
+focus ring is jsdom-unverifiable — visual confirmation deferred to Task 7 browser
+walkthrough; per-element aria-labels lead with English token "Trade" (nit).
