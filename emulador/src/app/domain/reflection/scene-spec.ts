@@ -48,3 +48,10 @@ export interface SceneSpec {
  * persistence time (lessons-db.service.ts, J-2).
  */
 export const MAX_EVIDENCE_SCENES = 5;
+
+/**
+ * Scene window size: 60 candles before and after the waypoint time
+ * (RFC-016 design spec §2.4). Defines the market-time window rendered
+ * in the scene: [waypoint.time - 60·baseTfSeconds, waypoint.time + 60·baseTfSeconds].
+ */
+export const SCENE_WINDOW_CANDLES = 60;
