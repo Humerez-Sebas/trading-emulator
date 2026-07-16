@@ -248,4 +248,58 @@ describe('HeatmapTradeCalendarComponent', () => {
       expect(rects.length).toBe(0);
     });
   });
+
+  // T6 review fix wave (Finding 2): tooltip must appear on keyboard focus too.
+  describe('focus tooltip (Finding 2)', () => {
+    it('should show tooltip on cell focus', () => {
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-1', seq: 1, rMultiple: 1.5 }];
+      fixture.componentRef.setInput('cells', cells);
+      fixture.detectChanges();
+
+      const rect = fixture.nativeElement.querySelector('rect[data-cell]');
+      rect?.dispatchEvent(new FocusEvent('focus'));
+      fixture.detectChanges();
+
+      const tooltip = fixture.nativeElement.querySelector('[data-tooltip]');
+      expect(tooltip).toBeTruthy();
+    });
+
+    it('should hide tooltip on cell blur', () => {
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-1', seq: 1, rMultiple: 1.5 }];
+      fixture.componentRef.setInput('cells', cells);
+      fixture.detectChanges();
+
+      const rect = fixture.nativeElement.querySelector('rect[data-cell]');
+      rect?.dispatchEvent(new FocusEvent('focus'));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-tooltip]')).toBeTruthy();
+
+      rect?.dispatchEvent(new FocusEvent('blur'));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-tooltip]')).toBeFalsy();
+    });
+  });
+
+  // T6 review fix wave (Finding 2): per-cell aria-label enriched with seq +
+  // R (the only physical facts HeatmapCellView carries — rule omission is
+  // Finding 6, no-fix-ruled: the read model structurally has no rule field).
+  describe('per-cell aria-label enrichment (Finding 2)', () => {
+    it('includes seq and R-multiple in the accessible name', () => {
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-5', seq: 5, rMultiple: 2.3 }];
+      fixture.componentRef.setInput('cells', cells);
+      fixture.detectChanges();
+
+      const rect = fixture.nativeElement.querySelector('rect[data-cell]');
+      expect(rect?.getAttribute('aria-label')).toBe('Trade #5 · +2.30R');
+    });
+
+    it('formats a negative R-multiple with a minus sign', () => {
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-2', seq: 2, rMultiple: -0.5 }];
+      fixture.componentRef.setInput('cells', cells);
+      fixture.detectChanges();
+
+      const rect = fixture.nativeElement.querySelector('rect[data-cell]');
+      expect(rect?.getAttribute('aria-label')).toBe('Trade #2 · -0.50R');
+    });
+  });
 });

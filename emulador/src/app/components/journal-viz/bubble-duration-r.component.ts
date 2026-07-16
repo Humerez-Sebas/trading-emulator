@@ -60,11 +60,13 @@ import type { BubbleView } from '../../state/journal/journal-read.models';
             [attr.data-trade-id]="bubble.tradeId"
             tabindex="0"
             role="button"
-            [attr.aria-label]="'Trade ' + bubble.seq"
+            [attr.aria-label]="pointAriaLabel(bubble)"
             (click)="onBubbleClick(bubble.tradeId)"
             (keydown.enter)="onBubbleClick(bubble.tradeId)"
             (mouseenter)="showTooltip(bubble)"
             (mouseleave)="hideTooltip()"
+            (focus)="showTooltip(bubble)"
+            (blur)="hideTooltip()"
           />
         }
       </g>
@@ -167,8 +169,14 @@ import type { BubbleView } from '../../state/journal/journal-read.models';
     circle[data-bubble]:hover,
     circle[data-bubble]:focus-visible {
       opacity: 1 !important;
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
+    }
+
+    /* Stroke-based focus ring (T6 review Finding 3): CSS outline paints
+       unreliably on SVG geometry elements (circle/rect) across engines;
+       a stroke change is the robust SVG focus-indicator pattern. */
+    circle[data-bubble]:focus-visible {
+      stroke: var(--accent);
+      stroke-width: 3;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -216,6 +224,17 @@ export class BubbleDurationRComponent {
   ariaLabel(): string {
     const n = this.bubbles().length;
     return `Gráfico de burbujas: duración contra R múltiple de ${n} trades. Cada burbuja es un trade; el radio indica eventos de gestión. Selecciona una burbuja para abrir su repetición detallada.`;
+  }
+
+  /** Per-bubble accessible name (T6 review Finding 2): same physical facts
+   * the hover tooltip shows, so a keyboard/AT user tabbing between bubbles
+   * gets duration/R/events/rule without needing the pointer. */
+  pointAriaLabel(bubble: BubbleView): string {
+    const sign = bubble.rMultiple >= 0 ? '+' : '';
+    const eventsStr =
+      bubble.managementEventCount === 1 ? '1 evento' : `${bubble.managementEventCount} eventos`;
+    const rule = bubble.ruleTitle ? ` · ${bubble.ruleTitle}` : '';
+    return `Trade #${bubble.seq} · ${bubble.durationBaseCandles} velas · ${sign}${bubble.rMultiple.toFixed(2)}R · ${eventsStr}${rule}`;
   }
 
   showTooltip(bubble: BubbleView): void {

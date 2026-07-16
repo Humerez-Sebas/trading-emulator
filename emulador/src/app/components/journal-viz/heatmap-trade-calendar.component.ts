@@ -40,11 +40,13 @@ import type { HeatmapCellView } from '../../state/journal/journal-read.models';
             [attr.data-trade-id]="cell.tradeId"
             tabindex="0"
             role="button"
-            [attr.aria-label]="'Trade ' + cell.seq"
+            [attr.aria-label]="cellAriaLabel(cell)"
             (click)="onCellClick(cell.tradeId)"
             (keydown.enter)="onCellClick(cell.tradeId)"
             (mouseenter)="showTooltip(cell)"
             (mouseleave)="hideTooltip()"
+            (focus)="showTooltip(cell)"
+            (blur)="hideTooltip()"
           />
         }
       </g>
@@ -124,8 +126,14 @@ import type { HeatmapCellView } from '../../state/journal/journal-read.models';
     rect[data-cell]:hover,
     rect[data-cell]:focus-visible {
       opacity: 0.8 !important;
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
+    }
+
+    /* Stroke-based focus ring (T6 review Finding 3): CSS outline paints
+       unreliably on SVG geometry elements (circle/rect) across engines;
+       a stroke change is the robust SVG focus-indicator pattern. */
+    rect[data-cell]:focus-visible {
+      stroke: var(--accent);
+      stroke-width: 3;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -176,6 +184,14 @@ export class HeatmapTradeCalendarComponent {
   ariaLabel(): string {
     const n = this.cells().length;
     return `Mapa de calor: calendario de trades de ${n} trades en una sesión. Cada celda es un trade codificado por ganancia (verde) o pérdida (rojo), con intensidad proporcional a R. Selecciona una celda para abrir su repetición detallada.`;
+  }
+
+  /** Per-cell accessible name (T6 review Finding 2): seq + R, the only
+   * physical facts `HeatmapCellView` carries — no rule field (Finding 6,
+   * no-fix-ruled: read-model changes are out of Task 6 scope). */
+  cellAriaLabel(cell: HeatmapCellView): string {
+    const sign = cell.rMultiple >= 0 ? '+' : '';
+    return `Trade #${cell.seq} · ${sign}${cell.rMultiple.toFixed(2)}R`;
   }
 
   showTooltip(cell: HeatmapCellView): void {

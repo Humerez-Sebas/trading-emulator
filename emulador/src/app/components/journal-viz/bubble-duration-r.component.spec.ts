@@ -383,4 +383,147 @@ describe('BubbleDurationRComponent', () => {
       expect(circles.length).toBe(0);
     });
   });
+
+  // T6 review fix wave (Finding 4): pin the bubble's cx for a known
+  // durationBaseCandles so a future domain regression fails a test instead
+  // of passing silently (the bubble's X domain was already correct per the
+  // review, but it lacked a coordinate pin like the scatter now has).
+  describe('coordinate mapping (Finding 4 pin)', () => {
+    it('maps a known duration to a computable cx (single-bubble domain = max(duration, 500))', () => {
+      // domainMaxX = max(250, 500) = 500 -> cx = 100 + (250/500)*650 = 425
+      const bubbles: BubbleView[] = [
+        {
+          tradeId: 'b1',
+          seq: 1,
+          durationBaseCandles: 250,
+          rMultiple: 0,
+          managementEventCount: 0,
+          ruleTitle: '',
+          colorToken: 'var(--text-muted)',
+        },
+      ];
+      fixture.componentRef.setInput('bubbles', bubbles);
+      fixture.detectChanges();
+
+      const circle = fixture.nativeElement.querySelector('circle[data-bubble]');
+      expect(circle?.getAttribute('cx')).toBe('425');
+    });
+
+    it('maps a duration exceeding the 500 floor to a domain-fit cx', () => {
+      // domainMaxX = max(1000) = 1000 -> cx = 100 + (1000/1000)*650 = 750
+      const bubbles: BubbleView[] = [
+        {
+          tradeId: 'b1',
+          seq: 1,
+          durationBaseCandles: 1000,
+          rMultiple: 0,
+          managementEventCount: 0,
+          ruleTitle: '',
+          colorToken: 'var(--text-muted)',
+        },
+      ];
+      fixture.componentRef.setInput('bubbles', bubbles);
+      fixture.detectChanges();
+
+      const circle = fixture.nativeElement.querySelector('circle[data-bubble]');
+      expect(circle?.getAttribute('cx')).toBe('750');
+    });
+  });
+
+  // T6 review fix wave (Finding 2): tooltip must appear on keyboard focus too.
+  describe('focus tooltip (Finding 2)', () => {
+    it('should show tooltip on bubble focus', () => {
+      const bubbles: BubbleView[] = [
+        {
+          tradeId: 'bubble-1',
+          seq: 1,
+          durationBaseCandles: 50,
+          rMultiple: 1.5,
+          managementEventCount: 2,
+          ruleTitle: 'Rule A',
+          colorToken: 'var(--rule-1)',
+        },
+      ];
+      fixture.componentRef.setInput('bubbles', bubbles);
+      fixture.detectChanges();
+
+      const circle = fixture.nativeElement.querySelector('circle[data-bubble]');
+      circle?.dispatchEvent(new FocusEvent('focus'));
+      fixture.detectChanges();
+
+      const tooltip = fixture.nativeElement.querySelector('[data-tooltip]');
+      expect(tooltip).toBeTruthy();
+    });
+
+    it('should hide tooltip on bubble blur', () => {
+      const bubbles: BubbleView[] = [
+        {
+          tradeId: 'bubble-1',
+          seq: 1,
+          durationBaseCandles: 50,
+          rMultiple: 1.5,
+          managementEventCount: 2,
+          ruleTitle: 'Rule A',
+          colorToken: 'var(--rule-1)',
+        },
+      ];
+      fixture.componentRef.setInput('bubbles', bubbles);
+      fixture.detectChanges();
+
+      const circle = fixture.nativeElement.querySelector('circle[data-bubble]');
+      circle?.dispatchEvent(new FocusEvent('focus'));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-tooltip]')).toBeTruthy();
+
+      circle?.dispatchEvent(new FocusEvent('blur'));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-tooltip]')).toBeFalsy();
+    });
+  });
+
+  // T6 review fix wave (Finding 2): per-bubble aria-label enriched with the
+  // same physical facts the tooltip shows, in Spanish.
+  describe('per-bubble aria-label enrichment (Finding 2)', () => {
+    it('includes seq, duration, R-multiple, event count, and rule title', () => {
+      const bubbles: BubbleView[] = [
+        {
+          tradeId: 'bubble-1',
+          seq: 7,
+          durationBaseCandles: 50,
+          rMultiple: 1.5,
+          managementEventCount: 3,
+          ruleTitle: 'Breakout',
+          colorToken: 'var(--rule-1)',
+        },
+      ];
+      fixture.componentRef.setInput('bubbles', bubbles);
+      fixture.detectChanges();
+
+      const circle = fixture.nativeElement.querySelector('circle[data-bubble]');
+      expect(circle?.getAttribute('aria-label')).toBe(
+        'Trade #7 · 50 velas · +1.50R · 3 eventos · Breakout'
+      );
+    });
+
+    it('omits the rule segment when ruleTitle is empty', () => {
+      const bubbles: BubbleView[] = [
+        {
+          tradeId: 'bubble-2',
+          seq: 3,
+          durationBaseCandles: 10,
+          rMultiple: 0,
+          managementEventCount: 0,
+          ruleTitle: '',
+          colorToken: 'var(--text-muted)',
+        },
+      ];
+      fixture.componentRef.setInput('bubbles', bubbles);
+      fixture.detectChanges();
+
+      const circle = fixture.nativeElement.querySelector('circle[data-bubble]');
+      expect(circle?.getAttribute('aria-label')).toBe(
+        'Trade #3 · 10 velas · +0.00R · 0 eventos'
+      );
+    });
+  });
 });

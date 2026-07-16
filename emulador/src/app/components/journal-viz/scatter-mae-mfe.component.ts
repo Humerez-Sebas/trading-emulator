@@ -2,10 +2,20 @@ import { Component, ChangeDetectionStrategy, input, output, signal } from '@angu
 import { CommonModule } from '@angular/common';
 import type { ScatterPointView } from '../../state/journal/journal-read.models';
 
+/** Small floor (in R) for each axis's data-fit domain — avoids a degenerate
+ * (division-by-zero) domain when every point clusters at/near 0 (T6 review
+ * Finding 1 fix wave). MAE_R and MFE_R are ALWAYS >= 0 (fill-engine clamps
+ * excursions to >=0 over a positive risk distance — `fill-engine.ts`,
+ * `excursion-stats.ts`), so a symmetric [-3,+3] domain wastes 3/4 of the
+ * canvas and misplaces the MAE=0/MFE=0 reference axes. Domains are now
+ * `[0, max(data max, MIN_AXIS_DOMAIN_R)]` per axis, independently. */
+const MIN_AXIS_DOMAIN_R = 1;
+
 /**
  * Scatter MAE vs MFE (RFC-016 Task 6, DESIGN_SYSTEM §4.2).
- * Standalone inline-SVG component: X=MAE_R, Y=MFE_R, origin visible,
- * dashed identity line, 6px radius points, opacity 0.85, color from colorToken.
+ * Standalone inline-SVG component: X=MAE_R, Y=MFE_R, non-negative data-fit
+ * domain per axis, origin visible at the bottom-left corner, dashed identity
+ * line, 6px radius points, opacity 0.85, color from colorToken.
  * Tooltip on hover/focus, click/Enter → tradeSelected output (D16.F).
  * No Store injection, no dispatches (J-6).
  */
@@ -23,36 +33,40 @@ import type { ScatterPointView } from '../../state/journal/journal-read.models';
       <!-- Canvas background -->
       <rect width="800" height="600" fill="var(--viz-grid)" />
 
-      <!-- Grid lines and axes -->
+      <!-- Grid lines and axes: MFE=0 (x) and MAE=0 (y) reference lines drawn
+           at scaleX(0)/scaleY(0) — always the plot's bottom-left corner,
+           since both domains start at 0 (T6 review Finding 1 fix wave). -->
       <g class="grid-and-axes">
-        <!-- X axis (y=0) -->
+        <!-- MFE=0 axis (horizontal) -->
         <line
           data-axis="x"
-          x1="100"
-          y1="300"
+          [attr.x1]="scaleX(0)"
+          [attr.y1]="scaleY(0)"
           x2="750"
-          y2="300"
+          [attr.y2]="scaleY(0)"
           stroke="var(--viz-axis)"
           stroke-width="1"
         />
-        <!-- Y axis (x=0) -->
+        <!-- MAE=0 axis (vertical) -->
         <line
           data-axis="y"
-          x1="100"
+          [attr.x1]="scaleX(0)"
           y1="50"
-          x2="100"
+          [attr.x2]="scaleX(0)"
           y2="550"
           stroke="var(--viz-axis)"
           stroke-width="1"
         />
 
-        <!-- Identity line (x=y, dashed) -->
+        <!-- Identity line (MAE=MFE, dashed): from the origin to the smaller
+             of the two axis domains, so every plotted point on the line is
+             a true (v,v) identity pair, never a clamped bend. -->
         <line
           data-line="identity"
-          x1="100"
-          y1="550"
-          x2="750"
-          y2="50"
+          [attr.x1]="scaleX(0)"
+          [attr.y1]="scaleY(0)"
+          [attr.x2]="scaleX(identityDomain())"
+          [attr.y2]="scaleY(identityDomain())"
           stroke="var(--viz-axis)"
           stroke-width="1"
           stroke-dasharray="5,5"
@@ -73,11 +87,13 @@ import type { ScatterPointView } from '../../state/journal/journal-read.models';
             [attr.data-trade-id]="point.tradeId"
             tabindex="0"
             role="button"
-            [attr.aria-label]="'Trade ' + point.seq"
+            [attr.aria-label]="pointAriaLabel(point)"
             (click)="onPointClick(point.tradeId)"
             (keydown.enter)="onPointClick(point.tradeId)"
             (mouseenter)="showTooltip(point)"
             (mouseleave)="hideTooltip()"
+            (focus)="showTooltip(point)"
+            (blur)="hideTooltip()"
           />
         }
       </g>
@@ -170,8 +186,14 @@ import type { ScatterPointView } from '../../state/journal/journal-read.models';
     circle[data-point]:hover,
     circle[data-point]:focus-visible {
       opacity: 1 !important;
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
+    }
+
+    /* Stroke-based focus ring (T6 review Finding 3): CSS outline paints
+       unreliably on SVG geometry elements (circle/rect) across engines;
+       a stroke change is the robust SVG focus-indicator pattern. */
+    circle[data-point]:focus-visible {
+      stroke: var(--accent);
+      stroke-width: 3;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -188,26 +210,56 @@ export class ScatterMaeMfeComponent {
 
   activeTooltip = signal<ScatterPointView | null>(null);
 
-  // Computed SVG coordinates: scale MAE_R and MFE_R to canvas area
-  // Canvas area: 100px margin, 650px wide/high, center at origin (0,0) = (400px, 300px)
-  // Range: typically -2 to +2 R, but we scale dynamically to fit all points
+  // Non-negative, data-fit domain per axis (T6 review Finding 1): MAE_R and
+  // MFE_R are always >= 0, so each axis's domain is [0, max(data max, floor)],
+  // independently — the two domains are NOT assumed equal (asymmetric MAE
+  // vs MFE ranges are the common case).
+  private domainMaxX(): number {
+    return Math.max(MIN_AXIS_DOMAIN_R, ...this.points().map((p) => p.maeR));
+  }
+
+  private domainMaxY(): number {
+    return Math.max(MIN_AXIS_DOMAIN_R, ...this.points().map((p) => p.mfeR));
+  }
+
+  /** The data value up to which BOTH axes' domains agree — the identity
+   * line (MAE=MFE) is drawn only up to this value so every point on the
+   * drawn line is a true (v,v) pair, not a clamped bend past one domain. */
+  identityDomain(): number {
+    return Math.min(this.domainMaxX(), this.domainMaxY());
+  }
+
+  // Computed SVG coordinates: scale MAE_R/MFE_R to canvas area.
+  // Canvas plot area: x in [100,750], y in [50,550] (100px margins).
   scaleX(value: number): number {
-    // X: MAE_R from left to right
-    // Map -3..+3 to 100..750
-    const scaled = ((value + 3) / 6) * 650 + 100;
+    // X: MAE_R from left (0) to right (domainMaxX)
+    const maxX = this.domainMaxX();
+    const scaled = 100 + (value / maxX) * 650;
     return Math.max(100, Math.min(750, scaled));
   }
 
   scaleY(value: number): number {
-    // Y: MFE_R from bottom to top (SVG y increases downward)
-    // Map -3..+3 to 550..50 (inverted)
-    const scaled = 550 - ((value + 3) / 6) * 500;
+    // Y: MFE_R from bottom (0) to top (domainMaxY) — SVG y increases
+    // downward, so 0 maps to the LARGER y (550, bottom) and the max maps
+    // to the smaller y (50, top).
+    const maxY = this.domainMaxY();
+    const scaled = 550 - (value / maxY) * 500;
     return Math.max(50, Math.min(550, scaled));
   }
 
   ariaLabel(): string {
     const n = this.points().length;
     return `Gráfico de dispersión: MAE contra MFE de ${n} trades. Cada punto es un trade. Selecciona un punto para abrir su repetición detallada.`;
+  }
+
+  /** Per-point accessible name (T6 review Finding 2): same physical facts
+   * the hover tooltip shows, so a keyboard/AT user tabbing between points
+   * gets the date/R/rule without needing the pointer. */
+  pointAriaLabel(point: ScatterPointView): string {
+    const date = new Date(point.openTime * 1000).toISOString().split('T')[0];
+    const sign = point.rMultiple >= 0 ? '+' : '';
+    const rule = point.ruleTitle ? ` · ${point.ruleTitle}` : '';
+    return `Trade #${point.seq} · ${date} · ${sign}${point.rMultiple.toFixed(2)}R${rule}`;
   }
 
   showTooltip(point: ScatterPointView): void {
