@@ -160,6 +160,20 @@ end $$;
 -- Also asserts the UPDATE `with check (auth.uid() = user_id)` rejects A
 -- reassigning its own row's user_id to B (same hardening as playbook_rules,
 -- see the comment in lessons.sql).
+--
+-- TIMESTAMP SUBTLETY (discovered on the first live run, 2026-07-15): every
+-- UPDATE in this block must send a client_updated_at STRICTLY NEWER than the
+-- inserted row's. `now()` is transaction-stable, and the `lww_guard` BEFORE
+-- trigger silently skips non-newer writes (`new.client_updated_at <=
+-- old.client_updated_at` → return null) BEFORE the RLS WITH CHECK is ever
+-- evaluated — with an equal timestamp the reassignment attempt below is
+-- no-opped by the trigger, no error raises, and the block false-fails with
+-- "A could reassign" even though RLS is sound. Hence `now() + interval '1
+-- second'` on the updates. (The playbook_rules block above shares this
+-- latent false-fail on its reassignment sub-test; flagged in the RFC-016
+-- run ledger, left untouched here — it belongs to RFC-015.)
+-- LAST VERIFIED 2026-07-15 against project nfcgfrsxvdvuasbgrxdy:
+--   RLS PASS (lessons), lessons_rows=0 after (self-cleaned).
 do $$
 declare
   a uuid; b uuid := gen_random_uuid(); lid uuid; cnt int; sref text;
@@ -179,7 +193,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', b::text)::text, true);
   select count(*) into cnt from public.lessons where id = lid;
   if cnt <> 0 then raise exception 'RLS FAIL: B can SELECT A lesson (cnt=%)', cnt; end if;
-  update public.lessons set session_ref = 'hacked-by-B', client_updated_at = now() where id = lid;
+  update public.lessons set session_ref = 'hacked-by-B', client_updated_at = now() + interval '1 second' where id = lid;
   get diagnostics cnt = row_count;
   if cnt <> 0 then raise exception 'RLS FAIL: B can UPDATE A lesson (rows=%)', cnt; end if;
   delete from public.lessons where id = lid;
@@ -199,7 +213,7 @@ begin
   -- wrapped in its own sub-block; the actual assertion is raised OUTSIDE that
   -- sub-block so it is never accidentally swallowed by its own handler.
   begin
-    update public.lessons set user_id = b, client_updated_at = now() where id = lid;
+    update public.lessons set user_id = b, client_updated_at = now() + interval '1 second' where id = lid;
     reassigned := true; -- only reached if the update did NOT raise
   exception
     when others then
