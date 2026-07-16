@@ -89,3 +89,10 @@ REQUIRES-ATTENTION (pre-existing, RFC-015 scope, NOT touched): the playbook_rule
 verify block shares the same latent false-fail on its reassignment sub-test —
 flagged to the owner as a spawned follow-up task and noted in the lessons block
 comment; final audit should not re-litigate it as an RFC-016 defect.
+RESOLVED 2026-07-16: the follow-up landed on THIS branch as commit 55d78a5
+(fix(playbook): both playbook-block UPDATEs now use now() + interval '1 second';
+lessons-block comment updated accordingly). Orchestrator re-ran the playbook_rules
+DO block live (project nfcgfrsxvdvuasbgrxdy) → RLS PASS (playbook_rules), no
+exception, self-cleaned. 55d78a5 is RFC-015-scoped maintenance riding this branch
+(user-directed follow-up execution) — OUT of Task 4's review range, sanctioned;
+final audit should treat it as reviewed-here, not an unaudited stray.
