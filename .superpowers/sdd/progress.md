@@ -23,7 +23,7 @@
 ## Tasks
 - [x] Task 1: Telemetry — management events (`OrderModified`/`PositionModified`) + `lastJump` anchor (D16.B)
 - [x] Task 2: Lesson domain + `lessons` NgRx slice + `emulador-lessons` DB
-- [ ] Task 3: Cloud sync — `lessons` SQL + per-row LWW cycle
+- [x] Task 3: Cloud sync — `lessons` SQL + per-row LWW cycle
 - [ ] Task 4: Pure scene/waypoint computation + `sharpe` in `computeSessionStats`
 - [ ] Task 5: Journal — routes, read models, sections, tables
 - [ ] Task 6: Journal visualizations — scatter, bubble, heatmap (SVG)
@@ -60,3 +60,18 @@ table omitted it), drawingSet = type-only import of DrawingSnapshotEntry from
 telemetry.models, MAX_EVIDENCE_SCENES=5 lives in scene-spec.ts. P-7 status: amendments
 now has its first sanctioned WRITER (amendRule); production READERS arrive in Task 7;
 detector update in Task 8.
+
+Task 3: complete (commits 011bb1e SQL + e8d639b service/effects + 8f69b37 specs; review
+opus: APPROVED "Ship it", ZERO findings at any severity; 1434→1465 tests / 119→121
+files, reviewer re-ran gates + all greps personally). TWO-AGENT execution: first
+implementer (sonnet) killed by session limit after writing lessons.sql + RLS verify
+block + red-phase lessons-sync.spec.ts (all orchestrator-inspected, on-brief, inherited
+with zero edits); finisher (sonnet) implemented service mapping/merge + effects wiring +
+effects sync spec and committed. Reviewer verified handoff seams line-by-line (finisher
+implemented to the RFC, not just to the inherited tests). Key verified semantics:
+repeat ⇄ repeat_field mapping; session_ref has NO FK (N-4/J-4 structural); UPDATE policy
+with using+with check (D15.F); lww_guard reused never redefined; assertNoCandles runs
+BEFORE any network I/O (pinned by test); pull never deletes; mid-flight-edit safety
+driven through the real reducer. Reviewer non-blocking observation for final audit: an
+explicit cloud session-deletion survival round-trip is structurally guaranteed (no FK)
+— revisit at closure only if an FK ever appears.
