@@ -35,10 +35,7 @@ describe('SessionSummaryComponent', () => {
   function render(trades: ClosedTrade[], executionCosts: ExecutionCosts | null = null): void {
     store.overrideSelector(tradingFeature.selectHistory, trades);
     store.overrideSelector(selectSessionStats, computeSessionStats(trades, INITIAL_BALANCE));
-    store.overrideSelector(
-      selectTradingData,
-      tradingState({ history: trades, executionCosts }),
-    );
+    store.overrideSelector(selectTradingData, tradingState({ history: trades, executionCosts }));
     fixture = TestBed.createComponent(SessionSummaryComponent);
     fixture.detectChanges();
   }

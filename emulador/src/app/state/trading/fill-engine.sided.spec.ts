@@ -65,7 +65,13 @@ function position(partial: Partial<Position>): Position {
 describe('sided fill predicates — Buy Limit: c.low + s <= E', () => {
   it('fills exactly at the boundary (low + s === E)', () => {
     const o = order({ side: 'buy', type: 'limit', entryPrice: 4000 });
-    const r = processCandle(book({ orders: [o] }), candle(100, 4000, 4001, 3990, 3995), null, CONTRACT, COSTS);
+    const r = processCandle(
+      book({ orders: [o] }),
+      candle(100, 4000, 4001, 3990, 3995),
+      null,
+      CONTRACT,
+      COSTS,
+    );
     expect(r.book.positions).toHaveLength(1);
     // recorded entry stays the level E — the spread is paid implicitly via the trigger
     expect(r.book.positions[0].entryPrice).toBe(4000);
@@ -84,7 +90,13 @@ describe('sided fill predicates — Buy Limit: c.low + s <= E', () => {
 describe('sided fill predicates — Buy Stop: c.high + s >= E', () => {
   it('fills exactly at the boundary (high + s === E)', () => {
     const o = order({ side: 'buy', type: 'stop', entryPrice: 3995 });
-    const r = processCandle(book({ orders: [o] }), candle(100, 3980, 3985, 3979, 3982), null, CONTRACT, COSTS);
+    const r = processCandle(
+      book({ orders: [o] }),
+      candle(100, 3980, 3985, 3979, 3982),
+      null,
+      CONTRACT,
+      COSTS,
+    );
     expect(r.book.positions).toHaveLength(1);
   });
 
@@ -289,7 +301,7 @@ describe('closeTrade — manual/session-end receive a Bid price; shorts cover at
     expect(r.history[0].exitPrice).toBe(3960);
   });
 
-  it('with no costs, both sides close at the raw Bid price (today\'s behavior)', () => {
+  it("with no costs, both sides close at the raw Bid price (today's behavior)", () => {
     const p = position({ side: 'sell', entryPrice: 4000, sl: 4100, tp: 3800 });
     const trade = closeTrade(p, 3950, 200, 'manual', CONTRACT);
     expect(trade.exitPrice).toBe(3950);
@@ -322,7 +334,14 @@ describe('commission — commissionPerLot per round-turn, charged exactly once a
 
   it('is charged once per position on a session-end force-close with multiple positions', () => {
     const p1 = position({ id: 'p1', side: 'buy', entryPrice: 4000, sl: 3900, tp: 4200, lots: 0.1 });
-    const p2 = position({ id: 'p2', side: 'sell', entryPrice: 4000, sl: 4100, tp: 3800, lots: 0.1 });
+    const p2 = position({
+      id: 'p2',
+      side: 'sell',
+      entryPrice: 4000,
+      sl: 4100,
+      tp: 3800,
+      lots: 0.1,
+    });
     const r = closeSession(book({ positions: [p1, p2] }), 4020, 300, CONTRACT, COSTS);
     expect(r.history).toHaveLength(2);
     for (const t of r.history) {
@@ -330,7 +349,7 @@ describe('commission — commissionPerLot per round-turn, charged exactly once a
     }
   });
 
-  it('with absent/zero costs, commission is 0 and grossProfit === profit (today\'s exact number)', () => {
+  it("with absent/zero costs, commission is 0 and grossProfit === profit (today's exact number)", () => {
     const p = position({ side: 'buy', entryPrice: 4000, sl: 3900, tp: 4200, lots: 0.1 });
     const trade = closeTrade(p, 4200, 200, 'tp', CONTRACT);
     expect(trade.commission).toBe(0);
@@ -401,10 +420,22 @@ describe('V-2 — profit never exceeds grossProfit for any non-negative cost gri
     }
 
     const cases: { p: Position; c: Candle }[] = [
-      { p: position({ side: 'buy', entryPrice: 4000, sl: 3900, tp: 4200 }), c: candle(1, 4150, 4210, 4140, 4160) }, // long win (TP)
-      { p: position({ side: 'buy', entryPrice: 4000, sl: 3900, tp: 4200 }), c: candle(1, 3950, 3960, 3890, 3940) }, // long loss (SL)
-      { p: position({ side: 'sell', entryPrice: 4000, sl: 4100, tp: 3800 }), c: candle(1, 3850, 3860, 3790, 3820) }, // short win (TP)
-      { p: position({ side: 'sell', entryPrice: 4000, sl: 4100, tp: 3800 }), c: candle(1, 4050, 4105, 4040, 4060) }, // short loss (SL) — high margin holds even at spreadPoints=0
+      {
+        p: position({ side: 'buy', entryPrice: 4000, sl: 3900, tp: 4200 }),
+        c: candle(1, 4150, 4210, 4140, 4160),
+      }, // long win (TP)
+      {
+        p: position({ side: 'buy', entryPrice: 4000, sl: 3900, tp: 4200 }),
+        c: candle(1, 3950, 3960, 3890, 3940),
+      }, // long loss (SL)
+      {
+        p: position({ side: 'sell', entryPrice: 4000, sl: 4100, tp: 3800 }),
+        c: candle(1, 3850, 3860, 3790, 3820),
+      }, // short win (TP)
+      {
+        p: position({ side: 'sell', entryPrice: 4000, sl: 4100, tp: 3800 }),
+        c: candle(1, 4050, 4105, 4040, 4060),
+      }, // short loss (SL) — high margin holds even at spreadPoints=0
     ];
 
     for (const costs of grid) {

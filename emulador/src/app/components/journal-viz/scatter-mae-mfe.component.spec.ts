@@ -207,7 +207,7 @@ describe('ScatterMaeMfeComponent', () => {
         new KeyboardEvent('keydown', {
           key: 'Enter',
           bubbles: true,
-        })
+        }),
       );
 
       expect(tradeSelected).toHaveBeenCalledWith('trade-2');
@@ -602,7 +602,7 @@ describe('ScatterMaeMfeComponent', () => {
 
       const circle = fixture.nativeElement.querySelector('circle[data-point]');
       expect(circle?.getAttribute('aria-label')).toBe(
-        'Trade #12 · 2024-01-01 · +1.50R · Ruptura de rango'
+        'Trade #12 · 2024-01-01 · +1.50R · Ruptura de rango',
       );
     });
 

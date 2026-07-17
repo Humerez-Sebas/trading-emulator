@@ -39,14 +39,20 @@ describe('CabinTradeListComponent', () => {
   });
 
   it('shows the ✎ mark only for rows with hasReflection', () => {
-    const fixture = mount([row({ tradeId: 't1', hasReflection: true }), row({ tradeId: 't2', seq: 2 })]);
+    const fixture = mount([
+      row({ tradeId: 't1', hasReflection: true }),
+      row({ tradeId: 't2', seq: 2 }),
+    ]);
     const rows: HTMLElement[] = fixture.nativeElement.querySelectorAll('.row');
     expect(rows[0].querySelector('.reflection-mark')).toBeTruthy();
     expect(rows[1].querySelector('.reflection-mark')).toBeNull();
   });
 
   it('shows the rule badge only when ruleBadge is non-empty', () => {
-    const fixture = mount([row({ tradeId: 't1', ruleBadge: 'R1' }), row({ tradeId: 't2', seq: 2, ruleBadge: '' })]);
+    const fixture = mount([
+      row({ tradeId: 't1', ruleBadge: 'R1' }),
+      row({ tradeId: 't2', seq: 2, ruleBadge: '' }),
+    ]);
     const rows: HTMLElement[] = fixture.nativeElement.querySelectorAll('.row');
     expect(rows[0].querySelector('.rule-badge')?.textContent).toContain('R1');
     expect(rows[1].querySelector('.rule-badge')).toBeNull();
@@ -62,7 +68,10 @@ describe('CabinTradeListComponent', () => {
   });
 
   it('colors R by result: up for >=0, down for <0', () => {
-    const fixture = mount([row({ tradeId: 't1', rMultiple: 1 }), row({ tradeId: 't2', seq: 2, rMultiple: -1 })]);
+    const fixture = mount([
+      row({ tradeId: 't1', rMultiple: 1 }),
+      row({ tradeId: 't2', seq: 2, rMultiple: -1 }),
+    ]);
     const rows: HTMLElement[] = fixture.nativeElement.querySelectorAll('.row');
     expect(rows[0].querySelector('.r')?.classList.contains('up')).toBe(true);
     expect(rows[1].querySelector('.r')?.classList.contains('down')).toBe(true);

@@ -1,5 +1,8 @@
 import type { ClosedTrade } from '../../state/trading/trading.models';
-import type { TelemetryEvent, TimeElapsedBeforeOrderPayload } from '../../state/telemetry/telemetry.models';
+import type {
+  TelemetryEvent,
+  TimeElapsedBeforeOrderPayload,
+} from '../../state/telemetry/telemetry.models';
 
 /**
  * Fixed keyboard map (RFC-016 D16.D §2.3): Entry=1, Management=2, MAE=3, MFE=4, Exit=5.
@@ -56,8 +59,8 @@ export function computeWaypoints(
       e.marketTime !== null &&
       e.marketTime >= trade.openTime &&
       e.marketTime <= trade.closeTime &&
-      (((e.payload as { orderRef?: string }).orderRef === trade.id) ||
-        ((e.payload as { positionRef?: string }).positionRef === trade.id)),
+      ((e.payload as { orderRef?: string }).orderRef === trade.id ||
+        (e.payload as { positionRef?: string }).positionRef === trade.id),
   );
 
   if (managementEvents.length > 0) {
@@ -94,10 +97,7 @@ export function computeWaypoints(
   return waypoints;
 }
 
-function createEntryWaypoint(
-  trade: ClosedTrade,
-  events: readonly TelemetryEvent[],
-): Waypoint {
+function createEntryWaypoint(trade: ClosedTrade, events: readonly TelemetryEvent[]): Waypoint {
   const riskDistance = Math.abs(trade.entryPrice - trade.sl);
 
   // Look for TimeElapsedBeforeOrder event for this trade
@@ -146,11 +146,7 @@ function createManagementWaypoint(events: TelemetryEvent[]): Waypoint {
 }
 
 function createMaeWaypoint(trade: ClosedTrade): Waypoint {
-  const excursionR = computeExcursionR(
-    trade.mae!,
-    trade.entryPrice,
-    trade.sl,
-  );
+  const excursionR = computeExcursionR(trade.mae!, trade.entryPrice, trade.sl);
 
   return {
     slot: 3,
@@ -163,11 +159,7 @@ function createMaeWaypoint(trade: ClosedTrade): Waypoint {
 }
 
 function createMfeWaypoint(trade: ClosedTrade): Waypoint {
-  const excursionR = computeExcursionR(
-    trade.mfe!,
-    trade.entryPrice,
-    trade.sl,
-  );
+  const excursionR = computeExcursionR(trade.mfe!, trade.entryPrice, trade.sl);
 
   return {
     slot: 4,
@@ -179,11 +171,7 @@ function createMfeWaypoint(trade: ClosedTrade): Waypoint {
   };
 }
 
-function createExitWaypoint(
-  trade: ClosedTrade,
-  maeMerged: boolean,
-  mfeMerged: boolean,
-): Waypoint {
+function createExitWaypoint(trade: ClosedTrade, maeMerged: boolean, mfeMerged: boolean): Waypoint {
   const facts: Record<string, unknown> = {
     profit: trade.profit,
     rMultiple: trade.rMultiple,
@@ -193,11 +181,7 @@ function createExitWaypoint(
 
   // Add merged MAE facts if applicable
   if (maeMerged && trade.mae !== undefined && trade.mae > 0) {
-    const excursionR = computeExcursionR(
-      trade.mae,
-      trade.entryPrice,
-      trade.sl,
-    );
+    const excursionR = computeExcursionR(trade.mae, trade.entryPrice, trade.sl);
     facts['mergedMae'] = {
       excursion: trade.mae,
       excursionR,
@@ -207,11 +191,7 @@ function createExitWaypoint(
 
   // Add merged MFE facts if applicable
   if (mfeMerged && trade.mfe !== undefined && trade.mfe > 0) {
-    const excursionR = computeExcursionR(
-      trade.mfe,
-      trade.entryPrice,
-      trade.sl,
-    );
+    const excursionR = computeExcursionR(trade.mfe, trade.entryPrice, trade.sl);
     facts['mergedMfe'] = {
       excursion: trade.mfe,
       excursionR,
@@ -231,11 +211,7 @@ function createExitWaypoint(
  * is zero (degenerate SL == entry), matching excursion-stats.ts idiom.
  * A zero excursion is legitimate and is NOT treated as absent.
  */
-function computeExcursionR(
-  excursion: number,
-  entryPrice: number,
-  sl: number,
-): number | null {
+function computeExcursionR(excursion: number, entryPrice: number, sl: number): number | null {
   const riskDistance = Math.abs(entryPrice - sl);
   if (riskDistance === 0) return null;
   return excursion / riskDistance;

@@ -95,7 +95,9 @@ describe('LessonsEffects', () => {
     const sub = new Subscription();
     sub.add(effects.persist$.subscribe());
     actions$.next(LessonsActions.createLesson({ lesson: lesson('l2') }));
-    actions$.next(LessonsActions.updateLesson({ id: 'l1', whatHappened: 'x', clientUpdatedAt: 100 }));
+    actions$.next(
+      LessonsActions.updateLesson({ id: 'l1', whatHappened: 'x', clientUpdatedAt: 100 }),
+    );
     await Promise.resolve();
     sub.unsubscribe();
   });

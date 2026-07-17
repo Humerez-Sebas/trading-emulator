@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toPayload, fromPayload } from '../../services/session-sync.mapping';
 import { singlePanelLayoutFor } from '../../services/session-migration';
 import type { PayloadInput } from '../../services/session-sync.models';
-import {
-  defaultTradingData,
-  type ClosedTrade,
-} from '../trading/trading.models';
+import { defaultTradingData, type ClosedTrade } from '../trading/trading.models';
 
 // ---------------------------------------------------------------------------
 // P-invariant coverage map (RFC-015)

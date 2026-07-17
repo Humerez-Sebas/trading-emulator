@@ -9,8 +9,18 @@ const management2: Waypoint = {
   time: 1100,
   facts: {
     subEvents: [
-      { seq: 1, kind: 'OrderModified', marketTime: 1100, payload: { field: 'sl', from: 1.08, to: 1.081 } },
-      { seq: 2, kind: 'OrderModified', marketTime: 1200, payload: { field: 'tp', from: 1.09, to: 1.095 } },
+      {
+        seq: 1,
+        kind: 'OrderModified',
+        marketTime: 1100,
+        payload: { field: 'sl', from: 1.08, to: 1.081 },
+      },
+      {
+        seq: 2,
+        kind: 'OrderModified',
+        marketTime: 1200,
+        payload: { field: 'tp', from: 1.09, to: 1.095 },
+      },
     ],
   },
 };
@@ -19,7 +29,12 @@ const management1: Waypoint = {
   time: 1100,
   facts: {
     subEvents: [
-      { seq: 1, kind: 'OrderModified', marketTime: 1100, payload: { field: 'sl', from: 1.08, to: 1.081 } },
+      {
+        seq: 1,
+        kind: 'OrderModified',
+        marketTime: 1100,
+        payload: { field: 'sl', from: 1.08, to: 1.081 },
+      },
     ],
   },
 };
@@ -40,7 +55,11 @@ describe('WaypointTimelineComponent', () => {
     const fixture = mount([entry, mae, exit]); // no Management
     const tabs = fixture.nativeElement.querySelectorAll('[role="tab"]');
     expect(tabs).toHaveLength(3);
-    expect([...tabs].map((t: HTMLElement) => t.textContent?.trim())).toEqual(['Entry', 'MAE', 'Exit']);
+    expect([...tabs].map((t: HTMLElement) => t.textContent?.trim())).toEqual([
+      'Entry',
+      'MAE',
+      'Exit',
+    ]);
   });
 
   it('uses role=tablist/tab/aria-selected (DESIGN_SYSTEM §5.4)', () => {
@@ -118,7 +137,11 @@ describe('WaypointTimelineComponent', () => {
     expect(fixture.componentInstance.activeSubIndex()).toBe(0);
 
     const subTimeline: HTMLElement = fixture.nativeElement.querySelector('.sub-timeline');
-    const rightEvent = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+    const rightEvent = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    });
     const stopSpy = { called: false };
     rightEvent.stopPropagation = () => (stopSpy.called = true);
     subTimeline.dispatchEvent(rightEvent);
@@ -133,7 +156,11 @@ describe('WaypointTimelineComponent', () => {
     fixture.detectChanges();
 
     const subTimeline: HTMLElement = fixture.nativeElement.querySelector('.sub-timeline');
-    const escEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const escEvent = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
     const stopSpy = { called: false };
     escEvent.stopPropagation = () => (stopSpy.called = true);
     subTimeline.dispatchEvent(escEvent);
@@ -143,11 +170,15 @@ describe('WaypointTimelineComponent', () => {
     expect(stopSpy.called).toBe(true);
   });
 
-  it('fused MAE-into-Exit: Exit waypoint carries mergedMae facts (rendering is WaypointFactsComponent\'s concern; timeline just shows the single fused Exit node)', () => {
+  it("fused MAE-into-Exit: Exit waypoint carries mergedMae facts (rendering is WaypointFactsComponent's concern; timeline just shows the single fused Exit node)", () => {
     const fusedExit: Waypoint = {
       slot: 5,
       time: 2000,
-      facts: { profit: 200, rMultiple: 2, mergedMae: { excursion: 0.001, excursionR: 0.5, time: 1990 } },
+      facts: {
+        profit: 200,
+        rMultiple: 2,
+        mergedMae: { excursion: 0.001, excursionR: 0.5, time: 1990 },
+      },
     };
     const fixture = mount([entry, fusedExit]);
     const tabs = fixture.nativeElement.querySelectorAll('[role="tab"]');

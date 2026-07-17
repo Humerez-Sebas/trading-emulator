@@ -115,7 +115,12 @@ describe('deriveFrozenRenderModel / baseTfSecondsOfScene / timeframeOfScene / sc
   });
 
   it('timeframeOfScene returns null for an unrecognized base TF', () => {
-    const s = scene({ window: { t0: 100_000 - 777 * SCENE_WINDOW_CANDLES, t1: 100_000 + 777 * SCENE_WINDOW_CANDLES } });
+    const s = scene({
+      window: {
+        t0: 100_000 - 777 * SCENE_WINDOW_CANDLES,
+        t1: 100_000 + 777 * SCENE_WINDOW_CANDLES,
+      },
+    });
     expect(timeframeOfScene(s)).toBeNull();
   });
 
@@ -199,7 +204,10 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
 
   beforeEach(() => {
     resetFakeEngines();
-    repo = { getCandles: vi.fn().mockResolvedValue([]), getCoverage: vi.fn().mockResolvedValue(null) };
+    repo = {
+      getCandles: vi.fn().mockResolvedValue([]),
+      getCoverage: vi.fn().mockResolvedValue(null),
+    };
   });
 
   afterEach(() => {
@@ -274,7 +282,9 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
     expect(repo.getCandles).not.toHaveBeenCalled(); // never even attempted — ref absent
     const rendered = FakeChartEngine.instances.find((e) => e.renderCalls.length > 0);
     expect(rendered?.renderCalls[0].candles).toEqual([]);
-    expect((rendered?.renderCalls[0].trading?.positions[0] as Position).entryPrice).toBe(s.orderGeometry.entryPrice);
+    expect((rendered?.renderCalls[0].trading?.positions[0] as Position).entryPrice).toBe(
+      s.orderGeometry.entryPrice,
+    );
   });
 
   it('dataset-missing when the repository read throws (never a blocking error, TKM §5.2)', async () => {
@@ -310,12 +320,18 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
     repo.getCandles.mockReturnValueOnce(first);
 
     const fixture = await mount();
-    const sceneA = scene({ cursorTime: 100_000, window: { t0: 100_000 - 3600, t1: 100_000 + 3600 } });
+    const sceneA = scene({
+      cursorTime: 100_000,
+      window: { t0: 100_000 - 3600, t1: 100_000 + 3600 },
+    });
     fixture.componentRef.setInput('scene', sceneA);
     fixture.detectChanges();
     await Promise.resolve();
 
-    const sceneB = scene({ cursorTime: 200_000, window: { t0: 200_000 - 3600, t1: 200_000 + 3600 } });
+    const sceneB = scene({
+      cursorTime: 200_000,
+      window: { t0: 200_000 - 3600, t1: 200_000 + 3600 },
+    });
     repo.getCandles.mockResolvedValue(candlesInWindow(sceneB));
     fixture.componentRef.setInput('scene', sceneB);
     fixture.detectChanges();

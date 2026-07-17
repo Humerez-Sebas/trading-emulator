@@ -53,15 +53,18 @@ describe('TradesTableComponent', () => {
 
   it('Side renders C/V as-is from the row (already mapped by the builder)', () => {
     const fixture = create({ rows: [row({ side: 'C' }), row({ tradeId: 't2', side: 'V' })] });
-    const sides = Array.from(fixture.nativeElement.querySelectorAll('tbody tr td:nth-child(3)')).map(
-      (el) => (el as HTMLElement).textContent!.trim(),
-    );
+    const sides = Array.from(
+      fixture.nativeElement.querySelectorAll('tbody tr td:nth-child(3)'),
+    ).map((el) => (el as HTMLElement).textContent!.trim());
     expect(sides).toEqual(['C', 'V']);
   });
 
   it('MAE_R/MFE_R render "—" when null, "N.NNR" otherwise', () => {
     const fixture = create({
-      rows: [row({ tradeId: 't1', maeR: null, mfeR: null }), row({ tradeId: 't2', maeR: 0.5, mfeR: 1.2 })],
+      rows: [
+        row({ tradeId: 't1', maeR: null, mfeR: null }),
+        row({ tradeId: 't2', maeR: 0.5, mfeR: 1.2 }),
+      ],
     });
     const rowsEl = fixture.nativeElement.querySelectorAll('tbody tr');
     expect(rowsEl[0].querySelector('td:nth-child(6)').textContent.trim()).toBe('—');
@@ -90,7 +93,10 @@ describe('TradesTableComponent', () => {
 
   it('shows ✎ only for trades with hasReflection (trade-with-reflection state)', () => {
     const fixture = create({
-      rows: [row({ tradeId: 't1', hasReflection: false }), row({ tradeId: 't2', hasReflection: true })],
+      rows: [
+        row({ tradeId: 't1', hasReflection: false }),
+        row({ tradeId: 't2', hasReflection: true }),
+      ],
     });
     const rowsEl = Array.from(fixture.nativeElement.querySelectorAll('tbody tr')) as HTMLElement[];
     expect(rowsEl[0].querySelector('.reflection-mark')).toBeNull();

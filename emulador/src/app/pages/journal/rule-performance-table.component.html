@@ -31,7 +31,11 @@
               (keydown.space)="$event.preventDefault(); toggle(row.ruleId)"
             >
               <td>
-                <span class="rule-swatch" [style.background]="row.colorToken" aria-hidden="true"></span>
+                <span
+                  class="rule-swatch"
+                  [style.background]="row.colorToken"
+                  aria-hidden="true"
+                ></span>
                 {{ row.title }}
               </td>
               <td class="num">{{ row.trades }}</td>

@@ -168,7 +168,12 @@ export class JournalDataService {
     ]);
 
     const rules: JournalRuleRef[] = this.allRules()
-      .map((r) => ({ id: r.id, title: r.title, shortcutSlot: r.shortcutSlot, sortOrder: r.sortOrder }))
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        shortcutSlot: r.shortcutSlot,
+        sortOrder: r.sortOrder,
+      }))
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
     const tradeIds = new Set(resolved.trades.map((t) => t.id));
@@ -198,7 +203,10 @@ export class JournalDataService {
     };
   }
 
-  private resolveSession(sessionId: string, metas: readonly WorkspaceMeta[]): ResolvedSession | null {
+  private resolveSession(
+    sessionId: string,
+    metas: readonly WorkspaceMeta[],
+  ): ResolvedSession | null {
     const currentAsset = this.currentAsset();
     for (const meta of metas) {
       const live = meta.symbol === currentAsset;

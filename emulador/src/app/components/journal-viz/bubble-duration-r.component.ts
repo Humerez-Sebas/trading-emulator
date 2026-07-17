@@ -265,7 +265,8 @@ export class BubbleDurationRComponent {
   tooltipRule(): string {
     const b = this.activeTooltip();
     if (!b) return '';
-    const eventsStr = b.managementEventCount === 1 ? '1 evento' : `${b.managementEventCount} eventos`;
+    const eventsStr =
+      b.managementEventCount === 1 ? '1 evento' : `${b.managementEventCount} eventos`;
     const rule = b.ruleTitle ? ` · ${b.ruleTitle}` : '';
     return `${eventsStr}${rule}`;
   }

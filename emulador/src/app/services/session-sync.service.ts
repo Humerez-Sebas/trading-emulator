@@ -194,7 +194,9 @@ export class SessionSyncService {
     const userId = await this.currentUserId();
     for (const rule of rules) {
       const dbRow = ruleToDbRow(rule, userId);
-      const { error } = await this.client.from('playbook_rules').upsert(dbRow, { onConflict: 'id' });
+      const { error } = await this.client
+        .from('playbook_rules')
+        .upsert(dbRow, { onConflict: 'id' });
       if (error) throw new Error(error.message);
     }
   }

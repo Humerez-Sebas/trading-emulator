@@ -25,7 +25,13 @@ describe('WaypointFactsComponent', () => {
         entryPrice: 1.085,
         riskDistancePrice: 0.005,
         riskDistanceR: 1,
-        elapsedBeforeOrder: { orderRef: 'o1', anchorKind: 'sessionStart', pausedMs: 2000, playingMs: 5000, candlesRevealed: 12 },
+        elapsedBeforeOrder: {
+          orderRef: 'o1',
+          anchorKind: 'sessionStart',
+          pausedMs: 2000,
+          playingMs: 5000,
+          candlesRevealed: 12,
+        },
       },
     };
     const fixture = mount(wp);
@@ -38,7 +44,11 @@ describe('WaypointFactsComponent', () => {
   });
 
   it('Entry: elapsed row is absent when no TimeElapsedBeforeOrder fact exists', () => {
-    const wp: Waypoint = { slot: 1, time: 1000, facts: { entryPrice: 1.085, riskDistancePrice: 0.005, riskDistanceR: 1 } };
+    const wp: Waypoint = {
+      slot: 1,
+      time: 1000,
+      facts: { entryPrice: 1.085, riskDistancePrice: 0.005, riskDistanceR: 1 },
+    };
     const fixture = mount(wp);
     expect(fixture.nativeElement.textContent).not.toContain('Tiempo antes de la orden');
   });
@@ -49,8 +59,18 @@ describe('WaypointFactsComponent', () => {
       time: 1100,
       facts: {
         subEvents: [
-          { seq: 1, kind: 'OrderModified', marketTime: 1100, payload: { field: 'sl', from: 1.08, to: 1.081 } },
-          { seq: 2, kind: 'OrderModified', marketTime: 1200, payload: { field: 'tp', from: 1.09, to: 1.095 } },
+          {
+            seq: 1,
+            kind: 'OrderModified',
+            marketTime: 1100,
+            payload: { field: 'sl', from: 1.08, to: 1.081 },
+          },
+          {
+            seq: 2,
+            kind: 'OrderModified',
+            marketTime: 1200,
+            payload: { field: 'tp', from: 1.09, to: 1.095 },
+          },
         ],
       },
     };
@@ -81,7 +101,11 @@ describe('WaypointFactsComponent', () => {
   });
 
   it('Exit: shows net result, R, costs, hora', () => {
-    const wp: Waypoint = { slot: 5, time: 2000, facts: { profit: 200, rMultiple: 2, commission: 5 } };
+    const wp: Waypoint = {
+      slot: 5,
+      time: 2000,
+      facts: { profit: 200, rMultiple: 2, commission: 5 },
+    };
     const fixture = mount(wp);
     const text = fixture.nativeElement.textContent;
     expect(text).toContain('Resultado neto');

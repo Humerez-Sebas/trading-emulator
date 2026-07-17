@@ -71,11 +71,7 @@ export function buildSceneSpec(
   const drawingSet = extractDrawingSet(trade.id, allEvents);
 
   // Build telemetry markers (opaque, management events + tMae/tMfe in window)
-  const telemetryMarkers = buildTelemetryMarkers(
-    trade,
-    allEvents,
-    window,
-  );
+  const telemetryMarkers = buildTelemetryMarkers(trade, allEvents, window);
 
   return {
     symbol: sessionMeta.symbol,
@@ -99,8 +95,7 @@ function extractDrawingSet(
   // Look for DrawingSnapshot events for this trade
   const drawingEvents = events.filter(
     (e) =>
-      e.kind === 'DrawingSnapshot' &&
-      ((e.payload as { eventRef?: string }).eventRef === tradeId),
+      e.kind === 'DrawingSnapshot' && (e.payload as { eventRef?: string }).eventRef === tradeId,
   );
 
   if (drawingEvents.length === 0) {
@@ -109,7 +104,7 @@ function extractDrawingSet(
 
   // Prefer the close-time (latest) snapshot
   const latest = drawingEvents.sort((a, b) => (b.marketTime ?? 0) - (a.marketTime ?? 0))[0];
-  return (((latest.payload as { drawings?: DrawingSnapshotEntry[] }).drawings) ?? []);
+  return (latest.payload as { drawings?: DrawingSnapshotEntry[] }).drawings ?? [];
 }
 
 /**
@@ -134,8 +129,8 @@ function buildTelemetryMarkers(
       e.marketTime !== null &&
       e.marketTime >= window.t0 &&
       e.marketTime <= window.t1 &&
-      (((e.payload as { orderRef?: string }).orderRef === trade.id) ||
-        ((e.payload as { positionRef?: string }).positionRef === trade.id)),
+      ((e.payload as { orderRef?: string }).orderRef === trade.id ||
+        (e.payload as { positionRef?: string }).positionRef === trade.id),
   );
 
   for (const event of managementEvents) {
@@ -147,11 +142,7 @@ function buildTelemetryMarkers(
   }
 
   // MAE/MFE extrema markers
-  if (
-    trade.tMae !== undefined &&
-    trade.tMae >= window.t0 &&
-    trade.tMae <= window.t1
-  ) {
+  if (trade.tMae !== undefined && trade.tMae >= window.t0 && trade.tMae <= window.t1) {
     markers['extrema'].push({
       kind: 'MAE',
       time: trade.tMae,
@@ -159,11 +150,7 @@ function buildTelemetryMarkers(
     });
   }
 
-  if (
-    trade.tMfe !== undefined &&
-    trade.tMfe >= window.t0 &&
-    trade.tMfe <= window.t1
-  ) {
+  if (trade.tMfe !== undefined && trade.tMfe >= window.t0 && trade.tMfe <= window.t1) {
     markers['extrema'].push({
       kind: 'MFE',
       time: trade.tMfe,

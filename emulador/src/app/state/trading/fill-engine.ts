@@ -271,7 +271,11 @@ function resolveExit(
 }
 
 /** First lower candle (>= fromIdx) that touches the order's entry price. */
-function fillSubIndex(o: PendingOrder, subCandles: Candle[] | null, costs?: ExecutionCosts): number {
+function fillSubIndex(
+  o: PendingOrder,
+  subCandles: Candle[] | null,
+  costs?: ExecutionCosts,
+): number {
   if (!subCandles) return 0;
   for (let i = 0; i < subCandles.length; i++) {
     if (orderFills(o, subCandles[i], costs)) return i;
@@ -572,8 +576,7 @@ function computeSharpe(rValues: readonly number[]): number | null {
   if (rValues.length < 2) return null;
 
   const mean = rValues.reduce((sum, r) => sum + r, 0) / rValues.length;
-  const variance =
-    rValues.reduce((sum, r) => sum + (r - mean) ** 2, 0) / (rValues.length - 1);
+  const variance = rValues.reduce((sum, r) => sum + (r - mean) ** 2, 0) / (rValues.length - 1);
   const stddev = Math.sqrt(variance);
 
   if (stddev === 0) return null;

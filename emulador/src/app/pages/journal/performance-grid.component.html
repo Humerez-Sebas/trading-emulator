@@ -22,7 +22,12 @@
       class="metric-value"
       [class.up]="stats().totalR >= 0"
       [class.down]="stats().totalR < 0"
-      [attr.aria-label]="'R acumulado: ' + (stats().totalR >= 0 ? '+' : '') + (stats().totalR | number: '1.2-2') + 'R'"
+      [attr.aria-label]="
+        'R acumulado: ' +
+        (stats().totalR >= 0 ? '+' : '') +
+        (stats().totalR | number: '1.2-2') +
+        'R'
+      "
     >
       {{ stats().totalR >= 0 ? '+' : '' }}{{ stats().totalR | number: '1.2-2' }}R
     </strong>
@@ -79,10 +84,7 @@
 
   <div class="metric-card" role="listitem">
     <span class="metric-label">Trades</span>
-    <strong
-      class="metric-value"
-      [attr.aria-label]="'Trades: ' + stats().tradesCount"
-    >
+    <strong class="metric-value" [attr.aria-label]="'Trades: ' + stats().tradesCount">
       {{ stats().tradesCount }}
     </strong>
   </div>

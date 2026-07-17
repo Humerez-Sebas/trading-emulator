@@ -12,7 +12,12 @@ import {
   selectReplayIndex,
 } from '../selectors';
 import { tradingFeature } from '../trading/trading.reducer';
-import { defaultTradingData, TradingState, Position, PendingOrder } from '../trading/trading.models';
+import {
+  defaultTradingData,
+  TradingState,
+  Position,
+  PendingOrder,
+} from '../trading/trading.models';
 import { drawingsFeature } from '../drawings/drawings.reducer';
 import { TelemetryDbService } from '../../services/telemetry-db.service';
 

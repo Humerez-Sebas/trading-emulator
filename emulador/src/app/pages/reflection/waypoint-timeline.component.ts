@@ -71,7 +71,9 @@ function fieldCode(field: string): string {
               type="button"
               class="expand-toggle"
               [attr.aria-expanded]="expanded()"
-              [attr.aria-label]="expanded() ? 'Colapsar eventos de gestión' : 'Expandir eventos de gestión'"
+              [attr.aria-label]="
+                expanded() ? 'Colapsar eventos de gestión' : 'Expandir eventos de gestión'
+              "
               (click)="toggleExpanded(wp)"
             >
               {{ expanded() ? '▾' : '▸' }}
@@ -81,7 +83,12 @@ function fieldCode(field: string): string {
       </div>
 
       @if (expanded() && managementWaypoint(); as mgmt) {
-        <div class="sub-timeline" role="group" aria-label="Eventos de gestión" (keydown)="onSubKeydown($event)">
+        <div
+          class="sub-timeline"
+          role="group"
+          aria-label="Eventos de gestión"
+          (keydown)="onSubKeydown($event)"
+        >
           @for (sub of subEventsOf(mgmt); track sub.seq; let si = $index) {
             <button
               type="button"
@@ -204,7 +211,8 @@ export class WaypointTimelineComponent {
   }
 
   subEventsOf(wp: Waypoint): ManagementSubEvent[] {
-    return ((wp.facts as { subEvents?: ManagementSubEvent[] }).subEvents ?? []) as ManagementSubEvent[];
+    return ((wp.facts as { subEvents?: ManagementSubEvent[] }).subEvents ??
+      []) as ManagementSubEvent[];
   }
 
   subLabel(sub: ManagementSubEvent): string {
@@ -267,5 +275,8 @@ function formatHHmm(unixSeconds: number): string {
 
 function formatPrice(value: number | null): string {
   if (value === null) return '—';
-  return value.toFixed(Math.abs(value) < 100 ? 5 : 2).replace(/0+$/, '').replace(/\.$/, '');
+  return value
+    .toFixed(Math.abs(value) < 100 ? 5 : 2)
+    .replace(/0+$/, '')
+    .replace(/\.$/, '');
 }

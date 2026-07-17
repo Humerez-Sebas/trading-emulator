@@ -46,8 +46,8 @@ describe('LessonFormComponent', () => {
 
   it('renders the 3 fields with VISIBLE labels (never placeholder-only)', () => {
     const fixture = mount();
-    const labels = [...fixture.nativeElement.querySelectorAll('.field-label')].map((e: HTMLElement) =>
-      e.textContent?.trim(),
+    const labels = [...fixture.nativeElement.querySelectorAll('.field-label')].map(
+      (e: HTMLElement) => e.textContent?.trim(),
     );
     expect(labels).toEqual(['¿Qué ocurrió?', '¿Qué debería repetir?', '¿Qué debería evitar?']);
   });
@@ -158,7 +158,10 @@ describe('LessonFormComponent', () => {
   });
 
   it('a slotted rule shows its R{slot} badge; an unslotted rule does not', () => {
-    const fixture = mount(null, [rule({ id: 'r1', shortcutSlot: 3 }), rule({ id: 'r2', shortcutSlot: null })]);
+    const fixture = mount(null, [
+      rule({ id: 'r1', shortcutSlot: 3 }),
+      rule({ id: 'r2', shortcutSlot: null }),
+    ]);
     const chips: HTMLElement[] = fixture.nativeElement.querySelectorAll('.rule-chips button');
     expect(chips[0].querySelector('.slot')?.textContent).toBe('R3');
     expect(chips[1].querySelector('.slot')).toBeNull();

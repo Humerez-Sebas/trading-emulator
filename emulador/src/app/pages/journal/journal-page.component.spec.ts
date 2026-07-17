@@ -40,10 +40,7 @@ describe('JournalPageComponent', () => {
     journalDataStub = { loadSessionReadModel: vi.fn().mockReturnValue(loadResult) };
     TestBed.configureTestingModule({
       imports: [JournalPageComponent],
-      providers: [
-        provideRouter([]),
-        { provide: JournalDataService, useValue: journalDataStub },
-      ],
+      providers: [provideRouter([]), { provide: JournalDataService, useValue: journalDataStub }],
     });
     router = TestBed.inject(Router);
     navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
@@ -87,10 +84,16 @@ describe('JournalPageComponent', () => {
     const fixture = await create(Promise.resolve(model({ trades })));
 
     expect(fixture.nativeElement.querySelector('h1').textContent).toContain('Ruptura EURUSD');
-    const headings = Array.from(fixture.nativeElement.querySelectorAll('.sections h2')).map(
-      (el) => (el as HTMLElement).textContent!.trim(),
+    const headings = Array.from(fixture.nativeElement.querySelectorAll('.sections h2')).map((el) =>
+      (el as HTMLElement).textContent!.trim(),
     );
-    expect(headings).toEqual(['Execution', 'Behavior', 'Rule Performance', 'Time of Day', 'Trades']);
+    expect(headings).toEqual([
+      'Execution',
+      'Behavior',
+      'Rule Performance',
+      'Time of Day',
+      'Trades',
+    ]);
     expect(fixture.nativeElement.querySelector('app-performance-grid')).toBeTruthy();
   });
 
@@ -193,7 +196,10 @@ describe('JournalPageComponent', () => {
   });
 
   it('trade selection from any element navigates to /journal/:id/reflect/:tradeId (D16.F)', async () => {
-    const fixture = await create(Promise.resolve(model({ trades: [closed({ id: 't1' })] })), 's-42');
+    const fixture = await create(
+      Promise.resolve(model({ trades: [closed({ id: 't1' })] })),
+      's-42',
+    );
     fixture.componentInstance.onTradeSelected('t1');
     expect(navigateSpy).toHaveBeenCalledWith(['/journal', 's-42', 'reflect', 't1']);
   });

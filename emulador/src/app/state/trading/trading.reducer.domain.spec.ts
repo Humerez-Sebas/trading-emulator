@@ -211,7 +211,9 @@ describe('trading reducer: modifyPosition rejects I-15 widening', () => {
 
 describe('trading reducer: modifyOrder rejects I-14-incoherent geometry on modification', () => {
   it('sl moved to the wrong side (above entry) for a buy: order unchanged (reference identity)', () => {
-    const s = tradingState({ orders: [order({ side: 'buy', entryPrice: 4000, sl: 3990, tp: 4020 })] });
+    const s = tradingState({
+      orders: [order({ side: 'buy', entryPrice: 4000, sl: 3990, tp: 4020 })],
+    });
     const next = reducer(s, TradingActions.modifyOrder({ id: 'o1', sl: 4005, contractSize: 100 }));
     expect(next.orders[0]).toBe(s.orders[0]);
     expect(next.orders[0].sl).toBe(3990);
@@ -220,7 +222,9 @@ describe('trading reducer: modifyOrder rejects I-14-incoherent geometry on modif
   });
 
   it('valid entry+sl re-placement is accepted and re-sizes lots (pending, no I-15 constraint)', () => {
-    const s = tradingState({ orders: [order({ side: 'buy', entryPrice: 4000, sl: 3990, tp: 4020 })] });
+    const s = tradingState({
+      orders: [order({ side: 'buy', entryPrice: 4000, sl: 3990, tp: 4020 })],
+    });
     const next = reducer(
       s,
       TradingActions.modifyOrder({ id: 'o1', entryPrice: 4010, sl: 3995, contractSize: 100 }),

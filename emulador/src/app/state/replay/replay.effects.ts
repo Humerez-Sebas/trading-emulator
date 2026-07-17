@@ -183,9 +183,7 @@ export class ReplayEffects {
       if (base && base.length) {
         const baseCandles = sliceRange(base, candle.time, candle.time + tfSeconds);
         for (const c of baseCandles) {
-          actions.push(
-            TradingActions.processCandle({ candle: c, subCandles: null, contractSize }),
-          );
+          actions.push(TradingActions.processCandle({ candle: c, subCandles: null, contractSize }));
         }
       } else {
         const subCandles = lower ? sliceRange(lower, candle.time, candle.time + tfSeconds) : null;

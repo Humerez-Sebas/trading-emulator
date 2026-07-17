@@ -4,8 +4,15 @@ import { PlaybookRule } from './playbook.models';
 
 function rule(over: Partial<PlaybookRule>): PlaybookRule {
   return {
-    id: 'x', title: 't', statement: '', createdAt: 0, status: 'active',
-    shortcutSlot: null, sortOrder: 0, amendments: [], ...over,
+    id: 'x',
+    title: 't',
+    statement: '',
+    createdAt: 0,
+    status: 'active',
+    shortcutSlot: null,
+    sortOrder: 0,
+    amendments: [],
+    ...over,
   };
 }
 

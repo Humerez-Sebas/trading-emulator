@@ -11,7 +11,10 @@
         <app-bubble-duration-r [bubbles]="bubbles()" (tradeSelected)="tradeSelected.emit($event)" />
       </div>
       <div class="viz-mount" data-viz="heatmap-trade-calendar">
-        <app-heatmap-trade-calendar [cells]="cells()" (tradeSelected)="tradeSelected.emit($event)" />
+        <app-heatmap-trade-calendar
+          [cells]="cells()"
+          (tradeSelected)="tradeSelected.emit($event)"
+        />
       </div>
     </div>
   }

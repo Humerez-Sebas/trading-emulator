@@ -94,7 +94,12 @@ describe('telemetry-facts (RFC-014 T5b-ii) — pure post-reducer diffing', () =>
     it('includes fillBaseIndex when a base series resolves it', () => {
       const base = [candle(100), candle(200)];
       const payload = buildOrderFilledPayload('t1', 105, 200, base);
-      expect(payload).toEqual({ tradeId: 't1', fillBaseIndex: 1, executedPrice: 105, marketTime: 200 });
+      expect(payload).toEqual({
+        tradeId: 't1',
+        fillBaseIndex: 1,
+        executedPrice: 105,
+        marketTime: 200,
+      });
     });
 
     it('omits the fillBaseIndex KEY (not just undefined) when there is no base series', () => {
@@ -200,7 +205,13 @@ describe('telemetry-facts (RFC-014 T5b-ii) — pure post-reducer diffing', () =>
       expect(facts[1]).toEqual({
         kind: 'PositionClosed',
         marketTime: 1500,
-        payload: { tradeId: 'x1', outcome: 'sl', ambiguous: false, executedPrice: 90, marketTime: 1500 },
+        payload: {
+          tradeId: 'x1',
+          outcome: 'sl',
+          ambiguous: false,
+          executedPrice: 90,
+          marketTime: 1500,
+        },
       });
     });
 
@@ -231,7 +242,10 @@ describe('telemetry-facts (RFC-014 T5b-ii) — pure post-reducer diffing', () =>
     it('multiple independent new facts in one transition are all emitted', () => {
       const prev = snap({ positions: [position({ id: 'keep', origin: 'limit' })] });
       const curr = snap({
-        positions: [position({ id: 'keep', origin: 'limit' }), position({ id: 'new', origin: 'stop' })],
+        positions: [
+          position({ id: 'keep', origin: 'limit' }),
+          position({ id: 'new', origin: 'stop' }),
+        ],
         history: [trade({ id: 'closed', origin: 'market' })],
       });
       const facts = diffDomainFacts(prev, curr, null);

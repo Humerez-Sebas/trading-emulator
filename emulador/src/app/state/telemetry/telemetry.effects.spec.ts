@@ -41,9 +41,11 @@ describe('TelemetryEffects — navigation observer (RFC-014 T5b-i)', () => {
    * `replayJump$` alive to observe the arm→consume sequence. */
   function subscribeAll(): Subscription {
     const sub = new Subscription();
-    sub.add((effects as unknown as { syncJumpOrigin$: { subscribe: () => Subscription } })[
-      'syncJumpOrigin$'
-    ].subscribe());
+    sub.add(
+      (effects as unknown as { syncJumpOrigin$: { subscribe: () => Subscription } })[
+        'syncJumpOrigin$'
+      ].subscribe(),
+    );
     sub.add(effects.replayJump$.subscribe());
     sub.add(effects.playbackToggled$.subscribe());
     sub.add(effects.speedChanged$.subscribe());

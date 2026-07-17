@@ -18,7 +18,9 @@
     @case ('no-trades') {
       <div class="page-state">
         <h1 #pageHeading tabindex="-1">Cabina de Reflexión</h1>
-        <p>Esta sesión no tiene trades cerrados. Los patrones aparecen aquí cuando cierras trades.</p>
+        <p>
+          Esta sesión no tiene trades cerrados. Los patrones aparecen aquí cuando cierras trades.
+        </p>
         <a appButton variant="primary" [routerLink]="['/journal', sessionId()]">← Journal</a>
       </div>
     }

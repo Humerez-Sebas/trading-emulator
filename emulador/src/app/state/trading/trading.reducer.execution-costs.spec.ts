@@ -12,7 +12,12 @@ import { COST_PRESETS, costPresetFor, ExecutionCosts } from './execution-costs';
 
 const reducer = tradingFeature.reducer;
 
-const COSTS: ExecutionCosts = { spreadPoints: 10, commissionPerLot: 5, slippagePoints: 4, pointSize: 1 };
+const COSTS: ExecutionCosts = {
+  spreadPoints: 10,
+  commissionPerLot: 5,
+  slippagePoints: 4,
+  pointSize: 1,
+};
 
 function state(partial: Partial<TradingState> = {}): TradingState {
   return {
@@ -104,10 +109,7 @@ describe('trading reducer: executionCosts wiring — closePosition (manual close
 describe('trading reducer: executionCosts wiring — endSession (force close)', () => {
   it('applies the same short Bid→Ask conversion and commission as a manual close', () => {
     const s = state({ positions: [position()], executionCosts: COSTS });
-    const next = reducer(
-      s,
-      TradingActions.endSession({ price: 3950, time: 300, contractSize: 1 }),
-    );
+    const next = reducer(s, TradingActions.endSession({ price: 3950, time: 300, contractSize: 1 }));
     expect(next.history[0].exitPrice).toBe(3960);
     expect(next.history[0].commission).toBeCloseTo(0.5, 10);
     expect(next.sessionEnded).toBe(true);
@@ -145,7 +147,7 @@ describe('SavedSession archive/restore round trip — executionCosts', () => {
     expect(next.savedSessions[0].trading.executionCosts).toEqual(costs);
   });
 
-  it('switchSession restores the target session\'s executionCosts into live state', () => {
+  it("switchSession restores the target session's executionCosts into live state", () => {
     const costs = COST_PRESETS.Forex;
     const saved = {
       id: 's1',

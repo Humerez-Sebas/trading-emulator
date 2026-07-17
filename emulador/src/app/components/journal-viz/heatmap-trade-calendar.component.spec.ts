@@ -137,9 +137,7 @@ describe('HeatmapTradeCalendarComponent', () => {
       const tradeSelected = vi.fn();
       component.tradeSelected.subscribe(tradeSelected);
 
-      const cells: HeatmapCellView[] = [
-        { tradeId: 'trade-1', seq: 1, rMultiple: 1.5 },
-      ];
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-1', seq: 1, rMultiple: 1.5 }];
       fixture.componentRef.setInput('cells', cells);
       fixture.detectChanges();
 
@@ -153,9 +151,7 @@ describe('HeatmapTradeCalendarComponent', () => {
       const tradeSelected = vi.fn();
       component.tradeSelected.subscribe(tradeSelected);
 
-      const cells: HeatmapCellView[] = [
-        { tradeId: 'trade-2', seq: 2, rMultiple: -0.5 },
-      ];
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-2', seq: 2, rMultiple: -0.5 }];
       fixture.componentRef.setInput('cells', cells);
       fixture.detectChanges();
 
@@ -165,16 +161,14 @@ describe('HeatmapTradeCalendarComponent', () => {
         new KeyboardEvent('keydown', {
           key: 'Enter',
           bubbles: true,
-        })
+        }),
       );
 
       expect(tradeSelected).toHaveBeenCalledWith('trade-2');
     });
 
     it('should make cells focusable (tabindex=0)', () => {
-      const cells: HeatmapCellView[] = [
-        { tradeId: 'trade-1', seq: 1, rMultiple: 1.0 },
-      ];
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-1', seq: 1, rMultiple: 1.0 }];
       fixture.componentRef.setInput('cells', cells);
       fixture.detectChanges();
 
@@ -185,9 +179,7 @@ describe('HeatmapTradeCalendarComponent', () => {
 
   describe('tooltip', () => {
     it('should show tooltip on cell hover', () => {
-      const cells: HeatmapCellView[] = [
-        { tradeId: 'trade-1', seq: 1, rMultiple: 1.5 },
-      ];
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-1', seq: 1, rMultiple: 1.5 }];
       fixture.componentRef.setInput('cells', cells);
       fixture.detectChanges();
 
@@ -200,9 +192,7 @@ describe('HeatmapTradeCalendarComponent', () => {
     });
 
     it('should format tooltip with trade seq and R value', () => {
-      const cells: HeatmapCellView[] = [
-        { tradeId: 'trade-5', seq: 5, rMultiple: 2.3 },
-      ];
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-5', seq: 5, rMultiple: 2.3 }];
       fixture.componentRef.setInput('cells', cells);
       fixture.detectChanges();
 
@@ -217,9 +207,7 @@ describe('HeatmapTradeCalendarComponent', () => {
     });
 
     it('should hide tooltip on mouseleave', () => {
-      const cells: HeatmapCellView[] = [
-        { tradeId: 'trade-1', seq: 1, rMultiple: 1.5 },
-      ];
+      const cells: HeatmapCellView[] = [{ tradeId: 'trade-1', seq: 1, rMultiple: 1.5 }];
       fixture.componentRef.setInput('cells', cells);
       fixture.detectChanges();
 

@@ -307,7 +307,12 @@
                     <span class="num muted">{{ card.trades }}</span>
                     <span class="muted">{{ card.createdAt | date: 'dd MMM yyyy' }}</span>
                     <div class="row-actions">
-                      <a appButton variant="subtle" size="sm" [routerLink]="['/journal', journalId(card)]">
+                      <a
+                        appButton
+                        variant="subtle"
+                        size="sm"
+                        [routerLink]="['/journal', journalId(card)]"
+                      >
                         Journal
                       </a>
                       <a

@@ -2,7 +2,10 @@ import type { SessionStats } from '../trading/fill-engine';
 import type { ClosedTrade } from '../trading/trading.models';
 import type { TelemetryEvent } from '../telemetry/telemetry.models';
 import type { Lesson } from '../lessons/lessons.models';
-import { computeExcursionAggregates, excursionR } from '../../components/session-summary/excursion-stats';
+import {
+  computeExcursionAggregates,
+  excursionR,
+} from '../../components/session-summary/excursion-stats';
 
 /**
  * PURE read-model builders for the Journal (RFC-016 D16.E, component
@@ -163,7 +166,8 @@ const UNDECLARED_LABEL = 'Sin declarar';
 
 /** `slot` when the rule has a shortcut slot, else a deterministic `sortOrder % 9` index (documented, RFC-016 D16.E/component-architecture §1.2). */
 function ruleColorToken(rule: JournalRuleRef): string {
-  const slot = rule.shortcutSlot !== null ? rule.shortcutSlot : (rule.sortOrder % RULE_PALETTE_SIZE) + 1;
+  const slot =
+    rule.shortcutSlot !== null ? rule.shortcutSlot : (rule.sortOrder % RULE_PALETTE_SIZE) + 1;
   return `var(--rule-${slot})`;
 }
 
@@ -210,7 +214,8 @@ function countManagementEvents(trade: ClosedTrade, telemetry: readonly Telemetry
   let count = 0;
   for (const e of telemetry) {
     if (e.kind !== 'OrderModified' && e.kind !== 'PositionModified') continue;
-    if (e.marketTime === null || e.marketTime < trade.openTime || e.marketTime > trade.closeTime) continue;
+    if (e.marketTime === null || e.marketTime < trade.openTime || e.marketTime > trade.closeTime)
+      continue;
     const payload = e.payload as { orderRef?: string; positionRef?: string };
     if (payload.orderRef === trade.id || payload.positionRef === trade.id) count++;
   }
@@ -415,7 +420,10 @@ export function buildBehaviorFacts(model: JournalSessionModel): BehaviorFactsVie
   let pauses = 0;
   for (const e of model.telemetry) {
     if (e.kind === 'ReplayJump') replayJumps++;
-    else if (e.kind === 'PlaybackToggled' && (e.payload as { playing?: boolean }).playing === false) {
+    else if (
+      e.kind === 'PlaybackToggled' &&
+      (e.payload as { playing?: boolean }).playing === false
+    ) {
       pauses++;
     }
   }

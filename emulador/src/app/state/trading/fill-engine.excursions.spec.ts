@@ -224,10 +224,9 @@ describe('V-11 — excursion floors hold for every SL/TP exit in a scripted grid
   });
 
   it('an ambiguous same-candle SL+TP close still seals coherent, non-negative excursions', () => {
-    const result = fold(
-      book({ positions: [longPosition({ entryPrice: 100, sl: 95, tp: 110 })] }),
-      [candle(60, 100, 112, 93, 105)],
-    );
+    const result = fold(book({ positions: [longPosition({ entryPrice: 100, sl: 95, tp: 110 })] }), [
+      candle(60, 100, 112, 93, 105),
+    ]);
     const trade = result.history[0];
     expect(trade.ambiguous).toBe(true);
     expect(trade.outcome).toBe('sl');
@@ -240,12 +239,15 @@ describe('V-11 — excursion floors hold for every SL/TP exit in a scripted grid
 
 // ============ sealing on every close path ============
 
-describe('sealing — every close path carries the position\'s accumulated excursions', () => {
+describe("sealing — every close path carries the position's accumulated excursions", () => {
   it('closeSession seals whatever accumulated across the walk, at the closing price/time given', () => {
-    const walked = fold(book({ positions: [longPosition({ entryPrice: 100, sl: 80, tp: null })] }), [
-      candle(60, 100, 106, 94, 100), // adverse=6, favorable=6 → mae=6@60, mfe=6@60
-      candle(120, 100, 109, 97, 100), // adverse=3 (no move), favorable=9 (>6, new max) → mfe=9@120
-    ]);
+    const walked = fold(
+      book({ positions: [longPosition({ entryPrice: 100, sl: 80, tp: null })] }),
+      [
+        candle(60, 100, 106, 94, 100), // adverse=6, favorable=6 → mae=6@60, mfe=6@60
+        candle(120, 100, 109, 97, 100), // adverse=3 (no move), favorable=9 (>6, new max) → mfe=9@120
+      ],
+    );
     expect(walked.positions).toHaveLength(1);
     const walkedPos = walked.positions[0];
     const r = closeSession(walked, 103, 200, CONTRACT);
@@ -259,7 +261,7 @@ describe('sealing — every close path carries the position\'s accumulated excur
     expect(trade.tMfe).toBe(walkedPos.tMfe);
   });
 
-  it('closeTrade (manual-close path) seals a position\'s pre-accumulated fields verbatim', () => {
+  it("closeTrade (manual-close path) seals a position's pre-accumulated fields verbatim", () => {
     const p = longPosition({
       entryPrice: 100,
       sl: 80,
@@ -292,7 +294,12 @@ describe('sealing — every close path carries the position\'s accumulated excur
 describe('excursion accumulation is decoupled from `changed` (fills/exits only)', () => {
   it('a position that neither fills nor exits leaves `changed` false even though mae/mfe move', () => {
     const p = shortPosition({ entryPrice: 100, sl: 4095 + 1000, tp: null }); // SL far away, never hit
-    const r = processCandle(book({ positions: [p] }), candle(100, 100, 108, 90, 100), null, CONTRACT);
+    const r = processCandle(
+      book({ positions: [p] }),
+      candle(100, 100, 108, 90, 100),
+      null,
+      CONTRACT,
+    );
     expect(r.changed).toBe(false);
     expect(r.book.positions[0].mae).toBeGreaterThan(0); // still accumulated under the hood
   });

@@ -22,9 +22,9 @@ function createDummyLesson(id: string, sessionRef: string, tradeRefs: string[] =
         cursorTime: 60,
         orderGeometry: {
           side: 'buy',
-          entryPrice: 1.0800,
-          sl: 1.0790,
-          tp: 1.0820,
+          entryPrice: 1.08,
+          sl: 1.079,
+          tp: 1.082,
           lots: 1,
         },
         drawingSet: [],
@@ -65,10 +65,10 @@ describe('Lessons Redux & DB Invariants (J-1, J-3, J-4, J-5)', () => {
         id: 't1',
         side: 'buy',
         origin: 'market',
-        entryPrice: 1.0800,
-        exitPrice: 1.0820,
-        sl: 1.0790,
-        tp: 1.0820,
+        entryPrice: 1.08,
+        exitPrice: 1.082,
+        sl: 1.079,
+        tp: 1.082,
         lots: 1,
         riskPct: 2,
         riskUsd: 100,
@@ -125,7 +125,7 @@ describe('Lessons Redux & DB Invariants (J-1, J-3, J-4, J-5)', () => {
       originalTrade.entryPrice = 2.0;
 
       // The saved lesson evidence should remain untouched
-      expect(lesson.evidence[0].orderGeometry.entryPrice).toBe(1.0800);
+      expect(lesson.evidence[0].orderGeometry.entryPrice).toBe(1.08);
       expect(lesson.evidence[0].orderGeometry.entryPrice).not.toBe(2.0);
     });
   });
@@ -154,7 +154,7 @@ describe('Lessons Redux & DB Invariants (J-1, J-3, J-4, J-5)', () => {
 
   // --- J-5: Session Isolation ---
   describe('J-5: Session Isolation', () => {
-    it('should verify that queries for a session\'s lessons do not leak into another session', () => {
+    it("should verify that queries for a session's lessons do not leak into another session", () => {
       const lessons = [
         createDummyLesson('l1', 'sess_1', ['t1']),
         createDummyLesson('l2', 'sess_1', ['t2']),

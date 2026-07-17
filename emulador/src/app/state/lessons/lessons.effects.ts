@@ -17,7 +17,11 @@ import { LessonsActions } from './lessons.actions';
 import { selectLessons } from './lessons.selectors';
 import { LessonsDbService } from '../../services/lessons-db.service';
 import { Lesson } from './lessons.models';
-import { isLessonDirty, mergeLessonsPull, SessionSyncService } from '../../services/session-sync.service';
+import {
+  isLessonDirty,
+  mergeLessonsPull,
+  SessionSyncService,
+} from '../../services/session-sync.service';
 import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
 
@@ -71,9 +75,7 @@ export class LessonsEffects {
           LessonsActions.lessonsSynced,
         ),
         withLatestFrom(this.store.select(selectLessons)),
-        concatMap(([, lessons]) =>
-          from(this.db.upsertMany(lessons)).pipe(catchError(() => EMPTY)),
-        ),
+        concatMap(([, lessons]) => from(this.db.upsertMany(lessons)).pipe(catchError(() => EMPTY))),
       ),
     { dispatch: false },
   );
@@ -102,7 +104,9 @@ export class LessonsEffects {
           this.store.select(authFeature.selectStatus),
         ),
         filter(([, , status]) => status === 'authenticated'),
-        concatMap(([, lessons]) => from(this.pushDirtyLessons(lessons)).pipe(catchError(() => EMPTY))),
+        concatMap(([, lessons]) =>
+          from(this.pushDirtyLessons(lessons)).pipe(catchError(() => EMPTY)),
+        ),
       ),
     { dispatch: false },
   );

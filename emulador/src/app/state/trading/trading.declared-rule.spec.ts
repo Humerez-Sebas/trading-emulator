@@ -19,7 +19,9 @@ describe('declaredRuleId identity chain (P-4)', () => {
       null,
       100,
     );
-    expect(fill.book.positions[0]?.declaredRuleId ?? fill.book.history[0]?.declaredRuleId).toBe('rule-1');
+    expect(fill.book.positions[0]?.declaredRuleId ?? fill.book.history[0]?.declaredRuleId).toBe(
+      'rule-1',
+    );
     const closedAll = [...fill.book.history];
     if (fill.book.positions.length) {
       closedAll.push(closeTrade(fill.book.positions[0], 3990, 120, 'manual', 100));

@@ -40,10 +40,10 @@ describe('ReflectionCabinPageComponent', () => {
     id: 't1',
     side: 'buy',
     origin: 'market',
-    entryPrice: 1.0850,
-    exitPrice: 1.0870,
-    sl: 1.0800,
-    tp: 1.0900,
+    entryPrice: 1.085,
+    exitPrice: 1.087,
+    sl: 1.08,
+    tp: 1.09,
     lots: 1,
     riskPct: 2,
     riskUsd: 100,
@@ -76,9 +76,7 @@ describe('ReflectionCabinPageComponent', () => {
     trades: [dummyTrade1, dummyTrade2],
     stats: {} as any,
     telemetry: [],
-    rules: [
-      { id: 'rule_1', title: 'Rule 1', shortcutSlot: 1, sortOrder: 0 }
-    ],
+    rules: [{ id: 'rule_1', title: 'Rule 1', shortcutSlot: 1, sortOrder: 0 }],
     lessonByTradeRef: {},
     datasetRefs: ['EURUSD|M1|all'],
     baseTfSeconds: 60,
@@ -103,7 +101,16 @@ describe('ReflectionCabinPageComponent', () => {
 
     store = TestBed.inject(MockStore);
     store.overrideSelector(selectActiveRules, [
-      { id: 'rule_1', title: 'Rule 1', statement: 'Statement 1', createdAt: 0, status: 'active', shortcutSlot: 1, sortOrder: 0, amendments: [] }
+      {
+        id: 'rule_1',
+        title: 'Rule 1',
+        statement: 'Statement 1',
+        createdAt: 0,
+        status: 'active',
+        shortcutSlot: 1,
+        sortOrder: 0,
+        amendments: [],
+      },
     ]);
     store.refreshState();
 
@@ -330,7 +337,7 @@ describe('ReflectionCabinPageComponent', () => {
 
       // Get the lesson sent to createLesson
       const createAction = dispatchSpy.mock.calls.find(
-        (call) => (call[0] as any).type === LessonsActions.createLesson.type
+        (call) => (call[0] as any).type === LessonsActions.createLesson.type,
       )?.[0] as any;
 
       expect(createAction).toBeDefined();

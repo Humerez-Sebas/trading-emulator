@@ -121,7 +121,10 @@ export class WaypointFactsComponent {
     };
     const rows: FactRow[] = [
       { label: 'Precio de entrada', value: fmtPrice(f.entryPrice) },
-      { label: 'Riesgo inicial', value: `${fmtPrice(f.riskDistancePrice)} (${f.riskDistanceR.toFixed(2)}R)` },
+      {
+        label: 'Riesgo inicial',
+        value: `${fmtPrice(f.riskDistancePrice)} (${f.riskDistanceR.toFixed(2)}R)`,
+      },
       { label: 'Hora', value: fmtHHmm(wp.time) },
     ];
     if (f.elapsedBeforeOrder) {
@@ -134,7 +137,8 @@ export class WaypointFactsComponent {
   }
 
   private managementRows(wp: Waypoint): FactRow[] {
-    const subEvents = ((wp.facts as { subEvents?: ManagementSubEvent[] }).subEvents ?? []) as ManagementSubEvent[];
+    const subEvents = ((wp.facts as { subEvents?: ManagementSubEvent[] }).subEvents ??
+      []) as ManagementSubEvent[];
     return subEvents.map((sub, i) => ({
       label: subEvents.length > 1 ? `Evento ${i + 1}` : 'Evento',
       value: `${sub.payload.field.toUpperCase()} ${fmtPrice(sub.payload.from)} → ${fmtPrice(sub.payload.to)} · ${fmtHHmm(sub.marketTime ?? undefined)}`,

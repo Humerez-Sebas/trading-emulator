@@ -16,7 +16,11 @@ import { ButtonDirective } from '../../components/ui/button.directive';
 import { JournalDataService } from '../../services/journal-data.service';
 import type { JournalSessionModel } from '../../state/journal/journal-read.models';
 import { buildTradeRows } from '../../state/journal/journal-read.models';
-import { computeWaypoints, type Waypoint, type WaypointSlot } from '../../domain/reflection/waypoints';
+import {
+  computeWaypoints,
+  type Waypoint,
+  type WaypointSlot,
+} from '../../domain/reflection/waypoints';
 import { buildSceneSpec } from '../../domain/reflection/build-scene-spec';
 import { MAX_EVIDENCE_SCENES, type SceneSpec } from '../../domain/reflection/scene-spec';
 import { LessonsActions } from '../../state/lessons/lessons.actions';
@@ -122,7 +126,9 @@ export class ReflectionCabinPageComponent {
     return computeWaypoints(trade, m.telemetry, m.baseTfSeconds);
   });
 
-  activeWaypoint = computed<Waypoint | null>(() => this.waypoints()[this.activeWaypointIndex()] ?? null);
+  activeWaypoint = computed<Waypoint | null>(
+    () => this.waypoints()[this.activeWaypointIndex()] ?? null,
+  );
 
   scene = computed<SceneSpec | null>(() => {
     const trade = this.activeTrade();
@@ -259,7 +265,9 @@ export class ReflectionCabinPageComponent {
     }
 
     for (const ruleId of draft.linkedRuleIds) {
-      this.store.dispatch(PlaybookActions.amendRule({ ruleId, lessonId: lesson.id, clientUpdatedAt: now }));
+      this.store.dispatch(
+        PlaybookActions.amendRule({ ruleId, lessonId: lesson.id, clientUpdatedAt: now }),
+      );
     }
 
     // Local optimistic patch: the ✎ mark / `reflection-existing` prefill show
@@ -281,8 +289,14 @@ export class ReflectionCabinPageComponent {
    * so later session/telemetry state changes can never mutate a saved lesson (J-3). */
   private freezeEvidence(trade: ClosedTrade, m: JournalSessionModel): SceneSpec[] {
     const wps = computeWaypoints(trade, m.telemetry, m.baseTfSeconds);
-    const sessionMeta = { symbol: m.symbol, datasetRefs: m.datasetRefs, baseTfSeconds: m.baseTfSeconds };
-    const scenes = wps.slice(0, MAX_EVIDENCE_SCENES).map((wp) => buildSceneSpec(trade, wp, sessionMeta, m.telemetry));
+    const sessionMeta = {
+      symbol: m.symbol,
+      datasetRefs: m.datasetRefs,
+      baseTfSeconds: m.baseTfSeconds,
+    };
+    const scenes = wps
+      .slice(0, MAX_EVIDENCE_SCENES)
+      .map((wp) => buildSceneSpec(trade, wp, sessionMeta, m.telemetry));
     return structuredClone(scenes);
   }
 
@@ -360,6 +374,9 @@ export class ReflectionCabinPageComponent {
   }
 
   private isTypingTarget(target: EventTarget | null): boolean {
-    return target instanceof HTMLElement && !!target.closest('input, textarea, select, [contenteditable]');
+    return (
+      target instanceof HTMLElement &&
+      !!target.closest('input, textarea, select, [contenteditable]')
+    );
   }
 }

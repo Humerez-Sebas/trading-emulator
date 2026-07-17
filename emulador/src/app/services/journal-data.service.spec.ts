@@ -7,11 +7,7 @@ import { TelemetryDbService } from './telemetry-db.service';
 import { workspaceDbStub } from '../testing/workspace-db.stub';
 import { closed, savedSession, workspaceMeta } from '../testing/fixtures';
 import { defaultTradingData, TradingData } from '../state/trading/trading.models';
-import {
-  selectCurrentAsset,
-  selectSavedSessions,
-  selectTradingData,
-} from '../state/selectors';
+import { selectCurrentAsset, selectSavedSessions, selectTradingData } from '../state/selectors';
 import { tradingFeature } from '../state/trading/trading.reducer';
 import { selectPlaybookRules } from '../state/playbook/playbook.selectors';
 import { selectLessonByTradeRef } from '../state/lessons/lessons.selectors';
@@ -69,16 +65,18 @@ describe('JournalDataService', () => {
   let telemetryStub: { listForSession: ReturnType<typeof vi.fn> };
   let service: JournalDataService;
 
-  function create(opts: {
-    db?: Partial<ReturnType<typeof workspaceDbStub>>;
-    telemetry?: TelemetryEvent[];
-    currentAsset?: string | null;
-    liveTrading?: TradingData;
-    liveSavedSessions?: ReturnType<typeof savedSession>[];
-    liveActiveSessionId?: string | null;
-    rules?: PlaybookRule[];
-    lessonByTradeRef?: Record<string, Lesson>;
-  } = {}) {
+  function create(
+    opts: {
+      db?: Partial<ReturnType<typeof workspaceDbStub>>;
+      telemetry?: TelemetryEvent[];
+      currentAsset?: string | null;
+      liveTrading?: TradingData;
+      liveSavedSessions?: ReturnType<typeof savedSession>[];
+      liveActiveSessionId?: string | null;
+      rules?: PlaybookRule[];
+      lessonByTradeRef?: Record<string, Lesson>;
+    } = {},
+  ) {
     dbStub = workspaceDbStub();
     if (opts.db) Object.assign(dbStub, opts.db);
     telemetryStub = { listForSession: vi.fn().mockResolvedValue(opts.telemetry ?? []) };
@@ -172,7 +170,11 @@ describe('JournalDataService', () => {
 
   it('rules carry ONLY id/title/shortcutSlot/sortOrder — never `statement` (P-2), sorted by sortOrder, retired included', async () => {
     create({
-      db: { listMetas: vi.fn().mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'a1' })]) },
+      db: {
+        listMetas: vi
+          .fn()
+          .mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'a1' })]),
+      },
       currentAsset: 'XAUUSD',
       liveActiveSessionId: 'a1',
       rules: [
@@ -187,8 +189,11 @@ describe('JournalDataService', () => {
     }
   });
 
-  it('lessonByTradeRef is filtered to THIS session\'s trade ids — a lesson for a trade outside this session never leaks (J-5)', async () => {
-    const trading: TradingData = { ...defaultTradingData(), history: [closed({ id: 'in-session' })] };
+  it("lessonByTradeRef is filtered to THIS session's trade ids — a lesson for a trade outside this session never leaks (J-5)", async () => {
+    const trading: TradingData = {
+      ...defaultTradingData(),
+      history: [closed({ id: 'in-session' })],
+    };
     create({
       currentAsset: 'XAUUSD',
       liveTrading: trading,
@@ -196,24 +201,30 @@ describe('JournalDataService', () => {
       db: { listMetas: vi.fn().mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD' })]) },
       lessonByTradeRef: {
         'in-session': lesson({ tradeRefs: ['in-session'] }),
-        'other-session-trade': lesson({ id: 'l2', sessionRef: 'other', tradeRefs: ['other-session-trade'] }),
+        'other-session-trade': lesson({
+          id: 'l2',
+          sessionRef: 'other',
+          tradeRefs: ['other-session-trade'],
+        }),
       },
     });
     const model = await service.loadSessionReadModel('a1');
     expect(Object.keys(model.lessonByTradeRef)).toEqual(['in-session']);
   });
 
-  it('datasetRefs are this symbol\'s local dataset ids only', async () => {
+  it("datasetRefs are this symbol's local dataset ids only", async () => {
     create({
       currentAsset: 'XAUUSD',
       liveActiveSessionId: 'a1',
       db: {
         listMetas: vi.fn().mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD' })]),
-        listDatasets: vi.fn().mockResolvedValue([
-          dataset({ id: 'XAUUSD|M1|2024', symbol: 'XAUUSD' }),
-          dataset({ id: 'XAUUSD|H1|all', symbol: 'XAUUSD', timeframe: 'H1', year: 'all' }),
-          dataset({ id: 'EURUSD|M1|2024', symbol: 'EURUSD' }),
-        ]),
+        listDatasets: vi
+          .fn()
+          .mockResolvedValue([
+            dataset({ id: 'XAUUSD|M1|2024', symbol: 'XAUUSD' }),
+            dataset({ id: 'XAUUSD|H1|all', symbol: 'XAUUSD', timeframe: 'H1', year: 'all' }),
+            dataset({ id: 'EURUSD|M1|2024', symbol: 'EURUSD' }),
+          ]),
       },
     });
     const model = await service.loadSessionReadModel('a1');
@@ -222,14 +233,16 @@ describe('JournalDataService', () => {
 
   // ---- baseTfSeconds (review Finding 1 fix): derived, not hardcoded ----
 
-  it('baseTfSeconds is 60 (M1) when the session\'s selectedTfs includes M1 (finest wins)', async () => {
+  it("baseTfSeconds is 60 (M1) when the session's selectedTfs includes M1 (finest wins)", async () => {
     create({
       currentAsset: 'XAUUSD',
       liveActiveSessionId: 'a1',
       db: {
         listMetas: vi
           .fn()
-          .mockResolvedValue([workspaceMeta({ symbol: 'XAUUSD', selectedTfs: ['M1', 'H1', 'D1'] })]),
+          .mockResolvedValue([
+            workspaceMeta({ symbol: 'XAUUSD', selectedTfs: ['M1', 'H1', 'D1'] }),
+          ]),
       },
     });
     const model = await service.loadSessionReadModel('a1');
@@ -319,9 +332,10 @@ describe('JournalDataService', () => {
   });
 
   it('a failed load is NOT cached — a subsequent call re-attempts the read', async () => {
-    const listMetas = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce([
-      workspaceMeta({ symbol: 'XAUUSD' }),
-    ]);
+    const listMetas = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce([workspaceMeta({ symbol: 'XAUUSD' })]);
     create({ currentAsset: 'XAUUSD', liveActiveSessionId: 'a1', db: { listMetas } });
     await expect(service.loadSessionReadModel('a1')).rejects.toThrow('boom');
     const model = await service.loadSessionReadModel('a1');

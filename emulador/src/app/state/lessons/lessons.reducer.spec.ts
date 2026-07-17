@@ -110,10 +110,7 @@ describe('lessons reducer', () => {
         lesson: lesson({ id: 'l1', clientUpdatedAt: 500, syncedAt: undefined }),
       }),
     );
-    const s = reducer(
-      s0,
-      LessonsActions.lessonsSynced({ stamps: [{ id: 'l1', syncedAt: 500 }] }),
-    );
+    const s = reducer(s0, LessonsActions.lessonsSynced({ stamps: [{ id: 'l1', syncedAt: 500 }] }));
     expect(s.lessons[0].clientUpdatedAt).toBe(500);
     expect(s.lessons[0].syncedAt).toBe(500);
   });
@@ -125,10 +122,7 @@ describe('lessons reducer', () => {
         lesson: lesson({ id: 'l1', clientUpdatedAt: 900, syncedAt: undefined }),
       }),
     );
-    const s = reducer(
-      s0,
-      LessonsActions.lessonsSynced({ stamps: [{ id: 'l1', syncedAt: 500 }] }),
-    );
+    const s = reducer(s0, LessonsActions.lessonsSynced({ stamps: [{ id: 'l1', syncedAt: 500 }] }));
     expect(s.lessons[0].clientUpdatedAt).toBe(900);
     expect(s.lessons[0].syncedAt).toBe(500);
     expect(s.lessons[0].clientUpdatedAt! > s.lessons[0].syncedAt!).toBe(true);

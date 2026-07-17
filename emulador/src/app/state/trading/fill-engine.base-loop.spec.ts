@@ -54,7 +54,11 @@ function book(partial: Partial<TradingBook>): TradingBook {
  * chronological, `subCandles: null` (mirrors processFills$/foldForwardFills
  * when `ctx.base` is present — D14.A).
  */
-function foldBase(initial: TradingBook, baseCandles: Candle[], contractSize = CONTRACT): TradingBook {
+function foldBase(
+  initial: TradingBook,
+  baseCandles: Candle[],
+  contractSize = CONTRACT,
+): TradingBook {
   let b = initial;
   for (const c of baseCandles) {
     b = processCandle(b, c, null, contractSize).book;

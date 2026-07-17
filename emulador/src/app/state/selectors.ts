@@ -600,9 +600,8 @@ function finestLoadedSeries(series: Partial<Record<Timeframe, Candle[]>>): Candl
  * Resolution — session creation already guarantees the anchor datasets are
  * present locally, so this is a plain IndexedDB-backed read, never a network one.
  */
-export const selectExecutionSeries = createSelector(
-  selectSeries,
-  (series): Candle[] | null => finestLoadedSeries(series),
+export const selectExecutionSeries = createSelector(selectSeries, (series): Candle[] | null =>
+  finestLoadedSeries(series),
 );
 
 /**

@@ -49,7 +49,11 @@ export interface CabinTradeRow {
             </span>
             @if (row.ruleBadge) {
               <span class="rule-badge">
-                <span class="rule-swatch" [style.background]="row.colorToken" aria-hidden="true"></span>
+                <span
+                  class="rule-swatch"
+                  [style.background]="row.colorToken"
+                  aria-hidden="true"
+                ></span>
                 {{ row.ruleBadge }}
               </span>
             }

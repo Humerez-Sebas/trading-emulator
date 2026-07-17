@@ -13,10 +13,10 @@ describe('computeWaypoints', () => {
     id: 'trade-1',
     side: 'buy',
     origin: 'market',
-    entryPrice: 1.0850,
-    exitPrice: 1.0870,
-    sl: 1.0800,
-    tp: 1.0900,
+    entryPrice: 1.085,
+    exitPrice: 1.087,
+    sl: 1.08,
+    tp: 1.09,
     lots: 1,
     riskPct: 2,
     riskUsd: 100,
@@ -66,8 +66,8 @@ describe('computeWaypoints', () => {
         payload: {
           orderRef: 'trade-1',
           field: 'sl',
-          from: 1.0800,
-          to: 1.0820,
+          from: 1.08,
+          to: 1.082,
         } as OrderModifiedPayload,
       };
       const waypoints = computeWaypoints(baseClosedTrade, [event], baseTfSeconds);
@@ -239,8 +239,8 @@ describe('computeWaypoints', () => {
         payload: {
           orderRef: 'trade-1',
           field: 'sl',
-          from: 1.0800,
-          to: 1.0820,
+          from: 1.08,
+          to: 1.082,
         } as OrderModifiedPayload,
       };
       const waypoints = computeWaypoints(trade, [event], baseTfSeconds);
@@ -274,7 +274,7 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0810,
+            from: 1.081,
             to: 1.0825,
           } as OrderModifiedPayload,
         },
@@ -286,8 +286,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0810,
+            from: 1.08,
+            to: 1.081,
           } as OrderModifiedPayload,
         },
         {
@@ -298,8 +298,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'tp',
-            from: 1.0900,
-            to: 1.0920,
+            from: 1.09,
+            to: 1.092,
           } as OrderModifiedPayload,
         },
       ];
@@ -326,8 +326,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           } as OrderModifiedPayload,
         },
         {
@@ -338,8 +338,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-OTHER',
             field: 'sl',
-            from: 1.0700,
-            to: 1.0730,
+            from: 1.07,
+            to: 1.073,
           } as OrderModifiedPayload,
         },
       ];
@@ -362,8 +362,8 @@ describe('computeWaypoints', () => {
           payload: {
             positionRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           } as PositionModifiedPayload,
         },
       ];
@@ -385,8 +385,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           } as OrderModifiedPayload,
         },
         {
@@ -397,8 +397,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0820,
-            to: 1.0830,
+            from: 1.082,
+            to: 1.083,
           } as OrderModifiedPayload,
         },
       ];
@@ -408,7 +408,7 @@ describe('computeWaypoints', () => {
       const subEvents = (management!.facts as any).subEvents;
       expect(subEvents.length).toBe(1); // Only post-open event
       expect((subEvents[0].payload as any).field).toBe('sl');
-      expect((subEvents[0].payload as any).to).toBe(1.0830);
+      expect((subEvents[0].payload as any).to).toBe(1.083);
     });
 
     it('Excludes management events with marketTime > closeTime', () => {
@@ -422,8 +422,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           } as OrderModifiedPayload,
         },
         {
@@ -434,8 +434,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0820,
-            to: 1.0830,
+            from: 1.082,
+            to: 1.083,
           } as OrderModifiedPayload,
         },
       ];
@@ -457,9 +457,7 @@ describe('computeWaypoints', () => {
     it('Entry contains initial risk distance in price units', () => {
       const waypoints = computeWaypoints(baseClosedTrade, [], baseTfSeconds);
       const entry = waypoints.find((w) => w.slot === 1);
-      const riskDistance = Math.abs(
-        baseClosedTrade.entryPrice - baseClosedTrade.sl,
-      );
+      const riskDistance = Math.abs(baseClosedTrade.entryPrice - baseClosedTrade.sl);
       expect((entry!.facts as any).riskDistancePrice).toBe(riskDistance);
     });
 
@@ -519,8 +517,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           } as OrderModifiedPayload,
         },
       ];
@@ -549,8 +547,8 @@ describe('computeWaypoints', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           } as OrderModifiedPayload,
         },
       ];
@@ -572,8 +570,8 @@ describe('computeWaypoints', () => {
           payload: {
             positionRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           } as PositionModifiedPayload,
         },
       ];
@@ -592,8 +590,8 @@ describe('computeWaypoints', () => {
         ...baseClosedTrade,
         mae: 50,
         tMae: 1500,
-        entryPrice: 1.0850,
-        sl: 1.0800,
+        entryPrice: 1.085,
+        sl: 1.08,
       };
       const waypoints = computeWaypoints(trade, [], baseTfSeconds);
       const mae = waypoints.find((w) => w.slot === 3);
@@ -608,8 +606,8 @@ describe('computeWaypoints', () => {
         ...baseClosedTrade,
         mae: 50,
         tMae: 1500,
-        entryPrice: 1.0850,
-        sl: 1.0850, // zero risk distance
+        entryPrice: 1.085,
+        sl: 1.085, // zero risk distance
       };
       const waypoints = computeWaypoints(trade, [], baseTfSeconds);
       const mae = waypoints.find((w) => w.slot === 3);
@@ -622,8 +620,8 @@ describe('computeWaypoints', () => {
         ...baseClosedTrade,
         mfe: 50,
         tMfe: 1800,
-        entryPrice: 1.0850,
-        sl: 1.0800,
+        entryPrice: 1.085,
+        sl: 1.08,
       };
       const waypoints = computeWaypoints(trade, [], baseTfSeconds);
       const mfe = waypoints.find((w) => w.slot === 4);

@@ -27,7 +27,10 @@
 
         @if (sessionWithoutTrades()) {
           <div class="page-state">
-            <p>Esta sesión no tiene trades cerrados. Los patrones aparecen aquí cuando cierras trades.</p>
+            <p>
+              Esta sesión no tiene trades cerrados. Los patrones aparecen aquí cuando cierras
+              trades.
+            </p>
             <a appButton variant="primary" routerLink="/sesiones">← Sesiones</a>
           </div>
         } @else {

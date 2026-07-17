@@ -2,12 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { TradingCapability as TradingCapabilityType } from './trading-capability';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { ChartEventBus } from '../chart-event-bus';
-import type {
-  ChartColors,
-  Position,
-  PendingOrder,
-  RenderModel,
-} from '../render-model';
+import type { ChartColors, Position, PendingOrder, RenderModel } from '../render-model';
 
 const { setMarkers, detachMarkers, seriesMarkersFactory } = vi.hoisted(() => {
   const setMarkers = vi.fn();

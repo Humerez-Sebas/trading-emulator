@@ -367,7 +367,9 @@ describe('TelemetryEffects — advanceDisplay wiring (RFC-016 D16.B)', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1500);
     armTrading(trading({ orders: [order({ id: 'o1' })] }), { replayIndex: 6, playing: false });
     await Promise.resolve();
-    expect(calls('TimeElapsedBeforeOrder')[0][1][0].payload).toMatchObject({ anchorKind: 'sessionStart' });
+    expect(calls('TimeElapsedBeforeOrder')[0][1][0].payload).toMatchObject({
+      anchorKind: 'sessionStart',
+    });
 
     // a huge paused gap, then a second +1 press — must NOT reset (no press memory survives the order capture)
     vi.spyOn(Date, 'now').mockReturnValue(999_999);

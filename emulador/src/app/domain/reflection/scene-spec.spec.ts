@@ -25,10 +25,10 @@ describe('buildSceneSpec', () => {
     id: 'trade-1',
     side: 'buy',
     origin: 'market',
-    entryPrice: 1.0850,
-    exitPrice: 1.0870,
-    sl: 1.0800,
-    tp: 1.0900,
+    entryPrice: 1.085,
+    exitPrice: 1.087,
+    sl: 1.08,
+    tp: 1.09,
     lots: 1,
     riskPct: 2,
     riskUsd: 100,
@@ -85,9 +85,9 @@ describe('buildSceneSpec', () => {
     it('Sets orderGeometry from trade: side, entryPrice, sl, tp, lots', () => {
       const spec = buildSceneSpec(baseClosedTrade, baseWaypoint, sessionMeta);
       expect(spec.orderGeometry.side).toBe('buy');
-      expect(spec.orderGeometry.entryPrice).toBe(1.0850);
-      expect(spec.orderGeometry.sl).toBe(1.0800);
-      expect(spec.orderGeometry.tp).toBe(1.0900);
+      expect(spec.orderGeometry.entryPrice).toBe(1.085);
+      expect(spec.orderGeometry.sl).toBe(1.08);
+      expect(spec.orderGeometry.tp).toBe(1.09);
       expect(spec.orderGeometry.lots).toBe(1);
     });
 
@@ -163,8 +163,8 @@ describe('buildSceneSpec', () => {
             {
               type: 'line',
               anchorPoints: [
-                { time: 1000, price: 1.0800 },
-                { time: 1500, price: 1.0850 },
+                { time: 1000, price: 1.08 },
+                { time: 1500, price: 1.085 },
               ] as DrawingPoint[],
               styleToken: 'line-style-1',
             },
@@ -188,8 +188,8 @@ describe('buildSceneSpec', () => {
             {
               type: 'rect',
               anchorPoints: [
-                { time: 1000, price: 1.0800 },
-                { time: 1100, price: 1.0900 },
+                { time: 1000, price: 1.08 },
+                { time: 1100, price: 1.09 },
               ] as DrawingPoint[],
               styleToken: 'rect-style-1',
             },
@@ -213,7 +213,7 @@ describe('buildSceneSpec', () => {
             drawings: [
               {
                 type: 'line',
-                anchorPoints: [{ time: 1000, price: 1.0800 }] as DrawingPoint[],
+                anchorPoints: [{ time: 1000, price: 1.08 }] as DrawingPoint[],
                 styleToken: 'line-style-1',
               },
             ],
@@ -229,7 +229,7 @@ describe('buildSceneSpec', () => {
             drawings: [
               {
                 type: 'rect',
-                anchorPoints: [{ time: 2000, price: 1.0850 }] as DrawingPoint[],
+                anchorPoints: [{ time: 2000, price: 1.085 }] as DrawingPoint[],
                 styleToken: 'rect-style-1',
               },
             ],
@@ -253,7 +253,7 @@ describe('buildSceneSpec', () => {
             drawings: [
               {
                 type: 'line',
-                anchorPoints: [{ time: 2000, price: 1.0800 }] as DrawingPoint[],
+                anchorPoints: [{ time: 2000, price: 1.08 }] as DrawingPoint[],
                 styleToken: 'line-style-1',
               },
             ],
@@ -282,8 +282,8 @@ describe('buildSceneSpec', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           },
         },
       ];
@@ -303,8 +303,8 @@ describe('buildSceneSpec', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           },
         },
       ];
@@ -342,8 +342,8 @@ describe('buildSceneSpec', () => {
           payload: {
             orderRef: 'trade-1',
             field: 'sl',
-            from: 1.0800,
-            to: 1.0820,
+            from: 1.08,
+            to: 1.082,
           },
         },
       ];

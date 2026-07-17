@@ -23,7 +23,11 @@ function cell(p: Partial<HeatmapCellView> = {}): HeatmapCellView {
 describe('BehaviorSectionComponent', () => {
   afterEach(() => TestBed.resetTestingModule());
 
-  function create(bubbles: BubbleView[], cells: HeatmapCellView[], facts = { replayJumps: 3, pauses: 2 }) {
+  function create(
+    bubbles: BubbleView[],
+    cells: HeatmapCellView[],
+    facts = { replayJumps: 3, pauses: 2 },
+  ) {
     TestBed.configureTestingModule({ imports: [BehaviorSectionComponent] });
     const fixture = TestBed.createComponent(BehaviorSectionComponent);
     fixture.componentRef.setInput('bubbles', bubbles);
@@ -60,8 +64,8 @@ describe('BehaviorSectionComponent', () => {
 
   it('the navigation-facts row always renders numbers (never gated by trade count)', () => {
     const fixture = create([bubble()], [cell()], { replayJumps: 5, pauses: 1 });
-    const facts = Array.from(fixture.nativeElement.querySelectorAll('.fact dd')).map(
-      (el) => (el as HTMLElement).textContent!.trim(),
+    const facts = Array.from(fixture.nativeElement.querySelectorAll('.fact dd')).map((el) =>
+      (el as HTMLElement).textContent!.trim(),
     );
     expect(facts).toEqual(['5', '1']);
   });

@@ -186,7 +186,7 @@ describe('BubbleDurationRComponent', () => {
 
       const circles = fixture.nativeElement.querySelectorAll('circle[data-bubble]');
       const radii = Array.from(circles as unknown[]).map((c) =>
-        parseFloat(((c as SVGCircleElement).getAttribute('r') || '0'))
+        parseFloat((c as SVGCircleElement).getAttribute('r') || '0'),
       );
 
       expect(radii[0]).toBeLessThan(radii[1]);
@@ -265,7 +265,7 @@ describe('BubbleDurationRComponent', () => {
         new KeyboardEvent('keydown', {
           key: 'Enter',
           bubbles: true,
-        })
+        }),
       );
 
       expect(tradeSelected).toHaveBeenCalledWith('bubble-2');
@@ -501,7 +501,7 @@ describe('BubbleDurationRComponent', () => {
 
       const circle = fixture.nativeElement.querySelector('circle[data-bubble]');
       expect(circle?.getAttribute('aria-label')).toBe(
-        'Trade #7 · 50 velas · +1.50R · 3 eventos · Breakout'
+        'Trade #7 · 50 velas · +1.50R · 3 eventos · Breakout',
       );
     });
 
@@ -521,9 +521,7 @@ describe('BubbleDurationRComponent', () => {
       fixture.detectChanges();
 
       const circle = fixture.nativeElement.querySelector('circle[data-bubble]');
-      expect(circle?.getAttribute('aria-label')).toBe(
-        'Trade #3 · 10 velas · +0.00R · 0 eventos'
-      );
+      expect(circle?.getAttribute('aria-label')).toBe('Trade #3 · 10 velas · +0.00R · 0 eventos');
     });
   });
 });

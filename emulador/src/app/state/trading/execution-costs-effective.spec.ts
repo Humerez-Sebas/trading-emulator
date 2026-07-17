@@ -44,9 +44,9 @@ describe('effectiveCosts (RFC-014 G1: new-session preset + override)', () => {
 
   it('a non-finite override (NaN/Infinity) falls back to the preset value', () => {
     const preset = COST_PRESETS.Forex;
-    expect(
-      effectiveCosts(preset, { ...NO_OVERRIDE, spreadPoints: NaN }).spreadPoints,
-    ).toBe(preset.spreadPoints);
+    expect(effectiveCosts(preset, { ...NO_OVERRIDE, spreadPoints: NaN }).spreadPoints).toBe(
+      preset.spreadPoints,
+    );
     expect(
       effectiveCosts(preset, { ...NO_OVERRIDE, slippagePoints: Infinity }).slippagePoints,
     ).toBe(preset.slippagePoints);

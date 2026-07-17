@@ -8,9 +8,15 @@ const initial = reducer(undefined, { type: '@@init' } as never);
 
 function rule(over: Partial<PlaybookRule> = {}): PlaybookRule {
   return {
-    id: 'r1', title: 'Ruptura de rango', statement: 'texto opaco',
-    createdAt: 1, status: 'active', shortcutSlot: null, sortOrder: 0,
-    amendments: [], ...over,
+    id: 'r1',
+    title: 'Ruptura de rango',
+    statement: 'texto opaco',
+    createdAt: 1,
+    status: 'active',
+    shortcutSlot: null,
+    sortOrder: 0,
+    amendments: [],
+    ...over,
   };
 }
 
@@ -33,8 +39,13 @@ describe('playbook reducer', () => {
       PlaybookActions.createRule({ id: 'r2', title: 'Pullback', statement: '', createdAt: 5 }),
     );
     expect(s.rules[1]).toMatchObject({
-      id: 'r2', title: 'Pullback', status: 'active', shortcutSlot: null,
-      sortOrder: 1, amendments: [], clientUpdatedAt: 5,
+      id: 'r2',
+      title: 'Pullback',
+      status: 'active',
+      shortcutSlot: null,
+      sortOrder: 1,
+      amendments: [],
+      clientUpdatedAt: 5,
     });
   });
 
@@ -77,7 +88,10 @@ describe('playbook reducer', () => {
   });
 
   it('updateRule stamps the given clientUpdatedAt onto the touched rule', () => {
-    const s0 = reducer(initial, PlaybookActions.hydrated({ rules: [rule({ clientUpdatedAt: 1 })] }));
+    const s0 = reducer(
+      initial,
+      PlaybookActions.hydrated({ rules: [rule({ clientUpdatedAt: 1 })] }),
+    );
     const s = reducer(
       s0,
       PlaybookActions.updateRule({ id: 'r1', title: 'nuevo', clientUpdatedAt: 999 }),
@@ -87,22 +101,33 @@ describe('playbook reducer', () => {
   });
 
   it('reorderRule stamps the given clientUpdatedAt onto the touched rule', () => {
-    const s0 = reducer(initial, PlaybookActions.hydrated({ rules: [rule({ clientUpdatedAt: 1 })] }));
-    const s = reducer(s0, PlaybookActions.reorderRule({ id: 'r1', sortOrder: 9, clientUpdatedAt: 777 }));
+    const s0 = reducer(
+      initial,
+      PlaybookActions.hydrated({ rules: [rule({ clientUpdatedAt: 1 })] }),
+    );
+    const s = reducer(
+      s0,
+      PlaybookActions.reorderRule({ id: 'r1', sortOrder: 9, clientUpdatedAt: 777 }),
+    );
     expect(s.rules[0].sortOrder).toBe(9);
     expect(s.rules[0].clientUpdatedAt).toBe(777);
   });
 
   it('updateRule on an unknown id is a reference-identity no-op', () => {
     const s0 = reducer(initial, PlaybookActions.hydrated({ rules: [rule()] }));
-    const s = reducer(s0, PlaybookActions.updateRule({ id: 'nope', title: 'x', clientUpdatedAt: 1 }));
+    const s = reducer(
+      s0,
+      PlaybookActions.updateRule({ id: 'nope', title: 'x', clientUpdatedAt: 1 }),
+    );
     expect(s).toBe(s0);
   });
 
   it('rulesSynced advances ONLY syncedAt — clientUpdatedAt is never rewritten by sync', () => {
     const s0 = reducer(
       initial,
-      PlaybookActions.hydrated({ rules: [rule({ id: 'a', clientUpdatedAt: 500, syncedAt: undefined })] }),
+      PlaybookActions.hydrated({
+        rules: [rule({ id: 'a', clientUpdatedAt: 500, syncedAt: undefined })],
+      }),
     );
     const s = reducer(s0, PlaybookActions.rulesSynced({ stamps: [{ id: 'a', syncedAt: 500 }] }));
     expect(s.rules[0].clientUpdatedAt).toBe(500);
@@ -114,7 +139,9 @@ describe('playbook reducer', () => {
     // is dispatched) the user edits again, bumping clientUpdatedAt to 900.
     const s0 = reducer(
       initial,
-      PlaybookActions.hydrated({ rules: [rule({ id: 'a', clientUpdatedAt: 900, syncedAt: undefined })] }),
+      PlaybookActions.hydrated({
+        rules: [rule({ id: 'a', clientUpdatedAt: 900, syncedAt: undefined })],
+      }),
     );
     const s = reducer(s0, PlaybookActions.rulesSynced({ stamps: [{ id: 'a', syncedAt: 500 }] }));
     expect(s.rules[0].clientUpdatedAt).toBe(900);

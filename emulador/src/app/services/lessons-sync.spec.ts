@@ -157,15 +157,15 @@ describe('isLessonDirty', () => {
   });
 
   it('is false for a brand new lesson with neither stamp set', () => {
-    expect(isLessonDirty(lesson({ clientUpdatedAt: undefined, syncedAt: undefined }))).toBe(
-      false,
-    );
+    expect(isLessonDirty(lesson({ clientUpdatedAt: undefined, syncedAt: undefined }))).toBe(false);
   });
 });
 
 describe('mergeLessonsPull', () => {
   it('remote newer wins: cloud row replaces local and is queued for a local write', () => {
-    const local = [lesson({ id: 'a', clientUpdatedAt: 1000, syncedAt: 1000, whatHappened: 'local' })];
+    const local = [
+      lesson({ id: 'a', clientUpdatedAt: 1000, syncedAt: 1000, whatHappened: 'local' }),
+    ];
     const remote = [
       lesson({ id: 'a', clientUpdatedAt: 2000, syncedAt: 2000, whatHappened: 'remote' }),
     ];
@@ -203,9 +203,7 @@ describe('mergeLessonsPull', () => {
   });
 
   it('remote-missing local-only DIRTY row is KEPT — pull never deletes, even a not-yet-pushed edit', () => {
-    const local = [
-      lesson({ id: 'local-only-dirty', clientUpdatedAt: 9000, syncedAt: undefined }),
-    ];
+    const local = [lesson({ id: 'local-only-dirty', clientUpdatedAt: 9000, syncedAt: undefined })];
     const remote: Lesson[] = [];
 
     const { lessons, toUpsertLocally } = mergeLessonsPull(local, remote);
@@ -226,9 +224,24 @@ describe('mergeLessonsPull', () => {
 
   it('a mixed pull resolves each id independently (conflict + remote-missing + cloud-only in one batch)', () => {
     const local = [
-      lesson({ id: 'local-newer', clientUpdatedAt: 3000, syncedAt: 1000, whatHappened: 'local wins' }),
-      lesson({ id: 'remote-wins', clientUpdatedAt: 1000, syncedAt: 1000, whatHappened: 'stale local' }),
-      lesson({ id: 'remote-missing', clientUpdatedAt: 500, syncedAt: 500, whatHappened: 'orphaned local' }),
+      lesson({
+        id: 'local-newer',
+        clientUpdatedAt: 3000,
+        syncedAt: 1000,
+        whatHappened: 'local wins',
+      }),
+      lesson({
+        id: 'remote-wins',
+        clientUpdatedAt: 1000,
+        syncedAt: 1000,
+        whatHappened: 'stale local',
+      }),
+      lesson({
+        id: 'remote-missing',
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+        whatHappened: 'orphaned local',
+      }),
     ];
     const remoteWinsRow = lesson({
       id: 'remote-wins',
@@ -238,7 +251,12 @@ describe('mergeLessonsPull', () => {
     });
     const cloudOnlyRow = lesson({ id: 'cloud-only', clientUpdatedAt: 4000, syncedAt: 4000 });
     const remote = [
-      lesson({ id: 'local-newer', clientUpdatedAt: 2000, syncedAt: 2000, whatHappened: 'stale remote' }),
+      lesson({
+        id: 'local-newer',
+        clientUpdatedAt: 2000,
+        syncedAt: 2000,
+        whatHappened: 'stale remote',
+      }),
       remoteWinsRow,
       cloudOnlyRow,
     ];
@@ -264,10 +282,7 @@ describe('mergeLessonsPull', () => {
 // ---------------------------------------------------------------------------
 
 function makeService(client: unknown): SessionSyncService {
-  return new SessionSyncService(
-    { client } as unknown as SupabaseService,
-    new WorkspaceDbService(),
-  );
+  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService());
 }
 
 describe('SessionSyncService.pushLessons', () => {

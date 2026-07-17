@@ -219,7 +219,12 @@ export function diffManagementEvents(
     if (before.entryPrice !== order.entryPrice) {
       emissions.push({
         kind: 'OrderModified',
-        payload: { orderRef: order.id, field: 'entry', from: before.entryPrice, to: order.entryPrice },
+        payload: {
+          orderRef: order.id,
+          field: 'entry',
+          from: before.entryPrice,
+          to: order.entryPrice,
+        },
       });
     }
   }

@@ -324,7 +324,9 @@ export class TelemetryEffects {
         withLatestFrom(this.store.select(selectReplayIndex), this.store.select(selectPlaying)),
         tap(([sessionId, replayIndex, playing]) => {
           this.orderClock =
-            sessionId == null ? null : freshOrderClock(sessionId, 'sessionStart', Date.now(), replayIndex, playing);
+            sessionId == null
+              ? null
+              : freshOrderClock(sessionId, 'sessionStart', Date.now(), replayIndex, playing);
         }),
       ),
     { dispatch: false },
@@ -378,7 +380,13 @@ export class TelemetryEffects {
         ),
         tap(([, sessionId, replayIndex, playing]) => {
           if (sessionId == null) return;
-          this.orderClock = withDisplayAdvance(this.orderClock, sessionId, Date.now(), replayIndex, playing);
+          this.orderClock = withDisplayAdvance(
+            this.orderClock,
+            sessionId,
+            Date.now(),
+            replayIndex,
+            playing,
+          );
         }),
       ),
     { dispatch: false },
@@ -470,7 +478,13 @@ export class TelemetryEffects {
           const orderRef = resolveOrderRef(prev, curr);
           if (orderRef == null) return;
 
-          const clockCapture = captureOrderClock(this.orderClock, curr.sessionId, Date.now(), replayIndex, playing);
+          const clockCapture = captureOrderClock(
+            this.orderClock,
+            curr.sessionId,
+            Date.now(),
+            replayIndex,
+            playing,
+          );
           this.orderClock = clockCapture.nextClock;
           this.capture(curr.sessionId, 'TimeElapsedBeforeOrder', marketTime, {
             orderRef,

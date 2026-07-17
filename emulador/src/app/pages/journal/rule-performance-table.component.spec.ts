@@ -39,7 +39,10 @@ describe('RulePerformanceTableComponent', () => {
   });
 
   it('renders one row per declared rule + the Sin declarar row', () => {
-    const fixture = create([row({ ruleId: 'r1', title: 'A' }), row({ ruleId: null, title: 'Sin declarar' })]);
+    const fixture = create([
+      row({ ruleId: 'r1', title: 'A' }),
+      row({ ruleId: null, title: 'Sin declarar' }),
+    ]);
     const cells = Array.from(fixture.nativeElement.querySelectorAll('tbody tr td:first-child')).map(
       (el) => (el as HTMLElement).textContent!.trim(),
     );

@@ -7,7 +7,8 @@ import { selectPlaybookLoaded, selectRuleBySlot } from './playbook.selectors';
 import { TradingActions } from '../trading/trading.actions';
 
 @Component({
-  template: `<input id="txt" /><div appPlaybookHotkeys id="host"></div>`,
+  template: `<input id="txt" />
+    <div appPlaybookHotkeys id="host"></div>`,
   standalone: true,
   imports: [PlaybookHotkeysDirective],
 })

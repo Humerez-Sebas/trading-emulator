@@ -45,7 +45,12 @@ export interface LessonDraft {
     <form (submit)="onSubmit($event)">
       <label class="field">
         <span class="field-label">¿Qué ocurrió?</span>
-        <textarea appInput rows="3" [value]="whatHappened()" (input)="onInput($event, whatHappened)"></textarea>
+        <textarea
+          appInput
+          rows="3"
+          [value]="whatHappened()"
+          (input)="onInput($event, whatHappened)"
+        ></textarea>
       </label>
       <label class="field">
         <span class="field-label">¿Qué debería repetir?</span>
@@ -77,7 +82,13 @@ export interface LessonDraft {
       }
 
       <button type="submit" appButton variant="primary" [disabled]="saveDisabled() || saving()">
-        {{ saving() ? 'Guardando…' : existing() ? 'Actualizar y volver al Journal' : 'Guardar y volver al Journal' }}
+        {{
+          saving()
+            ? 'Guardando…'
+            : existing()
+              ? 'Actualizar y volver al Journal'
+              : 'Guardar y volver al Journal'
+        }}
       </button>
     </form>
   `,

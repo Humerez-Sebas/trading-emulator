@@ -177,7 +177,14 @@ describe('buildScatterPoints', () => {
     const withoutExcursion = closed({ id: 't1', entryPrice: 100, sl: 90 });
     delete (withoutExcursion as { mae?: number }).mae;
     delete (withoutExcursion as { mfe?: number }).mfe;
-    const withExcursion = closed({ id: 't2', entryPrice: 100, sl: 90, mae: 5, mfe: 5, closeTime: 200 });
+    const withExcursion = closed({
+      id: 't2',
+      entryPrice: 100,
+      sl: 90,
+      mae: 5,
+      mfe: 5,
+      closeTime: 200,
+    });
     const m = model({ trades: [withoutExcursion, withExcursion] });
     const points = buildScatterPoints(m);
     expect(points.map((p) => p.tradeId)).toEqual(['t2']);
@@ -192,9 +199,7 @@ describe('buildScatterPoints', () => {
 
   it('declared trade under a slotted rule gets its --rule-{slot} token and title', () => {
     const m = model({
-      trades: [
-        closed({ id: 't1', declaredRuleId: 'r1', mae: 1, mfe: 1, entryPrice: 100, sl: 90 }),
-      ],
+      trades: [closed({ id: 't1', declaredRuleId: 'r1', mae: 1, mfe: 1, entryPrice: 100, sl: 90 })],
       rules: [rule({ id: 'r1', title: 'Ruptura', shortcutSlot: 4 })],
     });
     const [point] = buildScatterPoints(m);
@@ -279,7 +284,10 @@ describe('buildRulePerformanceRows', () => {
         closed({ id: 't2', declaredRuleId: 'r1', profit: -50, rMultiple: -0.5 }),
         closed({ id: 't3', profit: 20, rMultiple: 0.2 }), // undeclared
       ],
-      rules: [rule({ id: 'r1', title: 'A', sortOrder: 0 }), rule({ id: 'r2', title: 'B', sortOrder: 1 })],
+      rules: [
+        rule({ id: 'r1', title: 'A', sortOrder: 0 }),
+        rule({ id: 'r2', title: 'B', sortOrder: 1 }),
+      ],
     });
     const rows = buildRulePerformanceRows(m);
     expect(rows.map((r) => r.title)).toEqual(['A', 'B', 'Sin declarar']);
@@ -309,7 +317,14 @@ describe('buildRulePerformanceRows', () => {
     const m = model({ trades: [closed({ id: 't1', declaredRuleId: 'ghost' })], rules: [] });
     const rows = buildRulePerformanceRows(m);
     expect(rows).toEqual([
-      { ruleId: 'ghost', title: 'ghost', colorToken: 'var(--text-muted)', trades: 1, winRate: expect.any(Number), totalR: expect.any(Number) },
+      {
+        ruleId: 'ghost',
+        title: 'ghost',
+        colorToken: 'var(--text-muted)',
+        trades: 1,
+        winRate: expect.any(Number),
+        totalR: expect.any(Number),
+      },
     ]);
   });
 });
@@ -332,7 +347,10 @@ describe('buildTimeOfDayRows', () => {
 describe('buildTradeRows', () => {
   it('side C/V mirrors the chart label convention (buy=C, sell=V)', () => {
     const m = model({
-      trades: [closed({ id: 't1', side: 'buy' }), closed({ id: 't2', side: 'sell', closeTime: 200 })],
+      trades: [
+        closed({ id: 't1', side: 'buy' }),
+        closed({ id: 't2', side: 'sell', closeTime: 200 }),
+      ],
     });
     const rows = buildTradeRows(m);
     expect(rows.find((r) => r.tradeId === 't1')!.side).toBe('C');

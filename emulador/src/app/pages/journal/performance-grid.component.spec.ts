@@ -41,9 +41,9 @@ describe('PerformanceGridComponent', () => {
 
   it('renders all 10 cards in the design-spec order', () => {
     const fixture = create(stats());
-    const labels = Array.from(
-      fixture.nativeElement.querySelectorAll('.metric-label'),
-    ).map((el) => (el as HTMLElement).textContent!.trim());
+    const labels = Array.from(fixture.nativeElement.querySelectorAll('.metric-label')).map((el) =>
+      (el as HTMLElement).textContent!.trim(),
+    );
     expect(labels).toEqual([
       'Profit factor',
       'Win rate',

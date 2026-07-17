@@ -114,7 +114,8 @@ describe('PlaybookPanelComponent', () => {
     create([makeRule({ id: 'r1', status: 'active' })]);
     const dispatchSpy = vi.spyOn(store, 'dispatch');
 
-    const buttons: HTMLButtonElement[] = fixture.nativeElement.querySelectorAll('.rule-actions button');
+    const buttons: HTMLButtonElement[] =
+      fixture.nativeElement.querySelectorAll('.rule-actions button');
     const retireBtn = buttons[buttons.length - 1];
     retireBtn.click();
 

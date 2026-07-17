@@ -21,7 +21,11 @@ import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-cap
 import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
 import type { Drawing, Position, RenderModel } from '../../domain/chart/render-model';
 import { SceneSpec, SCENE_WINDOW_CANDLES } from '../../domain/reflection/scene-spec';
-import { CHART_ACCENT, DARK_CHART_COLORS, DARK_TRADE_BOX_OPACITY } from '../../state/settings/settings.models';
+import {
+  CHART_ACCENT,
+  DARK_CHART_COLORS,
+  DARK_TRADE_BOX_OPACITY,
+} from '../../state/settings/settings.models';
 
 /**
  * R1 integration spike (RFC-016 Task 7): the frozen scene is rendered via the
@@ -136,7 +140,11 @@ export function deriveFrozenRenderModel(scene: SceneSpec, candles: Candle[]): Pa
       times,
       barSpacing,
       pointSize: derivePointSize(candles),
-      colors: { accent: CHART_ACCENT, up: DARK_CHART_COLORS.upColor, down: DARK_CHART_COLORS.downColor },
+      colors: {
+        accent: CHART_ACCENT,
+        up: DARK_CHART_COLORS.upColor,
+        down: DARK_CHART_COLORS.downColor,
+      },
     },
     session: {
       sessionEnd: scene.cursorTime,
@@ -208,7 +216,12 @@ export class ChartEngineFactory {
       position: absolute;
       inset: 0;
       z-index: 2;
-      background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 37%, var(--surface) 63%);
+      background: linear-gradient(
+        90deg,
+        var(--surface) 25%,
+        var(--surface-2) 37%,
+        var(--surface) 63%
+      );
       background-size: 400% 100%;
       animation: scene-skeleton-shimmer 1.4s ease infinite;
     }

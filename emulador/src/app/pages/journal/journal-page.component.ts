@@ -200,7 +200,10 @@ export class JournalPageComponent {
   }
 
   private isTypingTarget(target: EventTarget | null): boolean {
-    return target instanceof HTMLElement && !!target.closest('input, textarea, select, [contenteditable]');
+    return (
+      target instanceof HTMLElement &&
+      !!target.closest('input, textarea, select, [contenteditable]')
+    );
   }
 
   /** Moves `selectedTradeId` by `delta` rows within the currently VISIBLE

@@ -4,7 +4,12 @@ import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SesionesPageComponent } from './sesiones-page.component';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
-import { selectCurrentAsset, selectCurrentTime, selectSavedSessions, selectTradingData } from '../../state/selectors';
+import {
+  selectCurrentAsset,
+  selectCurrentTime,
+  selectSavedSessions,
+  selectTradingData,
+} from '../../state/selectors';
 import { authFeature } from '../../state/auth/auth.reducer';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
@@ -32,13 +37,15 @@ describe('SesionesPageComponent — Journal/Reflect catalog buttons (RFC-016 §3
     vi.restoreAllMocks();
   });
 
-  async function create(opts: {
-    db?: Partial<ReturnType<typeof workspaceDbStub>>;
-    currentAsset?: string | null;
-    liveTrading?: TradingData;
-    liveSessions?: ReturnType<typeof savedSession>[];
-    liveActiveSessionId?: string | null;
-  } = {}) {
+  async function create(
+    opts: {
+      db?: Partial<ReturnType<typeof workspaceDbStub>>;
+      currentAsset?: string | null;
+      liveTrading?: TradingData;
+      liveSessions?: ReturnType<typeof savedSession>[];
+      liveActiveSessionId?: string | null;
+    } = {},
+  ) {
     const dbStub = workspaceDbStub();
     if (opts.db) Object.assign(dbStub, opts.db);
 
@@ -48,7 +55,10 @@ describe('SesionesPageComponent — Journal/Reflect catalog buttons (RFC-016 §3
         provideRouter([]),
         provideMockStore(),
         { provide: WorkspaceDbService, useValue: dbStub },
-        { provide: DialogService, useValue: { prompt: vi.fn(), confirm: vi.fn(), deleteSession: vi.fn() } },
+        {
+          provide: DialogService,
+          useValue: { prompt: vi.fn(), confirm: vi.fn(), deleteSession: vi.fn() },
+        },
         { provide: MarketDataRepository, useValue: { getCandles: vi.fn() } },
         { provide: DataOnboardingService, useValue: { runJobs: vi.fn() } },
         { provide: ManifestService, useValue: { fetchManifest: vi.fn() } },

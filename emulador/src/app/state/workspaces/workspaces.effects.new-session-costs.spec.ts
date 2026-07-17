@@ -112,6 +112,8 @@ describe('WorkspacesEffects — switchAsset(executionCosts) RFC-014 T6b', () => 
     );
 
     const result = await p;
-    expect(result).toEqual([WorkspacesActions.workspaceRestored({ workspace: emptyWorkspace(SYMBOL) })]);
+    expect(result).toEqual([
+      WorkspacesActions.workspaceRestored({ workspace: emptyWorkspace(SYMBOL) }),
+    ]);
   });
 });

@@ -116,7 +116,9 @@ describe('CrearSesionPageComponent — cost preset + override (RFC-014 T6b, G1)'
     await component.pickR2Asset({ symbol: 'XAUUSD', tfs: ['H1'] });
 
     component.onSpreadOverride({ target: { value: '-5' } } as unknown as Event);
-    expect(component.effectiveExecutionCosts().spreadPoints).toBe(component.costPreset().spreadPoints);
+    expect(component.effectiveExecutionCosts().spreadPoints).toBe(
+      component.costPreset().spreadPoints,
+    );
   });
 
   it('clearing an override input (empty string) reverts to the preset value', async () => {
@@ -127,7 +129,9 @@ describe('CrearSesionPageComponent — cost preset + override (RFC-014 T6b, G1)'
     component.onSpreadOverride({ target: { value: '15' } } as unknown as Event);
     expect(component.effectiveExecutionCosts().spreadPoints).toBe(15);
     component.onSpreadOverride({ target: { value: '' } } as unknown as Event);
-    expect(component.effectiveExecutionCosts().spreadPoints).toBe(component.costPreset().spreadPoints);
+    expect(component.effectiveExecutionCosts().spreadPoints).toBe(
+      component.costPreset().spreadPoints,
+    );
   });
 
   it('picking a new asset resets any prior override', async () => {
