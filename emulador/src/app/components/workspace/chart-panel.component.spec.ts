@@ -229,12 +229,16 @@ describe('ChartPanelComponent', () => {
       color: '#2962FF',
       syncCrosshair: true,
       syncTimeRange: true,
+      syncDrawings: true,
+      syncTrades: true,
     };
     const groupB: LinkGroup = {
       id: 'g2',
       color: '#F23645',
       syncCrosshair: true,
       syncTimeRange: true,
+      syncDrawings: true,
+      syncTrades: true,
     };
 
     it('an unlinked panel shows a hollow (unfilled) chip', () => {

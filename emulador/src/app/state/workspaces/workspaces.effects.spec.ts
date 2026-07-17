@@ -296,7 +296,16 @@ describe('WorkspacesEffects', () => {
       const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
       const trading = defaultTradingData();
       const { layout, panels } = singlePanelLayoutFor('EURUSD', 'M1');
-      const linkGroups = [{ id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: true }];
+      const linkGroups = [
+        {
+          id: 'g1',
+          color: '#f00',
+          syncCrosshair: true,
+          syncTimeRange: true,
+          syncDrawings: true,
+          syncTrades: true,
+        },
+      ];
 
       const p = effects.switch$.pipe(take(9), toArray()).toPromise();
       actions$.next(

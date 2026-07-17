@@ -44,7 +44,14 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       p2: { id: 'p2', symbol: 'GBPUSD', timeframe: 'H1', linkGroupId: 'g1' },
     };
     const linkGroups: LinkGroup[] = [
-      { id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: true },
+      {
+        id: 'g1',
+        color: '#f00',
+        syncCrosshair: true,
+        syncTimeRange: true,
+        syncDrawings: true,
+        syncTrades: true,
+      },
     ];
     const eurusdDrawing: Drawing = {
       id: 'd1',
@@ -174,6 +181,8 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       color: '#2962FF',
       syncCrosshair: true,
       syncTimeRange: true,
+      syncDrawings: true,
+      syncTrades: true,
     };
     linkGroupsState = linkGroupsFeature.reducer(
       linkGroupsState,

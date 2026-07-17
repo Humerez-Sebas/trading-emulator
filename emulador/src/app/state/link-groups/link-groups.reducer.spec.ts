@@ -12,6 +12,8 @@ const group = (id: string): LinkGroup => ({
   color: '#ff6b6b',
   syncCrosshair: true,
   syncTimeRange: true,
+  syncDrawings: true,
+  syncTrades: true,
 });
 
 describe('linkGroupsFeature reducer', () => {
