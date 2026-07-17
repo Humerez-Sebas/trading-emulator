@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  effect,
+  input,
+  output,
+  viewChildren,
+} from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 
 /**
@@ -37,6 +45,7 @@ export interface CabinTradeRow {
         <li>
           <button
             type="button"
+            #rowBtn
             class="row"
             [class.active]="row.tradeId === activeTradeId()"
             (click)="tradeSelected.emit(row.tradeId)"
@@ -94,8 +103,9 @@ export interface CabinTradeRow {
       background: var(--surface);
     }
     .row.active {
-      background: var(--surface-2);
+      background: var(--surface-3);
       border-inline-start-color: var(--accent);
+      font-weight: var(--weight-medium, 500);
     }
     .seq {
       color: var(--text-muted);
@@ -134,4 +144,25 @@ export class CabinTradeListComponent {
   trades = input.required<CabinTradeRow[]>();
   activeTradeId = input<string | null>(null);
   tradeSelected = output<string>();
+
+  rowBtns = viewChildren<ElementRef<HTMLButtonElement>>('rowBtn');
+
+  constructor() {
+    effect(() => {
+      const activeId = this.activeTradeId();
+      const trades = this.trades();
+      if (!activeId) return;
+
+      const idx = trades.findIndex((t) => t.tradeId === activeId);
+      if (idx === -1) return;
+
+      setTimeout(() => {
+        const btns = this.rowBtns();
+        const activeBtn = btns[idx]?.nativeElement;
+        if (activeBtn && typeof activeBtn.scrollIntoView === 'function') {
+          activeBtn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+    });
+  }
 }

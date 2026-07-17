@@ -25,7 +25,10 @@ import {
   CHART_ACCENT,
   DARK_CHART_COLORS,
   DARK_TRADE_BOX_OPACITY,
+  ChartColors,
 } from '../../state/settings/settings.models';
+import { Store } from '@ngrx/store';
+import { selectChartStyle } from '../../state/selectors';
 
 /**
  * R1 integration spike (RFC-016 Task 7): the frozen scene is rendered via the
@@ -34,16 +37,6 @@ import {
  * owns a slim, READ-ONLY, store-free instance. See task-7-report.md's "SPIKE
  * SEAM WRITE-UP" for what this component needed and did NOT need.
  */
-
-/** Static render config for every frozen scene: always the dark palette
- * (this app has no light-theme surface in production), gridVisible/gridOpacity
- * at their settings-reducer defaults — a frozen historical scene doesn't
- * react to the user's LIVE theme/grid settings (no Store read at all, J-6). */
-const FROZEN_SCENE_CONFIG: RenderModel['config'] = {
-  colors: DARK_CHART_COLORS,
-  gridVisible: true,
-  gridOpacity: 1,
-};
 
 /**
  * Recovers the scene's base timeframe, in seconds, from its OWN fields —
@@ -93,7 +86,11 @@ export function sceneDatasetAvailable(scene: SceneSpec, tf: Timeframe): boolean 
  *   primitive: `SessionCapability`/`SessionPrimitive` already draw exactly
  *   this shape for an unrelated field; the name is reused, not the semantics.
  */
-export function deriveFrozenRenderModel(scene: SceneSpec, candles: Candle[]): Partial<RenderModel> {
+export function deriveFrozenRenderModel(
+  scene: SceneSpec,
+  candles: Candle[],
+  style: { colors: ChartColors; gridVisible: boolean; gridOpacity: number },
+): Partial<RenderModel> {
   const times = candles.map((c) => c.time);
   const barSpacing = baseTfSecondsOfScene(scene);
 
@@ -119,7 +116,11 @@ export function deriveFrozenRenderModel(scene: SceneSpec, candles: Candle[]): Pa
 
   return {
     candles,
-    config: FROZEN_SCENE_CONFIG,
+    config: {
+      colors: style.colors,
+      gridVisible: style.gridVisible,
+      gridOpacity: style.gridOpacity,
+    },
     trading: {
       positions: [position],
       pendingOrders: [],
@@ -128,7 +129,7 @@ export function deriveFrozenRenderModel(scene: SceneSpec, candles: Candle[]): Pa
       shift: 0,
       times,
       barSpacing,
-      colors: DARK_CHART_COLORS,
+      colors: style.colors,
       opacity: DARK_TRADE_BOX_OPACITY,
     },
     drawings: {
@@ -142,8 +143,8 @@ export function deriveFrozenRenderModel(scene: SceneSpec, candles: Candle[]): Pa
       pointSize: derivePointSize(candles),
       colors: {
         accent: CHART_ACCENT,
-        up: DARK_CHART_COLORS.upColor,
-        down: DARK_CHART_COLORS.downColor,
+        up: style.colors.upColor,
+        down: style.colors.downColor,
       },
     },
     session: {
@@ -253,6 +254,8 @@ export class FrozenSceneHostComponent implements AfterViewInit, OnDestroy {
 
   private repo = inject(MarketDataRepository);
   private engineFactory = inject(ChartEngineFactory);
+  private store = inject(Store);
+  chartStyle = this.store.selectSignal(selectChartStyle);
 
   private layerAEl = viewChild<ElementRef<HTMLDivElement>>('layerA');
   private layerBEl = viewChild<ElementRef<HTMLDivElement>>('layerB');
@@ -269,6 +272,7 @@ export class FrozenSceneHostComponent implements AfterViewInit, OnDestroy {
   constructor() {
     effect(() => {
       const scene = this.scene();
+      this.chartStyle(); // Register reactive dependency on style changes
       if (!this.viewReady()) return;
       void this.applyScene(scene);
     });
@@ -307,7 +311,11 @@ export class FrozenSceneHostComponent implements AfterViewInit, OnDestroy {
     const { candles, missing } = await this.loadCandles(scene);
     if (token !== this.renderToken) return; // superseded by a newer scene
 
-    const model = deriveFrozenRenderModel(scene, candles);
+    const style = this.chartStyle();
+    const colors = style?.colors ?? DARK_CHART_COLORS;
+    const gridVisible = style?.gridVisible ?? false;
+    const gridOpacity = style?.gridOpacity ?? 1;
+    const model = deriveFrozenRenderModel(scene, candles, { colors, gridVisible, gridOpacity });
     const nextLayer: 'a' | 'b' = this.activeLayer() === 'a' ? 'b' : 'a';
     const engine = nextLayer === 'a' ? this.engineA : this.engineB;
     engine?.render(model);

@@ -11,6 +11,8 @@ import {
   deriveFrozenRenderModel,
   ChartEngineFactory,
 } from './frozen-scene-host.component';
+import { provideMockStore } from '@ngrx/store/testing';
+import { DARK_CHART_COLORS } from '../../state/settings/settings.models';
 
 /**
  * R1 integration-spike spec (RFC-016 Task 7). Per the brief: "the engine
@@ -105,6 +107,7 @@ function candlesInWindow(s: SceneSpec, n = 5): Candle[] {
 }
 
 describe('deriveFrozenRenderModel / baseTfSecondsOfScene / timeframeOfScene / sceneDatasetAvailable (pure)', () => {
+  const testStyle = { colors: DARK_CHART_COLORS, gridVisible: true, gridOpacity: 1 };
   it('baseTfSecondsOfScene recovers the base TF purely from window/cursorTime', () => {
     const s = scene();
     expect(baseTfSecondsOfScene(s)).toBe(60);
@@ -142,7 +145,7 @@ describe('deriveFrozenRenderModel / baseTfSecondsOfScene / timeframeOfScene / sc
   it('derives candles + config + trading + drawings + session from the scene', () => {
     const s = scene();
     const candles = candlesInWindow(s);
-    const model = deriveFrozenRenderModel(s, candles);
+    const model = deriveFrozenRenderModel(s, candles, testStyle);
 
     expect(model.candles).toBe(candles);
     expect(model.config?.colors).toBeDefined();
@@ -177,7 +180,7 @@ describe('deriveFrozenRenderModel / baseTfSecondsOfScene / timeframeOfScene / sc
         },
       ],
     });
-    const model = deriveFrozenRenderModel(s, []);
+    const model = deriveFrozenRenderModel(s, [], testStyle);
     expect(model.drawings?.items).toHaveLength(1);
     expect(model.drawings?.items[0].kind).toBe('line');
     expect(model.drawings?.items[0].p1).toEqual({ time: 1000, price: 1.08 });
@@ -188,14 +191,16 @@ describe('deriveFrozenRenderModel / baseTfSecondsOfScene / timeframeOfScene / sc
     const s = scene({
       drawingSet: [{ type: 'line', anchorPoints: [{ time: 1000, price: 1.08 }], styleToken: 'x' }],
     });
-    const model = deriveFrozenRenderModel(s, []);
+    const model = deriveFrozenRenderModel(s, [], testStyle);
     expect(model.drawings?.items).toEqual([]);
   });
 
   it('is a pure function: same inputs -> deep-equal output', () => {
     const s = scene();
     const candles = candlesInWindow(s);
-    expect(deriveFrozenRenderModel(s, candles)).toEqual(deriveFrozenRenderModel(s, candles));
+    expect(deriveFrozenRenderModel(s, candles, testStyle)).toEqual(
+      deriveFrozenRenderModel(s, candles, testStyle),
+    );
   });
 });
 
@@ -222,6 +227,16 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
       providers: [
         { provide: MarketDataRepository, useValue: repo },
         { provide: ChartEngineFactory, useClass: FakeChartEngineFactory },
+        provideMockStore({
+          initialState: {
+            settings: {
+              theme: 'dark',
+              chartColors: DARK_CHART_COLORS,
+              gridVisible: true,
+              gridOpacity: 1,
+            },
+          },
+        }),
       ],
     });
     const fixture = TestBed.createComponent(FrozenSceneHostComponent);

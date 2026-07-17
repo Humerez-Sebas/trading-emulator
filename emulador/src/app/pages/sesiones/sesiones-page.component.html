@@ -428,6 +428,13 @@
                               }
                             </div>
                           </div>
+                          <ng-container
+                            [ngTemplateOutlet]="actionMenu"
+                            [ngTemplateOutletContext]="{ card }"
+                          />
+                        </header>
+
+                        <div class="card-actions">
                           <button appButton variant="subtle" size="sm" (click)="open(card)">
                             Abrir
                           </button>
@@ -447,11 +454,7 @@
                           >
                             Reflect
                           </a>
-                          <ng-container
-                            [ngTemplateOutlet]="actionMenu"
-                            [ngTemplateOutletContext]="{ card }"
-                          />
-                        </header>
+                        </div>
 
                         <!-- P/L hero -->
                         <div class="pl-hero">

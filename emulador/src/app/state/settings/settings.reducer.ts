@@ -19,7 +19,7 @@ const defaultState: SettingsState = {
   theme: 'dark',
   chartColors: DARK_CHART_COLORS,
   utcOffset: -4, // La Paz by default
-  gridVisible: true,
+  gridVisible: false,
   gridOpacity: 1,
   floatingToolbar: true,
   tradeBoxesVisible: true,
@@ -61,7 +61,7 @@ function loadInitialState(): SettingsState {
       theme,
       chartColors: { ...defaultState.chartColors, ...saved.chartColors },
       utcOffset: typeof saved.utcOffset === 'number' ? saved.utcOffset : defaultState.utcOffset,
-      gridVisible: typeof saved.gridVisible === 'boolean' ? saved.gridVisible : true,
+      gridVisible: typeof saved.gridVisible === 'boolean' ? saved.gridVisible : false,
       gridOpacity:
         typeof saved.gridOpacity === 'number' ? Math.min(1, Math.max(0, saved.gridOpacity)) : 1,
       floatingToolbar: typeof saved.floatingToolbar === 'boolean' ? saved.floatingToolbar : true,
