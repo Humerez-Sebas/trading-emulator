@@ -239,8 +239,8 @@ export class WorkspacesEffects {
         );
       }
       if (thenRestore.linkGroups) {
-        // D17.I: a group parsed from a payload that predates the composition
-        // flags normalizes to the migration defaults, not `undefined`.
+        // A group parsed from a payload that predates the composition flags
+        // normalizes to the migration defaults, not `undefined`.
         actions.push(
           LinkGroupsActions.restoreGroups({
             groups: thenRestore.linkGroups.map(normalizeLinkGroup),
