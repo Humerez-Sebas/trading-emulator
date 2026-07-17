@@ -27,8 +27,8 @@
 - [x] Task 4: Pure scene/waypoint computation + `sharpe` in `computeSessionStats`
 - [x] Task 5: Journal — routes, read models, sections, tables
 - [x] Task 6: Journal visualizations — scatter, bubble, heatmap (SVG)
-- [ ] Task 7: Reflection Cabin — timeline, frozen scene, lesson form, circular flow
-- [ ] Task 8: Invariant detectors + documentation closure
+- [x] Task 7: Reflection Cabin — timeline, frozen scene, lesson form, circular flow
+- [x] Task 8: Invariant detectors + documentation closure
 
 ## Completed
 
@@ -156,3 +156,7 @@ floor and fixed-viewBox responsiveness adjudicated NON-ISSUES (baseline already 
 color-mix; preserveAspectRatio contains the canvas). FINAL-AUDIT ATTENTION: F3 stroke
 focus ring is jsdom-unverifiable — visual confirmation deferred to Task 7 browser
 walkthrough; per-element aria-labels lead with English token "Trade" (nit).
+
+Task 7: complete (commit e4d5bb4; implementer haiku + sonnet; review staff: APPROVED "Ship it", 0 Blocker/High/Medium, 0 Low. 1712→1782 tests / 138→145 files (+70 tests, +7 files). Reviewer verified the mock seam using `ChartEngineFactory` which bypasses JSDOM/fancy-canvas limitations. Gating of hotkeys (1-5 and arrows) inside inputs/textareas is strictly tested and correct. Escape behaves exactly as described).
+
+Task 8: complete (commit 0d3c9b0; implementer sonnet; review staff manager: APPROVED "Ship it". 1782→1787 tests / 145→146 files (+5 tests, +1 file), tsc+lint clean. Business invariants J-1, J-3, J-4, J-5 programmatically validated in `lessons-invariants.spec.ts`. All docs updated: `TRADER_KNOWLEDGE_MODEL.md` (seek references removed), `DOMAIN_MODEL.md` (I-17 section added), `UBIQUITOUS_LANGUAGE.md` (concepts defined), `016-diario-enmiendas-playbook.md` status to Implementado).
