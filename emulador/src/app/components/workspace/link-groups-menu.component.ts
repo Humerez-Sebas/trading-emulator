@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { Store } from '@ngrx/store';
 import { LinkGroupsActions } from '../../state/link-groups/link-groups.actions';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
+import { createLinkGroup } from '../../state/link-groups/link-groups.models';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature } from '../../state/layout/layout.reducer';
 
@@ -50,6 +51,24 @@ export const LINK_GROUP_PALETTE = [
               (change)="toggleTimeRange(group.id, group.syncTimeRange)"
             />
             Rango
+          </label>
+          <label class="group-toggle">
+            <input
+              type="checkbox"
+              class="sync-drawings"
+              [checked]="group.syncDrawings"
+              (change)="toggleDrawings(group.id, group.syncDrawings)"
+            />
+            Dibujos
+          </label>
+          <label class="group-toggle">
+            <input
+              type="checkbox"
+              class="sync-trades"
+              [checked]="group.syncTrades"
+              (change)="toggleTrades(group.id, group.syncTrades)"
+            />
+            Trades
           </label>
           <button
             class="group-delete"
@@ -135,9 +154,7 @@ export class LinkGroupsMenuComponent {
     const usedColors = new Set(this.groupsList().map((g) => g.color));
     const color = LINK_GROUP_PALETTE.find((c) => !usedColors.has(c)) ?? LINK_GROUP_PALETTE[0];
     this.store.dispatch(
-      LinkGroupsActions.createGroup({
-        group: { id: crypto.randomUUID(), color, syncCrosshair: true, syncTimeRange: true },
-      }),
+      LinkGroupsActions.createGroup({ group: createLinkGroup(crypto.randomUUID(), color) }),
     );
   }
 
@@ -147,6 +164,14 @@ export class LinkGroupsMenuComponent {
 
   toggleTimeRange(groupId: string, current: boolean): void {
     this.store.dispatch(LinkGroupsActions.setSyncTimeRange({ groupId, enabled: !current }));
+  }
+
+  toggleDrawings(groupId: string, current: boolean): void {
+    this.store.dispatch(LinkGroupsActions.setSyncDrawings({ groupId, enabled: !current }));
+  }
+
+  toggleTrades(groupId: string, current: boolean): void {
+    this.store.dispatch(LinkGroupsActions.setSyncTrades({ groupId, enabled: !current }));
   }
 
   /** RFC-013 (D6): also unlinks every panel currently in this group — the UI must never show a chip for a deleted group. */

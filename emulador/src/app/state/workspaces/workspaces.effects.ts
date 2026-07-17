@@ -20,6 +20,7 @@ import { ExecutionCosts } from '../trading/execution-costs';
 import { DrawingsActions } from '../drawings/drawings.actions';
 import { LayoutActions } from '../layout/layout.actions';
 import { LinkGroupsActions } from '../link-groups/link-groups.actions';
+import { normalizeLinkGroup } from '../link-groups/link-groups.models';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
 import {
   PendingCsv,
@@ -238,7 +239,13 @@ export class WorkspacesEffects {
         );
       }
       if (thenRestore.linkGroups) {
-        actions.push(LinkGroupsActions.restoreGroups({ groups: thenRestore.linkGroups }));
+        // D17.I: a group parsed from a payload that predates the composition
+        // flags normalizes to the migration defaults, not `undefined`.
+        actions.push(
+          LinkGroupsActions.restoreGroups({
+            groups: thenRestore.linkGroups.map(normalizeLinkGroup),
+          }),
+        );
       }
       const matchTf = loadedTfForMinutes(
         thenRestore.intervalMinutes,

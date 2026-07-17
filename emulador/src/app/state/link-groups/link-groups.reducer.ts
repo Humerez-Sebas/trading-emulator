@@ -28,6 +28,16 @@ export const linkGroupsFeature = createFeature({
       if (!g || g.syncTimeRange === enabled) return state;
       return { groups: { ...state.groups, [groupId]: { ...g, syncTimeRange: enabled } } };
     }),
+    on(LinkGroupsActions.setSyncDrawings, (state, { groupId, enabled }): LinkGroupsState => {
+      const g = state.groups[groupId];
+      if (!g || g.syncDrawings === enabled) return state;
+      return { groups: { ...state.groups, [groupId]: { ...g, syncDrawings: enabled } } };
+    }),
+    on(LinkGroupsActions.setSyncTrades, (state, { groupId, enabled }): LinkGroupsState => {
+      const g = state.groups[groupId];
+      if (!g || g.syncTrades === enabled) return state;
+      return { groups: { ...state.groups, [groupId]: { ...g, syncTrades: enabled } } };
+    }),
     on(
       LinkGroupsActions.restoreGroups,
       (_state, { groups }): LinkGroupsState => ({

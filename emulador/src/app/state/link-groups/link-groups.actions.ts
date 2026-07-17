@@ -10,6 +10,8 @@ export const LinkGroupsActions = createActionGroup({
     'Remove Group': props<{ groupId: string }>(),
     'Set Sync Crosshair': props<{ groupId: string; enabled: boolean }>(),
     'Set Sync Time Range': props<{ groupId: string; enabled: boolean }>(),
+    'Set Sync Drawings': props<{ groupId: string; enabled: boolean }>(),
+    'Set Sync Trades': props<{ groupId: string; enabled: boolean }>(),
     /** Wholesale-replaces the groups map from a restored session (RFC-011). */
     'Restore Groups': props<{ groups: LinkGroup[] }>(),
   },
