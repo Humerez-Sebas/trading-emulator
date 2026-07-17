@@ -1,0 +1,74 @@
+<div class="reflection-cabin-page">
+  @switch (state()) {
+    @case ('loading') {
+      <div class="skeleton-header" aria-hidden="true"></div>
+      <div class="skeleton-layout" aria-hidden="true">
+        <div class="skeleton-list"></div>
+        <div class="skeleton-scene"></div>
+      </div>
+      <p class="sr-only" role="status">Cargando Cabina de Reflexión…</p>
+    }
+    @case ('error') {
+      <div class="page-state">
+        <h1 #pageHeading tabindex="-1">Cabina de Reflexión</h1>
+        <p>No se encontró la sesión. Puede haber sido eliminada.</p>
+        <a appButton variant="primary" routerLink="/sesiones">← Sesiones</a>
+      </div>
+    }
+    @case ('no-trades') {
+      <div class="page-state">
+        <h1 #pageHeading tabindex="-1">Cabina de Reflexión</h1>
+        <p>Esta sesión no tiene trades cerrados. Los patrones aparecen aquí cuando cierras trades.</p>
+        <a appButton variant="primary" [routerLink]="['/journal', sessionId()]">← Journal</a>
+      </div>
+    }
+    @case ('ready') {
+      <header class="cabin-header">
+        <h1 #pageHeading tabindex="-1">Cabina de Reflexión</h1>
+        <app-cabin-breadcrumb
+          [index]="activeTradeIndex1based()"
+          [total]="tradeRows().length"
+          (back)="onBack()"
+          (prev)="onPrev()"
+          (next)="onNext()"
+        />
+      </header>
+
+      <div class="cabin-layout">
+        <aside class="trade-list-column">
+          <app-cabin-trade-list
+            [trades]="tradeRows()"
+            [activeTradeId]="resolvedTradeId()"
+            (tradeSelected)="onTradeSelected($event)"
+          />
+        </aside>
+
+        <div class="reflection-column">
+          <app-waypoint-timeline
+            [waypoints]="waypoints()"
+            [activeIndex]="activeWaypointIndex()"
+            (waypointSelected)="onWaypointSelected($event)"
+            (managementExpanded)="onManagementExpanded($event)"
+          />
+
+          <app-frozen-scene-host [scene]="scene()" />
+
+          <app-waypoint-facts [waypoint]="activeWaypoint()" />
+
+          <section class="reflection-panel" [class.has-reflection]="!!existingLesson()">
+            <app-lesson-form
+              [existing]="existingLesson()"
+              [activeRules]="activeRules()"
+              [saving]="saving()"
+              (save)="onSave($event)"
+            />
+          </section>
+        </div>
+      </div>
+
+      @if (toastMessage(); as msg) {
+        <div class="toast" role="status">{{ msg }}</div>
+      }
+    }
+  }
+</div>

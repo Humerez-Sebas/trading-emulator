@@ -166,6 +166,21 @@
   /* ---- DESIGN_SYSTEM.md §4.1 data-visualization canvas tokens ---- */
   --viz-grid: #1a1a1a;
   --viz-axis: #333333;
+
+  /* ---- DESIGN_SYSTEM.md §4.5 Reflection Cabin timeline connector ----
+     RFC-016 Task 7 is the first consumer; base-token addition per
+     component-architecture §2.3's "flagged in the task report" pattern —
+     flagged in task-7-report.md. NOTE (flagged, not silently resolved):
+     DESIGN_SYSTEM.md §4.5 itself gives --timeline-connector TWO different
+     hex values in adjacent bullets ("Inactive node: --timeline-connector
+     (#444444)" vs "Connector line: --timeline-connector (#333333), 2px
+     stroke") — an internal inconsistency in the authority document. #333333
+     already exists as --border-strong/--viz-axis (would add zero visual
+     distinction), so this token takes the OTHER value, #444444, which is
+     genuinely distinct and reads correctly against --surface for both the
+     inactive-node fill and the horizontal connector line (component-
+     architecture §2.3 ties both uses to this one token). */
+  --timeline-connector: #444444;
 }
 
 html,

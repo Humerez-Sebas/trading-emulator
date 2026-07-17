@@ -1,0 +1,164 @@
+/* DESIGN_SYSTEM §2.3 — exact `comfortable` density block for the Reflection Cabin. */
+.reflection-cabin-page {
+  --density-gap: var(--space-4);
+  --density-pad: var(--space-4);
+  --density-font: var(--text-sm);
+  --density-metric: var(--text-base);
+  --density-heading: var(--text-lg);
+  --density-radius: var(--radius-sm);
+
+  display: block;
+  padding: var(--space-6) var(--space-8);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.cabin-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  /* --zone-reflection restricted to header/panel borders/icons only (§5.1) */
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-3);
+}
+.cabin-header h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--zone-reflection);
+}
+
+/* Layout: 30% trade list / 70% scene+reflection (design spec §2.1). */
+.cabin-layout {
+  display: grid;
+  grid-template-columns: 3fr 7fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.trade-list-column {
+  border: 1px solid var(--border);
+  border-radius: var(--density-radius);
+  padding: var(--density-pad);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.reflection-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.reflection-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--density-radius);
+  padding: var(--density-pad);
+}
+/* reflection-existing (§3.2): subtle --zone-performance left border. */
+.reflection-panel.has-reflection {
+  border-inline-start: 3px solid var(--zone-performance);
+}
+
+/* <1100px: trade list collapses to a top drawer (design spec §2.1). */
+@media (max-width: 1100px) {
+  .cabin-layout {
+    grid-template-columns: 1fr;
+  }
+  .trade-list-column {
+    max-height: none;
+    overflow-x: auto;
+  }
+}
+
+.page-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-8) 0;
+  color: var(--text);
+}
+.page-state p {
+  margin: 0;
+  color: var(--text-muted);
+  max-width: 65ch;
+}
+.page-state h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* toast (design spec §2.5: "toast breve 'Reflexión guardada'") — no existing
+   toast/notice idiom in the codebase (grepped, none found); a page-local
+   fixed-position notice, not a new global ui-primitive (§6.2 governs
+   button/input/badge/tooltip variants, not this). */
+.toast {
+  position: fixed;
+  bottom: var(--space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-3);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--elevation-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--density-font);
+  z-index: 10;
+}
+
+/* ---- loading skeletons (never a spinner) ---- */
+.skeleton-header {
+  height: 48px;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 37%, var(--surface) 63%);
+  background-size: 400% 100%;
+  animation: cabin-skeleton-shimmer 1.4s ease infinite;
+}
+.skeleton-layout {
+  display: grid;
+  grid-template-columns: 3fr 7fr;
+  gap: var(--space-4);
+}
+.skeleton-list,
+.skeleton-scene {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 37%, var(--surface) 63%);
+  background-size: 400% 100%;
+  animation: cabin-skeleton-shimmer 1.4s ease infinite;
+}
+.skeleton-list {
+  height: 300px;
+}
+.skeleton-scene {
+  height: 400px;
+}
+
+@keyframes cabin-skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-header,
+  .skeleton-list,
+  .skeleton-scene {
+    animation-duration: 0.01ms !important;
+  }
+}

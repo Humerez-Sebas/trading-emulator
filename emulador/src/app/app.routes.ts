@@ -46,5 +46,24 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/journal/journal-page.component').then((m) => m.JournalPageComponent),
   },
+  {
+    // RFC-016 D16.D/§6: Reflection Cabin, no tradeId — the page resolves the
+    // first trade. Same read-side rationale as the Journal route above (no
+    // r2Onboarding guard, no practice workspace opened, J-6).
+    path: 'journal/:sessionId/reflect',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/reflection/reflection-cabin-page.component').then(
+        (m) => m.ReflectionCabinPageComponent,
+      ),
+  },
+  {
+    path: 'journal/:sessionId/reflect/:tradeId',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/reflection/reflection-cabin-page.component').then(
+        (m) => m.ReflectionCabinPageComponent,
+      ),
+  },
   { path: '**', redirectTo: '' },
 ];
