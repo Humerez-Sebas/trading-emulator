@@ -1,196 +1,162 @@
-# SDD Run Ledger — RFC-014 Alta Fidelidad + Telemetría
+# SDD Run Ledger — RFC-016 Playbook Amendment Journal
 
-- **RFC (spec):** `docs/architecture/rfcs/014-simulacion-alta-fidelidad-telemetria.md`
-- **Plan:** `docs/superpowers/plans/2026-07-10-rfc-014-implementation-plan.md`
-- **Branch:** `feature/rfc-014-alta-fidelidad-telemetria` @ base `cee5fa9` (develop)
-- **Run mode:** FULL (per-task review + final whole-branch audit) — R5: largest money-path
-  change since RFC-004. Implementer = `sdd-implementer` (sonnet). Reviews: opus on
-  money-path tasks (1–4), sonnet on 5–6; final audit = `branch-auditor` (opus).
-- **Baseline evidence (fresh, 2026-07-10):** tsc app ✓, tsc spec ✓, `ng test` 993/993 green
-  (74 files), lint 0 problems.
-- **Run decisions:** D14.A (STOP-compatible `base` plumbing with legacy fallback),
-  D14.B (placement reveal horizon — documented deviation from RFC §1.3 literal
-  "createdAt = cursor", forced by the RFC's own no-hindsight property), D14.C (engine
-  signature stability via optional trailing args), D14.D (single Ask derivation point).
-  See plan §Design decisions. Previous run's ledger (workspace panel polish, PASS,
-  merged) replaced — recoverable from git history.
-- **D14.E (USER DECISION, 2026-07-10, Task 4a):** the user explicitly authorized a punctual
-  STOP-rule exception: the two pre-existing specs whose fixtures contradict I-14/I-15 on the
-  modification path (`trading.reducer.spec.ts:120-126` sl===entry via modifyOrder;
-  `:128-134` SL widen via modifyPosition) MAY be minimally edited preserving each spec's
-  original intent (lots-0 guard; no re-sizing), so I-14/I-15 enforcement lands complete
-  (V-10 íntegro). Every other pre-existing spec remains untouchable.
-- **D14.F (orchestrator, Task 4b, requires-attention):** the plan's preferred
-  `TradingState.lastFacts` surfacing is TYPE-IMPOSSIBLE without STOP violations (NgRx
-  createFeature rejects optional feature-state props; a required field breaks 11 literal
-  TradingState construction sites across 6 protected spec files — evidence in
-  task-4b-report.md). Resolution: engine-level reification stands as `ProcessResult.facts`
-  (emitted during the walk, spec-covered); the Task-5 telemetry observer derives its
-  OrderFilled/PositionClosed events from post-reducer state transitions (pairwise diffing:
-  new positions ⇒ OrderFilled; new history entries ⇒ PositionClosed, synthesizing the
-  same-candle fill+close OrderFilled from the history entry's openTime/origin).
-  `ProcessResult.facts` has zero production read sites this phase — reserved extension
-  point (PHILOSOPHY §2.6) for Fase 2-3 engine-level consumers; final audit verifies it
-  stays unread.
+- **RFC (spec):** `docs/architecture/rfcs/016-diario-enmiendas-playbook.md` (D16.A–H, J-1..J-6)
+- **Design spec:** `docs/superpowers/specs/2026-07-13-rfc-016-journal-reflection-design.md`
+- **Component architecture:** `docs/superpowers/specs/2026-07-13-rfc-016-component-architecture.md`
+- **Plan:** `docs/superpowers/plans/2026-07-13-rfc-016-implementation-plan.md`
+- **Branch:** `feature/rfc-016-amendment-journal` @ base `64f19b3` (origin/develop)
+- **Run mode:** FULL (per-task Opus review + final whole-branch audit) — owner-mandated
+  in the run prompt; independently justified by decision-frameworks §8 (new persistence:
+  dedicated `emulador-lessons` IndexedDB DB + new `lessons` Supabase table + per-row LWW
+  sync). Implementer = `sdd-implementer` (sonnet). Final audit = `branch-auditor` (opus).
+- **Baseline evidence (fresh, 2026-07-15):** tsc app ✓, tsc spec ✓, `ng test`
+  1362/1362 green (112 files), lint 0 problems.
+- **Prerequisites verified (2026-07-15):** `seekTo|ReplaySeek|lastSeek` grep over
+  `emulador/src/app` = 0 hits (D16.A scrubber removal in base);
+  `PlaybookRule.amendments: string[]` present with "RESERVED for RFC-016 (P-7)" comment
+  (playbook.models.ts:14). RFC-015 merged (PR #40), RFC-016 docs merged (PR #39).
+- **Hierarchy on conflict:** RFC > design spec > component architecture > plan.
+  `DESIGN_SYSTEM.md` is the sole visual/interaction/accessibility authority (§6.1).
+- **Run notes:** previous run's ledger (RFC-014, PASS, merged PR #37) replaced —
+  recoverable from git history; RFC-015 uncommitted ledger tail preserved in `c86557b`.
 
 ## Tasks
-- [x] Task 1: Base-resolution execution loop + same-candle fills (V-4, V-5)
-- [x] Task 2: ExecutionCosts + Bid/Ask predicates + cost decomposition (V-1, V-2, V-3)
-- [x] Task 3: Mark-to-market + MAE/MFE + floatingEquity (V-11)
-- [x] Task 4: SimulationDomain I-14/I-15 + reified facts (V-10)
-- [x] Task 5: Telemetry black box (V-7, V-8, V-9)
-- [x] Task 6: UI history columns + summary aggregates + costs (G1/G4)
-- [x] Task 7: Documentation closure + ambiguousCount KPI
+- [x] Task 1: Telemetry — management events (`OrderModified`/`PositionModified`) + `lastJump` anchor (D16.B)
+- [x] Task 2: Lesson domain + `lessons` NgRx slice + `emulador-lessons` DB
+- [x] Task 3: Cloud sync — `lessons` SQL + per-row LWW cycle
+- [x] Task 4: Pure scene/waypoint computation + `sharpe` in `computeSessionStats`
+- [x] Task 5: Journal — routes, read models, sections, tables
+- [x] Task 6: Journal visualizations — scatter, bubble, heatmap (SVG)
+- [x] Task 7: Reflection Cabin — timeline, frozen scene, lesson form, circular flow
+- [x] Task 8: Invariant detectors + documentation closure
 
 ## Completed
 
-Task 1: complete (commits 4b150df..11115b4, review clean — Spec ✅, Quality Approved by opus
-reviewer; 993→1016 tests / 74→78 files, tsc+lint clean). NOTE: implementer session was killed
-by a usage limit after committing but before reporting; report reconstructed by orchestrator
-from git evidence + fresh personal gate run; reviewer instructed to verify point-by-point
-without implementer narrative (it did). D14.B verified: createdAt stamped at reveal horizon
-via selectPlacementTime in the only two placeOrder dispatch sites (chart.component.ts:1021,
-trade-panel.component.ts:174); openMarket keeps cursor time.
+Task 1: complete (commits cb08950 feat + 18a7465 test; implementer sonnet; review opus:
+APPROVED, 0 Critical/High/Medium, 1 Low ruled no-fix — tautological placeholder assertion
+in jump-anchor spec, invariant genuinely proven at effects level; 1362→1400 tests /
+112→114 files, tsc+lint clean, reviewer re-ran gates personally). Semantic decisions
+(reviewer-verified): management events derived by STATE-DIFF (`diffManagementEvents` in
+telemetry-facts.ts, value-comparing sl/tp/entryPrice by id — excludes I-14/I-15
+rejections structurally, fixtures cross-checked against real reducer idioms); D16.B
+threshold ≥3000 ms INCLUSIVE (brief-adjudicated: RFC title "≥3 s" over body "supera",
+boundary pinned by tests at 3000/2999); press-memory clearing structural via
+`freshOrderClock` omitting `lastAdvancePress` (anchor never moves backward past a newer
+sessionStart/lastOrderEvent anchor); jumpForward/jumpBack non-participation gated by
+ofType(advanceDisplay) and proven with interleaved-jump test. N-1/seek/purity greps
+clean; payloads carry exactly {ref, field, from, to}.
 
-Task 2: complete (commits 11115b4..9bfba5e = 1093d86 feat + 59190d2 test + 9bfba5e review-fix;
-review opus: Spec ✅, Quality Approved after 1 fix wave — Important crypto-pointSize finding
-closed with regression-pinning test; 1016→1073 tests / 78→82 files, tsc+lint clean).
-R3 RESOLVED: bars confirmed Bid inferentially — pipeline's only rate fetch is
-mt5.copy_rates_range (mt5_common.py:119), MT5 returns Bid-based OHLC, no Ask/tick path exists.
-Documented deviations (all judged sound by reviewer): ExecutionCosts carries 4th field
-pointSize; TradingData.executionCosts is `ExecutionCosts | null` (NgRx createFeature rejects
-optional feature-state props — follows sessionEnd/sessionName/folderId convention); closeTrade
-always populates grossProfit/commission (keeps V-1 deep-equality symmetric).
+Task 2: complete (commits 8d1a145+a5605a7+5996a79+49bd8c9 + 34d60e8 review-fix;
+implementer haiku (mechanical mirror), review opus: APPROVED, 0 Critical/High/Medium,
+3 Low — Finding 1 (banned "seeks" in scene-spec.ts:36 comment) fixed by orchestrator in
+34d60e8 (comment-only, tsc app + lint re-verified, remaining hit is the ban-documentation
+itself, reviewer-sanctioned); Findings 2-3 (two effects tests that don't force the error
+branch) ruled no-fix — verbatim mirrors of audited PlaybookEffects, test pragmatism per
+decision-frameworks §6; 1400→1434 tests / 114→119 files, reviewer re-ran gates
+personally). Documented inert deviations: SceneSpec lives in domain/reflection/
+(component-architecture §3.5, pre-authorized), amendRule added to playbook.effects.ts
+persist$/pushDirty$ trigger lists (necessary for P-7 amendments persistence+sync, plan
+table omitted it), drawingSet = type-only import of DrawingSnapshotEntry from
+telemetry.models, MAX_EVIDENCE_SCENES=5 lives in scene-spec.ts. P-7 status: amendments
+now has its first sanctioned WRITER (amendRule); production READERS arrive in Task 7;
+detector update in Task 8.
 
-Task 3: complete (commits 9bfba5e..920193b = 846bf1b feat + 920193b test; review opus: Spec ✅,
-Quality Approved, 0 Critical/Important; 1073→1096 tests / 82→85 files, tsc+lint clean).
-Two-agent execution: first implementer killed by session limit AFTER leaving gates green but
-uncommitted; finisher closed the orchestrator-confirmed reducer integration gap (reducer
-dropped result.book on !changed, discarding accumulators on quiet candles) via additive
-ProcessResult.excursionsMoved + three-way reducer gate (idle path byte-identical), then
-committed. Sealing decision: never-walked positions seal mae/mfe=0, tMae/tMfe=openTime.
-Legacy-path (coarse-grain) excursions documented as fidelity limitation, not defect
-(excursions never feed resolveExit; V-1 intact).
+Task 3: complete (commits 011bb1e SQL + e8d639b service/effects + 8f69b37 specs; review
+opus: APPROVED "Ship it", ZERO findings at any severity; 1434→1465 tests / 119→121
+files, reviewer re-ran gates + all greps personally). TWO-AGENT execution: first
+implementer (sonnet) killed by session limit after writing lessons.sql + RLS verify
+block + red-phase lessons-sync.spec.ts (all orchestrator-inspected, on-brief, inherited
+with zero edits); finisher (sonnet) implemented service mapping/merge + effects wiring +
+effects sync spec and committed. Reviewer verified handoff seams line-by-line (finisher
+implemented to the RFC, not just to the inherited tests). Key verified semantics:
+repeat ⇄ repeat_field mapping; session_ref has NO FK (N-4/J-4 structural); UPDATE policy
+with using+with check (D15.F); lww_guard reused never redefined; assertNoCandles runs
+BEFORE any network I/O (pinned by test); pull never deletes; mid-flight-edit safety
+driven through the real reducer. Reviewer non-blocking observation for final audit: an
+explicit cloud session-deletion survival round-trip is structurally guaranteed (no FK)
+— revisit at closure only if an FK ever appears.
 
-Task 4: complete (commits 920193b..401fa46 = b281875+0bb6df8 T4a, 58e85ca T4a/D14.E,
-43237df+401fa46 T4b; review opus: Spec ✅, Quality Approved, 0 Critical/Important;
-1096→1140 tests / 85→88 files, tsc+lint clean). D14.E consumed: exactly 2 pre-existing
-specs minimally edited (verified intent-preserving by reviewer). D14.F verified sound by
-reviewer (lastFacts type-impossible; facts = ProcessResult.facts engine-level, reserved
-unread this phase per PHILOSOPHY §2.6). Reviewer ⚠️ noted: modifyPosition intentionally
-runs NO TP-geometry check (I-15 declares TP free) — scope decision, note in walkthrough.
-FINAL-AUDIT ATTENTION: verify ProcessResult.facts stays production-unread.
+Task 3 coordination (orchestrator, 2026-07-15): `lessons.sql` APPLIED to live project
+nfcgfrsxvdvuasbgrxdy via Supabase MCP (`apply_migration`, name
+`rfc016_lessons_table_rls_lww`). RLS verify: first run FALSE-FAILED on the
+reassignment sub-test — root-caused to `lww_guard` returning NULL for non-newer
+`client_updated_at` (transaction-stable `now()`) BEFORE the RLS WITH CHECK evaluates;
+NOT an RLS hole. Fixed the lessons verify block to use strictly-newer timestamps
+(`now() + interval '1 second'`, commit b57a827 with full explanatory comment);
+re-run → RLS PASS (lessons), cross-user isolation + reassignment rejection hold,
+lessons_rows=0 after (self-cleaned). DoD 3 (RLS verificada) satisfied for lessons.
+REQUIRES-ATTENTION (pre-existing, RFC-015 scope, NOT touched): the playbook_rules
+verify block shares the same latent false-fail on its reassignment sub-test —
+flagged to the owner as a spawned follow-up task and noted in the lessons block
+comment; final audit should not re-litigate it as an RFC-016 defect.
+RESOLVED 2026-07-16: the follow-up landed on THIS branch as commit 55d78a5
+(fix(playbook): both playbook-block UPDATEs now use now() + interval '1 second';
+lessons-block comment updated accordingly). Orchestrator re-ran the playbook_rules
+DO block live (project nfcgfrsxvdvuasbgrxdy) → RLS PASS (playbook_rules), no
+exception, self-cleaned. 55d78a5 is RFC-015-scoped maintenance riding this branch
+(user-directed follow-up execution) — OUT of Task 4's review range, sanctioned;
+final audit should treat it as reviewed-here, not an unaudited stray.
 
-Task 5a: complete (commits bedf095 feat + 6197411 test; 1140→1151 tests / 88→89 files,
-tsc+lint clean; per-task review deferred to the combined Task 5 review after 5b).
-DEVIATION (documented, requires walkthrough note): telemetry store lives in a DEDICATED
-`emulador-telemetry` DB, not the RFC-named `emulador-workspaces` — joining required bumping
-the shared DB_VERSION, breaking a STOP-protected assertion (workspace-db.service.spec.ts
-pins store count = 6). Cap decision + envelope types in task-5a-report.md. Open items for
-5b: verify ReplaySeekPayload.direction / ReplayJumpPayload.grain typing against RFC intent
-(RESOLVED in 5b-i: grain type fixed in fd388a5).
+Task 4: complete (commits b10191a+273285c waypoints/scene + 456b588 sharpe + 62e1876
+specs, range 4a7762e..62e1876; implementer haiku (pure/mechanical), review opus:
+APPROVED "Ship it", 0 Critical/High/Medium, 2 Low no-fix-ruled — L-1 second "seek"
+ban-reference comment in build-scene-spec.ts:117 (sanctioned ban-doc pattern, optional
+reword), L-2 two tautological telemetryMarkers tests over an explicitly opaque
+structure (filter verified correct by reviewer reading; strengthen when Task 5/7 gives
+markers a real consumer); 1465→1544 tests / 121→124 files (+79/+3), reviewer re-ran
+gates + all greps personally, hand-checked sharpe vectors and merge boundary. Key
+verified semantics: fixed slots 1-5 without recompaction; merge boundary half-open
+(tMae > closeTime − baseTfSeconds; exactly-one-candle stays separate); never-walked
+trades produce Entry/Exit only with no merge artifact; merged MAE/MFE facts ride Exit;
+management sub-events ref-matched AND windowed [openTime, closeTime] (pre-fill
+order mods excluded — documented, RFC-closure doc candidate); Entry shows no future
+facts; sharpe = mean(R)/sampleStdDev(R) (n−1), null on n<2 or stddev 0, ALL trades
+included (totalR parity); fill-engine diff strictly additive; engine boundary
+untouched. FINAL-AUDIT ATTENTION: none beyond the two no-fixed Lows.
 
-Task 5: complete (commits bedf095..28fb1c0 across 3 slices + 1 fix wave; combined review
-opus: Spec ✅, Quality Approved after fix — Important stale-pendingJumpOrigin finding closed
-structurally in 28fb1c0, re-derived and verified by reviewer incl. legitimate-fold non-race;
-1140→1231 tests / 88→95 files, tsc+lint clean). V-8 evidence: 8.1–13.0 ms per 69-event
-jump-50 burst vs 16 ms/frame budget (jsdom bound 50 ms; conservative — includes MockStore
-harness overhead). N-1 grep: 0 hits in telemetry dir. V-9: assertNoCandles reused on every
-batch. Reviewer-verified soft-degradation asymmetry: any future ordering change drops a
-telemetry event, never fabricates one, never touches domain state.
-FINAL-AUDIT ATTENTION: telemetry store lives in DEDICATED emulador-telemetry DB (sanctioned
-deviation from RFC's emulador-workspaces naming — STOP-protected store-count assertion);
-Task 7 must reflect it in docs.
+Task 5: complete (commits 714a432 read-models/service + 9e5b62e page/sections +
+c0c6653 route/buttons + 108104e specs + 9a7b3d5 review-fix; implementer sonnet, review
+opus: CHANGES REQUESTED → 1 Medium fixed → APPROVED "ship it"; 1544→1640→1644 tests /
+124→135 files, reviewer re-ran gates personally both passes). The Medium:
+baseTfSeconds hardcoded to M1 was WRONG for sessions anchored only on H1/D1 (execution
+base = finest LOADED series, not always M1) — would have inflated bubble durations 60×
+and mis-sized Task-7 scene windows; fixed in 9a7b3d5 (`resolveBaseTfSeconds`: finest
+selectedTfs → finest cached dataset for the symbol → M1 last resort; leak-check test
+against cross-symbol datasets; reviewer verified precedence + fixtures passthrough
+behavior-preserving via grep — no pre-existing spec passes selectedTfs). Design
+conformance verified verbatim by reviewer (§1.8 state copy character-exact, §2.3
+compact density block, zone tokens = DESIGN_SYSTEM §2.1/§4.1 documented values, zero
+digit listeners, focus-on-h1, caption/th-scope). styles.css gained the §2.1/§4.1 zone
++ rule + viz tokens (sanctioned base-token addition, first consumer). J-5/J-6/D8/N-1
+greps clean (reviewer-run). Notable adjudicated decisions: cloud-only session ⇒ error
+state this phase (pre-authorized); datasetRefs = DatasetRecord.id composite keys;
+buildBehaviorFacts ships 2 counts not the design spec's 3 (telemetry JUMP_FAMILY
+structurally cannot distinguish +1 from jumps — Task 8 doc-closure candidate); "Sin
+declarar" row ≥1-gated; Trades section deliberately unzoned; English section headers
+(domain proper nouns). FINAL-AUDIT ATTENTION: Task-6 must close the §6.5 checklist's
+two deferred items (viz clickability, IA hierarchy); behavior-counts doc note in
+Task 8; Lows — drawdown "-0.0%" cosmetic (no-fix).
 
-Task 6: complete (commits 28fb1c0..75f4ff6 = 2d425f7+501d6af T6a, f8019ef+daa304d+75f4ff6
-T6b; review sonnet: Spec ✅, Quality Approved, 0 Critical/Important; 1231→1277 tests /
-95→101 files, tsc+lint clean). ambiguousCount surfaced for the first time (was computed but
-never rendered — RFC UI scope sanctions it). switchAsset carries executionCosts TOP-LEVEL
-(sibling of thenNewSession) — forced by STOP-protected objectContaining assertion, verified
-sound by reviewer; costs read only inside if(thenNewSession) (no leak). Reviewer ⚠️ for
-docs: MAE_R divisor uses the trade's FINAL sl (RFC-mandated formula |entry−sl|) which can
-diverge from the entry-time 1R after SL tightening — document in Task 7.
+Task 6: complete (commits a3c29c1 specs + e91300c components + ca6494b mounts +
+5da4ac5 review-fix; implementer haiku (mechanical SVG), review opus: CHANGES REQUESTED
+→ 1 Medium fixed → APPROVED "Ship it"; 1644→1692→1712 tests / 135→138 files, reviewer
+re-ran gates personally both passes; reviewer session was killed mid-review by a usage
+limit and resumed from transcript — no evidence lost). The Medium: scatter used a
+symmetric [-3,+3] fixed domain although MAE_R/MFE_R are provably ≥0 (fill-engine
+clamp), crushing all points into one quadrant with the zero-axis drawn at the frame;
+fixed in 5da4ac5 (independent non-negative data-fit domains, zero-axes at
+scaleX(0)/scaleY(0), true (v,v) identity line; reviewer hand-verified the old code
+FAILS 4 of the 6 new coordinate pins — pins genuinely constrain the mapping). Fix wave
+also applied reviewer-recommended Lows: focus-triggered tooltips + enriched Spanish
+aria-labels (F2), stroke-based SVG focus rings replacing unreliable CSS outline (F3).
+No-fix-ruled (do not re-litigate): tooltip edge clipping (F5, cosmetic), heatmap
+tooltip omits rule (F6 — HeatmapCellView carries no rule field; Task 8 doc note
+candidate), heatmap intensity max(...,1) floor (F7, doc-accuracy). color-mix browser
+floor and fixed-viewBox responsiveness adjudicated NON-ISSUES (baseline already uses
+color-mix; preserveAspectRatio contains the canvas). FINAL-AUDIT ATTENTION: F3 stroke
+focus ring is jsdom-unverifiable — visual confirmation deferred to Task 7 browser
+walkthrough; per-element aria-labels lead with English token "Trade" (nit).
 
-Task 7: complete (commits 091cbee docs + aedd7b4 KPI spec; review sonnet: Spec ✅, Approved,
-0 Critical/Important; 1277→1278 tests / 101→102 files, tsc+lint clean; implementer cut off
-pre-commit, orchestrator verified tree + re-ran gates + committed unchanged). KPI (DoD #3):
-ambiguousCount reference scenario legacy H1-envelope = 3 vs base-grain M1 walk = 1
-(irreducible same-M1 collision floor, per-trade asserted). Reviewer traced every doc claim
-to shipped code; Desviaciones registradas complete (D14.B, dedicated DB, D14.E, D14.F,
-go-to-date gap).
+Task 7: complete (commit e4d5bb4; implementer haiku + sonnet; review staff: APPROVED "Ship it", 0 Blocker/High/Medium, 0 Low. 1712→1782 tests / 138→145 files (+70 tests, +7 files). Reviewer verified the mock seam using `ChartEngineFactory` which bypasses JSDOM/fancy-canvas limitations. Gating of hotkeys (1-5 and arrows) inside inputs/textareas is strictly tested and correct. Escape behaves exactly as described).
 
-ALL 7 TASKS COMPLETE. Final test count: 1278/1278 (102 files), baseline was 993/74.
-
-## Final audit (branch-auditor, opus) — cee5fa9..a3c0a03
-**VERDICT: PASS — "Ship it".** Gates re-run personally: tsc app+spec clean; ng test
-1278/1278 (102 files); lint 0; `npm run build` exit 0 (known 623 kB budget warning only,
-NO vitest sentinel chunks). Invariant greps all clean: no new deps (package.json/lock
-untouched), engine purity (7 pure modules framework-free), no spec-util/vitest in app code,
-D8 no factory selectors, N-1 only benign pre-existing hits, ProcessResult.facts verified
-reserved-unread, assertNoCandles guards telemetry batches, syncPriceScale still
-reserved-unimplemented, STOP verified (only trading.reducer.spec.ts modified = D14.E,
-28 spec files newly added). Ledger arithmetic corroborated independently (74+28=102 files).
-All six attention flags reviewed line-by-line: sound. Money path deep-reviewed: sided
-predicates consistent, V-1 degeneration preserved, costs round-trip lossless, no third
-placement site. Zero Critical/High/Medium. One Low (T7-m1 stale domain-facts.ts comment)
-fixed post-audit in 51e2249 (comment-only; tsc app + lint re-verified). Remaining rollup
-minors ruled no-fix with written reasons (see audit report / PHILOSOPHY §3.5).
-
-## Post-audit polish wave (2026-07-12, user-directed)
-User-directed cleanup after PR #37 opened: T6-m2 (cost-label→label dedup, both components)
-and T6-m3 (commission copy symmetry "Comisión ($/lote)") fixed; docs/architecture/
-walkthrough.md replaced with the RFC-014 closure walkthrough (old content in git history);
-DOMAIN_MODEL §8 gains "Deviations recorded by RFC-014" (items 5-6: dedicated
-emulador-telemetry DB, goToTime capture gap). Executed by a sonnet subagent (killed by
-session limit pre-commit; orchestrator reviewed, restored the [title] cursor:help rule
-lost to a literal instruction, re-ran all four gates personally: 1278/1278, tsc+lint
-clean) and committed by the orchestrator.
-
-## Minor findings rollup (for final audit triage)
-
-- T1-m1 (theoretical): base-candle walk slices only within resolution-candle intervals
-  (trading.effects.ts:39, replay.effects.ts:181) — a base candle inside a resolution-series
-  gap would be skipped; unreachable while resolution aggregates base (same gaps). Suggested:
-  one-line comment if a future task decouples the series.
-- T1-m2 (coverage depth): idempotence spec (fill-engine.base-loop.spec.ts:771-778) proves
-  no-double-fill but not no-double-exit; strict V-4 separately covered by no-hindsight test.
-- T1-m3 (type-level): `as MemoizedSelector<object, FillContext, FillContextProjector>` cast
-  (selectors.ts:638) — documented STOP-rule workaround; acceptable as-is.
-- T2-m1 (coverage): round-trip "absent" test proves null→null, not key-absent legacy JSON →
-  zero-cost (session-sync.execution-costs.spec.ts:101-106); runtime-safe via `?? undefined`.
-- T2-m2 (near-tautological): V-2 test asserts profit<=grossProfit which follows from the
-  formula; doesn't verify spread/slippage reflected in grossProfit vs clean baseline.
-- T2-m3 (latent type-vs-runtime): executionCosts non-optional but legacy payloads deserialize
-  key-absent (undefined) — absorbed by `?? undefined`, mirrors existing convention.
-- T2-m4 (cosmetic): costPresetFor runs assetClassOf twice per call after the fix; trivial.
-- T3-m1 (doc wording): ProcessResult.excursionsMoved doc says "still-open" but flag also set
-  for same-candle closers — harmless (reducer reads it only under !changed); imprecise wording.
-- T3-m2 (future note): accumulators never reset on step-back; a manual close at a rewound
-  cursor can seal tMae/tMfe later than closeTime — consistent with engine idempotency
-  philosophy, out of scope, untested interaction.
-- T3-m3 (coverage): no single e2e test composes reducer quiet-candle accumulation + manual-close
-  sealing; halves tested separately.
-- T4-m1 (idiom): ProcessResult.facts is required while sibling additive fields are optional;
-  safe (no external ProcessResult constructor), worth a one-line rationale if standardized.
-- T4-m2 (cosmetic): modifyOrder rejection returns fresh outer state object (order-level ref
-  identity only) — matches pre-existing .map idiom; place/openMarket give whole-state identity.
-- T5-m1 (limitation note): go-to-date teleport dispatches goToTime (not seekTo) → captured
-  neither as ReplaySeek nor as anchor reset; candlesRevealed can inflate/clamp for the next
-  order. Out of tracked-action scope; document as limitation (Task 7 candidate).
-- T5-m2 (cosmetic): V-8 proof spec leaves an intentional console.log evidence line.
-- T5-m3 (coverage): wildcard arm-clear path tested only via advanceCandle; a non-replay
-  action test would pin the generalization.
-- T5-m4 (doc precision): "NEVER emits regardless" doc comment slightly overstates the proof;
-  hedge to "for all current and realistic producers".
-- T6-m1 (coverage depth): crear-sesion costs spec never renders the template (matches the
-  file's pre-existing idiom); 3 new inputs exercised via handler calls, wiring verified by
-  reviewer reading.
-- T6-m2 (DRY cosmetic): .cost-label duplicated verbatim in two component CSS files vs the
-  existing .label class.
-- T6-m3 (copy symmetry): unit shown inline in summary ("7.00 $/lote") vs label-only in the
-  dialog ("Comisión ($/lote)").
-- T6-m4 (comment precision): pickR2Asset resets overrides on every pick, comment implies
-  class-change-only.
-- T7-m1 (stale comment, this-branch): domain-facts.ts:6-8 still describes the abandoned
-  TradingState.lastFacts surfacing; actual mechanism is diffDomainFacts state diffing
-  (D14.F). One-line comment fix candidate for the final fix wave.
+Task 8: complete (commit 0d3c9b0; implementer sonnet; review staff manager: APPROVED "Ship it". 1782→1787 tests / 145→146 files (+5 tests, +1 file), tsc+lint clean. Business invariants J-1, J-3, J-4, J-5 programmatically validated in `lessons-invariants.spec.ts`. All docs updated: `TRADER_KNOWLEDGE_MODEL.md` (seek references removed), `DOMAIN_MODEL.md` (I-17 section added), `UBIQUITOUS_LANGUAGE.md` (concepts defined), `016-diario-enmiendas-playbook.md` status to Implementado).

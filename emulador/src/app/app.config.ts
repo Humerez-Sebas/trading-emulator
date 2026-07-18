@@ -16,6 +16,7 @@ import { authFeature } from './state/auth/auth.reducer';
 import { layoutFeature } from './state/layout/layout.reducer';
 import { linkGroupsFeature } from './state/link-groups/link-groups.reducer';
 import { playbookFeature } from './state/playbook/playbook.reducer';
+import { lessonsFeature } from './state/lessons/lessons.reducer';
 import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
@@ -26,6 +27,7 @@ import { SessionSyncEffects } from './state/sync/session-sync.effects';
 import { LayoutEffects } from './state/layout/layout.effects';
 import { TelemetryEffects } from './state/telemetry/telemetry.effects';
 import { PlaybookEffects } from './state/playbook/playbook.effects';
+import { LessonsEffects } from './state/lessons/lessons.effects';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -44,6 +46,7 @@ export const appConfig: ApplicationConfig = {
       [layoutFeature.name]: layoutFeature.reducer,
       [linkGroupsFeature.name]: linkGroupsFeature.reducer,
       [playbookFeature.name]: playbookFeature.reducer,
+      [lessonsFeature.name]: lessonsFeature.reducer,
     }),
     provideEffects(
       MarketEffects,
@@ -56,6 +59,7 @@ export const appConfig: ApplicationConfig = {
       LayoutEffects,
       TelemetryEffects,
       PlaybookEffects,
+      LessonsEffects,
     ),
   ],
 };

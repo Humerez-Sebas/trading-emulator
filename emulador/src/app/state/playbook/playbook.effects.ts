@@ -74,12 +74,11 @@ export class PlaybookEffects {
           PlaybookActions.setRuleStatus,
           PlaybookActions.assignSlot,
           PlaybookActions.reorderRule,
+          PlaybookActions.amendRule,
           PlaybookActions.rulesSynced,
         ),
         withLatestFrom(this.store.select(selectPlaybookRules)),
-        concatMap(([, rules]) =>
-          from(this.db.upsertMany(rules)).pipe(catchError(() => EMPTY)),
-        ),
+        concatMap(([, rules]) => from(this.db.upsertMany(rules)).pipe(catchError(() => EMPTY))),
       ),
     { dispatch: false },
   );
@@ -108,6 +107,7 @@ export class PlaybookEffects {
           PlaybookActions.setRuleStatus,
           PlaybookActions.assignSlot,
           PlaybookActions.reorderRule,
+          PlaybookActions.amendRule,
         ),
         auditTime(2000),
         withLatestFrom(
@@ -115,9 +115,7 @@ export class PlaybookEffects {
           this.store.select(authFeature.selectStatus),
         ),
         filter(([, , status]) => status === 'authenticated'),
-        concatMap(([, rules]) =>
-          from(this.pushDirtyRules(rules)).pipe(catchError(() => EMPTY)),
-        ),
+        concatMap(([, rules]) => from(this.pushDirtyRules(rules)).pipe(catchError(() => EMPTY))),
       ),
     { dispatch: false },
   );

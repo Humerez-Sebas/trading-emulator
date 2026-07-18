@@ -31,7 +31,16 @@ describe('selectFloatingEquity.projector', () => {
   it('empty positions ⇒ balance, regardless of any candle being available', () => {
     expect(selectFloatingEquity.projector(10000, [], null, null, 0, 0, null, 100)).toBe(10000);
     expect(
-      selectFloatingEquity.projector(10000, [], null, [candle(0, 100, 101, 99, 100)], 0, 60, null, 100),
+      selectFloatingEquity.projector(
+        10000,
+        [],
+        null,
+        [candle(0, 100, 101, 99, 100)],
+        0,
+        60,
+        null,
+        100,
+      ),
     ).toBe(10000);
   });
 

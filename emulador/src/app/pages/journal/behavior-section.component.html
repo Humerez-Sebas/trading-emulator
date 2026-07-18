@@ -1,0 +1,32 @@
+<section class="section" data-zone="behavior" aria-labelledby="behavior-heading">
+  <header class="section-header">
+    <h2 id="behavior-heading">Behavior</h2>
+  </header>
+
+  @if (insufficientData()) {
+    <p class="insufficient-data">Se necesitan al menos 3 trades para esta visualización.</p>
+  } @else {
+    <div class="viz-row">
+      <div class="viz-mount" data-viz="bubble-duration-r">
+        <app-bubble-duration-r [bubbles]="bubbles()" (tradeSelected)="tradeSelected.emit($event)" />
+      </div>
+      <div class="viz-mount" data-viz="heatmap-trade-calendar">
+        <app-heatmap-trade-calendar
+          [cells]="cells()"
+          (tradeSelected)="tradeSelected.emit($event)"
+        />
+      </div>
+    </div>
+  }
+
+  <dl class="facts-row" aria-label="Hechos físicos de navegación">
+    <div class="fact">
+      <dt>Saltos de replay</dt>
+      <dd>{{ facts().replayJumps }}</dd>
+    </div>
+    <div class="fact">
+      <dt>Pausas</dt>
+      <dd>{{ facts().pauses }}</dd>
+    </div>
+  </dl>
+</section>

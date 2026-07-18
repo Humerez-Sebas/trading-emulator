@@ -74,7 +74,7 @@ describe('TelemetryDbService — append / flush sequencing', () => {
     expect(s2.map((e) => e.seq)).toEqual([0]);
   });
 
-  it('a fresh service instance continues the seq from the store\'s existing rows', async () => {
+  it("a fresh service instance continues the seq from the store's existing rows", async () => {
     await svc.append('s1', [event(), event()]);
     await svc.flush();
     const svc2 = new TelemetryDbService();

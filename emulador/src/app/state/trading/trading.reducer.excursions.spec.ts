@@ -32,7 +32,10 @@ describe('trading reducer: processCandle adopts excursion accumulation on the !c
     // candle 1 (t=60): adverse=max(0,100-97)=3, favorable=max(0,105-100)=5
     // → mae=3@60, mfe=5@60. No fill/exit → changed:false, excursionsMoved:true.
     const c1 = candle(60, 100, 105, 97, 100);
-    const s1 = reducer(s0, TradingActions.processCandle({ candle: c1, subCandles: null, contractSize: CONTRACT }));
+    const s1 = reducer(
+      s0,
+      TradingActions.processCandle({ candle: c1, subCandles: null, contractSize: CONTRACT }),
+    );
     expect(s1.positions).toHaveLength(1);
     expect(s1.positions[0].mae).toBeCloseTo(3);
     expect(s1.positions[0].tMae).toBe(60);
@@ -46,7 +49,10 @@ describe('trading reducer: processCandle adopts excursion accumulation on the !c
     // candle 2 (t=120): adverse=max(0,100-95)=5 (>3, new max)@120;
     // favorable=max(0,103-100)=3 (no move, mfe stays 5@60)
     const c2 = candle(120, 100, 103, 95, 100);
-    const s2 = reducer(s1, TradingActions.processCandle({ candle: c2, subCandles: null, contractSize: CONTRACT }));
+    const s2 = reducer(
+      s1,
+      TradingActions.processCandle({ candle: c2, subCandles: null, contractSize: CONTRACT }),
+    );
     expect(s2.positions[0].mae).toBeCloseTo(5);
     expect(s2.positions[0].tMae).toBe(120);
     expect(s2.positions[0].mfe).toBeCloseTo(5);
@@ -55,7 +61,10 @@ describe('trading reducer: processCandle adopts excursion accumulation on the !c
     // candle 3 (t=180): adverse=max(0,100-99)=1 (no move, mae stays 5@120);
     // favorable=max(0,108-100)=8 (>5, new max)@180
     const c3 = candle(180, 100, 108, 99, 100);
-    const s3 = reducer(s2, TradingActions.processCandle({ candle: c3, subCandles: null, contractSize: CONTRACT }));
+    const s3 = reducer(
+      s2,
+      TradingActions.processCandle({ candle: c3, subCandles: null, contractSize: CONTRACT }),
+    );
     expect(s3.positions[0].mae).toBeCloseTo(5);
     expect(s3.positions[0].tMae).toBe(120);
     expect(s3.positions[0].mfe).toBeCloseTo(8);
@@ -66,7 +75,10 @@ describe('trading reducer: processCandle adopts excursion accumulation on the !c
     // adverse=max(0,100-89)=11 (>5, new max)@240; favorable=max(0,106-100)=6
     // (no move, mfe stays 8@180). changed:true this time → full book adopted.
     const c4 = candle(240, 100, 106, 89, 100);
-    const s4 = reducer(s3, TradingActions.processCandle({ candle: c4, subCandles: null, contractSize: CONTRACT }));
+    const s4 = reducer(
+      s3,
+      TradingActions.processCandle({ candle: c4, subCandles: null, contractSize: CONTRACT }),
+    );
     expect(s4.positions).toHaveLength(0);
     expect(s4.history).toHaveLength(1);
     const trade = s4.history[0];
@@ -83,7 +95,10 @@ describe('trading reducer: processCandle adopts excursion accumulation on the !c
     const s0 = tradingState();
     expect(s0.positions).toHaveLength(0);
     const c = candle(60, 100, 101, 99, 100);
-    const next = reducer(s0, TradingActions.processCandle({ candle: c, subCandles: null, contractSize: CONTRACT }));
+    const next = reducer(
+      s0,
+      TradingActions.processCandle({ candle: c, subCandles: null, contractSize: CONTRACT }),
+    );
     expect(next.positions).toBe(s0.positions); // same array reference, no churn
     expect(next.lastProcessedTime).toBe(60);
   });

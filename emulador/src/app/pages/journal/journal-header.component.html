@@ -1,0 +1,11 @@
+<header class="journal-header">
+  <a class="breadcrumb" routerLink="/sesiones">← Sesiones</a>
+  <h1 #heading tabindex="-1">Journal — {{ sessionName() }}</h1>
+  <p class="meta">
+    {{ symbol() }}
+    @if (dateFrom() !== null && dateTo() !== null) {
+      · {{ dateFrom()! * 1000 | date: 'dd MMM yyyy' : 'UTC' }} –
+      {{ dateTo()! * 1000 | date: 'dd MMM yyyy' : 'UTC' }}
+    }
+  </p>
+</header>

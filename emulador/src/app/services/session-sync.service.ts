@@ -23,6 +23,8 @@ import type { SavedSession, TradingData } from '../state/trading/trading.models'
 import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import { defaultTradingData } from '../state/trading/trading.models';
 import type { PlaybookRule, PlaybookRuleStatus } from '../state/playbook/playbook.models';
+import type { Lesson } from '../state/lessons/lessons.models';
+import type { SceneSpec } from '../domain/reflection/scene-spec';
 
 /**
  * Supabase CRUD boundary for session sync (Task 8). Pure I/O — no merge/LWW
@@ -192,7 +194,9 @@ export class SessionSyncService {
     const userId = await this.currentUserId();
     for (const rule of rules) {
       const dbRow = ruleToDbRow(rule, userId);
-      const { error } = await this.client.from('playbook_rules').upsert(dbRow, { onConflict: 'id' });
+      const { error } = await this.client
+        .from('playbook_rules')
+        .upsert(dbRow, { onConflict: 'id' });
       if (error) throw new Error(error.message);
     }
   }
@@ -213,6 +217,55 @@ export class SessionSyncService {
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as DbPlaybookRuleRow[];
     return rows.map(dbRowToRule);
+  }
+
+  // ---------------------------------------------------------------------
+  // RFC-016 Task 3: lessons push/pull. Same client, same error idiom as
+  // playbook_rules above. Pure I/O only — dirty filtering (isLessonDirty)
+  // and LWW merge (mergeLessonsPull) are the caller's (LessonsEffects')
+  // responsibility, kept as pure functions at the bottom of this file so the
+  // spec needs no network (see lessons-sync.spec.ts).
+  // ---------------------------------------------------------------------
+
+  /**
+   * Upserts every given lesson as-is (no internal dirty filtering — the
+   * caller decides what's dirty via `isLessonDirty`). N-5: evidence
+   * (`SceneSpec[]`) must travel candle-free, so `assertNoCandles` runs
+   * BEFORE any network call — including `currentUserId()`'s own round-trip —
+   * so a poisoned evidence array never reaches the wire. Any single failed
+   * upsert rejects the whole call so the caller does not stamp
+   * `lessonsSynced` for a partially-pushed batch (playbook parity: retried
+   * whole on the next debounce cycle — safe, upsert is idempotent and the
+   * `lww_guard` trigger no-ops a retry that resends the same
+   * `client_updated_at`).
+   */
+  async pushLessons(lessons: Lesson[]): Promise<void> {
+    if (!lessons.length) return;
+    assertNoCandles(lessons);
+    const userId = await this.currentUserId();
+    for (const lesson of lessons) {
+      const dbRow = lessonToDbRow(lesson, userId);
+      const { error } = await this.client.from('lessons').upsert(dbRow, { onConflict: 'id' });
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Lists every lesson owned by the current user (RLS-scoped server-side).
+   * The select string names every field of `DbLessonRow` (including
+   * `user_id`, which `dbRowToLesson` itself never reads) so the
+   * `as DbLessonRow[]` cast below is honest — it doesn't claim a column that
+   * wasn't actually selected.
+   */
+  async pullLessons(): Promise<Lesson[]> {
+    const { data, error } = await this.client
+      .from('lessons')
+      .select(
+        'id,user_id,what_happened,repeat_field,avoid,linked_rule_ids,evidence,trade_refs,session_ref,authored_at,client_updated_at',
+      );
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as DbLessonRow[];
+    return rows.map(dbRowToLesson);
   }
 
   // ---------------------------------------------------------------------
@@ -650,6 +703,132 @@ export function mergePlaybookPull(
   }
 
   return { rules, toUpsertLocally };
+}
+
+// ---------------------------------------------------------------------------
+// RFC-016 Task 3: lessons mapping + LWW merge. Pure, no DI/IO — mirrors the
+// playbook_rules block immediately above line-by-line, adapted to Lesson's
+// shape (three opaque text fields, evidence: SceneSpec[], no status/
+// shortcutSlot/sortOrder/amendments).
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw Postgres row shape for public.lessons (snake_case, ISO timestamps).
+ * Column naming: the domain field `Lesson.repeat` maps to `repeat_field`
+ * (see the comment in supabase/lessons.sql for the full rationale).
+ */
+export interface DbLessonRow {
+  id: string;
+  user_id: string;
+  what_happened: string;
+  repeat_field: string;
+  avoid: string;
+  linked_rule_ids: string[];
+  evidence: SceneSpec[];
+  trade_refs: string[];
+  session_ref: string;
+  authored_at: string; // ISO
+  client_updated_at: string; // ISO
+}
+
+/** dirty ⇔ clientUpdatedAt > (syncedAt ?? 0), applied to a full Lesson (D15.F/D16 parity with isPlaybookRuleDirty). */
+export function isLessonDirty(lesson: Lesson): boolean {
+  return isDirty(lesson.clientUpdatedAt, lesson.syncedAt);
+}
+
+/**
+ * Domain Lesson -> Postgres row. `userId` is the auth.uid() owner, set
+ * explicitly (mirrors `ruleToDbRow` above — never relies on the column
+ * default so RLS's `with check (auth.uid() = user_id)` always sees an
+ * explicit match). A lesson that has never been locally stamped falls back
+ * to its own `authoredAt` for `client_updated_at` (a lesson that has never
+ * been edited was, by definition, last written at authoring time).
+ */
+export function lessonToDbRow(lesson: Lesson, userId: string): DbLessonRow {
+  return {
+    id: lesson.id,
+    user_id: userId,
+    what_happened: lesson.whatHappened,
+    repeat_field: lesson.repeat,
+    avoid: lesson.avoid,
+    linked_rule_ids: lesson.linkedRuleIds,
+    evidence: lesson.evidence,
+    trade_refs: lesson.tradeRefs,
+    session_ref: lesson.sessionRef,
+    authored_at: new Date(lesson.authoredAt).toISOString(),
+    client_updated_at: new Date(lesson.clientUpdatedAt ?? lesson.authoredAt).toISOString(),
+  };
+}
+
+/**
+ * Postgres row -> domain Lesson. `syncedAt` is stamped equal to the row's
+ * own `clientUpdatedAt` — a row just read from the cloud is, by definition,
+ * in sync with the cloud as of that timestamp (playbook parity, see
+ * `dbRowToRule`).
+ */
+export function dbRowToLesson(row: DbLessonRow): Lesson {
+  const clientUpdatedAt = new Date(row.client_updated_at).getTime();
+  return {
+    id: row.id,
+    authoredAt: new Date(row.authored_at).getTime(),
+    whatHappened: row.what_happened,
+    repeat: row.repeat_field,
+    avoid: row.avoid,
+    linkedRuleIds: row.linked_rule_ids,
+    evidence: row.evidence,
+    tradeRefs: row.trade_refs,
+    sessionRef: row.session_ref,
+    clientUpdatedAt,
+    syncedAt: clientUpdatedAt,
+  };
+}
+
+/**
+ * Pure per-row LWW merge of a local lesson set against a cloud pull.
+ * Deliberately simpler than `mergeByLww` (no delete branch): a pull NEVER
+ * deletes locally — a local-dirty row absent from the cloud (never pushed
+ * yet, or pushed from a device that is now offline) is always KEPT, because
+ * losing a trader's authored knowledge on a stale pull would violate P-3
+ * (mirrors `mergePlaybookPull` exactly).
+ *  - id present on both sides: whichever `clientUpdatedAt` is newer wins;
+ *    equal timestamps keep local (no-op).
+ *  - id local-only: kept as-is (not queued for a local write — it's already
+ *    there; pushing it to the cloud is `LessonsEffects`' push cycle's job).
+ *  - id cloud-only: inserted into the merged set and queued for a local
+ *    IndexedDB write (`toUpsertLocally`).
+ */
+export function mergeLessonsPull(
+  local: Lesson[],
+  remote: Lesson[],
+): { lessons: Lesson[]; toUpsertLocally: Lesson[] } {
+  const remoteById = new Map(remote.map((r) => [r.id, r]));
+  const localIds = new Set(local.map((l) => l.id));
+
+  const lessons: Lesson[] = [];
+  const toUpsertLocally: Lesson[] = [];
+
+  for (const l of local) {
+    const r = remoteById.get(l.id);
+    if (!r) {
+      lessons.push(l); // remote-missing local row: never deleted by pull
+      continue;
+    }
+    if ((r.clientUpdatedAt ?? 0) > (l.clientUpdatedAt ?? 0)) {
+      lessons.push(r);
+      toUpsertLocally.push(r);
+    } else {
+      lessons.push(l); // local newer, or a tie: local survives
+    }
+  }
+
+  for (const r of remote) {
+    if (!localIds.has(r.id)) {
+      lessons.push(r);
+      toUpsertLocally.push(r);
+    }
+  }
+
+  return { lessons, toUpsertLocally };
 }
 
 /** Min/max over the active session's cursor + its trading activity, in unix seconds. Both 0 when there's no activity. */

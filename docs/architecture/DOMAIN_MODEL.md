@@ -418,6 +418,19 @@ opacity and survival of trader-authored rules:
 Additionally, `declaredRuleId?: string | null` is noted on the §3.1 identity chain
 (`PendingOrder → Position → ClosedTrade`) as an additive, opaque stamp.
 
+### I-17 Lesson & Journal Invariants (RFC-016)
+
+The Lesson and Journal systems (`state/lessons/` and pages `/journal`, `/reflection`) introduce six invariants protecting the conservation, isolation, and user-authorship of trader knowledge:
+
+| Id | Invariant | Detector |
+| :--- | :--- | :--- |
+| J-1 | Las escenas son recomputables: ningún render se persiste jamás (N-3) | Test de forma de almacenamiento: cero blobs/Base64 en stores de lessons/telemetría (`lessons-db.service.spec.ts`, `lessons-invariants.spec.ts`) |
+| J-2 | Solo los campos autorados por el trader (`whatHappened`/`repeat`/`avoid`) portan significado; ningún camino los parsea, puntúa o transforma | Grep de sitios de lectura (solo display/edit/export/sync) + grep N-1 |
+| J-3 | La evidencia se congela al autorar: cambios posteriores de sesión/telemetría jamás mutan una lección | Test de inmutabilidad sobre las copias de `evidence` (`reflection-cabin-page.component.spec.ts`, `lessons-invariants.spec.ts`) |
+| J-4 | Conservación (N-4): purgar sesiones+telemetría deja lessons y playbook intactos y legibles | Round-trip de borrado (`lessons-db.service.spec.ts`, `lessons-invariants.spec.ts`) |
+| J-5 | Session-scope: ningún read-model del Journal o lección consume más de una sesión | Revisión de selectores + test de aislamiento (`lessons-invariants.spec.ts`) |
+| J-6 | El Journal/Cabina es read-side puro sobre facts: cero dispatches a trading/replay/telemetry | Grep de dispatches en `journal/**` y `reflection/**` (solo acciones de lessons/navegación/playbook.amendRule) |
+
 ---
 
 ## 6. Domain Services (pure function inventory)

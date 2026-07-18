@@ -547,6 +547,19 @@ export class SesionesPageComponent {
     return card.initialBalance ? card.pnl / card.initialBalance : 0;
   }
 
+  /**
+   * The id `/journal/:id` and `/journal/:id/reflect` navigate with (RFC-016
+   * §3). `card.syncId` already covers every case uniformly: an archived
+   * card's `syncId` mirrors its own `id`; the ACTIVE card's `id` is null but
+   * `syncId` carries `activeSessionId`; a cloud-only card's `syncId` mirrors
+   * its cloud row id. Falls back to `card.id` defensively (never both null
+   * in practice — `activeSessionId` is minted on every `switchAsset`/
+   * `newSession` transition) so the link never renders `null` in the URL.
+   */
+  journalId(card: SessionCard): string {
+    return card.syncId ?? card.id ?? '';
+  }
+
   folderName(id: string | null): string {
     if (!id) return 'Sin carpeta';
     return this.folders().find((f) => f.id === id)?.name ?? 'Sin carpeta';

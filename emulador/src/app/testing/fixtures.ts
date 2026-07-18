@@ -124,6 +124,11 @@ export function workspaceMeta(p: Partial<WorkspaceMeta> = {}): WorkspaceMeta {
     trading: ws.trading,
     sessions: ws.sessions,
     lastModified: ws.lastModified,
+    // RFC-016 T5 review Finding 1 fix: was silently dropped even when passed
+    // (WorkspaceMeta.selectedTfs is a real, testable field — journal-data
+    // service tests need to set it). Additive: undefined when not passed,
+    // identical to the prior behavior for every existing caller.
+    selectedTfs: ws.selectedTfs,
     activeSessionId: p.activeSessionId,
     activeClientUpdatedAt: p.activeClientUpdatedAt,
     activeSyncedAt: p.activeSyncedAt,

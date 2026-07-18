@@ -220,10 +220,19 @@ export class TelemetryDbService {
   async listForSession(sessionId: string): Promise<TelemetryEvent[]> {
     const db = await this.open();
     const records = await this.request<TelemetryRecord[]>(
-      db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll(this.sessionRange(sessionId)),
+      db
+        .transaction(STORE_NAME, 'readonly')
+        .objectStore(STORE_NAME)
+        .getAll(this.sessionRange(sessionId)),
     );
     return records
       .sort((a, b) => a.seq - b.seq)
-      .map((r) => ({ seq: r.seq, wallClockMs: r.wallClockMs, marketTime: r.marketTime, kind: r.kind, payload: r.payload }));
+      .map((r) => ({
+        seq: r.seq,
+        wallClockMs: r.wallClockMs,
+        marketTime: r.marketTime,
+        kind: r.kind,
+        payload: r.payload,
+      }));
   }
 }

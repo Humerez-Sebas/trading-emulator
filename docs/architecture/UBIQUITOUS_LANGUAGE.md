@@ -712,20 +712,9 @@ independently derives the same fact shapes by pairwise-diffing consecutive
 `positions[]`/`history[]` snapshots (`diffDomainFacts`,
 `state/telemetry/telemetry-facts.ts`), not by reading `ProcessResult.facts`.
 
-**ReplaySeek** (telemetry fact).
-`{fromTime, toTime, direction}` — the objective record of a scrubber teleport. The
-register stores geometry, never labels (no `isBacktrack`, no honesty fields).
-*Technical implication:* captured by `TelemetryEffects.replaySeek$` on
-`ReplayActions.seekTo` only. **Known capture gap (RFC-014 closure deviation):** the
-"go to date" teleport, and programmatic session-restore/CSV-start jumps, dispatch
-`ReplayActions.goToTime` directly, bypassing `seekTo` — captured as neither
-`ReplaySeek` nor a jump-arm-based `ReplayJump` (Jump, Section 4), and it does not
-reset the `TimeElapsedBeforeOrder` order-clock anchor. Not fixed in the RFC-014
-closure task; a future telemetry pass should widen the capture surface.
-
 **TimeElapsedBeforeOrder.**
 `{anchorKind, pausedMs, playingMs, candlesRevealed}` — the physical timing context
-of an order placement, anchored at the most recent of session start, last seek, or
+of an order placement, anchored at the most recent of session start, last jump, or
 last order event.
 
 **MAE / MFE.**
@@ -749,10 +738,21 @@ staying undefined. Rendered as `MAE_R`/`MFE_R` columns in the trade history
 (display-time derivation; "—" for legacy trades missing the fields) plus
 mean/max aggregates in the session summary (G4).
 
-**Reflection Cabin** (The Mirror).
+**Reflection Cabin / Cabina de Reflexión.**
 The end-of-session / on-demand reconstruction surface: Reflective Scenes plus
 uninterpreted fact panels. It presents and asks nothing; lesson authoring is always
-trader-initiated.
+trader-initiated. The interactive surface where the trader visualizes trade waypoints.
+*Technical implication:* `ReflectionCabinPageComponent` (`pages/reflection/reflection-cabin-page.component.ts`).
+
+**Waypoint.**
+Un instante físico significativo en la vida de un trade (Entry, Management, MAE, MFE, Exit) que sirve como ancla para la reconstrucción de escenas reflectivas.
+
+**Diario de Enmiendas (Amendment Journal).**
+El almacén consolidado y la bitácora de lecciones persistidas que vincula la evidencia de los trades con la evolución de las reglas del Playbook.
+
+**`emulador-lessons`.**
+La base de datos local IndexedDB dedicada exclusivamente a la persistencia a largo plazo de las lecciones (Permanent Lessons), garantizando que sobrevivan a la purga de sesiones y telemetría (J-4).
+*Technical implication:* `LessonsDbService` (`services/lessons-db.service.ts`), object store `lessons`.
 
 Note: "Session" keeps its Section 7 definition; the knowledge model adds its tier
 classification — a transitory container whose deletion must never destroy Lessons.

@@ -24,13 +24,19 @@ describe('newSession seeds executionCosts (RFC-014 G1, T6b)', () => {
 
   it('a resolved preset in the action seeds the fresh session executionCosts', () => {
     const costs = COST_PRESETS.Forex;
-    const next = reducer(state(), TradingActions.newSession({ currentCursor: 0, executionCosts: costs }));
+    const next = reducer(
+      state(),
+      TradingActions.newSession({ currentCursor: 0, executionCosts: costs }),
+    );
     expect(next.executionCosts).toEqual(costs);
   });
 
   it('an overridden cost object seeds the fresh session executionCosts verbatim', () => {
     const costs = { spreadPoints: 4, commissionPerLot: 1.5, slippagePoints: 0, pointSize: 1 };
-    const next = reducer(state(), TradingActions.newSession({ currentCursor: 0, executionCosts: costs }));
+    const next = reducer(
+      state(),
+      TradingActions.newSession({ currentCursor: 0, executionCosts: costs }),
+    );
     expect(next.executionCosts).toEqual(costs);
   });
 

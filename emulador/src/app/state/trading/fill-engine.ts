@@ -271,7 +271,11 @@ function resolveExit(
 }
 
 /** First lower candle (>= fromIdx) that touches the order's entry price. */
-function fillSubIndex(o: PendingOrder, subCandles: Candle[] | null, costs?: ExecutionCosts): number {
+function fillSubIndex(
+  o: PendingOrder,
+  subCandles: Candle[] | null,
+  costs?: ExecutionCosts,
+): number {
   if (!subCandles) return 0;
   for (let i = 0; i < subCandles.length; i++) {
     if (orderFills(o, subCandles[i], costs)) return i;
@@ -499,6 +503,8 @@ export interface SessionStats {
   /** Equity after each closed trade, starting at the initial balance. */
   equityCurve: number[];
   ambiguousCount: number;
+  /** Sharpe ratio (per-trade, without annualization). mean(R) / sampleStdDev(R), null when n < 2 or stddev === 0 (RFC-016 D16.C.3). */
+  sharpe: number | null;
 }
 
 export function computeSessionStats(history: ClosedTrade[], initialBalance: number): SessionStats {
@@ -517,6 +523,9 @@ export function computeSessionStats(history: ClosedTrade[], initialBalance: numb
   let maxDrawdown = 0;
   let maxDrawdownPct = 0;
 
+  // Collect all R values for Sharpe calculation
+  const rValues: number[] = [];
+
   for (const t of trades) {
     if (t.outcome === 'session-end') expired++;
     else if (t.profit > 0) won++;
@@ -524,6 +533,7 @@ export function computeSessionStats(history: ClosedTrade[], initialBalance: numb
     if (t.profit >= 0) grossWin += t.profit;
     else grossLoss += -t.profit;
     totalR += t.rMultiple;
+    rValues.push(t.rMultiple);
     if (t.ambiguous) ambiguousCount++;
 
     equity += t.profit;
@@ -535,6 +545,10 @@ export function computeSessionStats(history: ClosedTrade[], initialBalance: numb
       maxDrawdownPct = peak > 0 ? dd / peak : 0;
     }
   }
+
+  // Compute Sharpe ratio: mean(R) / sampleStdDev(R)
+  // Null when n < 2 or stddev === 0
+  const sharpe = computeSharpe(rValues);
 
   const decided = won + lost;
   return {
@@ -550,5 +564,21 @@ export function computeSessionStats(history: ClosedTrade[], initialBalance: numb
     maxDrawdownPct,
     equityCurve,
     ambiguousCount,
+    sharpe,
   };
+}
+
+/**
+ * Compute Sharpe ratio (per-trade, no annualization). mean(R) / sampleStdDev(R).
+ * Returns null when n < 2 or stddev === 0.
+ */
+function computeSharpe(rValues: readonly number[]): number | null {
+  if (rValues.length < 2) return null;
+
+  const mean = rValues.reduce((sum, r) => sum + r, 0) / rValues.length;
+  const variance = rValues.reduce((sum, r) => sum + (r - mean) ** 2, 0) / (rValues.length - 1);
+  const stddev = Math.sqrt(variance);
+
+  if (stddev === 0) return null;
+  return mean / stddev;
 }

@@ -24,7 +24,12 @@ describe('telemetry-drawings (RFC-014 T5b-ii) — G3 frozen snapshot mapping', (
     });
 
     it('styleToken currently mirrors kind (no separate style field on Drawing)', () => {
-      const line: Drawing = { id: 'd2', kind: 'line', p1: { time: 0, price: 0 }, p2: { time: 1, price: 1 } };
+      const line: Drawing = {
+        id: 'd2',
+        kind: 'line',
+        p1: { time: 0, price: 0 },
+        p2: { time: 1, price: 1 },
+      };
       expect(toDrawingSnapshotEntry(line).styleToken).toBe('line');
     });
 

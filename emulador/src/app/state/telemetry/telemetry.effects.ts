@@ -18,10 +18,16 @@ import { drawingsFeature } from '../drawings/drawings.reducer';
 import {
   captureOrderClock,
   freshOrderClock,
+  withDisplayAdvance,
   withPlaybackToggled,
   type OrderClock,
 } from './telemetry-anchors';
-import { diffDomainFacts, resolveOrderRef, type TradingSnapshot } from './telemetry-facts';
+import {
+  diffDomainFacts,
+  diffManagementEvents,
+  resolveOrderRef,
+  type TradingSnapshot,
+} from './telemetry-facts';
 import { snapshotDrawings } from './telemetry-drawings';
 
 /**
@@ -318,7 +324,9 @@ export class TelemetryEffects {
         withLatestFrom(this.store.select(selectReplayIndex), this.store.select(selectPlaying)),
         tap(([sessionId, replayIndex, playing]) => {
           this.orderClock =
-            sessionId == null ? null : freshOrderClock(sessionId, 'sessionStart', Date.now(), replayIndex, playing);
+            sessionId == null
+              ? null
+              : freshOrderClock(sessionId, 'sessionStart', Date.now(), replayIndex, playing);
         }),
       ),
     { dispatch: false },
@@ -344,6 +352,40 @@ export class TelemetryEffects {
             action.type === ReplayActions.play.type,
             Date.now(),
             replayIndex,
+          );
+        }),
+      ),
+    { dispatch: false },
+  );
+
+  /**
+   * `+1` press (`ReplayActions.advanceDisplay`, RFC-016 D16.B): keeps
+   * `orderClock`'s press memory + potential retroactive `lastJump`
+   * re-anchor in sync — see `withDisplayAdvance` in `telemetry-anchors.ts`
+   * for the pure transition. Deliberately gated to ONLY `advanceDisplay`:
+   * `jumpForward`/`jumpBack` do not participate in D16.B (the RFC names
+   * only `advanceDisplay`), even though `advanceDisplay` is ALSO a member
+   * of `JUMP_FAMILY` for the completely separate `ReplayJump` capture
+   * concern above (`syncJumpOrigin$`/`replayJump$`) — both observers watch
+   * the same action independently and neither affects the other.
+   */
+  private displayAdvanceClock$ = createEffect(
+    () =>
+      this.actions$.pipe(
+        ofType(ReplayActions.advanceDisplay),
+        withLatestFrom(
+          this.activeSessionId$,
+          this.store.select(selectReplayIndex),
+          this.store.select(selectPlaying),
+        ),
+        tap(([, sessionId, replayIndex, playing]) => {
+          if (sessionId == null) return;
+          this.orderClock = withDisplayAdvance(
+            this.orderClock,
+            sessionId,
+            Date.now(),
+            replayIndex,
+            playing,
           );
         }),
       ),
@@ -384,6 +426,32 @@ export class TelemetryEffects {
   );
 
   /**
+   * Management events (`OrderModified`/`PositionModified`, RFC-016 §1),
+   * derived from the SAME `tradingPairs$` state diff as `facts$` (see
+   * `diffManagementEvents`'s doc comment in `telemetry-facts.ts`) —
+   * automatically excludes rejected modifications (unchanged value),
+   * fills/placements/closes (id not present in both snapshots), and
+   * MAE/MFE accumulator churn (only sl/tp/entryPrice are compared).
+   * `marketTime` is the CURRENT replay time (`selectCurrentTime`), NOT any
+   * per-entity historical timestamp — a modification has no "its own"
+   * instant the way a fill/close does (those use `openTime`/`closeTime`);
+   * same choice as `playbackToggled$`/`speedChanged$` above.
+   */
+  managementEvents$ = createEffect(
+    () =>
+      this.tradingPairs$.pipe(
+        withLatestFrom(this.store.select(selectCurrentTime)),
+        tap(([[prev, curr], marketTime]) => {
+          if (curr.sessionId == null || prev.sessionId !== curr.sessionId) return; // no session, or a session switch: reset baseline, no spurious events
+          for (const event of diffManagementEvents(prev, curr)) {
+            this.capture(curr.sessionId, event.kind, marketTime, event.payload);
+          }
+        }),
+      ),
+    { dispatch: false },
+  );
+
+  /**
    * `TimeElapsedBeforeOrder` + `DrawingSnapshot` at order placement
    * (`placeOrder`/`openMarket`). State-driven off the SAME `tradingPairs$`
    * as `facts$`: `resolveOrderRef` finds the id the reducer just minted (a
@@ -410,7 +478,13 @@ export class TelemetryEffects {
           const orderRef = resolveOrderRef(prev, curr);
           if (orderRef == null) return;
 
-          const clockCapture = captureOrderClock(this.orderClock, curr.sessionId, Date.now(), replayIndex, playing);
+          const clockCapture = captureOrderClock(
+            this.orderClock,
+            curr.sessionId,
+            Date.now(),
+            replayIndex,
+            playing,
+          );
           this.orderClock = clockCapture.nextClock;
           this.capture(curr.sessionId, 'TimeElapsedBeforeOrder', marketTime, {
             orderRef,

@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| Estado | Propuesto (pendiente de aprobación del owner) |
+| Estado | Implementado |
 | Fecha | 2026-07-13 |
 | Bloque | Mastery Block — Fase 3 ([ROADMAP.md](../ROADMAP.md)) |
 | Rama de implementación | `feature/rfc-016-amendment-journal` → PR a `develop` |
@@ -259,6 +259,11 @@ Lesson := { id, authoredAt,
    Cabina (estados §3.2, `tabular-nums`, contraste §5.1, teclado §5.2,
    `prefers-reduced-motion`, jerarquía §1).
 7. Documentación actualizada (TKM, DOMAIN_MODEL, UL, este RFC a Implementado).
+
+## Notas de Implementación y Desviaciones
+
+- **Mock del ChartEngine en Pruebas Unitarias (T7):** La suite de pruebas para `ReflectionCabinPageComponent` requería simular `ChartEngine` sin recurrir a APIs nativas del navegador (como `window.matchMedia`) que causaban errores en JSDOM. Debido a que el test-harness de Angular/Vitest no permite hacer `vi.mock` de importaciones relativas locales, se introdujo `ChartEngineFactory` como seam de inyección, facilitando el uso de `FakeChartEngine` mediante TestBed en los specs.
+- **Validación de Supervivencia J-4 (T8):** Se blindó programáticamente en la spec de invariantes de lecciones (`lessons-invariants.spec.ts`) que las acciones de borrado de sesión (`TradingActions.deleteSession`) no se propagan a la base de datos `emulador-lessons` ni a su estado en el Store.
 
 ## Referencias
 

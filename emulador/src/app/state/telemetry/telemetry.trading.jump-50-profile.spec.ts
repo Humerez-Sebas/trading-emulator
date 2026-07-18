@@ -14,7 +14,12 @@ import {
   selectReplayTfSeconds,
 } from '../selectors';
 import { tradingFeature } from '../trading/trading.reducer';
-import { defaultTradingData, TradingState, Position, PendingOrder } from '../trading/trading.models';
+import {
+  defaultTradingData,
+  TradingState,
+  Position,
+  PendingOrder,
+} from '../trading/trading.models';
 import { drawingsFeature } from '../drawings/drawings.reducer';
 import type { Drawing } from '../drawings/drawings.models';
 import { TelemetryDbService } from '../../services/telemetry-db.service';
@@ -170,7 +175,10 @@ describe('TelemetryEffects — V-8 frame-budget evidence (RFC-014 T5b-ii, jump-5
 
     // 25 fills (facts$ -> OrderFilled) into positions[].
     for (let i = 0; i < 25; i++) {
-      state = trading({ ...state, positions: [...state.positions, pos(`p${i}`, i * 60, i % 2 === 0 ? 'limit' : 'stop')] });
+      state = trading({
+        ...state,
+        positions: [...state.positions, pos(`p${i}`, i * 60, i % 2 === 0 ? 'limit' : 'stop')],
+      });
       arm(state, i, i * 60);
     }
 
@@ -223,7 +231,9 @@ describe('TelemetryEffects — V-8 frame-budget evidence (RFC-014 T5b-ii, jump-5
     // Sanity: the burst actually drove the observer (not a silent no-op).
     expect(telemetryDb.append.mock.calls.length).toBeGreaterThan(50);
 
-    console.log(`[V-8] jump-50 burst observer overhead: ${elapsedMs.toFixed(2)}ms (bound: 50ms, real budget: 16ms/frame)`);
+    console.log(
+      `[V-8] jump-50 burst observer overhead: ${elapsedMs.toFixed(2)}ms (bound: 50ms, real budget: 16ms/frame)`,
+    );
 
     // GENEROUS, documented-as-generous bound — see the file-level doc comment.
     expect(elapsedMs).toBeLessThan(50);

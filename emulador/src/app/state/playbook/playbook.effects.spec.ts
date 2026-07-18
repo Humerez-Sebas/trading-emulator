@@ -131,7 +131,9 @@ describe('PlaybookEffects', () => {
       store.overrideSelector(selectPlaybookRules, currentRules);
       subscribeAll();
 
-      actions$.next(PlaybookActions.createRule({ id: 'c', title: 't', statement: 's', createdAt: 1 }));
+      actions$.next(
+        PlaybookActions.createRule({ id: 'c', title: 't', statement: 's', createdAt: 1 }),
+      );
 
       await Promise.resolve();
 
@@ -208,7 +210,9 @@ describe('PlaybookEffects', () => {
       (dbService.upsertMany as any).mockRejectedValue(new Error('DB error'));
       subscribeAll();
 
-      actions$.next(PlaybookActions.createRule({ id: 'b', title: 't', statement: 's', createdAt: 1 }));
+      actions$.next(
+        PlaybookActions.createRule({ id: 'b', title: 't', statement: 's', createdAt: 1 }),
+      );
 
       await Promise.resolve();
 
@@ -246,7 +250,9 @@ describe('PlaybookEffects', () => {
       setupAuthenticated([clean, dirty]);
 
       const sub = effects.pushDirty$.subscribe();
-      actions$.next(PlaybookActions.createRule({ id: 'x', title: 't', statement: 's', createdAt: 1 }));
+      actions$.next(
+        PlaybookActions.createRule({ id: 'x', title: 't', statement: 's', createdAt: 1 }),
+      );
       vi.advanceTimersByTime(2000);
       await Promise.resolve();
       await Promise.resolve();
@@ -265,7 +271,9 @@ describe('PlaybookEffects', () => {
       setupAuthenticated([dirty]);
 
       const sub = effects.pushDirty$.subscribe();
-      actions$.next(PlaybookActions.createRule({ id: 'x', title: 't', statement: 's', createdAt: 1 }));
+      actions$.next(
+        PlaybookActions.createRule({ id: 'x', title: 't', statement: 's', createdAt: 1 }),
+      );
       vi.advanceTimersByTime(2000);
       await Promise.resolve();
       await Promise.resolve();
@@ -283,7 +291,9 @@ describe('PlaybookEffects', () => {
       setupAuthenticated([rule('clean', { clientUpdatedAt: 1000, syncedAt: 1000 })]);
 
       const sub = effects.pushDirty$.subscribe();
-      actions$.next(PlaybookActions.createRule({ id: 'x', title: 't', statement: 's', createdAt: 1 }));
+      actions$.next(
+        PlaybookActions.createRule({ id: 'x', title: 't', statement: 's', createdAt: 1 }),
+      );
       vi.advanceTimersByTime(2000);
       await Promise.resolve();
       await Promise.resolve();
@@ -295,12 +305,16 @@ describe('PlaybookEffects', () => {
 
     it('does not push when the auth status is not "authenticated"', async () => {
       vi.useFakeTimers();
-      store.overrideSelector(selectPlaybookRules, [rule('a', { clientUpdatedAt: 2000, syncedAt: 1000 })]);
+      store.overrideSelector(selectPlaybookRules, [
+        rule('a', { clientUpdatedAt: 2000, syncedAt: 1000 }),
+      ]);
       store.overrideSelector(authFeature.selectStatus, 'anonymous');
       store.refreshState();
 
       const sub = effects.pushDirty$.subscribe();
-      actions$.next(PlaybookActions.createRule({ id: 'x', title: 't', statement: 's', createdAt: 1 }));
+      actions$.next(
+        PlaybookActions.createRule({ id: 'x', title: 't', statement: 's', createdAt: 1 }),
+      );
       vi.advanceTimersByTime(2000);
       await Promise.resolve();
       await Promise.resolve();

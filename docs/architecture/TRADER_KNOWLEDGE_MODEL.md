@@ -149,16 +149,14 @@ Objective record of how the trader moved through time — including rewinds, rec
 as geometry, never as verdicts:
 
 ```
-ReplaySeek   := { fromTime, toTime, direction }   // direction = sign(toTime - fromTime)
 ReplayJump   := { fromTime, toTime, grain }       // fold-processed forward, review back
 PlaybackToggled := { playing }                    // play / pause transitions
 SpeedChanged    := { msPerCandle }
 ```
 
-`ReplaySeek` captures scrubber teleportation exactly as the frozen navigation
-semantics define it
-([replay-trading.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/engineering/domain/replay-trading.md)):
-a viewing motion. The register stores from, to, and direction. It does **not**
+`ReplayJump` captures time jumps exactly as the navigation
+semantics define it:
+a viewing motion. The register stores from, to, and grain. It does **not**
 store, and no schema may ever add, fields such as `isBacktrack`, `honesty`, or
 `retryOfTradeId` — that is interpretation (N-1).
 
@@ -168,13 +166,13 @@ The physical timing context of every order placement:
 
 ```
 TimeElapsedBeforeOrder := { orderRef,
-                            anchorKind,        // sessionStart | lastSeek | lastOrderEvent
+                            anchorKind,        // sessionStart | lastJump | lastOrderEvent
                             pausedMs,          // wall time paused since anchor
                             playingMs,         // wall time playing since anchor
                             candlesRevealed }  // base-resolution candles revealed since anchor
 ```
 
-The anchor is defined as the most recent of: session start, last `ReplaySeek`, last
+The anchor is defined as the most recent of: session start, last `ReplayJump`, last
 order event. This makes the measure unambiguous and computable without inference.
 Whether a long `pausedMs` was patience or paralysis is a question only the trader
 can answer, in the mirror (Section 4).
@@ -393,7 +391,7 @@ Section 4). It adds no domain behavior and no new write path into trading state:
 
 ```
 existing commands & facts                      new, passive
-(ReplayClockAdvanced, ReplaySeek gesture,      +----------------------+
+(ReplayClockAdvanced, ReplayJump gesture,      +----------------------+
  OrderPlaced, OrderFilled, PositionClosed) --> | black-box appender   |
                                                | (observer policy)    |
                                                +----------+-----------+
@@ -440,7 +438,7 @@ provides it together with the base-resolution loop.
   Part 9 Section 2: pointer/stress "behavior signatures", playback-rewind "honesty
   and discipline" scoring, and mandatory session-start mood tags (a session-start
   prompt violates S2; behavioral scoring violates S1). Rewinds ARE still recorded —
-  as neutral `ReplaySeek` facts.
+  as neutral `ReplayJump` facts.
 - **Reframes** the audit's AI Coach: any future analysis feature (audit Fase 4)
   operates as an on-demand lens over recorded facts at the trader's explicit
   request, never as an autonomous judge, and never writes into the permanent

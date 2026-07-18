@@ -13,7 +13,13 @@ import {
   selectReplayIndex,
 } from '../selectors';
 import { tradingFeature } from '../trading/trading.reducer';
-import { defaultTradingData, TradingState, Position, ClosedTrade, PendingOrder } from '../trading/trading.models';
+import {
+  defaultTradingData,
+  TradingState,
+  Position,
+  ClosedTrade,
+  PendingOrder,
+} from '../trading/trading.models';
 import { drawingsFeature } from '../drawings/drawings.reducer';
 import type { Drawing } from '../drawings/drawings.models';
 import { TelemetryDbService } from '../../services/telemetry-db.service';
@@ -154,7 +160,11 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       arm(trading());
       const sub = subscribeAll();
 
-      arm(trading({ positions: [pos({ id: 'p1', origin: 'limit', entryPrice: 105, openTime: 1200 })] }));
+      arm(
+        trading({
+          positions: [pos({ id: 'p1', origin: 'limit', entryPrice: 105, openTime: 1200 })],
+        }),
+      );
       await Promise.resolve();
 
       expect(calls('OrderFilled')).toHaveLength(1);
@@ -183,12 +193,19 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
     });
 
     it('a position closing emits PositionClosed AND a DrawingSnapshot(eventRef=tradeId)', async () => {
-      const drawing: Drawing = { id: 'd1', kind: 'rect', p1: { time: 1, price: 1 }, p2: { time: 2, price: 2 } };
+      const drawing: Drawing = {
+        id: 'd1',
+        kind: 'rect',
+        p1: { time: 1, price: 1 },
+        p2: { time: 2, price: 2 },
+      };
       arm(trading({ positions: [pos({ id: 'p1', origin: 'limit' })] }), { drawings: [drawing] });
       const sub = subscribeAll();
 
       arm(
-        trading({ history: [closedTrade({ id: 'p1', origin: 'limit', outcome: 'manual', closeTime: 3000 })] }),
+        trading({
+          history: [closedTrade({ id: 'p1', origin: 'limit', outcome: 'manual', closeTime: 3000 })],
+        }),
         { drawings: [drawing] },
       );
       await Promise.resolve();
@@ -209,7 +226,13 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       arm(
         trading({
           history: [
-            closedTrade({ id: 'x1', origin: 'stop', outcome: 'sl', openTime: 1500, closeTime: 1500 }),
+            closedTrade({
+              id: 'x1',
+              origin: 'stop',
+              outcome: 'sl',
+              openTime: 1500,
+              closeTime: 1500,
+            }),
           ],
         }),
       );
@@ -220,8 +243,12 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       expect(orderFilledCall).toHaveLength(1);
       expect(positionClosedCall).toHaveLength(1);
       // append is called once per emission (capture() = one append per event), in emission order:
-      const kindsInOrder = (telemetryDb.append.mock.calls as AppendCall[]).map(([, events]) => events[0].kind);
-      expect(kindsInOrder.indexOf('OrderFilled')).toBeLessThan(kindsInOrder.indexOf('PositionClosed'));
+      const kindsInOrder = (telemetryDb.append.mock.calls as AppendCall[]).map(
+        ([, events]) => events[0].kind,
+      );
+      expect(kindsInOrder.indexOf('OrderFilled')).toBeLessThan(
+        kindsInOrder.indexOf('PositionClosed'),
+      );
       sub.unsubscribe();
     });
 
@@ -285,7 +312,9 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       arm(trading(), { base: null });
       const sub = subscribeAll();
 
-      arm(trading({ positions: [pos({ id: 'p1', origin: 'limit', openTime: 1200 })] }), { base: null });
+      arm(trading({ positions: [pos({ id: 'p1', origin: 'limit', openTime: 1200 })] }), {
+        base: null,
+      });
       await Promise.resolve();
 
       const call = calls('OrderFilled')[0];
@@ -298,7 +327,12 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
 
   describe('orderPlacement$', () => {
     it('placeOrder-shaped transition emits TimeElapsedBeforeOrder(anchorKind=sessionStart) + DrawingSnapshot(eventRef=orderRef)', async () => {
-      const drawing: Drawing = { id: 'd1', kind: 'fib', p1: { time: 1, price: 1 }, p2: { time: 2, price: 2 } };
+      const drawing: Drawing = {
+        id: 'd1',
+        kind: 'fib',
+        p1: { time: 1, price: 1 },
+        p2: { time: 2, price: 2 },
+      };
       vi.spyOn(Date, 'now').mockReturnValue(10_000);
       arm(trading(), { replayIndex: 5, currentTime: 1200, drawings: [drawing] });
       const sub = subscribeAll();
@@ -354,14 +388,19 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
 
       arm(trading({ orders: [order({ id: 'o1' })] }), { replayIndex: 2 });
       await Promise.resolve();
-      expect(calls('TimeElapsedBeforeOrder')[0][1][0].payload).toMatchObject({ anchorKind: 'sessionStart' });
+      expect(calls('TimeElapsedBeforeOrder')[0][1][0].payload).toMatchObject({
+        anchorKind: 'sessionStart',
+      });
 
       vi.spyOn(Date, 'now').mockReturnValue(1500);
       arm(trading({ orders: [order({ id: 'o1' }), order({ id: 'o2' })] }), { replayIndex: 5 });
       await Promise.resolve();
 
       const second = calls('TimeElapsedBeforeOrder')[1];
-      expect(second[1][0].payload).toMatchObject({ anchorKind: 'lastOrderEvent', candlesRevealed: 3 }); // 5 - 2
+      expect(second[1][0].payload).toMatchObject({
+        anchorKind: 'lastOrderEvent',
+        candlesRevealed: 3,
+      }); // 5 - 2
       sub.unsubscribe();
     });
 
@@ -413,7 +452,11 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       await Promise.resolve();
 
       const call = calls('TimeElapsedBeforeOrder')[0];
-      expect(call[1][0].payload).toMatchObject({ anchorKind: 'sessionStart', pausedMs: 300_000, playingMs: 0 });
+      expect(call[1][0].payload).toMatchObject({
+        anchorKind: 'sessionStart',
+        pausedMs: 300_000,
+        playingMs: 0,
+      });
       sub.unsubscribe();
     });
 
@@ -456,7 +499,12 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
   describe('DrawingSnapshot frozen-copy semantics', () => {
     it('mutating the source drawing AFTER an order-placement capture does not alter the stored payload', async () => {
       vi.spyOn(Date, 'now').mockReturnValue(1000);
-      const drawing: Drawing = { id: 'd1', kind: 'rect', p1: { time: 1, price: 1.5 }, p2: { time: 2, price: 2.5 } };
+      const drawing: Drawing = {
+        id: 'd1',
+        kind: 'rect',
+        p1: { time: 1, price: 1.5 },
+        p2: { time: 2, price: 2.5 },
+      };
       arm(trading(), { drawings: [drawing] });
       const sub = subscribeAll();
 

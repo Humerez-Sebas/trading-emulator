@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { toPayload, fromPayload, flattenWorkspace, reconstructWorkspaces } from './session-sync.mapping';
+import {
+  toPayload,
+  fromPayload,
+  flattenWorkspace,
+  reconstructWorkspaces,
+} from './session-sync.mapping';
 import type {
   PayloadInput,
   SessionPayloadV1,

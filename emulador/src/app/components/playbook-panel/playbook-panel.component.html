@@ -23,11 +23,7 @@
         (input)="onStatementInput($event)"
       ></textarea>
     </label>
-    <button
-      class="submit"
-      [disabled]="!newTitle().trim()"
-      (click)="createRule()"
-    >
+    <button class="submit" [disabled]="!newTitle().trim()" (click)="createRule()">
       Crear regla
     </button>
   </section>
@@ -68,10 +64,7 @@
           <div class="rule-actions">
             <label class="slot-select">
               Atajo
-              <select
-                [value]="rule.shortcutSlot ?? ''"
-                (change)="onSlotChange(rule, $event)"
-              >
+              <select [value]="rule.shortcutSlot ?? ''" (change)="onSlotChange(rule, $event)">
                 <option value="">—</option>
                 @for (opt of slotOptions; track opt.value) {
                   @if (opt.value !== null) {

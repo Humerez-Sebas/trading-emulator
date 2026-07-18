@@ -1,0 +1,67 @@
+<section class="section" aria-labelledby="trades-heading">
+  <header class="section-header">
+    <h2 id="trades-heading">Trades</h2>
+    @if (ruleFilter() !== null) {
+      <span class="filter-note">Filtrado por regla</span>
+    }
+  </header>
+
+  @if (filteredRows().length) {
+    <table>
+      <caption class="sr-only">
+        Trades cerrados de esta sesión
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">#</th>
+          <th scope="col">Hora</th>
+          <th scope="col">Side</th>
+          <th scope="col" class="num">P/L</th>
+          <th scope="col" class="num">R</th>
+          <th scope="col" class="num">MAE_R</th>
+          <th scope="col" class="num">MFE_R</th>
+          <th scope="col">Regla</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of filteredRows(); track row.tradeId) {
+          <tr
+            class="row"
+            [class.selected]="row.tradeId === selectedTradeId()"
+            [class.trade-with-reflection]="row.hasReflection"
+            (click)="select(row.tradeId)"
+          >
+            <td>{{ row.seq }}</td>
+            <td>{{ row.openTime * 1000 | date: 'HH:mm' : 'UTC' }}</td>
+            <td>{{ row.side }}</td>
+            <td class="num" [class.up]="row.profit >= 0" [class.down]="row.profit < 0">
+              {{ row.profit >= 0 ? '+' : '' }}{{ row.profit | number: '1.2-2' }} $
+            </td>
+            <td class="num" [class.up]="row.rMultiple >= 0" [class.down]="row.rMultiple < 0">
+              {{ row.rMultiple >= 0 ? '+' : '' }}{{ row.rMultiple | number: '1.2-2' }}R
+            </td>
+            <td class="num">{{ row.maeR === null ? '—' : (row.maeR | number: '1.2-2') + 'R' }}</td>
+            <td class="num">{{ row.mfeR === null ? '—' : (row.mfeR | number: '1.2-2') + 'R' }}</td>
+            <td>
+              @if (row.ruleBadge) {
+                <span class="rule-badge">
+                  <span
+                    class="rule-swatch"
+                    [style.background]="row.colorToken"
+                    aria-hidden="true"
+                  ></span>
+                  {{ row.ruleBadge }}
+                </span>
+              }
+              @if (row.hasReflection) {
+                <span class="reflection-mark" aria-label="Tiene reflexión">✎</span>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  } @else {
+    <p class="empty">Ningún trade coincide con el filtro activo.</p>
+  }
+</section>

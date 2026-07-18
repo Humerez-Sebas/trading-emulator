@@ -119,16 +119,18 @@ describe('isPlaybookRuleDirty', () => {
   });
 
   it('is false for a brand new rule with neither stamp set', () => {
-    expect(
-      isPlaybookRuleDirty(rule({ clientUpdatedAt: undefined, syncedAt: undefined })),
-    ).toBe(false);
+    expect(isPlaybookRuleDirty(rule({ clientUpdatedAt: undefined, syncedAt: undefined }))).toBe(
+      false,
+    );
   });
 });
 
 describe('mergePlaybookPull', () => {
   it('remote newer wins: cloud row replaces local and is queued for a local write', () => {
     const local = [rule({ id: 'a', clientUpdatedAt: 1000, syncedAt: 1000, title: 'local title' })];
-    const remote = [rule({ id: 'a', clientUpdatedAt: 2000, syncedAt: 2000, title: 'remote title' })];
+    const remote = [
+      rule({ id: 'a', clientUpdatedAt: 2000, syncedAt: 2000, title: 'remote title' }),
+    ];
 
     const { rules, toUpsertLocally } = mergePlaybookPull(local, remote);
 
@@ -138,7 +140,9 @@ describe('mergePlaybookPull', () => {
 
   it('local newer survives: local row is kept, nothing queued for a local write', () => {
     const local = [rule({ id: 'a', clientUpdatedAt: 3000, syncedAt: 1000, title: 'local newer' })];
-    const remote = [rule({ id: 'a', clientUpdatedAt: 2000, syncedAt: 2000, title: 'stale remote' })];
+    const remote = [
+      rule({ id: 'a', clientUpdatedAt: 2000, syncedAt: 2000, title: 'stale remote' }),
+    ];
 
     const { rules, toUpsertLocally } = mergePlaybookPull(local, remote);
 
@@ -219,10 +223,7 @@ describe('mergePlaybookPull', () => {
 // ---------------------------------------------------------------------------
 
 function makeService(client: unknown): SessionSyncService {
-  return new SessionSyncService(
-    { client } as unknown as SupabaseService,
-    new WorkspaceDbService(),
-  );
+  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService());
 }
 
 describe('SessionSyncService.pushPlaybookRules', () => {

@@ -312,7 +312,13 @@ export const tradingFeature = createFeature({
       },
     ),
     on(TradingActions.endSession, (state, { price, time, contractSize }): TradingState => {
-      const book = closeSession(state, price, time, contractSize, state.executionCosts ?? undefined);
+      const book = closeSession(
+        state,
+        price,
+        time,
+        contractSize,
+        state.executionCosts ?? undefined,
+      );
       return { ...state, ...book, sessionEnded: true, summaryOpen: true };
     }),
     on(TradingActions.setInitialBalance, (state, { balance }): TradingState => {

@@ -70,7 +70,7 @@ function openPosition(id: string): Position {
 }
 
 function book(position: Position): TradingBook {
-  return { balance: 10000, orders: [], positions: [position], history: [], };
+  return { balance: 10000, orders: [], positions: [position], history: [] };
 }
 
 /** One `processCandle` per candle, in order — the real engine, nothing mocked. */
