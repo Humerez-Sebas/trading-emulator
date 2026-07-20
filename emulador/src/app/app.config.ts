@@ -17,6 +17,7 @@ import { layoutFeature } from './state/layout/layout.reducer';
 import { linkGroupsFeature } from './state/link-groups/link-groups.reducer';
 import { playbookFeature } from './state/playbook/playbook.reducer';
 import { lessonsFeature } from './state/lessons/lessons.reducer';
+import { conversationFeature } from './state/conversation/conversation.reducer';
 import { MarketEffects } from './state/market/market.effects';
 import { ReplayEffects } from './state/replay/replay.effects';
 import { SettingsEffects } from './state/settings/settings.effects';
@@ -47,6 +48,7 @@ export const appConfig: ApplicationConfig = {
       [linkGroupsFeature.name]: linkGroupsFeature.reducer,
       [playbookFeature.name]: playbookFeature.reducer,
       [lessonsFeature.name]: lessonsFeature.reducer,
+      [conversationFeature.name]: conversationFeature.reducer,
     }),
     provideEffects(
       MarketEffects,

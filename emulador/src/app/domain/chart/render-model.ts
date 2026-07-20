@@ -145,3 +145,23 @@ export interface RenderModel {
   session?: SessionModel;
   trading?: TradingModel;
 }
+
+// ───────── Conversation anchors (Experience Domain facet vocabulary) ─────────
+
+/** Facet of a Trade Object under the pointer/focus (TEDS grammar marks). */
+export type TradeAnchorKind =
+  | 'stem'
+  | 'entry-node'
+  | 'exit-node'
+  | 'entry-tick'
+  | 'sl-tick'
+  | 'tp-tick'
+  | 'filament'
+  | 'mae-notch'
+  | 'mfe-notch';
+
+export interface TradeAnchor {
+  /** Trade identity — one id across the order → position → closed-trade chain. */
+  tradeId: string;
+  kind: TradeAnchorKind;
+}
