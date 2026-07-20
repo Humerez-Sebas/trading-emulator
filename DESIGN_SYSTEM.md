@@ -64,6 +64,10 @@ the space while cards fill the rest is a design violation.
   judges. Meaning lives exclusively in trader-authored content.
 - Navigation is intentional, not accidental. Surfaces have clear entry and exit
   points. The flow between Journal and Reflection Cabin is a deliberate loop.
+- The boundary between what the system shows (facts), what the interaction reveals
+  (ephemeral conversation), and what the trader preserves (meaning) is formalized
+  in `docs/architecture/EXPERIENCE_DOMAINS.md`; surfaces are projections of those
+  domains, never domains themselves (its invariant X-2).
 - Preference for keyboard-first interaction in data-dense surfaces. Mouse is
   available but never required.
 - State changes are communicated through controlled transitions, never through
@@ -374,6 +378,23 @@ This section will grow. When it exceeds reasonable document size, extract to
 equity curve, distribution histograms, expectancy charts, drawdown profiles,
 Monte Carlo simulations, rule dependency graphs.
 
+### 4.7 On-Chart Trade Language (TEDS)
+
+Everything a trade draws on a chart pane — primitives, ink levels, hue policy,
+text policy, reveal states, zoom collapse — is governed by
+`docs/architecture/TEDS_GRAMMAR.md`, not by this section. Which information may
+appear on the pane at all is governed by
+`docs/architecture/EXPERIENCE_DOMAINS.md`.
+
+Registration hold (2026-07-19): the trade-layer token table proposed in
+`docs/superpowers/specs/2026-07-16-rfc-017-trade-visualization-concepts.md` §6
+was superseded before registration (see that document's supersession note) and
+**must not be added to §2.1**. TEDS token integration (typography and palette for
+the pane grammar) is pending and will enter through the §6.4 evolution procedure
+— written justification, contrast verification (§5.1), and review against the
+Information Architecture hierarchy (§1). Until then, `DESIGN.md` base tokens
+remain the only registered values.
+
 ---
 
 ## 5. Accessibility
@@ -560,3 +581,7 @@ Before any feature branch is merged, verify:
 - `styles/ui-primitives.css` — global CSS classes for shared UI components.
 - `docs/architecture/TRADER_KNOWLEDGE_MODEL.md` — S1/S2 stances (the system
   observes; the trader interprets).
+- `docs/architecture/TEDS_GRAMMAR.md` — normative grammar for everything a trade
+  draws on a chart pane (§4.7).
+- `docs/architecture/EXPERIENCE_DOMAINS.md` — Market/Trade/Conversation/Knowledge
+  information boundaries.

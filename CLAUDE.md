@@ -26,6 +26,7 @@ engineering decisions are made here; every rule below is an application of it.
 | Before proposing a fix/refactor | `docs/engineering/anti-patterns.md` |
 | Ambiguous engineering choice | `docs/engineering/decision-frameworks.md` |
 | UI/visual work | `PRODUCT.md` (brand, anti-references) + `DESIGN.md` (tokens) |
+| On-chart trade visualization / TEDS grammar | `docs/architecture/TEDS_GRAMMAR.md` + `docs/architecture/EXPERIENCE_DOMAINS.md` (domain boundaries) |
 
 ## Invariants — never break these (see PHILOSOPHY §3.1 for the authority hierarchy)
 

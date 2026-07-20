@@ -30,14 +30,24 @@ lives in the trader's head). Three consequences shape everything below:
 
 ## 2. Bounded Contexts (summary)
 
-Formal context mapping lives in `ARCHITECTURE_VISION.md` (Stage 5). The three domain
-contexts, per `strategic_audit.md` Part 1:
+Formal context mapping lives in `ARCHITECTURE_VISION.md` (Stage 5). The first three
+domain contexts are per `strategic_audit.md` Part 1; the fourth (Knowledge
+Conservation) postdates the audit and was formalized by RFC-015/016:
 
 | Context | Aggregate Root | Owns | Explicitly does not own |
 | :--- | :--- | :--- | :--- |
 | Market Data | Series (per symbol) | Candle series, timeframes, datasets, coverage, manifest | Anything user-created |
 | Simulation / Trading | `TradingBook` | Orders, positions, history, balance, session statistics | Candles (reads them), presentation |
 | Workspace / Presentation | `Session` | Layout, panels, link groups, drawings, replay cursor, archive | Candles (references them), trading math |
+| Knowledge Conservation | `Playbook` | Playbook rules (`PlaybookRule`), Permanent Lessons, amendments — trader-authored knowledge | Sessions and telemetry (it survives their deletion), candles (referenced only as frozen `SceneSpec` evidence), trading math, presentation |
+
+The Knowledge Conservation context's doctrine and permanent schema live in
+`TRADER_KNOWLEDGE_MODEL.md` §5, its vocabulary in `UBIQUITOUS_LANGUAGE.md` §9, and
+its executable invariants in §5 below (I-16/I-17). Its aggregate root owns rules
+and lessons under their own per-row LWW cycle in dedicated databases, deliberately
+outside `SessionPayloadV2` (D9 untouched). Taxonomy note: these bounded contexts
+are *model* boundaries; the experience-plane placement doctrine of
+`EXPERIENCE_DOMAINS.md` is a separate, complementary taxonomy.
 
 ---
 

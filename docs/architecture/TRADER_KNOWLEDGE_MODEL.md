@@ -449,6 +449,14 @@ provides it together with the base-resolution loop.
 - **Consumes** DOMAIN_MODEL invariants unchanged; adds N-1..N-6 on top. The
   fill-engine and persistence invariants (I-1..I-15) are untouched by this
   document.
+- **Is projected by** [EXPERIENCE_DOMAINS.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/EXPERIENCE_DOMAINS.md)
+  (2026-07-19) onto the experience plane: its Market → Trade → Conversation →
+  Knowledge taxonomy maps this document's three knowledge forms (Facts ↔ Trade,
+  Scenes ↔ Conversation as its cold-review species, Lessons ↔ Knowledge) and adds
+  the live-interaction generalization of the Reflective Scene. S1/S2 and N-1..N-6
+  govern every tier unchanged; this document remains supreme on conservation. The
+  on-pane rendering of Facts and Conversation-tier reveals is governed by
+  [TEDS_GRAMMAR.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TEDS_GRAMMAR.md).
 
 ---
 
