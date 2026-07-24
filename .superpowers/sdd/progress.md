@@ -37,7 +37,7 @@
 
 - [x] Task 1: LinkGroup composition channels (`syncDrawings`, `syncTrades`) — cherry-picked, re-verified 2026-07-24
 - [x] Task 2: Drawing schema expansion + target resolution + pure migration functions — DONE 2026-07-24
-- [ ] Task 3: Entity store + owner index + per-panel selection + mapper composition + chart cutover ⟨per-task audit⟩
+- [x] Task 3: Entity store + owner index + per-panel selection + mapper composition + chart cutover ⟨per-task audit⟩ — implemented 2026-07-24, audit pending
 - [ ] Task 4: Panel-scoped undo/redo with revision guard (D17.F)
 - [ ] Task 5: Clipboard (D17.G) + per-panel shared-layer toggle (D17.H)
 - [ ] Task 6: SessionPayloadV3 + migration chain + IndexedDB lift (D17.J) ⟨per-task audit⟩
@@ -103,5 +103,53 @@
     collections) now claim the new required fields at the type level while lacking them
     at runtime. This is the **planned, deliberate gap** closed by Task 6's read-time
     lift — flagged so the auditor does not read it as an escape.
+
+### Task 3 — Entity store + ownerIndex + per-panel selection + composition + cutover — IMPLEMENTED (audit pending)
+
+- **Commits:** `ee95bfb` (store restructure), `9e1bdc7` (mapper composition), `6633e28`
+  (chart + toolbar cutover), `887629f` (persistence bridge), `04d92f2` (`selectItems`
+  consumer migration), `5bdd809` (STOP-exception spec adaptations).
+  Range `d4d054c..5bdd809`.
+- **Evidence (implementer, raw, exit 0 on all four):** tsc app ✓, tsc spec ✓, lint 0,
+  `ng test` **152 files / 1843 tests passed**.
+- **Test-count arithmetic (orchestrator-verified):** 1809 → 1843 = **+34**; files
+  150 → 152 = `drawings.reducer.entity.spec.ts` (306 lines) +
+  `chart-model-mapper.composition.spec.ts` (235 lines). Consistent.
+- **Scope actually touched (orchestrator diff-scan):** 24 files, +1004/−206. This is the
+  largest diff of the run.
+- **Deviations — inert (5, per report):** `pickTool` no longer clears a selection (the
+  action carries no `panelId` and selection is per-panel now); `restoreDrawings` resets
+  `activeTool` where `clearDrawings` did not (pre-authorized in the brief);
+  `groupDrawingsBySymbol` takes a flat array (pre-authorized interface refinement);
+  `pushDrawings()` gained a small O(k) per-call DTO `.map()` (outside the §4.1
+  zero-allocation contract, which binds the mapper memo only); the cloud-restore flatten
+  in `sesiones-page.component.ts` dropped a now-unreachable `?? meta.drawings` fallback.
+- **Deviations — REQUIRES ATTENTION (3, all forwarded to the per-task audit):**
+  1. **Scope expanded past the brief's file list**, forced by retiring
+     `drawingsFeature.selectItems`/`selectSelectedId` (a hard compile-time dependency):
+     `components/session-summary/session-summary.component.ts` and
+     `state/telemetry/telemetry.effects.ts` (+ 5 specs) now read the new
+     `selectAllDrawings`. **Both are behavior widenings** — the `.session.json` export and
+     the RFC-014 `DrawingSnapshot` telemetry fact now cover the WHOLE session's drawings
+     (every panel/symbol) instead of the previously-current symbol's slice. The
+     implementer did not review this against RFC-014's own telemetry invariants.
+  2. `state/workspaces/session-persistence.e2e.spec.ts` adapted (it drove the retired
+     `restoreDrawingsForSymbol` directly) — inside the declared STOP-exception class by
+     content, but not named in the brief's file inventory.
+  3. Composition memo keys on the WHOLE `selection` record reference (as the technical
+     spec §4.1 specifies), so any panel's `selectDrawing` invalidates every other panel's
+     memo. Inherent to the specified 5-reference tuple; narrowing it would need a
+     per-panel-parameterized store derivation, which D8 forbids.
+- **STOP-exception specs adapted (report §"Pre-existing specs adapted"):**
+  `drawings.reducer.spec.ts` (the big one — every describe ported to the entity API;
+  the `restoreDrawingsForSymbol` block **removed with no replacement**, the action being
+  fully retired with zero app call sites; the `clearDrawings` block re-expressed through
+  `restoreDrawings({drawings: []})`), `session-persistence.e2e.spec.ts`,
+  `session-summary.component.spec.ts`, and four `state/telemetry/*.spec.ts` fixture
+  re-pointings. `drawings-migration.spec.ts` gained 3 new `groupDrawingsBySymbol` cases
+  (pure addition, not an adaptation).
+- **FINAL-AUDIT ATTENTION:** largest diff of the branch; the telemetry/export widening
+  above; the reducer's `ownerIndex` incremental maintenance and the mapper's
+  reference-stability memo are the two correctness cores.
 
 (further entries recorded as tasks complete)
