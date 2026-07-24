@@ -26,23 +26,26 @@ function drawing(id = 'd1'): Drawing {
 }
 
 describe('drawings reducer: pickTool', () => {
-  it('sets activeTool and clears selectedId', () => {
-    const s = { ...initial(), selectedId: 'd1', activeTool: 'none' as const };
+  // The old flat-slice reducer also cleared the global `selectedId` here.
+  // `pickTool` carries no `panelId` in the entity model (the tool palette is
+  // global, selection is per-panel), so there is no per-panel slot for this
+  // action to clear anymore; it only ever touches `activeTool`.
+  it('sets activeTool', () => {
+    const s = { ...initial(), activeTool: 'none' as const };
     const next = reducer(s, DrawingsActions.pickTool({ tool: 'rect' }));
     expect(next.activeTool).toBe('rect');
-    expect(next.selectedId).toBeNull();
   });
 });
 
 describe('drawings reducer: addDrawing', () => {
-  it('appends the drawing, sets activeTool to none, selects the new id', () => {
+  it('stores the drawing, sets activeTool to none, selects the new id for the acting panel', () => {
     const s = { ...initial(), activeTool: 'line' as const };
     const d = drawing('d1');
-    const next = reducer(s, DrawingsActions.addDrawing({ drawing: d }));
-    expect(next.items).toHaveLength(1);
-    expect(next.items[0]).toEqual(d);
+    const next = reducer(s, DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: d }));
+    expect(next.entities['d1']).toEqual(d);
+    expect(next.ownerIndex['panel:panel-1']).toEqual(['d1']);
     expect(next.activeTool).toBe('none');
-    expect(next.selectedId).toBe('d1');
+    expect(next.selection['panel-1']).toBe('d1');
   });
 });
 
@@ -50,71 +53,90 @@ describe('drawings reducer: moveDrawing', () => {
   it('updates p1/p2 of the matching id only', () => {
     const d1 = drawing('d1');
     const d2 = drawing('d2');
-    const s = { ...initial(), items: [d1, d2] };
+    const s = { ...initial(), entities: { d1, d2 } };
     const newP1 = { time: 100, price: 200 };
     const newP2 = { time: 200, price: 300 };
-    const next = reducer(s, DrawingsActions.moveDrawing({ id: 'd1', p1: newP1, p2: newP2 }));
-    expect(next.items[0].p1).toEqual(newP1);
-    expect(next.items[0].p2).toEqual(newP2);
-    expect(next.items[1]).toEqual(d2);
+    const next = reducer(
+      s,
+      DrawingsActions.moveDrawing({ panelId: 'panel-1', id: 'd1', p1: newP1, p2: newP2 }),
+    );
+    expect(next.entities['d1'].p1).toEqual(newP1);
+    expect(next.entities['d1'].p2).toEqual(newP2);
+    expect(next.entities['d2']).toEqual(d2);
   });
 });
 
 describe('drawings reducer: selectDrawing', () => {
-  it('sets selectedId to the provided id', () => {
+  it('sets the acting panel selection to the provided id', () => {
     const s = initial();
-    const next = reducer(s, DrawingsActions.selectDrawing({ id: 'd1' }));
-    expect(next.selectedId).toBe('d1');
+    const next = reducer(s, DrawingsActions.selectDrawing({ panelId: 'panel-1', id: 'd1' }));
+    expect(next.selection['panel-1']).toBe('d1');
   });
 
-  it('sets selectedId to null', () => {
-    const s = { ...initial(), selectedId: 'd1' };
-    const next = reducer(s, DrawingsActions.selectDrawing({ id: null }));
-    expect(next.selectedId).toBeNull();
+  it('sets the acting panel selection to null', () => {
+    const s = { ...initial(), selection: { 'panel-1': 'd1' } };
+    const next = reducer(s, DrawingsActions.selectDrawing({ panelId: 'panel-1', id: null }));
+    expect(next.selection['panel-1']).toBeNull();
   });
 });
 
 describe('drawings reducer: deleteSelected', () => {
-  it('removes the selected drawing and clears selectedId', () => {
+  it("removes the acting panel's selected drawing and clears its selection", () => {
     const d1 = drawing('d1');
     const d2 = drawing('d2');
-    const s = { ...initial(), items: [d1, d2], selectedId: 'd1' };
-    const next = reducer(s, DrawingsActions.deleteSelected());
-    expect(next.items).toHaveLength(1);
-    expect(next.items[0].id).toBe('d2');
-    expect(next.selectedId).toBeNull();
+    const s = {
+      ...initial(),
+      entities: { d1, d2 },
+      ownerIndex: { 'panel:panel-1': ['d1', 'd2'] },
+      selection: { 'panel-1': 'd1' },
+    };
+    const next = reducer(s, DrawingsActions.deleteSelected({ panelId: 'panel-1' }));
+    expect(next.entities['d1']).toBeUndefined();
+    expect(next.entities['d2']).toEqual(d2);
+    expect(next.selection['panel-1']).toBeNull();
   });
 });
 
-describe('drawings reducer: clearDrawings', () => {
-  it('empties items and clears selectedId', () => {
-    const s = { ...initial(), items: [drawing('d1'), drawing('d2')], selectedId: 'd1' };
-    const next = reducer(s, DrawingsActions.clearDrawings());
-    expect(next.items).toHaveLength(0);
-    expect(next.selectedId).toBeNull();
+describe('drawings reducer: clearing all drawings', () => {
+  // The old flat-slice reducer had a dedicated `clearDrawings` action. It is
+  // retired: wiping the whole store is exactly what `restoreDrawings` with an
+  // empty set already expresses, so the "clear all" gesture (toolbar-tools's
+  // clearAll()) now dispatches that instead of adding a second API for the
+  // same guarantee.
+  it('restoreDrawings with an empty set empties entities/ownerIndex and every panel selection', () => {
+    const s = {
+      ...initial(),
+      entities: { d1: drawing('d1'), d2: drawing('d2') },
+      ownerIndex: { 'panel:panel-1': ['d1', 'd2'] },
+      selection: { 'panel-1': 'd1' },
+    };
+    const next = reducer(s, DrawingsActions.restoreDrawings({ drawings: [] }));
+    expect(next.entities).toEqual({});
+    expect(next.ownerIndex).toEqual({});
+    expect(next.selection).toEqual({});
   });
 });
 
 describe('drawings reducer: restoreDrawings', () => {
-  it('replaces items with the provided drawings and resets tool/selection', () => {
+  it('replaces entities/ownerIndex with the provided drawings and resets tool/selection', () => {
     const restored = [drawing('r1'), drawing('r2')];
     const s = {
       ...initial(),
-      items: [drawing('old')],
+      entities: { old: drawing('old') },
       activeTool: 'rect' as const,
-      selectedId: 'old',
+      selection: { 'panel-1': 'old' },
     };
     const next = reducer(s, DrawingsActions.restoreDrawings({ drawings: restored }));
-    expect(next.items).toEqual(restored);
+    expect(Object.values(next.entities)).toEqual(restored);
     expect(next.activeTool).toBe('none');
-    expect(next.selectedId).toBeNull();
+    expect(next.selection).toEqual({});
   });
 
-  it('replaces with an empty list when no drawings are provided', () => {
-    const s = { ...initial(), items: [drawing('old')], selectedId: 'old' };
+  it('replaces with an empty set when no drawings are provided', () => {
+    const s = { ...initial(), entities: { old: drawing('old') }, selection: { 'panel-1': 'old' } };
     const next = reducer(s, DrawingsActions.restoreDrawings({ drawings: [] }));
-    expect(next.items).toEqual([]);
-    expect(next.selectedId).toBeNull();
+    expect(next.entities).toEqual({});
+    expect(next.selection).toEqual({});
   });
 });
 
@@ -124,45 +146,21 @@ describe('drawings reducer: workspaceRestored', () => {
     const ws = workspace({ drawings });
     const s = {
       ...initial(),
-      items: [drawing('old')],
+      entities: { old: drawing('old') },
       activeTool: 'rect' as const,
-      selectedId: 'old',
+      selection: { 'panel-1': 'old' },
     };
     const next = reducer(s, WorkspacesActions.workspaceRestored({ workspace: ws }));
-    expect(next.items).toEqual(drawings);
+    expect(Object.values(next.entities)).toEqual(drawings);
     expect(next.activeTool).toBe('none');
-    expect(next.selectedId).toBeNull();
+    expect(next.selection).toEqual({});
   });
 });
 
-describe('restoreDrawingsForSymbol (RFC-011 Task 2)', () => {
-  it('hydrates items from the record slice matching the given symbol', () => {
-    const d = {
-      id: 'd1',
-      symbol: 'EURUSD',
-      owner: { type: 'panel' as const, id: 'panel-1' },
-      kind: 'line' as const,
-      p1: { time: 1, price: 1 },
-      p2: { time: 2, price: 2 },
-      zIndex: 0,
-      locked: false,
-      visible: true,
-    };
-    const drawings = { EURUSD: { version: 1, items: [d] }, GBPUSD: { version: 1, items: [] } };
-    const state = reducer(
-      initial(),
-      DrawingsActions.restoreDrawingsForSymbol({ drawings, symbol: 'EURUSD' }),
-    );
-    expect(state.items).toEqual([d]);
-    expect(state.selectedId).toBeNull();
-    expect(state.activeTool).toBe('none');
-  });
-
-  it('a symbol absent from the record restores an empty list (never throws)', () => {
-    const state = reducer(
-      initial(),
-      DrawingsActions.restoreDrawingsForSymbol({ drawings: {}, symbol: 'EURUSD' }),
-    );
-    expect(state.items).toEqual([]);
-  });
-});
+// `restoreDrawingsForSymbol` (the per-symbol hydration action) is retired:
+// the store no longer swaps a per-symbol slice, so there is nothing left for
+// a symbol-narrowed restore to narrow. The equivalent guarantee — "the right
+// drawings end up attached to the right symbol after a restore" — is covered
+// by `drawings.reducer.entity.spec.ts`'s hydration-rebuild cases and by the
+// composition mapper's symbol-filter test, both against the surviving
+// `restoreDrawings`/`workspaceRestored` API.

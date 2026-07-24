@@ -112,7 +112,10 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
 
     // wire: feed the restored values through the actual restore actions
     // against FRESH feature reducers (mirrors what workspaceRestored/
-    // thenRestore dispatch in production).
+    // thenRestore dispatch in production). The drawings store now holds the
+    // WHOLE session (every symbol) in one entity map, hydrated in a single
+    // `restoreDrawings` call from the flattened record — per-symbol scoping
+    // becomes a filter over the composed entities, not a separate action.
     const layoutState = layoutFeature.reducer(
       undefined,
       LayoutActions.restoreLayout({ layout: restored.layout, panels: restored.panels }),
@@ -121,14 +124,13 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       undefined,
       LinkGroupsActions.restoreGroups({ groups: restored.linkGroups }),
     );
-    const eurusdDrawingsState = drawingsFeature.reducer(
+    const flattened = Object.values(restored.drawings).flatMap((c) => c.items);
+    const drawingsState = drawingsFeature.reducer(
       undefined,
-      DrawingsActions.restoreDrawingsForSymbol({ drawings: restored.drawings, symbol: 'EURUSD' }),
+      DrawingsActions.restoreDrawings({ drawings: flattened }),
     );
-    const gbpusdDrawingsState = drawingsFeature.reducer(
-      undefined,
-      DrawingsActions.restoreDrawingsForSymbol({ drawings: restored.drawings, symbol: 'GBPUSD' }),
-    );
+    const bySymbol = (symbol: string) =>
+      Object.values(drawingsState.entities).filter((d) => d.symbol === symbol);
 
     // assert: the invariant the live reducer relies on holds on the restored
     // state, and nothing was lost or reshaped along the way.
@@ -136,8 +138,8 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
     expect(layoutState.workspace).toEqual(layout);
     expect(layoutState.panels).toEqual(panels);
     expect(linkGroupsState.groups).toEqual({ g1: linkGroups[0] });
-    expect(eurusdDrawingsState.items).toEqual([eurusdDrawing]);
-    expect(gbpusdDrawingsState.items).toEqual([gbpusdDrawing]);
+    expect(bySymbol('EURUSD')).toEqual([eurusdDrawing]);
+    expect(bySymbol('GBPUSD')).toEqual([gbpusdDrawing]);
   });
 
   /**
