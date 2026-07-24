@@ -26,10 +26,12 @@ import {
 import { Candle, derivePointSize } from '../../models';
 import {
   selectActiveTfShortfall,
+  selectCurrentAsset,
   selectDataRange,
   selectPlacementTime,
   selectTradePanelView,
 } from '../../state/selectors';
+import { effectivePanelSymbol } from '../../state/layout/layout.models';
 import { selectRuleSlotMap } from '../../state/playbook/playbook.selectors';
 import { ChartModelMapper, PanelDrawingsView } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -457,9 +459,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // --- drawing state ---
   private activeTool = this.store.selectSignal(drawingsFeature.selectActiveTool);
-  /** This panel's composed drawing layer (RFC-017): local ∪ shared group, symbol-filtered, z-ordered. */
+  /** This panel's composed drawing layer: local ∪ shared group, symbol-filtered, z-ordered. */
   private panelDrawings: PanelDrawingsView = { items: [], selectedId: null };
   private linkGroups = this.store.selectSignal(linkGroupsFeature.selectGroups);
+  /** Resolves a panel's `''` sentinel symbol to the active asset before a new drawing is stamped. */
+  private currentAsset = this.store.selectSignal(selectCurrentAsset);
   private shiftSecs = 0; // time zone offset applied to the chart
   private accent = CHART_ACCENT;
   private up = DARK_CHART_COLORS.upColor;
@@ -1199,9 +1203,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const descriptor = this.mapper.descriptor();
     // defensive: no panel configured yet means nothing can own the drawing
     if (!descriptor) return;
+    const symbol = effectivePanelSymbol(descriptor, this.currentAsset());
+    // defensive: no descriptor symbol AND no active asset means nothing to stamp
+    if (!symbol) return;
     const drawing: Drawing = {
       id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-      symbol: descriptor.symbol,
+      symbol,
       owner: resolveDrawingTarget(descriptor, this.linkGroups()),
       kind: tool as DrawingType,
       p1,

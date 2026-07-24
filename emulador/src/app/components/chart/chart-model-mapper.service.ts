@@ -6,6 +6,7 @@ import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
 import {
   selectChartStyle,
   selectChartView,
+  selectCurrentAsset,
   selectCurrentTime,
   selectSeries,
   selectSessionEnd,
@@ -41,7 +42,7 @@ import {
   TradeBoxOpacity,
 } from '../../domain/chart/render-model';
 import { lastIndexAtOrBefore, firstIndexAtOrAfter } from '../../state/trading/fill-engine';
-import { PanelDescriptor } from '../../state/layout/layout.models';
+import { effectivePanelSymbol, PanelDescriptor } from '../../state/layout/layout.models';
 import { Candle, Timeframe, TIMEFRAME_SECONDS } from '../../models';
 import { generateCustomSeries } from '../../state/market/custom-timeframe';
 
@@ -112,6 +113,7 @@ export function composePanelDrawings(
   selection: Record<string, string | null>,
   groups: Record<string, LinkGroup>,
   descriptor: PanelDescriptor,
+  currentAsset: string | null,
 ): PanelDrawingsView {
   const localIds = ownerIndex[ownerKeyOf({ type: 'panel', id: descriptor.id })] ?? [];
   const group = descriptor.linkGroupId != null ? groups[descriptor.linkGroupId] : undefined;
@@ -120,11 +122,10 @@ export function composePanelDrawings(
       ? (ownerIndex[ownerKeyOf({ type: 'group', id: descriptor.linkGroupId })] ?? [])
       : [];
   const ids = sharedIds.length ? [...localIds, ...sharedIds] : localIds;
+  const symbol = effectivePanelSymbol(descriptor, currentAsset);
   const items = ids
     .map((id) => entities[id])
-    .filter(
-      (d): d is StateDrawing => d != null && d.symbol === descriptor.symbol && d.visible,
-    )
+    .filter((d): d is StateDrawing => d != null && d.symbol === symbol && d.visible)
     .sort((a, b) => a.zIndex - b.zIndex || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const selected = selection[descriptor.id] ?? null;
   const selectedId = selected != null && items.some((d) => d.id === selected) ? selected : null;
@@ -369,21 +370,25 @@ export class ChartModelMapper {
     .select(selectSessionEnd)
     .pipe(this.gated());
 
-  /** Composition memo slot: keyed on the five input references, one per mapper instance. */
+  /** Composition memo slot: keyed on the six input references, one per mapper instance. */
   private lastDrawingsInputs: {
     descriptor: PanelDescriptor;
     entities: Record<string, StateDrawing>;
     ownerIndex: Record<string, readonly string[]>;
     selection: Record<string, string | null>;
     groups: Record<string, LinkGroup>;
+    currentAsset: string | null;
   } | null = null;
   private lastDrawingsView: PanelDrawingsView | null = null;
 
   /**
-   * This panel's composed drawing layer, recomputed only when one of the five
+   * This panel's composed drawing layer, recomputed only when one of the six
    * upstream references actually changes (never per frame, never per replay
    * tick) — the same reference-keyed memo discipline as `panelChartView$`,
-   * applied to `composePanelDrawings` instead of candle geometry.
+   * applied to `composePanelDrawings` instead of candle geometry. The active
+   * asset resolves the panel's `''` sentinel symbol (`effectivePanelSymbol`)
+   * so a hot-added or freshly opened panel composes drawings from the first
+   * emission, not only once its own symbol is explicitly set.
    */
   readonly panelDrawings$: Observable<PanelDrawingsView> = combineLatest([
     this.panelDescriptor$,
@@ -391,8 +396,9 @@ export class ChartModelMapper {
     this.store.select(drawingsFeature.selectOwnerIndex),
     this.store.select(drawingsFeature.selectSelection),
     this.store.select(linkGroupsFeature.selectGroups),
+    this.store.select(selectCurrentAsset),
   ]).pipe(
-    map(([descriptor, entities, ownerIndex, selection, groups]) => {
+    map(([descriptor, entities, ownerIndex, selection, groups, currentAsset]) => {
       const last = this.lastDrawingsInputs;
       if (
         last &&
@@ -400,12 +406,20 @@ export class ChartModelMapper {
         last.entities === entities &&
         last.ownerIndex === ownerIndex &&
         last.selection === selection &&
-        last.groups === groups
+        last.groups === groups &&
+        last.currentAsset === currentAsset
       ) {
         return this.lastDrawingsView!;
       }
-      this.lastDrawingsInputs = { descriptor, entities, ownerIndex, selection, groups };
-      this.lastDrawingsView = composePanelDrawings(entities, ownerIndex, selection, groups, descriptor);
+      this.lastDrawingsInputs = { descriptor, entities, ownerIndex, selection, groups, currentAsset };
+      this.lastDrawingsView = composePanelDrawings(
+        entities,
+        ownerIndex,
+        selection,
+        groups,
+        descriptor,
+        currentAsset,
+      );
       return this.lastDrawingsView;
     }),
     this.gated(),

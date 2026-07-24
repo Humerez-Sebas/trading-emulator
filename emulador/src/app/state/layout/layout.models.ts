@@ -27,6 +27,14 @@ export interface PanelDescriptor {
   linkGroupId: string | null;
 }
 
+/** '' on a descriptor means "whatever asset is active"; resolve it before use. */
+export function effectivePanelSymbol(
+  descriptor: PanelDescriptor,
+  activeSymbol: string | null,
+): string {
+  return descriptor.symbol || activeSymbol || '';
+}
+
 /** A tab-group inside one grid cell: stacked panels, one visible at a time. */
 export interface GridCell {
   panelIds: string[];

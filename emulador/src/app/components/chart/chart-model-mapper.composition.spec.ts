@@ -4,7 +4,7 @@ import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper, PanelDrawingsView } from './chart-model-mapper.service';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
-import { selectActiveTfShortfall } from '../../state/selectors';
+import { selectActiveTfShortfall, selectCurrentAsset } from '../../state/selectors';
 import { MAX_PANELS_PER_TAB, PanelDescriptor } from '../../state/layout/layout.models';
 import { Drawing } from '../../state/drawings/drawings.models';
 import { LinkGroup } from '../../state/link-groups/link-groups.models';
@@ -50,18 +50,20 @@ describe('ChartModelMapper.panelDrawings$ composition (RFC-017 pipeline)', () =>
 
   afterEach(() => store.resetSelectors());
 
-  /** Seeds the four raw composition selectors and returns the configured mapper. */
+  /** Seeds the five raw composition selectors and returns the configured mapper. */
   function mapperFor(
     desc: PanelDescriptor,
     entities: Record<string, Drawing>,
     ownerIndex: Record<string, readonly string[]>,
     selection: Record<string, string | null>,
     groups: Record<string, LinkGroup>,
+    currentAsset: string | null = null,
   ): ChartModelMapper {
     store.overrideSelector(drawingsFeature.selectEntities, entities);
     store.overrideSelector(drawingsFeature.selectOwnerIndex, ownerIndex);
     store.overrideSelector(drawingsFeature.selectSelection, selection);
     store.overrideSelector(linkGroupsFeature.selectGroups, groups);
+    store.overrideSelector(selectCurrentAsset, currentAsset);
     store.refreshState();
     const mapper = TestBed.runInInjectionContext(() => new ChartModelMapper());
     mapper.configurePanel(desc);
@@ -124,6 +126,65 @@ describe('ChartModelMapper.panelDrawings$ composition (RFC-017 pipeline)', () =>
     );
     expect(() => latest(mapper)).not.toThrow();
     expect(latest(mapper).items).toEqual([local]);
+  });
+
+  it('sentinel symbol: a panel with symbol \'\' composes the active asset\'s drawings', () => {
+    const eurusd = drawing({ id: 'd1', symbol: 'EURUSD', owner: { type: 'panel', id: 'p1' } });
+    const mapper = mapperFor(
+      descriptor({ id: 'p1', symbol: '' }),
+      { d1: eurusd },
+      { 'panel:p1': ['d1'] },
+      {},
+      {},
+      'EURUSD',
+    );
+    expect(latest(mapper).items).toEqual([eurusd]);
+  });
+
+  it('an explicit panel symbol still wins over the active asset (no regression)', () => {
+    const eurusd = drawing({ id: 'd1', symbol: 'EURUSD', owner: { type: 'panel', id: 'p1' } });
+    const gbpusd = drawing({ id: 'd2', symbol: 'GBPUSD', owner: { type: 'panel', id: 'p1' } });
+    const mapper = mapperFor(
+      descriptor({ id: 'p1', symbol: 'GBPUSD' }),
+      { d1: eurusd, d2: gbpusd },
+      { 'panel:p1': ['d1', 'd2'] },
+      {},
+      {},
+      'EURUSD', // active asset differs from this panel's own explicit symbol
+    );
+    expect(latest(mapper).items).toEqual([gbpusd]);
+  });
+
+  it('the shared group layer reaches a sentinel-symbol panel when syncDrawings is on', () => {
+    const shared = drawing({ id: 'd1', symbol: 'EURUSD', owner: { type: 'group', id: 'g1' } });
+    const mapper = mapperFor(
+      descriptor({ id: 'p1', symbol: '', linkGroupId: 'g1' }),
+      { d1: shared },
+      { 'group:g1': ['d1'] },
+      {},
+      { g1: group({ syncDrawings: true }) },
+      'EURUSD',
+    );
+    expect(latest(mapper).items).toEqual([shared]);
+  });
+
+  it('the composed items track a change in the active asset for a sentinel-symbol panel (the sixth memo reference is real)', () => {
+    const eurusd = drawing({ id: 'd1', symbol: 'EURUSD', owner: { type: 'panel', id: 'p1' } });
+    const gbpusd = drawing({ id: 'd2', symbol: 'GBPUSD', owner: { type: 'panel', id: 'p1' } });
+    const mapper = mapperFor(
+      descriptor({ id: 'p1', symbol: '' }),
+      { d1: eurusd, d2: gbpusd },
+      { 'panel:p1': ['d1', 'd2'] },
+      {},
+      {},
+      'EURUSD',
+    );
+    expect(latest(mapper).items).toEqual([eurusd]);
+
+    store.overrideSelector(selectCurrentAsset, 'GBPUSD');
+    store.refreshState();
+
+    expect(latest(mapper).items).toEqual([gbpusd]);
   });
 
   it('symbol filter: a drawing of another symbol is excluded', () => {
