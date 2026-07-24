@@ -157,9 +157,32 @@ overlay fantasma sobre paneles de otro símbolo, corrección declarada) **y**
 (panel sin grupo **o** `syncTrades` del grupo activo). `syncTrades` es un
 resolutor de visibilidad, no un canal de datos.
 
+**Paneles secundarios de observación (multi-símbolo de solo-vista).** El libro
+mono-símbolo (D1) restringe la *operación*, no la *observación*. En un layout de
+varios paneles, un panel secundario puede seleccionar **cualquier activo ya
+descargado** (p. ej. NASDAQ mientras `primarySymbol` = US30) para lectura de la
+acción del precio y **trazado de dibujos** (locales o compartidos, filtrados por
+`Drawing.symbol`, §3–§4). En esos paneles la capa de trades se **apaga
+dinámicamente** por el predicado de arriba: son **charts de referencia read-only
+respecto a trades**, pero 100 % funcionales para análisis técnico y herramientas
+de dibujo. No existe colocación/gestión de órdenes en un panel cuyo símbolo ≠
+`primarySymbol`; el trading **multi-símbolo operable** sigue siendo un no-goal
+congelado (008-012), y esta cláusula no lo reabre.
+
 ---
 
 ## 6. Capa de Visualización de Trades (dirección visual)
+
+> **Nota de supersesión (2026-07-22).** La *dirección visual* de esta sección
+> (Concepto A «Ghost Rails», zonas rectangulares, marcadores triángulo/diamante,
+> chip HUD en esquina, path coloreado por resultado) queda **superseded por TEDS**
+> (`TEDS_GRAMMAR.md` §10; render normado en `docs/architecture/TEDS_INTERACTION.md`
+> + `docs/architecture/TEDS_MOTION.md`). Lo único que **sobrevive** de aquí es el
+> *predicado de gating* de §5.1 (`panel.symbol === primarySymbol` ∧ visibilidad
+> `syncTrades`) — el contrato de *dónde* se pintan los trades. Su implementación
+> migra al plan TEDS (`docs/superpowers/specs/2026-07-TEDS-implementation-plan.md`),
+> no a este run de RFC-017; por eso las **Tasks 7–8 quedan fuera de alcance**. El
+> texto de abajo se conserva como registro histórico de la exploración.
 
 La exploración obligatoria de tres conceptos (A «Ghost Rails», B «Command
 HUD», C «Path Narrative») con su evaluación contra legibilidad/carga
