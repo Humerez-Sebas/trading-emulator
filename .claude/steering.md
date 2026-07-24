@@ -25,6 +25,8 @@
 - Protected — never delete or overwrite without explicit approval: `pipeline/**`
   (especially `fill_r2.py`), the `.claude/` hooks / `settings.json` / `steering.md`,
   and `CLAUDE.md`.
+- Angular 21 code (Signals / `linkedSignal` / `resource()` / standalone): consult the
+  `context7` MCP for current official syntax BEFORE writing — don't rely on recall.
 - Git: branch from `origin/*`; RFC & `feature/*` work -> develop, product/fix -> main;
   never PR an individual RFC to main. Language: user-facing docs & UI copy in Spanish;
   agent artifacts in English.
