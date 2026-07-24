@@ -13,6 +13,7 @@ import { ChartRegistry } from './chart-registry.service';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { ChartSyncRouter } from './chart-sync-router';
 import { LinkGroupsMenuComponent } from './link-groups-menu.component';
+import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature, selectVisiblePanelIds } from '../../state/layout/layout.reducer';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
@@ -87,7 +88,7 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
                 class="tab-close"
                 role="button"
                 tabindex="0"
-                [attr.aria-label]="'Cerrar ' + tab.name"
+                [attr.aria-label]="'Cerrar ' + tab.name + ' y sus dibujos locales'"
                 (click)="closeTab($event, tab.id)"
                 (keydown.enter)="closeTab($event, tab.id)"
                 (keydown.space)="closeTab($event, tab.id)"
@@ -147,7 +148,7 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
                       class="cell-tab-close"
                       role="button"
                       tabindex="0"
-                      [attr.aria-label]="'Cerrar ' + panelLabel(pid)"
+                      [attr.aria-label]="'Cerrar ' + panelLabel(pid) + ' y sus dibujos locales'"
                       (click)="closePanel($event, pid)"
                       (keydown.enter)="closePanel($event, pid)"
                       (keydown.space)="closePanel($event, pid)"
@@ -424,9 +425,23 @@ export class WorkspaceViewportComponent implements OnDestroy {
     );
   }
 
-  /** RFC-013 (D4): closes a tab; stops propagation so the tab's own click (selectTab) doesn't also fire. Absent in the template when it is the last tab. */
+  /**
+   * RFC-013 (D4): closes a tab; stops propagation so the tab's own click
+   * (selectTab) doesn't also fire. Absent in the template when it is the last
+   * tab. Closing a tab removes several panels' descriptors at once, which the
+   * drawings reducer cannot resolve from a bare `tabId` (see
+   * `purgePanelDrawings`'s doc comment) — so this is two dispatches for one
+   * user gesture, not one atomic action: the panel ids are computed HERE
+   * (the tab→panels mapping lives only in this component's own layout
+   * signal) and the purge fires before the tab itself closes.
+   */
   closeTab(event: Event, tabId: string): void {
     event.stopPropagation();
+    const tab = this.workspace().tabs.find((t) => t.id === tabId);
+    const panelIds = tab ? tab.cells.flatMap((cell) => cell.panelIds) : [];
+    if (panelIds.length) {
+      this.store.dispatch(DrawingsActions.purgePanelDrawings({ panelIds }));
+    }
     this.store.dispatch(LayoutActions.closeTab({ tabId }));
   }
 

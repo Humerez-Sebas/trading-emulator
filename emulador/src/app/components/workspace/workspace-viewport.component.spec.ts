@@ -10,6 +10,7 @@ import { ChartModelMapper } from '../chart/chart-model-mapper.service';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import { ChartRegistry } from './chart-registry.service';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
+import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature } from '../../state/layout/layout.reducer';
 import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
@@ -309,9 +310,37 @@ describe('WorkspaceViewportComponent', () => {
     const dispatch = vi.spyOn(store, 'dispatch');
     const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
     expect(closeButtons).toHaveLength(2); // two tabs present, both closable
-    (closeButtons[1] as HTMLElement).click(); // tab-b's close affordance
+    (closeButtons[1] as HTMLElement).click(); // tab-b's close affordance (zero panels)
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith(LayoutActions.closeTab({ tabId: 'tab-b' }));
+  });
+
+  it('closing a tab that HAS panels also purges those panels\' drawings, dispatched before closeTab itself', () => {
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
+    (closeButtons[0] as HTMLElement).click(); // tab-a's close affordance (p1, p2, p3)
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(dispatch.mock.calls[0][0]).toEqual(
+      DrawingsActions.purgePanelDrawings({ panelIds: ['p1', 'p2', 'p3'] }),
+    );
+    expect(dispatch.mock.calls[1][0]).toEqual(LayoutActions.closeTab({ tabId: 'tab-a' }));
+  });
+
+  it('the panel close affordance discloses that its own drawings close with it', () => {
+    const fixture = create();
+    const closeButtons = fixture.nativeElement.querySelectorAll('.cell-tabs .cell-tab-close');
+    expect((closeButtons[0] as HTMLElement).getAttribute('aria-label')).toContain(
+      'y sus dibujos locales',
+    );
+  });
+
+  it('the tab close affordance discloses that its panels\' own drawings close with it', () => {
+    const fixture = create();
+    const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
+    expect((closeButtons[0] as HTMLElement).getAttribute('aria-label')).toContain(
+      'y sus dibujos locales',
+    );
   });
 
   it('the tab close affordance is absent when only a single tab exists', () => {
