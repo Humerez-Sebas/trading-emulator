@@ -542,8 +542,10 @@ ever.
 
 ### 7.1 TEDS Vocabulary (on-pane trade language)
 
-Source of truth: `TEDS_GRAMMAR.md` (normative) and `EXPERIENCE_DOMAINS.md` (domain
-boundaries). Registered 2026-07-19 (decision TEDS-D11).
+Source of truth: `TEDS_GRAMMAR.md` (normative grammar), `TEDS_INTERACTION.md`
+(interaction, Phase 3), `TEDS_MOTION.md` (motion, Phase 4/5), and
+`EXPERIENCE_DOMAINS.md` (domain boundaries). Registered 2026-07-19 (TEDS-D11);
+interaction + motion vocabulary added 2026-07-22 (TEDS-D14–D29).
 
 **Trade Object.**
 The single on-pane body of a trade: not a container with content, but a mark built
@@ -585,6 +587,37 @@ The TEDS E9 drag conversation: a time-bounded candidate rail with R-ladder
 magnetism and an R:R chip while dragging TP/SL. *Term reassigned 2026-07-19:* the
 RFC-017 visual spec's "Concept A — Ghost Rails" is cited historically as
 "span-scoped geometry (2026-07-16 exploration)".
+
+**Modo enfoque.**
+A workspace-level session toggle that hides a trade's exact P/L digits (currency
+**and** R) — the P/L Rider degrades to a numberless meter travelling the SL→TP span;
+digits return only at close (decision TEDS-D7). A render modifier, not a matrix state,
+and orthogonal to `prefers-reduced-motion`.
+
+**Reveal ladder / Staggering.**
+The progressive-disclosure mechanism of a selected Trade Object (TEDS-D14): *Ask for
+depth* (tiers advance only on an explicit step verb, in INV-03 order) + *Walk for
+breadth* (chip seat B travels along the events) within the fixed 2-chip budget. Dwell
+(time-as-input) is rejected. Normative in `TEDS_INTERACTION.md` §4.
+
+**Witness panel.**
+A non-gesture panel showing the globally-selected trade: it renders a luminance halo
+only — no world-dimming, no chips — while the gesture ("origin") panel carries the full
+subtract + embody (TEDS-D18). Keeps INV-11 (one selection per workspace) honest across
+panels.
+
+**Motion tiers (0–3) & the Motion Budget.**
+The attention hierarchy of `TEDS_MOTION.md`: Tier 0 Reality (canvas geometry-truth,
+exempt), Tier 1 Critical trading state, Tier 2 Workspace, Tier 3 Cosmetic. The
+**One-Animation Rule** allows at most one intentional UI animation at a time; a
+higher tier cancels lower-tier motion to its end state (`activeMotionTier` guard,
+ephemeral Conversation state — never persisted).
+
+**Motion moves (the eight).**
+The closed motion vocabulary (TEDS-D21), mirroring the six primitives: Dissolve · Lift ·
+Quiet · Emerge · Travel · Seal · Swap · Snap. Opacity is the only CSS medium; Travel/Seal/
+Snap are canvas geometry on `--ease-linear`. Any choreography not expressible as these
+is rejected by the anti-decoration gate.
 
 **Selection Cardinality.**
 Exactly zero or one Trade Object selected per workspace (TEDS INV-11). Multi-trade
