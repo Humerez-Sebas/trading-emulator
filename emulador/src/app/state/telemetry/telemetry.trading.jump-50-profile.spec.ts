@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryEffects } from './telemetry.effects';
 import { ReplayActions } from '../replay/replay.actions';
 import {
+  selectAllDrawings,
   selectCurrentTime,
   selectExecutionSeries,
   selectPlaying,
@@ -20,7 +21,6 @@ import {
   Position,
   PendingOrder,
 } from '../trading/trading.models';
-import { drawingsFeature } from '../drawings/drawings.reducer';
 import type { Drawing } from '../drawings/drawings.models';
 import { TelemetryDbService } from '../../services/telemetry-db.service';
 import type { Candle } from '../../models';
@@ -161,7 +161,7 @@ describe('TelemetryEffects — V-8 frame-budget evidence (RFC-014 T5b-ii, jump-5
     store.overrideSelector(selectCurrentTime, currentTime);
     store.overrideSelector(selectReplayTfSeconds, 60);
     store.overrideSelector(selectPlaying, playing);
-    store.overrideSelector(drawingsFeature.selectItems, drawings);
+    store.overrideSelector(selectAllDrawings, drawings);
     store.refreshState();
   }
 

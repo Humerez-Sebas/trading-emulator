@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryEffects } from './telemetry.effects';
 import { ReplayActions } from '../replay/replay.actions';
 import {
+  selectAllDrawings,
   selectCurrentTime,
   selectExecutionSeries,
   selectPlaying,
@@ -20,7 +21,6 @@ import {
   ClosedTrade,
   PendingOrder,
 } from '../trading/trading.models';
-import { drawingsFeature } from '../drawings/drawings.reducer';
 import type { Drawing } from '../drawings/drawings.models';
 import { TelemetryDbService } from '../../services/telemetry-db.service';
 import type { Candle } from '../../models';
@@ -92,7 +92,7 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
     store.overrideSelector(selectReplayIndex, opts.replayIndex ?? 0);
     store.overrideSelector(selectCurrentTime, opts.currentTime ?? 0);
     store.overrideSelector(selectPlaying, opts.playing ?? false);
-    store.overrideSelector(drawingsFeature.selectItems, opts.drawings ?? []);
+    store.overrideSelector(selectAllDrawings, opts.drawings ?? []);
     store.refreshState();
   }
 

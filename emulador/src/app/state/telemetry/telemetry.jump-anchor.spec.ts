@@ -16,6 +16,7 @@ import {
 import { TelemetryEffects } from './telemetry.effects';
 import { ReplayActions } from '../replay/replay.actions';
 import {
+  selectAllDrawings,
   selectCurrentTime,
   selectExecutionSeries,
   selectPlaying,
@@ -24,7 +25,6 @@ import {
 } from '../selectors';
 import { tradingFeature } from '../trading/trading.reducer';
 import { defaultTradingData, TradingState, PendingOrder } from '../trading/trading.models';
-import { drawingsFeature } from '../drawings/drawings.reducer';
 import { TelemetryDbService } from '../../services/telemetry-db.service';
 
 /**
@@ -224,7 +224,7 @@ describe('TelemetryEffects — advanceDisplay wiring (RFC-016 D16.B)', () => {
     store.overrideSelector(selectCurrentTime, opts.currentTime ?? 0);
     store.overrideSelector(selectPlaying, opts.playing ?? false);
     store.overrideSelector(selectReplayTfSeconds, 60);
-    store.overrideSelector(drawingsFeature.selectItems, []);
+    store.overrideSelector(selectAllDrawings, []);
     store.refreshState();
   }
 

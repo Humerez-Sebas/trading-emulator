@@ -3,9 +3,9 @@ import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SessionSummaryComponent } from './session-summary.component';
 import { tradingFeature } from '../../state/trading/trading.reducer';
-import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { marketFeature } from '../../state/market/market.reducer';
 import {
+  selectAllDrawings,
   selectCurrentAsset,
   selectCurrentTime,
   selectDataRange,
@@ -64,7 +64,7 @@ describe('SessionSummaryComponent', () => {
     store.overrideSelector(marketFeature.selectCustomTf, null);
     store.overrideSelector(selectMsPerCandle, 500);
     store.overrideSelector(selectResolutionMinutes, null);
-    store.overrideSelector(drawingsFeature.selectItems, []);
+    store.overrideSelector(selectAllDrawings, []);
     store.overrideSelector(selectLoadedTfs, []);
   });
 

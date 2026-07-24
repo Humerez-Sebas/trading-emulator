@@ -5,9 +5,9 @@ import { TradingActions } from '../../state/trading/trading.actions';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { buildSessionCsv } from '../../state/trading/session-csv';
 import { ClosedTrade } from '../../state/trading/trading.models';
-import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { marketFeature } from '../../state/market/market.reducer';
 import {
+  selectAllDrawings,
   selectCurrentAsset,
   selectDataRange,
   selectCurrentTime,
@@ -66,7 +66,7 @@ export class SessionSummaryComponent {
   private playbackSpeed = this.store.selectSignal(selectMsPerCandle);
   private replayResolution = this.store.selectSignal(selectResolutionMinutes);
   private tradingData = this.store.selectSignal(selectTradingData);
-  private drawings = this.store.selectSignal(drawingsFeature.selectItems);
+  private drawings = this.store.selectSignal(selectAllDrawings);
   private loadedTfs = this.store.selectSignal(selectLoadedTfs);
 
   /** History sorted by close time, as shown in the table. */

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TelemetryEffects } from './telemetry.effects';
 import {
+  selectAllDrawings,
   selectCurrentTime,
   selectExecutionSeries,
   selectPlaying,
@@ -18,7 +19,6 @@ import {
   Position,
   PendingOrder,
 } from '../trading/trading.models';
-import { drawingsFeature } from '../drawings/drawings.reducer';
 import { TelemetryDbService } from '../../services/telemetry-db.service';
 
 /**
@@ -77,7 +77,7 @@ describe('TelemetryEffects — management events (RFC-016 T1, §1)', () => {
     store.overrideSelector(selectReplayIndex, 0);
     store.overrideSelector(selectCurrentTime, opts.currentTime ?? 0);
     store.overrideSelector(selectPlaying, false);
-    store.overrideSelector(drawingsFeature.selectItems, []);
+    store.overrideSelector(selectAllDrawings, []);
     store.refreshState();
   }
 
