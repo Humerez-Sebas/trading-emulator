@@ -17,6 +17,10 @@
   audit gating the PR. Implementer = `sdd-implementer`.
 - **Baseline evidence (fresh, 2026-07-24, on this branch):** tsc app ✓, tsc spec ✓,
   `ng test` **1798/1798 green (148 files)**, lint 0 problems.
+- **Baseline RE-VERIFIED by the orchestrator at run resume** (2026-07-24, HEAD `17c378c`,
+  clean tree): all four gates run raw in one chained command, **exit 0** — tsc app ✓,
+  tsc spec ✓, lint 0 problems, `ng test` **148 files / 1798 tests passed**. This is the
+  arithmetic origin for every task's test-count progression below.
 - **New standing rules (2026-07-22 tooling, PR #43):** consult the `context7` MCP before
   writing Angular 21 code; never mask gate exit codes with `| tail`/`| head`.
 - **Run decisions:**
