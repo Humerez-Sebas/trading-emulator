@@ -31,7 +31,7 @@ import {
   selectTradePanelView,
 } from '../../state/selectors';
 import { selectRuleSlotMap } from '../../state/playbook/playbook.selectors';
-import { ChartModelMapper } from './chart-model-mapper.service';
+import { ChartModelMapper, PanelDrawingsView } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import {
   ChartColors,
@@ -457,8 +457,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // --- drawing state ---
   private activeTool = this.store.selectSignal(drawingsFeature.selectActiveTool);
-  private drawings = this.store.selectSignal(drawingsFeature.selectItems);
-  private selectedId = this.store.selectSignal(drawingsFeature.selectSelectedId);
+  /** This panel's composed drawing layer (RFC-017): local ∪ shared group, symbol-filtered, z-ordered. */
+  private panelDrawings: PanelDrawingsView = { items: [], selectedId: null };
   private linkGroups = this.store.selectSignal(linkGroupsFeature.selectGroups);
   private shiftSecs = 0; // time zone offset applied to the chart
   private accent = CHART_ACCENT;
@@ -490,8 +490,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.destroyed) return;
     if (e.key === 'Shift') this.shiftKey = true;
-    if (e.key === 'Delete' && this.selectedId()) {
-      this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected()));
+    if (e.key === 'Delete' && this.panelDrawings.selectedId) {
+      const panelId = this.mapper.descriptor()?.id;
+      if (panelId) {
+        this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected({ panelId })));
+      }
     }
     if (e.key === 'Escape') {
       if (this.placing()) this.zone.run(() => this.cancelPlacing());
@@ -573,10 +576,13 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         this.coverageBanner.set(last === null ? null : this.formatShortfall(last)),
       );
 
-    // drawings: repaint when they change
-    this.mapper.drawingsState$
+    // drawings: this panel's composed layer, repainted whenever it changes
+    this.mapper.panelDrawings$
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.pushDrawings());
+      .subscribe((view) => {
+        this.panelDrawings = view;
+        this.pushDrawings();
+      });
 
     // trade overlay: entry/SL/TP price lines + entry/exit markers
     this.mapper.tradeChartView$
@@ -1170,8 +1176,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (tool === 'none') {
       // selection by click
       if (!param.point) return;
+      const panelId = this.mapper.descriptor()?.id;
+      if (!panelId) return;
       const hit = this.drawingsCap.hitTestDrawing(param.point.x, param.point.y);
-      this.store.dispatch(DrawingsActions.selectDrawing({ id: hit }));
+      this.store.dispatch(DrawingsActions.selectDrawing({ panelId, id: hit }));
       return;
     }
 
@@ -1202,7 +1210,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       locked: false,
       visible: true,
     };
-    this.store.dispatch(DrawingsActions.addDrawing({ drawing }));
+    this.store.dispatch(DrawingsActions.addDrawing({ panelId: descriptor.id, drawing }));
   }
 
   private handleCrosshair(param: MouseEventParams<Time>): void {
@@ -1307,7 +1315,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
     // resize handle of the selected drawing takes priority over moving
     const handle = this.drawingsCap.hitTestHandle(x, y);
-    let id: string | null = handle ? this.selectedId() : null;
+    let id: string | null = handle ? this.panelDrawings.selectedId : null;
     let mode: 'move' | 'p1' | 'p2' = handle ?? 'move';
     if (!id) {
       // trade lines (SL/TP/pending entry) go before drawing bodies: they are
@@ -1337,7 +1345,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       mode = 'move';
     }
     if (!id) return;
-    const d = this.drawings().find((it) => it.id === id);
+    const d = this.panelDrawings.items.find((it) => it.id === id);
     if (!d) return;
 
     const x1 = this.drawingsCap.xForTime(d.p1.time);
@@ -1346,7 +1354,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const y2 = this.series.priceToCoordinate(d.p2.price);
     if (x1 === null || x2 === null || y1 === null || y2 === null) return;
 
-    this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ id })));
+    const panelId = this.mapper.descriptor()?.id;
+    if (panelId) {
+      this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ panelId, id })));
+    }
+    // a locked drawing may still be selected, but never dragged/resized — cursor stays default
+    if (d.locked) return;
     this.drag = { id, mode, startX: x, startY: y, x1, y1, x2, y2 };
     // Capture mousemove globally so drags work even outside the chart area
     window.addEventListener('mousemove', this.onMouseMoveDom);
@@ -1396,7 +1409,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       return time !== null && price !== null ? { time, price } : null;
     };
 
-    const d = this.drawings().find((it) => it.id === this.drag!.id);
+    const d = this.panelDrawings.items.find((it) => it.id === this.drag!.id);
     if (!d) return;
     let p1 = d.p1;
     let p2 = d.p2;
@@ -1416,7 +1429,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       p2 = n;
     }
     const id = this.drag.id;
-    this.zone.run(() => this.store.dispatch(DrawingsActions.moveDrawing({ id, p1, p2 })));
+    const panelId = this.mapper.descriptor()?.id;
+    if (!panelId) return;
+    this.zone.run(() => this.store.dispatch(DrawingsActions.moveDrawing({ panelId, id, p1, p2 })));
   }
 
   private endDrag(): void {
@@ -1439,11 +1454,17 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** Syncs the current state to the primitive and forces a repaint. */
   private pushDrawings(): void {
+    const items = this.panelDrawings.items.map((d) => ({
+      id: d.id,
+      kind: d.kind,
+      p1: d.p1,
+      p2: d.p2,
+    }));
     this.engine!.render({
       drawings: this.mapper.buildDrawingsModel(
-        this.drawings(),
+        items,
         this.activeTool(),
-        this.selectedId(),
+        this.panelDrawings.selectedId,
         this.draft,
         this.shiftSecs,
         this.renderedTimes,

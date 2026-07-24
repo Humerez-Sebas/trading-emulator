@@ -72,7 +72,8 @@ export const LINK_GROUP_PALETTE = [
           </label>
           <button
             class="group-delete"
-            [attr.aria-label]="'Eliminar grupo'"
+            [attr.aria-label]="'Eliminar grupo y sus dibujos compartidos'"
+            [attr.title]="'Eliminar grupo y sus dibujos compartidos'"
             (click)="deleteGroup(group.id)"
           >
             &times;
