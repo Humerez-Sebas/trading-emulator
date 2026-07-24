@@ -26,9 +26,15 @@ export interface Drawing {
 }
 
 export interface DrawingsState {
-  items: Drawing[];
+  /** All session drawings, every symbol and owner, keyed by id. */
+  entities: Record<string, Drawing>;
+  /** `ownerKeyOf()` ('panel:<id>' | 'group:<id>') -> the ids it owns, maintained incrementally. */
+  ownerIndex: Record<string, readonly string[]>;
+  /** panelId -> the id that panel currently has selected (or null). */
+  selection: Record<string, string | null>;
   activeTool: DrawingTool;
-  selectedId: string | null;
+  /** Monotonic z-order counter; every new drawing takes `nextZ` and bumps it. */
+  nextZ: number;
 }
 
 /** Standard Fibonacci retracement levels. */

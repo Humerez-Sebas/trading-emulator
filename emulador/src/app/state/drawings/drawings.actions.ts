@@ -1,29 +1,26 @@
-import { createActionGroup, emptyProps, props } from '@ngrx/store';
+import { createActionGroup, props } from '@ngrx/store';
 import { Drawing, DrawingPoint, DrawingTool } from './drawings.models';
-import { DrawingCollection } from '../../services/session-sync.models';
 
 export const DrawingsActions = createActionGroup({
   source: 'Drawings',
   events: {
     'Pick Tool': props<{ tool: DrawingTool }>(),
-    'Add Drawing': props<{ drawing: Drawing }>(),
-    'Move Drawing': props<{ id: string; p1: DrawingPoint; p2: DrawingPoint }>(),
-    'Select Drawing': props<{ id: string | null }>(),
-    'Delete Selected': emptyProps(),
-    'Clear Drawings': emptyProps(),
+    /** `drawing.owner` is pre-resolved by the dispatching panel; the reducer assigns the real zIndex. */
+    'Add Drawing': props<{ panelId: string; drawing: Drawing }>(),
+    /** Rejected (identity return) when the drawing is locked. */
+    'Move Drawing': props<{ panelId: string; id: string; p1: DrawingPoint; p2: DrawingPoint }>(),
+    /** Selecting a non-null id steals it from any other panel's selection. */
+    'Select Drawing': props<{ panelId: string; id: string | null }>(),
+    /** Acts on the panel's own selection only; rejected (no-op) when stale or locked. */
+    'Delete Selected': props<{ panelId: string }>(),
+    /** Metadata only, any panel; no index/selection change. */
+    'Set Drawing Locked': props<{ id: string; locked: boolean }>(),
+    'Set Drawing Visible': props<{ id: string; visible: boolean }>(),
     /**
      * Replaces ALL drawings with the provided set (the `.session.json` import
-     * flow, Task 9). Clears the active tool and the selection.
+     * flow, and the "clear all" gesture via an empty array). Clears the
+     * active tool and every panel's selection.
      */
     'Restore Drawings': props<{ drawings: Drawing[] }>(),
-    /**
-     * Per-symbol hydration from a restored SessionPayloadV2 (RFC-011): takes
-     * the FULL per-symbol record and narrows to the given symbol's items.
-     * Additive alongside `restoreDrawings`, which stays untouched.
-     */
-    'Restore Drawings For Symbol': props<{
-      drawings: Record<string, DrawingCollection>;
-      symbol: string;
-    }>(),
   },
 });

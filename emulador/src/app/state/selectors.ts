@@ -71,6 +71,11 @@ export const selectTradingData = createSelector(tradingFeature.selectTradingStat
 
 export const selectSavedSessions = tradingFeature.selectSavedSessions;
 
+/** Flat view of every drawing in the session, every symbol and owner — memoized on the `entities` reference. */
+export const selectAllDrawings = createSelector(drawingsFeature.selectEntities, (entities) =>
+  Object.values(entities),
+);
+
 export interface WorkspaceSnapshot {
   series: Partial<Record<Timeframe, Candle[]>>;
   files: Partial<Record<Timeframe, string>>;
@@ -87,7 +92,7 @@ export const selectWorkspaceSnapshot = createSelector(
   marketFeature.selectFiles,
   marketFeature.selectActiveTf,
   replayFeature.selectCurrentTime,
-  drawingsFeature.selectItems,
+  selectAllDrawings,
   selectTradingData,
   selectSavedSessions,
   (series, files, activeTf, currentTime, drawings, trading, sessions): WorkspaceSnapshot => ({
@@ -110,7 +115,7 @@ export const selectWorkspaceMetaSnapshot = createSelector(
   marketFeature.selectActiveTf,
   marketFeature.selectSelectedTfs,
   replayFeature.selectCurrentTime,
-  drawingsFeature.selectItems,
+  selectAllDrawings,
   selectTradingData,
   selectSavedSessions,
   tradingFeature.selectActiveSessionId,
