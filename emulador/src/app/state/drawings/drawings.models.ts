@@ -7,11 +7,22 @@ export interface DrawingPoint {
   price: number;
 }
 
+/** The composition namespace a drawing belongs to: a single panel, or a whole link group. */
+export interface DrawingOwner {
+  type: 'panel' | 'group';
+  id: string; // panelId | linkGroupId
+}
+
 export interface Drawing {
   id: string;
+  symbol: string;
+  owner: DrawingOwner;
   kind: DrawingType;
   p1: DrawingPoint;
   p2: DrawingPoint;
+  zIndex: number;
+  locked: boolean;
+  visible: boolean;
 }
 
 export interface DrawingsState {
