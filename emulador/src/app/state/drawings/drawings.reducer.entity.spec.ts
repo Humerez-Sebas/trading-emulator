@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { drawingsFeature } from './drawings.reducer';
 import { DrawingsActions } from './drawings.actions';
 import { LinkGroupsActions } from '../link-groups/link-groups.actions';
+import { LayoutActions } from '../layout/layout.actions';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
 import { Drawing, DrawingsState } from './drawings.models';
 import { workspace } from '../../testing/fixtures';
@@ -302,5 +303,160 @@ describe('drawings reducer: hydration rebuild (restoreDrawings / workspaceRestor
     expect(next.nextZ).toBe(4);
     expect(next.selection).toEqual({});
     expect(next.activeTool).toBe('none');
+  });
+});
+
+describe('drawings reducer: stale-selection invalidation on sync/link changes', () => {
+  it('turning syncDrawings off nulls every selection slot pointing at that group\'s drawings, leaving panel-owned selections untouched', () => {
+    const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
+    const panelDrawing = drawing({ id: 'p-d1', owner: { type: 'panel', id: 'panel-1' } });
+    const s: DrawingsState = {
+      ...initial(),
+      entities: { 'g-d1': groupDrawing, 'p-d1': panelDrawing },
+      ownerIndex: { 'group:g1': ['g-d1'], 'panel:panel-1': ['p-d1'] },
+      selection: { 'panel-a': 'g-d1', 'panel-b': 'p-d1' },
+    };
+
+    const next = reducer(s, LinkGroupsActions.setSyncDrawings({ groupId: 'g1', enabled: false }));
+
+    expect(next.selection['panel-a']).toBeNull(); // was selecting the now-invisible shared drawing
+    expect(next.selection['panel-b']).toBe('p-d1'); // panel-owned selection: untouched
+  });
+
+  it('turning syncDrawings ON is a no-op returning state by identity', () => {
+    const s: DrawingsState = {
+      ...initial(),
+      selection: { 'panel-a': 'g-d1' },
+    };
+    const next = reducer(s, LinkGroupsActions.setSyncDrawings({ groupId: 'g1', enabled: true }));
+    expect(next).toBe(s);
+  });
+
+  it('turning syncDrawings off for a group with no selections pointing at it is a no-op returning state by identity', () => {
+    const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
+    const s: DrawingsState = {
+      ...initial(),
+      entities: { 'g-d1': groupDrawing },
+      ownerIndex: { 'group:g1': ['g-d1'] },
+      selection: { 'panel-a': null },
+    };
+    const next = reducer(s, LinkGroupsActions.setSyncDrawings({ groupId: 'g1', enabled: false }));
+    expect(next).toBe(s);
+  });
+
+  it('unlinking a panel clears only that panel\'s group-owned selection', () => {
+    const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
+    const panelDrawing = drawing({ id: 'p-d1', owner: { type: 'panel', id: 'panel-2' } });
+    const s: DrawingsState = {
+      ...initial(),
+      entities: { 'g-d1': groupDrawing, 'p-d1': panelDrawing },
+      ownerIndex: { 'group:g1': ['g-d1'], 'panel:panel-2': ['p-d1'] },
+      selection: { 'panel-1': 'g-d1', 'panel-2': 'p-d1' },
+    };
+
+    const next = reducer(
+      s,
+      LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: null }),
+    );
+
+    expect(next.selection['panel-1']).toBeNull();
+    expect(next.selection['panel-2']).toBe('p-d1'); // a different panel's selection: untouched
+  });
+
+  it('setPanelLinkGroup for a panel whose selection is NOT group-owned is a no-op returning state by identity', () => {
+    const panelDrawing = drawing({ id: 'p-d1', owner: { type: 'panel', id: 'panel-1' } });
+    const s: DrawingsState = {
+      ...initial(),
+      entities: { 'p-d1': panelDrawing },
+      ownerIndex: { 'panel:panel-1': ['p-d1'] },
+      selection: { 'panel-1': 'p-d1' },
+    };
+    const next = reducer(
+      s,
+      LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: 'g2' }),
+    );
+    expect(next).toBe(s);
+  });
+
+  it('setPanelLinkGroup for a panel with no selection at all is a no-op returning state by identity', () => {
+    const s = initial();
+    const next = reducer(
+      s,
+      LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: 'g1' }),
+    );
+    expect(next).toBe(s);
+  });
+});
+
+describe('drawings reducer: panel-close cascade (removePanel / purgePanelDrawings)', () => {
+  it('removePanel deletes exactly that panel\'s owned entities, drops its index key and selection slot, leaves group-owned entities and other panels untouched', () => {
+    const ownDrawing = drawing({ id: 'p1-d1', owner: { type: 'panel', id: 'panel-1' } });
+    const otherPanelDrawing = drawing({ id: 'p2-d1', owner: { type: 'panel', id: 'panel-2' } });
+    const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
+    const s: DrawingsState = {
+      ...initial(),
+      entities: { 'p1-d1': ownDrawing, 'p2-d1': otherPanelDrawing, 'g-d1': groupDrawing },
+      ownerIndex: {
+        'panel:panel-1': ['p1-d1'],
+        'panel:panel-2': ['p2-d1'],
+        'group:g1': ['g-d1'],
+      },
+      selection: { 'panel-1': 'p1-d1', 'panel-2': 'p2-d1', 'panel-3': 'g-d1' },
+    };
+
+    const next = reducer(s, LayoutActions.removePanel({ panelId: 'panel-1' }));
+
+    expect(next.entities['p1-d1']).toBeUndefined();
+    expect(next.entities['p2-d1']).toEqual(otherPanelDrawing);
+    expect(next.entities['g-d1']).toEqual(groupDrawing); // group-owned: NEVER touched
+    expect(next.ownerIndex['panel:panel-1']).toBeUndefined();
+    expect(next.ownerIndex['panel:panel-2']).toEqual(['p2-d1']);
+    expect(next.ownerIndex['group:g1']).toEqual(['g-d1']);
+    expect('panel-1' in next.selection).toBe(false); // the closed panel's own slot is dropped
+    expect(next.selection['panel-2']).toBe('p2-d1'); // untouched
+    expect(next.selection['panel-3']).toBe('g-d1'); // group-owned selection survives the panel's death
+  });
+
+  it('removing a panel that owns nothing (and has no selection slot) is a no-op returning state by identity', () => {
+    const s = initial();
+    const next = reducer(s, LayoutActions.removePanel({ panelId: 'ghost' }));
+    expect(next).toBe(s);
+  });
+
+  it('purgePanelDrawings with several ids purges all of them in one shot, leaving group-owned entities alone', () => {
+    const d1 = drawing({ id: 'p1-d1', owner: { type: 'panel', id: 'panel-1' } });
+    const d2 = drawing({ id: 'p2-d1', owner: { type: 'panel', id: 'panel-2' } });
+    const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
+    const s: DrawingsState = {
+      ...initial(),
+      entities: { 'p1-d1': d1, 'p2-d1': d2, 'g-d1': groupDrawing },
+      ownerIndex: {
+        'panel:panel-1': ['p1-d1'],
+        'panel:panel-2': ['p2-d1'],
+        'group:g1': ['g-d1'],
+      },
+      selection: { 'panel-1': 'p1-d1', 'panel-2': 'p2-d1', 'panel-3': 'g-d1' },
+    };
+
+    const next = reducer(
+      s,
+      DrawingsActions.purgePanelDrawings({ panelIds: ['panel-1', 'panel-2'] }),
+    );
+
+    expect(next.entities['p1-d1']).toBeUndefined();
+    expect(next.entities['p2-d1']).toBeUndefined();
+    expect(next.entities['g-d1']).toEqual(groupDrawing);
+    expect(next.ownerIndex['panel:panel-1']).toBeUndefined();
+    expect(next.ownerIndex['panel:panel-2']).toBeUndefined();
+    expect(next.ownerIndex['group:g1']).toEqual(['g-d1']);
+    expect('panel-1' in next.selection).toBe(false);
+    expect('panel-2' in next.selection).toBe(false);
+    expect(next.selection['panel-3']).toBe('g-d1');
+  });
+
+  it('purgePanelDrawings with ids that own nothing is a no-op returning state by identity', () => {
+    const s = initial();
+    const next = reducer(s, DrawingsActions.purgePanelDrawings({ panelIds: ['ghost-1', 'ghost-2'] }));
+    expect(next).toBe(s);
   });
 });

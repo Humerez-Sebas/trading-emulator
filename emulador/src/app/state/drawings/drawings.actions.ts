@@ -22,5 +22,15 @@ export const DrawingsActions = createActionGroup({
      * active tool and every panel's selection.
      */
     'Restore Drawings': props<{ drawings: Drawing[] }>(),
+    /**
+     * Cascade-deletes the given panels' OWN drawings only (group-owned ones
+     * survive). The layout reducer's `closeTab` removes several panels'
+     * descriptors in one action, which the drawings reducer cannot resolve
+     * from a bare `tabId` — the dispatching component computes the panel ids
+     * and fires this alongside `LayoutActions.closeTab`. A single-panel close
+     * (`LayoutActions.removePanel`) is covered directly; this action exists
+     * for the multi-panel tab-close case.
+     */
+    'Purge Panel Drawings': props<{ panelIds: string[] }>(),
   },
 });
