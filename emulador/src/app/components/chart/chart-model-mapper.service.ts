@@ -1,4 +1,5 @@
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 import { BehaviorSubject, combineLatest, Observable, ReplaySubject } from 'rxjs';
 import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
@@ -343,6 +344,11 @@ export class ChartModelMapper {
   configurePanel(descriptor: PanelDescriptor): void {
     this.panelDescriptor$.next(descriptor);
   }
+
+  /** This panel's identity as a signal; null until `configurePanel` has run. */
+  readonly descriptor: Signal<PanelDescriptor | null> = toSignal(this.panelDescriptor$, {
+    initialValue: null,
+  });
 
   /** Pure recompute — spied on by the RFC-008 isolation test; called on memo miss only. */
   private computePanelView(

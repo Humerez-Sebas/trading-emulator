@@ -44,6 +44,8 @@ import { DialogService } from '../ui/dialog.service';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
+import { resolveDrawingTarget } from '../../state/drawings/drawing-ownership';
+import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
 import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
 import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
@@ -54,6 +56,7 @@ import { ChartEngine } from '../../domain/chart/chart-engine';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import {
   ChartConfig,
+  Drawing as DomainDrawing,
   TradeBoxItem as DomainTradeBoxItem,
   TradeMarker as DomainTradeMarker,
   Position as DomainPosition,
@@ -456,6 +459,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private activeTool = this.store.selectSignal(drawingsFeature.selectActiveTool);
   private drawings = this.store.selectSignal(drawingsFeature.selectItems);
   private selectedId = this.store.selectSignal(drawingsFeature.selectSelectedId);
+  private linkGroups = this.store.selectSignal(linkGroupsFeature.selectGroups);
   private shiftSecs = 0; // time zone offset applied to the chart
   private accent = CHART_ACCENT;
   private up = DARK_CHART_COLORS.upColor;
@@ -465,7 +469,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private boxFillAlpha = DARK_TRADE_BOX_OPACITY.fill;
   private boxBorderAlpha = DARK_TRADE_BOX_OPACITY.border;
   private draftP1: DrawingPoint | null = null;
-  private draft: Drawing | null = null;
+  /** Render-only preview (quick ruler / in-progress draft): never a store entity. */
+  private draft: DomainDrawing | null = null;
   /** Anchor of the ephemeral middle-click measurement (not persisted). */
   private quickRuler: DrawingPoint | null = null;
   private shiftKey = false;
@@ -1179,15 +1184,24 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // second click: complete the drawing (ignore the exact same point,
     // e.g. the click+dblclick pair of an accidental double click)
     if (pt.time === this.draftP1.time && pt.price === this.draftP1.price) return;
-    const p2 = this.applySnap(this.draftP1, pt, tool as DrawingType);
-    const drawing: Drawing = {
-      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-      kind: tool as DrawingType,
-      p1: this.draftP1,
-      p2,
-    };
+    const p1 = this.draftP1;
+    const p2 = this.applySnap(p1, pt, tool as DrawingType);
     this.draftP1 = null;
     this.draft = null;
+    const descriptor = this.mapper.descriptor();
+    // defensive: no panel configured yet means nothing can own the drawing
+    if (!descriptor) return;
+    const drawing: Drawing = {
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      symbol: descriptor.symbol,
+      owner: resolveDrawingTarget(descriptor, this.linkGroups()),
+      kind: tool as DrawingType,
+      p1,
+      p2,
+      zIndex: 0, // placeholder — the reducer owns real z-order assignment
+      locked: false,
+      visible: true,
+    };
     this.store.dispatch(DrawingsActions.addDrawing({ drawing }));
   }
 
