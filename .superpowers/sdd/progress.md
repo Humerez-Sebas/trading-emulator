@@ -152,4 +152,82 @@
   above; the reducer's `ownerIndex` incremental maintenance and the mapper's
   reference-stability memo are the two correctness cores.
 
+### Task 3 — PER-TASK AUDIT #1: **FAIL** (1 High, 3 Medium, 4 Low) — 2026-07-24
+
+`branch-auditor` (Opus) re-ran all four gates personally and confirmed them green
+(152 files / 1843 tests, lint 0) and **independently verified the ledger arithmetic**
+(counted `it()` deltas per file: +22 entity spec, +11 composition spec, +3 migration spec,
+−2 reducer spec = **+34**, 1809 → 1843 ✓). It also verified as CORRECT: the zero-allocation
+memo (returns the previous array by reference; the spec asserts `toBe` identity), the §4
+diagram stage order, `entities`/`ownerIndex` agreement on every path, genuine
+identity-return rejections, ownership immutability, D8 compliance, and every
+STOP-exception spec adaptation (intent preserved, no assertion weakened).
+
+Findings requiring fixes:
+- **H1** — `chart-model-mapper.service.ts` filtered `d.symbol === descriptor.symbol`, but
+  `PanelDescriptor.symbol` uses `''` as a live sentinel meaning "the active asset"
+  (`layout.models.ts:23`). Every hot-added panel/tab AND the cold-start `panel-1` carry
+  `''`, there is no `setPanelSymbol` action, and nothing resolved it — so those panels
+  composed ZERO drawings and **the shared group layer never rendered**. Orchestrator
+  independently confirmed the sentinel before acting.
+- **M1** — nothing invalidated `selection[panelId]` when composition stopped including the
+  selected drawing, so the toolbar trash stayed enabled over an invisible selection and
+  permanently deleted it (no undo until Task 4).
+- **M2** — closing a panel orphaned its drawings forever (UUID panel ids ⇒ the owner key
+  is unreclaimable); they stayed in every payload, unrenderable and undeletable.
+- **M3** — the RFC-014 G3 `DrawingSnapshot` fact captured the whole session's drawings
+  while the trading panel now paints a composed subset, so reflection scenes would show
+  analysis the trader never had on screen.
+- **L1** — decision/RFC ids in new code comments (branch convention, cf. `257fdea`).
+- Ruled **no-fix** by the auditor with written reasons: `pickTool` no longer clearing a
+  selection (no interaction hazard; a global clear is worse under per-panel semantics);
+  the memo keying on the whole `selection` record (accepted by technical spec §4.1 —
+  `selectDrawing` fires per click, never per frame, so the 16 ms budget is untouched, and
+  narrowing it would need a D8-banned parameterized derivation); the report's off-by-one
+  test-count breakdown (net +34 is correct).
+
+**OWNER DECISION (escalated and answered during the run):** closing a panel
+**cascade-deletes that panel's own drawings, disclosed in the UI** — mirroring D17.L.
+Group-owned drawings survive; the Spanish copy reads "…y sus dibujos locales", where
+"locales" is load-bearing. Auto-reassignment stays banned (Invariant 1). This is a new
+product decision RFC-017 never made — **Task 9 must record it in the RFC's deviations
+section.**
+
+### Task 3 — FIX WAVE (all audit findings) — DONE
+
+- **Commits:** `afd3c7b` (H1 sentinel resolution), `396398e` (M1 selection invalidation +
+  M2 reducer cascade + L1), `a8db521` (M2 tab-close wiring + UI disclosure),
+  `1ea48a1` (M3 telemetry scoping). Range `c542d9b..1ea48a1`.
+- **Evidence (implementer, raw, exit 0 on all four):** tsc app ✓, tsc spec ✓, lint 0,
+  `ng test` **152 files / 1861 tests passed**.
+- **Test-count arithmetic (orchestrator-verified):** 1843 → 1861 = **+18**; file count
+  unchanged at 152 because every new case extended an existing spec file. Consistent.
+- **Scope (orchestrator diff-scan):** 14 files, +479/−29 — every file traceable to a
+  named finding.
+- **Fixes as landed:** `effectivePanelSymbol()` in `layout.models.ts` + `selectCurrentAsset`
+  added as a 6th memo reference in the composition (H1); reducer handlers on
+  `setSyncDrawings(false)` / `setPanelLinkGroup` clearing stale group-owned selections
+  (M1); `purgePanelDrawings({panelIds})` + `on(LayoutActions.removePanel)` sharing one
+  purge helper, with `closeTab()` dispatching the purge for its tab's panels (M2);
+  a parameterless active-asset+visible selector feeding both telemetry capture sites (M3).
+- **Disclosed deviations:** the tab-close path is **two dispatches in one gesture**, not
+  one atomic action, because the tab→panels mapping lives only in the layout slice (the
+  single-panel `removePanel` path IS atomic). `drawings.reducer.ts` carries three
+  unrelated fixes across two commits at file granularity — read `396398e`'s full diff
+  rather than assuming a 1:1 message-to-hunk mapping. L1's second cited "I-14" location
+  never existed (only one citation was in the file) — inert.
+- **FINAL-AUDIT ATTENTION:** H1's `chart.component.ts` stamping half has no dedicated
+  spec (this repo has no `chart.component.spec.ts` at all — pre-existing gap); the M3
+  spec adaptations lean on a specific NgRx `MockStore` `overrideSelector` behavior for
+  nested-selector resolution (implementer verified it against `node_modules` source).
+
+### RUN STATE — PAUSED at owner's request (credit conservation)
+
+Stopped after the Task 3 fix wave. **Nothing has been dispatched since.**
+**Next step on resume: re-audit Task 3** (`branch-auditor`, Opus) — the run protocol
+requires a PASS before Task 4 is dispatched, and audit #1 returned FAIL. The re-audit
+dispatch brief is ready at `.superpowers/sdd/task-3-reaudit-brief.md`.
+Remaining after that: Task 4 → Task 5 → Task 6 ⟨audit⟩ → Task 9 → final whole-branch
+audit → PR to `develop`.
+
 (further entries recorded as tasks complete)
