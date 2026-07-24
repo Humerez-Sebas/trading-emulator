@@ -55,15 +55,25 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
     ];
     const eurusdDrawing: Drawing = {
       id: 'd1',
+      symbol: 'EURUSD',
+      owner: { type: 'panel', id: 'p1' },
       kind: 'line',
       p1: { time: 0, price: 1.1 },
       p2: { time: 3600, price: 1.2 },
+      zIndex: 0,
+      locked: false,
+      visible: true,
     };
     const gbpusdDrawing: Drawing = {
       id: 'd2',
+      symbol: 'GBPUSD',
+      owner: { type: 'panel', id: 'p2' },
       kind: 'line',
       p1: { time: 0, price: 1.3 },
       p2: { time: 3600, price: 1.4 },
+      zIndex: 0,
+      locked: false,
+      visible: true,
     };
     const drawings: Record<string, DrawingCollection> = {
       EURUSD: { version: 1, items: [eurusdDrawing] },

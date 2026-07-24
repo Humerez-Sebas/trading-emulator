@@ -217,7 +217,17 @@ describe('WorkspacesEffects', () => {
       const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
       const trading = { ...defaultTradingData(), balance: 12345, sessionName: 'Restaurada' };
       const drawings = [
-        { id: 'd1', kind: 'line' as const, p1: { time: 0, price: 1 }, p2: { time: 1, price: 2 } },
+        {
+          id: 'd1',
+          symbol: 'EURUSD',
+          owner: { type: 'panel' as const, id: 'panel-1' },
+          kind: 'line' as const,
+          p1: { time: 0, price: 1 },
+          p2: { time: 1, price: 2 },
+          zIndex: 0,
+          locked: false,
+          visible: true,
+        },
       ];
 
       const p = effects.switch$.pipe(take(7), toArray()).toPromise();

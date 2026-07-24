@@ -14,9 +14,14 @@ function initial() {
 function drawing(id = 'd1'): Drawing {
   return {
     id,
+    symbol: 'EURUSD',
+    owner: { type: 'panel', id: 'panel-1' },
     kind: 'line',
     p1: { time: 0, price: 100 },
     p2: { time: 3600, price: 105 },
+    zIndex: 0,
+    locked: false,
+    visible: true,
   };
 }
 
@@ -134,9 +139,14 @@ describe('restoreDrawingsForSymbol (RFC-011 Task 2)', () => {
   it('hydrates items from the record slice matching the given symbol', () => {
     const d = {
       id: 'd1',
+      symbol: 'EURUSD',
+      owner: { type: 'panel' as const, id: 'panel-1' },
       kind: 'line' as const,
       p1: { time: 1, price: 1 },
       p2: { time: 2, price: 2 },
+      zIndex: 0,
+      locked: false,
+      visible: true,
     };
     const drawings = { EURUSD: { version: 1, items: [d] }, GBPUSD: { version: 1, items: [] } };
     const state = reducer(

@@ -143,9 +143,14 @@ describe('TelemetryEffects — V-8 frame-budget evidence (RFC-014 T5b-ii, jump-5
 
   const drawings: Drawing[] = Array.from({ length: 8 }, (_, i) => ({
     id: `d${i}`,
+    symbol: 'EURUSD',
+    owner: { type: 'panel' as const, id: 'panel-1' },
     kind: (['rect', 'line', 'fib', 'ruler'] as const)[i % 4],
     p1: { time: i * 10, price: i },
     p2: { time: i * 10 + 5, price: i + 1 },
+    zIndex: 0,
+    locked: false,
+    visible: true,
   }));
 
   function arm(state: TradingState, replayIndex: number, currentTime: number, playing = false) {

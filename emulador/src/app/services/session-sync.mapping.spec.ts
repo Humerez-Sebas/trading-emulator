@@ -212,9 +212,14 @@ function activeDrawings(): Record<string, DrawingCollection> {
   const items: Drawing[] = [
     {
       id: 'd1',
+      symbol: 'EURUSD',
+      owner: { type: 'panel', id: 'panel-1' },
       kind: 'rect',
       p1: { time: 1699000000, price: 1.1 },
       p2: { time: 1699100000, price: 1.2 },
+      zIndex: 0,
+      locked: false,
+      visible: true,
     },
   ];
   return { EURUSD: { version: 1, items } };

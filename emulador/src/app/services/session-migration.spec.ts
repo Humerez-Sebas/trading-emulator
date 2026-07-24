@@ -15,9 +15,14 @@ import type { Drawing } from '../state/drawings/drawings.models';
 
 const drawing = (id: string): Drawing => ({
   id,
+  symbol: 'EURUSD',
+  owner: { type: 'panel', id: 'panel-1' },
   kind: 'line',
   p1: { time: 100, price: 1.1 },
   p2: { time: 200, price: 1.2 },
+  zIndex: 0,
+  locked: false,
+  visible: true,
 });
 
 function sampleV1(): SessionPayloadV1 {

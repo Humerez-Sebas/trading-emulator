@@ -195,9 +195,14 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
     it('a position closing emits PositionClosed AND a DrawingSnapshot(eventRef=tradeId)', async () => {
       const drawing: Drawing = {
         id: 'd1',
+        symbol: 'EURUSD',
+        owner: { type: 'panel', id: 'panel-1' },
         kind: 'rect',
         p1: { time: 1, price: 1 },
         p2: { time: 2, price: 2 },
+        zIndex: 0,
+        locked: false,
+        visible: true,
       };
       arm(trading({ positions: [pos({ id: 'p1', origin: 'limit' })] }), { drawings: [drawing] });
       const sub = subscribeAll();
@@ -329,9 +334,14 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
     it('placeOrder-shaped transition emits TimeElapsedBeforeOrder(anchorKind=sessionStart) + DrawingSnapshot(eventRef=orderRef)', async () => {
       const drawing: Drawing = {
         id: 'd1',
+        symbol: 'EURUSD',
+        owner: { type: 'panel', id: 'panel-1' },
         kind: 'fib',
         p1: { time: 1, price: 1 },
         p2: { time: 2, price: 2 },
+        zIndex: 0,
+        locked: false,
+        visible: true,
       };
       vi.spyOn(Date, 'now').mockReturnValue(10_000);
       arm(trading(), { replayIndex: 5, currentTime: 1200, drawings: [drawing] });
@@ -501,9 +511,14 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       vi.spyOn(Date, 'now').mockReturnValue(1000);
       const drawing: Drawing = {
         id: 'd1',
+        symbol: 'EURUSD',
+        owner: { type: 'panel', id: 'panel-1' },
         kind: 'rect',
         p1: { time: 1, price: 1.5 },
         p2: { time: 2, price: 2.5 },
+        zIndex: 0,
+        locked: false,
+        visible: true,
       };
       arm(trading(), { drawings: [drawing] });
       const sub = subscribeAll();
