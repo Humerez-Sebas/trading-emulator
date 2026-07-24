@@ -395,6 +395,22 @@ the pane grammar) is pending and will enter through the §6.4 evolution procedur
 Information Architecture hierarchy (§1). Until then, `DESIGN.md` base tokens
 remain the only registered values.
 
+Motion-token integration (2026-07-22): the TEDS motion layer (Phase 4/5, ratified —
+`docs/architecture/TEDS_MOTION.md`) reuses the wired duration/easing ladder and adds
+exactly **two** tokens, registered here via §6.4 (justification: TEDS-D22, exit ≤ entry;
+opacity-only, so `prefers-reduced-motion` §5.5 degrades them by construction — no
+contrast impact):
+
+| Token | Value | Role |
+| :--- | :--- | :--- |
+| `--duration-exit` | `80ms` | Every leaving mark (exit is faster than entry) |
+| `--ease-linear` | `linear` | Geometry-truth canvas interpolation only (never CSS UI transitions) |
+
+`--duration-base` stays **180ms** — Phase 4's proposed "re-anchor 140→180" is a no-op
+(`styles.css` already defines it at 180ms). `TEDS_MOTION.md` is the authority for how
+these tokens choreograph; the `styles.css` / `ui-primitives.css` edits land at
+implementation time, not here.
+
 ---
 
 ## 5. Accessibility
