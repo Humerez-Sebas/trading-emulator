@@ -33,10 +33,13 @@ Thumbs.db
 .idea/
 
 # --- Claude / agent tooling local state (not app code) ---
-# .claude is local state EXCEPT commands/ and agents/, which are permanent repo assets
+# .claude is local state EXCEPT the assets below, which are permanent repo assets
 .claude/*
 !.claude/commands/
 !.claude/agents/
+!.claude/hooks/
+!.claude/settings.json
+!.claude/steering.md
 .agents/
 .impeccable/
 skills-lock.json
