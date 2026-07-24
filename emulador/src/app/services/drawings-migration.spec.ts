@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { liftLegacyDrawing, ownerPanelFor } from './drawings-migration';
+import { groupDrawingsBySymbol, liftLegacyDrawing, ownerPanelFor } from './drawings-migration';
 import { WorkspaceLayout, PanelDescriptor } from '../state/layout/layout.models';
+import { Drawing } from '../state/drawings/drawings.models';
 
 describe('liftLegacyDrawing', () => {
   it('preserves id/kind/p1/p2 byte-for-byte and stamps the new owner/locked/visible/symbol/zIndex fields', () => {
@@ -92,5 +93,46 @@ describe('ownerPanelFor', () => {
   it('returns an empty string when the layout has no panels at all', () => {
     const layout = layoutWith([]);
     expect(ownerPanelFor('EURUSD', layout, {})).toBe('');
+  });
+});
+
+describe('groupDrawingsBySymbol', () => {
+  function drawing(id: string, symbol: string): Drawing {
+    return {
+      id,
+      symbol,
+      owner: { type: 'panel', id: 'panel-1' },
+      kind: 'line',
+      p1: { time: 0, price: 1 },
+      p2: { time: 1, price: 2 },
+      zIndex: 0,
+      locked: false,
+      visible: true,
+    };
+  }
+
+  it('buckets drawings by symbol, each bucket versioned', () => {
+    const eur = drawing('d1', 'EURUSD');
+    const gbp = drawing('d2', 'GBPUSD');
+
+    const grouped = groupDrawingsBySymbol([eur, gbp]);
+
+    expect(grouped).toEqual({
+      EURUSD: { version: 1, items: [eur] },
+      GBPUSD: { version: 1, items: [gbp] },
+    });
+  });
+
+  it('groups multiple drawings of the same symbol into one bucket, in input order', () => {
+    const d1 = drawing('d1', 'EURUSD');
+    const d2 = drawing('d2', 'EURUSD');
+
+    const grouped = groupDrawingsBySymbol([d1, d2]);
+
+    expect(grouped).toEqual({ EURUSD: { version: 1, items: [d1, d2] } });
+  });
+
+  it('an empty input yields an empty record', () => {
+    expect(groupDrawingsBySymbol([])).toEqual({});
   });
 });

@@ -1,5 +1,6 @@
 import { Drawing, DrawingPoint, DrawingType } from '../state/drawings/drawings.models';
 import { PanelDescriptor, WorkspaceLayout } from '../state/layout/layout.models';
+import { DrawingCollection } from './session-sync.models';
 
 /** The legacy (V2 and earlier) on-wire shape of one drawing: no owner, no z-order, no lock/visibility. */
 export interface LegacyDrawingItem {
@@ -57,4 +58,23 @@ export function ownerPanelFor(
     }
   }
   return firstPanelId ?? '';
+}
+
+/**
+ * Buckets a flat, owner-tagged drawing set by symbol into the versioned
+ * per-symbol shape the V2 payload writer expects — the write-side inverse of
+ * flattening a restored `Record<symbol, DrawingCollection>` back into one array.
+ */
+export function groupDrawingsBySymbol(
+  drawings: readonly Drawing[],
+): Record<string, DrawingCollection> {
+  const bySymbol: Record<string, Drawing[]> = {};
+  for (const d of drawings) {
+    (bySymbol[d.symbol] ??= []).push(d);
+  }
+  const result: Record<string, DrawingCollection> = {};
+  for (const symbol of Object.keys(bySymbol)) {
+    result[symbol] = { version: 1, items: bySymbol[symbol] };
+  }
+  return result;
 }

@@ -9,6 +9,7 @@ import {
   mergeByLww,
 } from './session-sync.mapping';
 import { singlePanelLayoutFor } from './session-migration';
+import { groupDrawingsBySymbol } from './drawings-migration';
 import type {
   CloudFolderRow,
   CloudSessionRow,
@@ -887,7 +888,7 @@ function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
       activeTf: meta.activeTf,
       customTfMinutes: null,
       playbackSpeed: 1,
-      drawings: { [meta.symbol]: { version: 1, items: meta.drawings ?? [] } },
+      drawings: groupDrawingsBySymbol(meta.drawings ?? []),
       notes: [],
       selectedTfs: meta.selectedTfs ?? [],
       startRange,

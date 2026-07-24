@@ -37,6 +37,7 @@ import { ManifestService } from '../../services/market-data/manifest.service';
 import { ClosedTrade, defaultTradingData, PendingOrder } from '../../state/trading/trading.models';
 import { Drawing } from '../../state/drawings/drawings.models';
 import {
+  selectAllDrawings,
   selectCurrentAsset,
   selectCurrentTime,
   selectDataRange,
@@ -47,7 +48,6 @@ import {
   selectTradingData,
 } from '../../state/selectors';
 import { marketFeature } from '../../state/market/market.reducer';
-import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { SavedSession, SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { emptyWorkspace, WorkspaceMeta } from '../../state/workspaces/workspaces.models';
@@ -266,7 +266,7 @@ export class SesionesPageComponent {
   private liveCustomTf = this.store.selectSignal(marketFeature.selectCustomTf);
   private livePlaybackSpeed = this.store.selectSignal(selectMsPerCandle);
   private liveReplayResolution = this.store.selectSignal(selectResolutionMinutes);
-  private liveDrawings = this.store.selectSignal(drawingsFeature.selectItems);
+  private liveDrawings = this.store.selectSignal(selectAllDrawings);
   private liveLoadedTfs = this.store.selectSignal(selectLoadedTfs);
 
   /** Flat list of every session as a card (live state wins for the open asset). */
@@ -856,7 +856,9 @@ export class SesionesPageComponent {
     meta.layout = restored.layout;
     meta.panels = restored.panels;
     meta.linkGroups = restored.linkGroups;
-    meta.drawings = restored.drawings[card.symbol]?.items ?? meta.drawings ?? [];
+    // Flatten every symbol's bucket (not just card.symbol's) so drawings on
+    // secondary observation panels survive a cloud restore too.
+    meta.drawings = Object.values(restored.drawings).flatMap((c) => c.items);
     await this.db.putMeta(meta);
     await this.reload();
     await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });
