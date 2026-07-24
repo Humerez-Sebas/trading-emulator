@@ -540,6 +540,89 @@ The only three things that cross the engine boundary: immutable view data in, ev
 out, behavior added as registered extensions. The engine imports no Angular and no NgRx,
 ever.
 
+### 7.1 TEDS Vocabulary (on-pane trade language)
+
+Source of truth: `TEDS_GRAMMAR.md` (normative grammar), `TEDS_INTERACTION.md`
+(interaction, Phase 3), `TEDS_MOTION.md` (motion, Phase 4/5), and
+`EXPERIENCE_DOMAINS.md` (domain boundaries). Registered 2026-07-19 (TEDS-D11);
+interaction + motion vocabulary added 2026-07-22 (TEDS-D14–D29).
+
+**Trade Object.**
+The single on-pane body of a trade: not a container with content, but a mark built
+exclusively from the six TEDS primitives that conjugates with interaction (idle →
+hover → selected). Replaces the legacy "trade box" rendering.
+*Technical implication:* `TEDS_GRAMMAR.md` §6. In code, the Trade Object is exactly
+what the **trade visualization layer** draws: the chart engine's trade `Capability`
+(`TradingCapability`, RFC-004) fed by the `model.trading` DTO and gated per panel
+by RFC-017 §5.1 — no other code path may paint trade marks on a pane.
+
+**Stem / Node / Tick / Filament / Veil / Chip (TEDS primitives).**
+The six-and-only-six marks of the trade grammar: Stem (1px trade body at the entry
+bar, SL→TP), Node (price-time event; MAE/MFE notches are Nodes in a triangular
+glyph), Tick (trade-owned price level, never full-width), Filament (the position's
+journey through time — the sole owner of trade time), Veil (conversational ≤8% alpha
+price zone; never a container, never at idle), Chip (the only text container on the
+pane; max 2 visible per trade).
+*Disambiguation:* the TEDS **Chip** is canvas ink; the DOM UI primitive "Badge /
+Chip" (`.ui-badge`, `DESIGN_SYSTEM.md` §3.1) is a different thing and keeps its
+name in DOM contexts.
+
+**Conversation (Experience Domain).**
+The ephemeral middle tier between Trade facts and Knowledge: hover, selection,
+veils, DG reveals, drag previews, and reconstructed scenes. Derived on demand,
+never persisted (invariant X-1; TEDS INV-12). The Reflective Scene (Section 9) is
+its cold-review species.
+*Technical implication:* `EXPERIENCE_DOMAINS.md` §3–§4.
+
+**Dock (TEDS projection surface).**
+The side surface that projects Conversation-tier aspatial judgments while a trade
+is selected; it never stores knowledge and empties when the conversation ends
+(decision TEDS-D12).
+*Disambiguation:* distinct from the **workspaces dock** (panel container hosting
+e.g. the Playbook Panel, `TRADER_KNOWLEDGE_MODEL.md` §5.1). Documents must qualify
+which dock they mean.
+
+**Ghost Rails.**
+The TEDS E9 drag conversation: a time-bounded candidate rail with R-ladder
+magnetism and an R:R chip while dragging TP/SL. *Term reassigned 2026-07-19:* the
+RFC-017 visual spec's "Concept A — Ghost Rails" is cited historically as
+"span-scoped geometry (2026-07-16 exploration)".
+
+**Modo enfoque.**
+A workspace-level session toggle that hides a trade's exact P/L digits (currency
+**and** R) — the P/L Rider degrades to a numberless meter travelling the SL→TP span;
+digits return only at close (decision TEDS-D7). A render modifier, not a matrix state,
+and orthogonal to `prefers-reduced-motion`.
+
+**Reveal ladder / Staggering.**
+The progressive-disclosure mechanism of a selected Trade Object (TEDS-D14): *Ask for
+depth* (tiers advance only on an explicit step verb, in INV-03 order) + *Walk for
+breadth* (chip seat B travels along the events) within the fixed 2-chip budget. Dwell
+(time-as-input) is rejected. Normative in `TEDS_INTERACTION.md` §4.
+
+**Witness panel.**
+A non-gesture panel showing the globally-selected trade: it renders a luminance halo
+only — no world-dimming, no chips — while the gesture ("origin") panel carries the full
+subtract + embody (TEDS-D18). Keeps INV-11 (one selection per workspace) honest across
+panels.
+
+**Motion tiers (0–3) & the Motion Budget.**
+The attention hierarchy of `TEDS_MOTION.md`: Tier 0 Reality (canvas geometry-truth,
+exempt), Tier 1 Critical trading state, Tier 2 Workspace, Tier 3 Cosmetic. The
+**One-Animation Rule** allows at most one intentional UI animation at a time; a
+higher tier cancels lower-tier motion to its end state (`activeMotionTier` guard,
+ephemeral Conversation state — never persisted).
+
+**Motion moves (the eight).**
+The closed motion vocabulary (TEDS-D21), mirroring the six primitives: Dissolve · Lift ·
+Quiet · Emerge · Travel · Seal · Swap · Snap. Opacity is the only CSS medium; Travel/Seal/
+Snap are canvas geometry on `--ease-linear`. Any choreography not expressible as these
+is rejected by the anti-decoration gate.
+
+**Selection Cardinality.**
+Exactly zero or one Trade Object selected per workspace (TEDS INV-11). Multi-trade
+comparison is a distinct future verb requiring its own RFC.
+
 ---
 
 ## 8. Persistence and Synchronization Context
@@ -814,11 +897,17 @@ anti-pattern itself):
 - Decisions worth keeping receive an identity (D-numbers, R-numbers) and a written
   rationale; this glossary cites them (D1 mono-symbol, D8 local mapper, D9 atomic
   payload, R4 single cache) rather than restating their arguments.
+- Design-grammar decisions use the **`TEDS-D#` namespace** (`TEDS_GRAMMAR.md` §9),
+  created 2026-07-19 to resolve the collision between the TEDS design documents'
+  bare D-numbers (their phase gate used D6–D10) and the repository decision
+  registry above.
 
 ---
 
 ## 13. References
 
+- `docs/architecture/TEDS_GRAMMAR.md` — normative on-pane trade grammar (Section 7.1 terms).
+- `docs/architecture/EXPERIENCE_DOMAINS.md` — Market/Trade/Conversation/Knowledge boundaries.
 - `docs/architecture/TRAINING_WORKFLOW.md` — training domain source of truth.
 - `docs/architecture/strategic_audit.md` — bounded contexts, fidelity diagnosis, RFC-014+ direction.
 - `docs/engineering/domain/replay-trading.md` — replay clock, fills, trading state.

@@ -26,6 +26,7 @@ engineering decisions are made here; every rule below is an application of it.
 | Before proposing a fix/refactor | `docs/engineering/anti-patterns.md` |
 | Ambiguous engineering choice | `docs/engineering/decision-frameworks.md` |
 | UI/visual work | `PRODUCT.md` (brand, anti-references) + `DESIGN.md` (tokens) |
+| On-chart trade visualization / TEDS grammar | `docs/architecture/TEDS_GRAMMAR.md` + `docs/architecture/EXPERIENCE_DOMAINS.md` (domain boundaries) |
 
 ## Invariants — never break these (see PHILOSOPHY §3.1 for the authority hierarchy)
 
@@ -56,6 +57,10 @@ npx tsc -p tsconfig.spec.json --noEmit
 npx ng test --watch=false        # NEVER bare `npx vitest run` — it always fails (no TestBed env)
 npm run lint                      # must be 0 problems (develop is lint-clean)
 ```
+
+**Never mask exit codes.** Never run a verification or test command through `| tail`,
+`| head`, or any pipe that swallows the process's non-zero exit (`EXIT 1`) — a real
+failure then reads as a pass. Run gates raw and read their exit status.
 
 `npm run build` additionally required at branch finalization (watch for NEW chunk types,
 e.g. vitest sentinels; the ~609 kB vs 500 kB budget warning is known-accepted,
@@ -89,3 +94,7 @@ recovery in `docs/engineering/testing.md`).
   repo root, never part of the app or its build.
 - Decisions worth keeping get an identity (D-numbers) and a written rationale; deviations
   from plans are documented in the ledger, never silent.
+- **Angular 21 syntax authority:** before writing or changing Angular code (Signals,
+  `linkedSignal`, `resource()` / Resource API, standalone components, new control flow),
+  you MUST consult the `context7` MCP for the in-use version's official docs — never rely
+  on training-data recall for framework APIs.
