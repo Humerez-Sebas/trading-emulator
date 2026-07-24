@@ -1,0 +1,80 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm run lint)",
+      "Bash(npm run format:check)",
+      "Bash(npx ng test *)",
+      "Bash(npm ci --dry-run)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git fetch origin)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(git branch)",
+      "Bash(git branch -a)",
+      "Bash(git branch -vv)",
+      "Bash(git branch --show-current)",
+      "Bash(py -m pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(ruff check *)",
+      "Bash(ruff format --check *)"
+    ],
+    "ask": [
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git reset --hard *)",
+      "Bash(git rebase *)",
+      "Bash(git clean *)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py \"${CLAUDE_PROJECT_DIR}/.claude/hooks/steering_context.py\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py \"${CLAUDE_PROJECT_DIR}/.claude/hooks/engine_purity_guard.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py \"${CLAUDE_PROJECT_DIR}/.claude/hooks/protect_paths.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py \"${CLAUDE_PROJECT_DIR}/.claude/hooks/format_changed.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
