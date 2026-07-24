@@ -3,10 +3,10 @@
 | Field | Value |
 | :--- | :--- |
 | Status | Foundational (normative, living document) |
-| Date | 2026-07-19 (consolidates TEDS Phase 1 rev 18-jul + Phase 2 rev 19-jul + phase-gate rulings of 2026-07-19) |
+| Date | 2026-07-22 (consolidates TEDS Phase 1 rev 18-jul + Phase 2 rev 19-jul + phase-gate rulings 2026-07-19; **Phase 3 Interaction (RULED) + Phase 4/5 Motion (RATIFIED)** folded in 2026-07-22 — interaction spec = `TEDS_INTERACTION.md`, motion spec = `TEDS_MOTION.md`) |
 | Authority | Normative source for everything trade-related drawn on a chart pane. Sits below `TRADER_KNOWLEDGE_MODEL.md` (S1/S2, N-1..N-6) and `EXPERIENCE_DOMAINS.md` (domain boundaries); visual token integration is governed by `DESIGN_SYSTEM.md` §6.4 |
 | Upstream | `PRODUCT_PRINCIPLES.md` §1 — "The UI Manages Attention, Not Pixels". TEDS is that governing model applied at pane grain: the pane's attention budget is spent on price first, and every First Principle below is a pane-level application of a product principle (normative mapping in §3.1) |
-| Renders | The Claude Design project "TEDS" (Baseline, Phase 1 — Conceptual Design, Phase 2 — Component Design) holds the exploratory renders and vignettes. Those documents are *exploration artifacts*; **this file is the normative record**. On conflict, this file wins |
+| Renders | The Claude Design project "TEDS" (Baseline, Phase 1 — Conceptual Design, Phase 2 — Component Design, Phase 3 — Interaction, Phase 4 — Motion, Phase 5 — Motion Consolidation) holds the exploratory renders; archived under `docs/superpowers/specs/2026-07-teds-phase{3,4,5}-*.md`. Those are *exploration artifacts*; **this file plus `TEDS_INTERACTION.md` (interaction) and `TEDS_MOTION.md` (motion) are the normative record**. On conflict, the normative record wins |
 | Language authority | `UBIQUITOUS_LANGUAGE.md` §7 (TEDS vocabulary registered there) |
 | Supersedes | The visual direction of RFC-017 §6 and `docs/superpowers/specs/2026-07-16-rfc-017-trade-visualization-concepts.md` (registered supersession — see Section 10) |
 | Decision namespace | `TEDS-D#` (Section 9; resolves the collision between the design docs' bare D-numbers and the repository decision registry D1/D8/D9/D14.x/D16.x/D17.x) |
@@ -143,9 +143,10 @@ The tier ladder binds ink and reveal politics (silence-by-default, E3·M1 verdic
 idle shows P1 only; hover adds P2; selection opens P3 + DG.
 
 > **Nota de alcance (F-6):** la política de revelación por tiers es la capa de
-> interacción. Está hospedada aquí temporalmente hasta que exista el spec de
-> Phase 3; su futura extracción está planificada y no constituirá una violación
-> de la gramática.
+> interacción, ahora especificada normativamente en `TEDS_INTERACTION.md`
+> (Phase 3 · matriz de 21 celdas, TEDS-D14–D20). Este resumen de tiers permanece
+> como el ancla de tinta de la gramática; el contrato de interacción completo vive
+> en ese documento.
 
 | Tier | Name | Content | Encoding |
 | :--- | :--- | :--- | :--- |
@@ -249,10 +250,10 @@ unmarked verdicts are carried unchanged from the design documents.
 
 ### 8.1 The distributed-reveal amendment (supersedes dock-as-overflow)
 
-> **Nota de alcance (F-6):** la estrategia de revelación progresiva es la capa de
-> interacción. Está hospedada aquí temporalmente hasta que exista el spec de
-> Phase 3; su futura extracción está planificada y no constituirá una violación
-> de la gramática.
+> **Nota de alcance (F-6):** la estrategia de revelación progresiva quedó **resuelta
+> en Phase 3** (TEDS-D14, *staggering* = Ask-for-depth + Walk-for-breadth) y se
+> especifica normativamente en `TEDS_INTERACTION.md`. Las cuatro restricciones
+> congeladas de abajo se conservan como el origen de esa decisión.
 
 The 2026-07-19 review identified that the E4/E7 dock-overflow clause violated FP-3
 (eye travel chart ⇄ dock) and resolved it **without amending L6**:
@@ -265,10 +266,11 @@ The 2026-07-19 review identified that the E4/E7 dock-overflow clause violated FP
   whole trade with no coordinate) render as the DG chip and/or project to the Dock,
   which is a **Conversation projection** (`EXPERIENCE_DOMAINS.md` X-2), never a
   storage surface and never the *destination* of the selection conversation.
-- **The open problem (deliberately deferred, Phase 3 scope):** the full
+- **The (former) open problem — resolved in Phase 3 as TEDS-D14:** the full
   progressive-reveal strategy — *how a selected Trade Object staggers complex
-  diagnostics speaking only the six primitives*. Its binding constraints, frozen
-  now:
+  diagnostics speaking only the six primitives* — is now specified in
+  `TEDS_INTERACTION.md`. Its binding constraints, frozen at the Phase 2 gate and
+  honored by the D14 mechanism:
   1. PR-6 budget holds: ≤2 chips visible simultaneously per trade.
   2. The strategy ships three designed zoom forms (L7) — distribution that works at
      Completa must have designed collapses for Estándar/Glifo (a 3-bar scalp
@@ -288,19 +290,37 @@ decision registry (D1 mono-symbol, D8 factory-selector ban, D9 atomic payload �
 `UBIQUITOUS_LANGUAGE.md` §12) and are hereby renamed. The design renders must adopt
 the prefixed ids on their next revision.
 
-| Id | Decision | Status (2026-07-19) |
+| Id | Decision | Status |
 | :--- | :--- | :--- |
 | TEDS-D6 | Selection composite: subtract + embody as the single selection philosophy | **Approved with amendment** — the dock-as-DG-overflow clause is replaced by distributed reveal (Section 8.1) |
-| TEDS-D7 | P/L Rider as default + "modo enfoque" (numberless meter) as session toggle; scope of hidden digits (currency only vs R too) | **Pending** — not ruled in the 2026-07-19 review |
-| TEDS-D8 | Ghost Rails = live rail + R-ladder magnetism + R:R chip (Alt = free); ladder steps fixed 1R/2R/3R vs per-playbook-rule | **Pending** |
-| TEDS-D9 | Lifecycle: pure Filament as immutable record; conviction-shading only while selected | **Pending** (the E10 verdict stands as recommendation) |
+| TEDS-D7 | P/L Rider as default (R primary, currency secondary at 55%); *modo enfoque* = workspace-level session toggle that hides **both** currency and R (rider degrades to a numberless meter travelling the SL→TP span); digits return only at close (the record never hides — INV-07) | **Ruled — Phase 3 (2026-07-22)** — scope of hidden digits settled: enfoque hides currency AND R |
+| TEDS-D8 | Ghost Rails ladder fixed at **1R/2R/3R**; when the active setup carries a playbook rule, its required rung takes the luminance emphasis + the one-line rule chip and base rungs recede to 25%; Alt = free placement ships regardless | **Ruled — Phase 3** — ladder steps fixed (not per-rule); Knowledge projects as emphasis (L3), never geometry (L6) |
+| TEDS-D9 | Lifecycle: pure Filament as the immutable record (outcome hue at the exit Node only, pixel-identical forever — INV-07); conviction-shading is Conversation, legal **only while Selected**, reverts on deselect, never persisted (INV-12) | **Ruled / Ratified — Phase 3** |
 | TEDS-D10 | Grammar freeze (six primitives + seven laws) | **Ruled — frozen with amendments:** (a) PR-5 strict clauses (Veil is a contextual surface; not a container; never duplicates the Filament; no layout; L6 not amended); (b) MAE/MFE notches classified as Nodes (PR-1); (c) L2 ownership chain extended to name Filament and Veil ownership; (d) INV-11 and INV-12 added; (e) L6 reaffirmed verbatim |
 | TEDS-D11 | **Experience-domain taxonomy adopted**: Market → Trade → Conversation → Knowledge, documented in `EXPERIENCE_DOMAINS.md`, subordinate to TKM S1/S2 | Ruled 2026-07-19 |
 | TEDS-D12 | **The Dock is a projection, not a domain**: it projects Conversation-tier content (aspatial judgments) during the selection conversation; it never stores knowledge, never replaces the Journal, never editorializes the Chart. It is demoted from "overflow home" to projection surface | Ruled 2026-07-19 |
 | TEDS-D13 | **Distributed progressive reveal** replaces dock-overflow as the diagnostic strategy; FP-3 refined to event grain; strategy details deferred to Phase 3 under the four binding constraints of Section 8.1 | Ruled 2026-07-19 |
+| TEDS-D14 | **Reveal staggering mechanism**: *Ask for depth + Walk for breadth* within the fixed 2-chip-seat budget (PR-6). Seat A holds the aspatial voice (DG / R:R / rule chip); seat B holds the nearest event's chip and travels with cursor or ←/→. Tiers advance only on an explicit step verb, always in INV-03 order; dwell rejected | Ruled — Phase 3 (2026-07-22) |
+| TEDS-D15 | **Scalp collapse** is threshold-driven in **pixels**: when a trade's event span falls below 24px its event Nodes merge into one composite Node (a Node merge, not a seventh primitive); selection decomposes it as a vertical unstack along the Stem; floor = a 1-bar trade; no decomposition offered at Glifo | Ruled — Phase 3 |
+| TEDS-D16 | **Dock choreography = fixed slot** (Echo, amended): selection fills it instantly, deselection empties it, it holds nothing between; because the slot is spatially fixed and always allocated, filling it moves no layout (the pane never shifts under a click) | Ruled — Phase 3 |
+| TEDS-D17 | **Drag × selection = Deepening, narrowed**: drag is reachable only from Selected (handles are selection affordances); while dragging, the trade's other chips retire — rail + ladder + R:R chip hold both seats; release commits → Selected, Esc cancels; not offered at Glifo | Ruled — Phase 3 |
+| TEDS-D18 | **Multi-panel echo = Origin + witness**: INV-11 is global (one selected Trade Object per workspace); the gesture panel renders full subtract + embody, every other panel showing the trade renders a witness luminance-halo only (no dimming, no chips) | Ruled — Phase 3 |
+| TEDS-D19 | **Keyboard = read-only reachability**: Tab cycles the roster of visible trades in time order, Enter embodies, Esc subtracts, ↑/↓ walk the reveal ladder, ←/→ walk the selected trade's events; no level-nudge keys (editing risk geometry stays a pointer verb) | Ruled — Phase 3 |
+| TEDS-D20 | **The 21-cell state matrix** (7 states × Completa / Estándar / Glifo) ratified as the canonical interaction contract; normative record = `TEDS_INTERACTION.md` | Ruled — Phase 3 |
+| TEDS-D21 | **Motion vocabulary + anti-decoration gate**: the eight moves (Dissolve · Lift · Quiet · Emerge · Travel · Seal · Swap · Snap) are a closed set; any choreography not expressible as these is rejected. Motion narrates completed state, never delays it | Ratified — Phase 4 |
+| TEDS-D22 | **Timing/easing tokens, exit ≤ entry**: reuse the wired `--duration-fast/base/slow` + `--ease-out/--ease-in`; **add** `--duration-exit: 80ms` and `--ease-linear`; opacity is the only medium (integration via `DESIGN_SYSTEM.md` §6.4 / `TEDS_MOTION.md`) | Ratified — Phase 4 |
+| TEDS-D23 | **Selection choreography order**: subtraction leads (the world quiets first), information begins last, all beats resolve ≤ 240ms (INV-05) | Ratified — Phase 4 |
+| TEDS-D24 | **Geometry-truth canvas exemption**: the live rider/meter dot, the live edge and the Tick-commit travel are Tier-0 reality (linear, canvas rAF), exempt from "nothing moves at rest" and never CSS transitions | Minted — Phase 4 |
+| TEDS-D25 | **Reduced-motion hybrid**: strip spatial keyframes + geometry travel, preserve luminance/color fades capped to the fast rung (≤120ms) | Minted — Phase 4 |
+| TEDS-D26 | **Fast crossfade** for the zoom form-swap (≤120ms; outgoing dissolves as incoming lifts; no scale, no morph) | Minted — Phase 4 |
+| TEDS-D27 | **Simultaneous multi-panel echo**: every witness surface updates on the same frame as the origin (t=0, no stagger, no temporal hierarchy) | Minted — Phase 4 |
+| TEDS-D28 | **Block-render ladder**: the Ghost-Rails R-ladder renders complete in one beat (one class on the container), no per-rung cascade | Minted — Phase 4 |
+| TEDS-D29 | **Silent Dock seal** (open → closed): no pulse, no exit-efficiency projection; win and loss seal identically — closure is informational, not celebratory (INV-07, no gamification) | Minted — Phase 4 |
 
-Pending decisions (TEDS-D7/D8/D9) block Phase 3 (interaction-state matrix) but do
-not block the Phase 2 consolidation of everything ruled above.
+All TEDS design decisions are now ruled (TEDS-D6–D29); nothing in the ledger remains
+pending. The interaction-state matrix is specified normatively in `TEDS_INTERACTION.md`
+(Phase 3) and the motion layer in `TEDS_MOTION.md` (Phase 4/5). Implementation of these
+behaviors is a downstream plan, not a reopening of the grammar.
 
 ---
 
@@ -350,7 +370,13 @@ not block the Phase 2 consolidation of everything ruled above.
 
 - Claude Design project "TEDS": `TEDS Baseline.dc.html`, `TEDS Phase 1 - Conceptual
   Design.dc.html` (rev 18-jul-2026), `TEDS Phase 2 - Component Design.dc.html`
-  (rev 19-jul-2026) — exploratory renders and vignettes.
+  (rev 19-jul-2026), Phase 3 — Interaction, Phase 4 — Motion, Phase 5 — Motion
+  Consolidation — exploratory renders, archived at
+  `docs/superpowers/specs/2026-07-teds-phase{3,4,5}-*.md`.
+- `docs/architecture/TEDS_INTERACTION.md` — normative Phase-3 record (21-cell state
+  matrix TEDS-D20, reveal strategy TEDS-D14, D15–D19).
+- `docs/architecture/TEDS_MOTION.md` — normative Phase-4/5 record (motion doctrine,
+  tiers, tokens, choreography, TEDS-D21–D29).
 - `docs/architecture/EXPERIENCE_DOMAINS.md` — domain boundary doctrine.
 - `docs/architecture/TRADER_KNOWLEDGE_MODEL.md` — S1/S2 stances, N-invariants.
 - `DESIGN_SYSTEM.md`, `DESIGN.md`, `PRODUCT.md` — visual authority and brand.
