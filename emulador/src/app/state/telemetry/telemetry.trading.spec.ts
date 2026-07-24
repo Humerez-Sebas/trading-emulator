@@ -7,12 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryEffects } from './telemetry.effects';
 import { ReplayActions } from '../replay/replay.actions';
 import {
-  selectAllDrawings,
+  selectCurrentAsset,
   selectCurrentTime,
   selectExecutionSeries,
   selectPlaying,
   selectReplayIndex,
 } from '../selectors';
+import { drawingsFeature } from '../drawings/drawings.reducer';
 import { tradingFeature } from '../trading/trading.reducer';
 import {
   defaultTradingData,
@@ -76,6 +77,12 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
     };
   }
 
+  function byId(drawings: Drawing[]): Record<string, Drawing> {
+    const out: Record<string, Drawing> = {};
+    for (const d of drawings) out[d.id] = d;
+    return out;
+  }
+
   function arm(
     state: TradingState,
     opts: {
@@ -84,6 +91,8 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       currentTime?: number;
       playing?: boolean;
       drawings?: Drawing[];
+      /** Active asset the DrawingSnapshot filter resolves against (default matches every fixture's symbol). */
+      activeAsset?: string | null;
     } = {},
   ) {
     store.overrideSelector(tradingFeature.selectTradingState, state);
@@ -92,7 +101,12 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
     store.overrideSelector(selectReplayIndex, opts.replayIndex ?? 0);
     store.overrideSelector(selectCurrentTime, opts.currentTime ?? 0);
     store.overrideSelector(selectPlaying, opts.playing ?? false);
-    store.overrideSelector(selectAllDrawings, opts.drawings ?? []);
+    // These two feed the REAL (unmocked) `selectActiveAssetVisibleDrawings` — its
+    // `.setResult()`-free projector runs for real against them (NgRx MockStore
+    // patches overridden selectors' own function bodies, so a nested/composed
+    // selector that reads them keeps working correctly).
+    store.overrideSelector(drawingsFeature.selectEntities, byId(opts.drawings ?? []));
+    store.overrideSelector(selectCurrentAsset, opts.activeAsset ?? 'EURUSD');
     store.refreshState();
   }
 
@@ -535,6 +549,37 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
 
       expect(captured.anchorPoints[0].price).toBe(1.5);
       expect(captured.type).toBe('rect');
+      sub.unsubscribe();
+    });
+
+    it('a drawing of another symbol, and a hidden drawing, are excluded — only the active asset\'s VISIBLE drawings are captured (RFC-014 G3)', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(1000);
+      const shown: Drawing = {
+        id: 'd1',
+        symbol: 'EURUSD',
+        owner: { type: 'panel', id: 'panel-1' },
+        kind: 'rect',
+        p1: { time: 1, price: 1 },
+        p2: { time: 2, price: 2 },
+        zIndex: 0,
+        locked: false,
+        visible: true,
+      };
+      const otherSymbol: Drawing = { ...shown, id: 'd2', symbol: 'GBPUSD', kind: 'line' };
+      const hidden: Drawing = { ...shown, id: 'd3', visible: false, kind: 'fib' };
+      arm(trading(), { drawings: [shown, otherSymbol, hidden], activeAsset: 'EURUSD' });
+      const sub = subscribeAll();
+
+      arm(trading({ orders: [order({ id: 'o1' })] }), {
+        drawings: [shown, otherSymbol, hidden],
+        activeAsset: 'EURUSD',
+      });
+      await Promise.resolve();
+
+      const snapshotCall = calls('DrawingSnapshot')[0];
+      const captured = snapshotCall[1][0].payload.drawings;
+      expect(captured).toHaveLength(1);
+      expect(captured[0].type).toBe('rect'); // only the active-asset, visible drawing survives
       sub.unsubscribe();
     });
   });

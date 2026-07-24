@@ -76,6 +76,19 @@ export const selectAllDrawings = createSelector(drawingsFeature.selectEntities, 
   Object.values(entities),
 );
 
+/**
+ * The active asset's own visible drawings — what a trader could actually see
+ * painted on screen at any instant. A panel showing a DIFFERENT symbol (a
+ * secondary observation panel), or a drawing toggled invisible, never counts:
+ * this is the fact content a telemetry `DrawingSnapshot` must capture.
+ */
+export const selectActiveAssetVisibleDrawings = createSelector(
+  drawingsFeature.selectEntities,
+  selectCurrentAsset,
+  (entities, activeAsset) =>
+    Object.values(entities).filter((d) => d.visible && d.symbol === activeAsset),
+);
+
 export interface WorkspaceSnapshot {
   series: Partial<Record<Timeframe, Candle[]>>;
   files: Partial<Record<Timeframe, string>>;

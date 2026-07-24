@@ -7,7 +7,7 @@ import type { TelemetryEventKindV1 } from './telemetry.models';
 import { ReplayActions } from '../replay/replay.actions';
 import { TradingActions } from '../trading/trading.actions';
 import {
-  selectAllDrawings,
+  selectActiveAssetVisibleDrawings,
   selectCurrentTime,
   selectExecutionSeries,
   selectPlaying,
@@ -407,7 +407,7 @@ export class TelemetryEffects {
       this.tradingPairs$.pipe(
         withLatestFrom(
           this.store.select(selectExecutionSeries),
-          this.store.select(selectAllDrawings),
+          this.store.select(selectActiveAssetVisibleDrawings),
         ),
         tap(([[prev, curr], base, drawings]) => {
           if (curr.sessionId == null || prev.sessionId !== curr.sessionId) return; // no session, or a session switch: reset baseline, no spurious facts
@@ -471,7 +471,7 @@ export class TelemetryEffects {
           this.store.select(selectReplayIndex),
           this.store.select(selectCurrentTime),
           this.store.select(selectPlaying),
-          this.store.select(selectAllDrawings),
+          this.store.select(selectActiveAssetVisibleDrawings),
         ),
         tap(([[prev, curr], replayIndex, marketTime, playing, drawings]) => {
           if (curr.sessionId == null || prev.sessionId !== curr.sessionId) return;
