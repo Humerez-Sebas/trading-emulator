@@ -1078,3 +1078,28 @@ Tasks 1–6 + 9 done, green at **156 files / 1922 tests**, lint 0, build `647.21
 (budget warning known/accepted), all 11 invariants holding, zero BLOCKED conditions.
 Tasks 7–8 remain out of scope (superseded by TEDS). Next: the mandatory final
 whole-branch Opus audit, then PR to `develop`.
+
+## RUN COMPLETE — PR opened 2026-07-25
+
+**[PR #45](https://github.com/Humerez-Sebas/trading-emulator/pull/45)** ·
+`feature/rfc-017-compositional-panel-sync` → **`develop`** (never `main`; RFC work is
+released to `main` only as a whole-block release PR). Head `71f15f7`, base `af3d8ca`,
+58 commits. No PR template exists in `.github/`; the body follows
+`docs/engineering/git-workflow.md`'s required shape (what/why · evidence · deviations ·
+reviewer attention · generated-with footer) and carries every item this ledger's
+`### PR body` section enumerates.
+
+**Final state:** Tasks 1–6 + 9 done, Tasks 7–8 out of scope (superseded by TEDS). Five
+gates green — 156 files / **1936 tests**, lint 0, build **648.07 kB**, sentinel clean.
+Tests 1798 → 1936 across the run; bundle 639.07 → 648.07 kB; zero new runtime dependencies.
+Final audit verdict **PASS**, zero Critical/High/Medium.
+
+Noted in the PR for the reviewer: CI (`.github/workflows/ci.yml`) runs on PRs to `main` and
+pushes to `main` — **not** on PRs to `develop`. So no automated check will gate this PR; the
+evidence is the locally-run gates, each independently re-run by the auditors rather than
+taken from a report.
+
+**Two owner-facing items carried out of the run, deliberately not acted on:** the
+`ChartComponent` keyboard-wiring coverage gap (audit-accepted, non-blocking, with a standing
+recommendation to close it before more keyboard surface lands) and `CLAUDE.md`'s stale
+"~609 kB" bundle figure (owner-protected file; the drift predates this branch).
