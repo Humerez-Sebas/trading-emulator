@@ -410,14 +410,89 @@ New findings:
   `sesiones-page.component.spec.ts` was **rewritten rather than merely re-shaped** — its
   behavioral proof changed, so it needs its own read.
 
-### RUN STATE — PAUSED at owner's request (credit conservation)
+### Task 6 — PER-TASK AUDIT: **FAIL** (1 Medium, 6 Low) — 2026-07-24
 
-Stopped after Task 6's implementation. **Nothing has been dispatched since.**
-**Next step on resume: the Task 6 per-task audit** (`branch-auditor`, Opus) — the run
-protocol requires a PASS before Task 9. The dispatch brief is ready at
-`.superpowers/sdd/task-6-audit-brief.md`.
-Remaining after that: Task 9 (invariant greps, `npm run build`, docs closure) → final
-whole-branch audit → PR to `develop`.
+`branch-auditor` (Opus) re-ran all four gates personally — tsc app ✓, tsc spec ✓, lint 0,
+`ng test` **156 files / 1921 tests** — and re-derived the arithmetic independently
+(+24 `it()` / −8 = net +16; the 8 removals = 3 deleted bridge tests + 5 retitle-in-place
+cases, **no still-valid guarantee vanished**). Every invariant grep re-run and clean:
+`groupDrawingsBySymbol` gone, `assertNoCandles` single definition still on the `toPayload`
+write path (kernel #4 holds), `DB_VERSION = 6` unchanged with no new object store,
+`package*.json` and `domain/` zero-diff, D8 intact, `session-migration.ts` pure.
+**Runtime-only state provably cannot reach the wire** — `revisions`/`history`/`clipboard`
+have zero occurrences in the selectors, workspace models, payload models or mapping.
+
+**The TDD-inversion lead was largely discharged.** The auditor derived the fidelity table
+from technical spec §7 *before* reading the spec file, and found
+`session-migration.v3.spec.ts` genuinely adversarial rather than code-shaped: its
+`legacyItem()` fixture deliberately builds each input as a FULL `Drawing` with
+`symbol:'WRONG-SYMBOL'`, `owner:{id:'stale-owner'}`, `zIndex:999`, `locked:true`,
+`visible:false`, so any copy-through implementation fails; EURUSD is shown only by the
+SECOND panel, so "always first panel" fails; the zIndex case uses two buckets and asserts
+`0,1,2`, so a per-symbol restart fails; the corrupt-layout case pins the
+replace-layout-BEFORE-migrating ordering with a `ghost-panel` fixture. The predicted
+post-hoc-spec risk materialized only as L3/L4, both test-side.
+
+**M1 (Medium) — a legacy `.session.json` import silently discards every drawing.**
+`restoreDrawings` has a **second dispatcher that bypasses the read-time lift**: the
+`thenRestore` branch (`workspaces.effects.ts:281`), fed straight from the on-disk file via
+`plan.drawings as Drawing[]` (`sesiones-page.component.ts:736`) — a raw cast of
+`unknown[]`, never lifted. A `.session.json` exported before this branch carries legacy
+`{id,kind,p1,p2}` items; `isWellFormedV1` accepts the file, then this task's new reducer
+guard (`if (!d.owner) continue;`) skips **every** item, `entities` comes back `{}`, the UI
+reports success ("Sesión importada…"), and the debounced `persistMeta$` writes the empty
+snapshot over IndexedDB. **Attribution, on the record:** the inability to restore these
+was introduced by Tasks 2–5 (at `133c09e` this path threw a `TypeError`); Task 6's guard
+is what converted a loud failure into a silent one. It is a **regression against shipped
+`develop`** and is not no-fixable — a production data path. Medium rather than High only
+because the source file survives on disk. The coverage gap that let it through:
+`workspaces.effects.spec.ts:428` exercises this path with `drawings: []`.
+
+Low findings — **ruled no-fix with written reasons, do not re-litigate:** **L2** the
+read-time lift can pair `ws.layout` with a fallback `panels` map (unreachable — every
+writer writes both together); **L4** two adapted assertions in `session-migration.spec.ts`
+became tautologies (`f(x) === f(x)`), but the concrete guarantee **moved** to the v3 spec
+and coverage is net stronger; **L5** `parseSessionPayload` no longer applies the defensive
+layout fallback to V3 (unreachable, damage is a degraded layout not data loss, and the
+naive fix would orphan drawings whose `owner` points into the discarded layout — a real
+defect traded for a hypothetical one); **L6** the cloud write path stamps
+`schemaVersion: 3` on un-lifted legacy `meta.drawings`, but this is **strictly better than
+the deleted bridge** (which baked a permanently wrong `symbol: 'undefined'`); the field is
+merely absent and self-heals through the read-time lift, a path the auditor traced end to
+end. Booked for the final audit: L5's and L6's durable fixes are design decisions.
+
+Lows to fold into **Task 9's sweep:** **L1** — of the three flagged decision-id comments,
+two are ruled no-fix (`session-sync.models.ts:100` deliberately mirrors the adjacent
+pre-existing V2 doc comment; `session-sync.mapping.ts:208` is a rewrite that *stripped* a
+task/RFC citation and kept only the decision id — a net reduction), but
+`workspaces.effects.ts:47`'s "RFC-011" is a real violation carrying no load. **Also
+recorded:** `task-6-report.md` asserts "Comments in new code contain no task/RFC/decision
+IDs", which is **false** for all three sites — nothing was concealed (the orchestrator's
+own grep caught it and this ledger recorded it before the audit), but a gating report must
+not assert a constraint was met when a grep says otherwise. **L3** — the workspace-lift
+fixture uses `singlePanelLayoutFor`, so `panel-migrated-1` is also what the *fallback*
+produces: an implementation ignoring `ws.layout`/`ws.panels` entirely would pass
+identically. Production code verified correct by line-by-line read; the fixture needs a
+two-panel layout with a non-default panel id.
+
+**Auditor's own verdict on the STOP-exception adaptations:** all seven preserve intent, and
+the rewritten cloud-open assertion in `sesiones-page.component.spec.ts` is **stronger, not
+weaker** — verified against the fixture that `p1` really is the first panel in layout order
+showing `XAUUSD`, and the test now proves the migration end-to-end through the real
+cloud-open path instead of asserting passthrough.
+
+### RUN STATE
+
+Task 6 implemented; **audit returned FAIL on M1**. Next: the M1 fix wave (+ L1/L3 folded
+in), then Task 9, then the final whole-branch audit → PR to `develop`.
+
+Task 9 docs/sweep backlog (accumulated, do not lose): RFC deviations section must record
+**the owner's panel-close cascade decision** and the
+**`selectActiveAssetVisibleDrawings` fidelity caveat** (its doc comment overclaims);
+`CLAUDE.md`'s accepted bundle overage is stale ("~609 kB" → measured **642.43 kB**); sweep
+the stale "five composition inputs" comment at
+`chart-model-mapper.composition.spec.ts:261`; and the accumulated **`ChartComponent`
+keyboard-wiring coverage gap** (three tasks' worth) needs a ruling at the final audit.
 
 Task 9 carries a docs backlog accumulated by the audits, recorded here so it is not lost:
 RFC deviations section must record **the owner's panel-close cascade decision** and the
