@@ -333,12 +333,20 @@ describe('WorkspaceViewportComponent', () => {
     expect((closeButtons[0] as HTMLElement).getAttribute('aria-label')).toContain(
       'y sus dibujos locales',
     );
+    // aria-label alone is invisible to sighted users; title must carry the same warning.
+    expect((closeButtons[0] as HTMLElement).getAttribute('title')).toContain(
+      'y sus dibujos locales',
+    );
   });
 
   it('the tab close affordance discloses that its panels\' own drawings close with it', () => {
     const fixture = create();
     const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
     expect((closeButtons[0] as HTMLElement).getAttribute('aria-label')).toContain(
+      'y sus dibujos locales',
+    );
+    // aria-label alone is invisible to sighted users; title must carry the same warning.
+    expect((closeButtons[0] as HTMLElement).getAttribute('title')).toContain(
       'y sus dibujos locales',
     );
   });
@@ -357,6 +365,22 @@ describe('WorkspaceViewportComponent', () => {
     fixture.detectChanges();
     const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
     expect(closeButtons).toHaveLength(0);
+  });
+
+  it('calling closeTab() directly on the last remaining tab purges nothing and dispatches nothing', () => {
+    const singleTabState: LayoutState = {
+      workspace: {
+        tabs: [layoutState.workspace.tabs[0]],
+        activeTabId: 'tab-a',
+      },
+      panels: layoutState.panels,
+      focusedPanelId: 'p1',
+    };
+    store.setState({ layout: singleTabState });
+    const fixture = create();
+    const dispatch = vi.spyOn(store, 'dispatch');
+    fixture.componentInstance.closeTab(new Event('click'), 'tab-a');
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('double-clicking a tab enters inline rename; Enter commits renameTab with the typed name', () => {

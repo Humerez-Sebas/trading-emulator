@@ -89,6 +89,7 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
                 role="button"
                 tabindex="0"
                 [attr.aria-label]="'Cerrar ' + tab.name + ' y sus dibujos locales'"
+                [attr.title]="'Cerrar ' + tab.name + ' y sus dibujos locales'"
                 (click)="closeTab($event, tab.id)"
                 (keydown.enter)="closeTab($event, tab.id)"
                 (keydown.space)="closeTab($event, tab.id)"
@@ -149,6 +150,7 @@ const GRID_TEMPLATES: GridTemplate[] = ['1', '2h', '2v', '3', '2x2', '1+2', '1+3
                       role="button"
                       tabindex="0"
                       [attr.aria-label]="'Cerrar ' + panelLabel(pid) + ' y sus dibujos locales'"
+                      [attr.title]="'Cerrar ' + panelLabel(pid) + ' y sus dibujos locales'"
                       (click)="closePanel($event, pid)"
                       (keydown.enter)="closePanel($event, pid)"
                       (keydown.space)="closePanel($event, pid)"
@@ -428,8 +430,10 @@ export class WorkspaceViewportComponent implements OnDestroy {
   /**
    * RFC-013 (D4): closes a tab; stops propagation so the tab's own click
    * (selectTab) doesn't also fire. Absent in the template when it is the last
-   * tab. Closing a tab removes several panels' descriptors at once, which the
-   * drawings reducer cannot resolve from a bare `tabId` (see
+   * tab; the guard below repeats that condition here too, so the irreversible
+   * purge below can never fire on a call the layout reducer would otherwise
+   * no-op. Closing a tab removes several panels' descriptors at once, which
+   * the drawings reducer cannot resolve from a bare `tabId` (see
    * `purgePanelDrawings`'s doc comment) — so this is two dispatches for one
    * user gesture, not one atomic action: the panel ids are computed HERE
    * (the tab→panels mapping lives only in this component's own layout
@@ -437,6 +441,7 @@ export class WorkspaceViewportComponent implements OnDestroy {
    */
   closeTab(event: Event, tabId: string): void {
     event.stopPropagation();
+    if (this.workspace().tabs.length <= 1) return;
     const tab = this.workspace().tabs.find((t) => t.id === tabId);
     const panelIds = tab ? tab.cells.flatMap((cell) => cell.panelIds) : [];
     if (panelIds.length) {
