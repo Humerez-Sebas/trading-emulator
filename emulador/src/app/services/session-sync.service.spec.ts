@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionSyncService } from './session-sync.service';
 import type { SupabaseService } from '../auth/supabase.service';
 import { PAYLOAD_MAX_BYTES, reconstructWorkspaces } from './session-sync.mapping';
-import { SESSION_PAYLOAD_VERSION_2 } from './session-sync.models';
+import { SESSION_PAYLOAD_VERSION_3 } from './session-sync.models';
 import type { CloudFolderRow, CloudSessionRow, SessionPayloadV1 } from './session-sync.models';
 import { WorkspaceDbService } from './workspace-db.service';
 import { workspaceMeta, savedSession, position } from '../testing/fixtures';
@@ -800,7 +800,7 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     expect(pushed.layout).toEqual(layout);
     expect(pushed.panels).toEqual(panels);
     expect(pushed.linkGroups).toEqual(linkGroups);
-    expect(pushed.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
+    expect(pushed.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_3);
   });
 });
 

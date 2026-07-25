@@ -763,7 +763,23 @@ describe('SesionesPageComponent', () => {
     expect(metaArg.layout).toEqual(multiPanelLayout);
     expect(metaArg.panels).toEqual(multiPanels);
     expect(metaArg.linkGroups).toEqual(linkGroups);
-    expect(metaArg.drawings).toEqual([cloudDrawing]);
+    // The V2->V3 migration lifts the legacy item into an owner-tagged Drawing:
+    // symbol from its record key (XAUUSD), owner = the first panel in layout
+    // order showing that symbol (p1), zIndex 0, locked:false, visible:true —
+    // id/kind/geometry carried over verbatim.
+    expect(metaArg.drawings).toEqual([
+      {
+        id: 'd1',
+        symbol: 'XAUUSD',
+        owner: { type: 'panel', id: 'p1' },
+        kind: 'line',
+        p1: { time: 0, price: 1.1 },
+        p2: { time: 3600, price: 1.2 },
+        zIndex: 0,
+        locked: false,
+        visible: true,
+      },
+    ]);
     // sanity: the migration-default single-panel shape used elsewhere is NOT
     // what got written (i.e. this really carries the cloud payload's layout).
     expect(metaArg.layout).not.toEqual(layout);

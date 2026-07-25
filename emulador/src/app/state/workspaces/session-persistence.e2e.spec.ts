@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toPayload } from '../../services/session-sync.mapping';
 import { parseSessionPayload } from '../../services/session-migration';
 import { fromPayload } from '../../services/session-sync.mapping';
-import type { PayloadInput, DrawingCollection } from '../../services/session-sync.models';
+import type { PayloadInput } from '../../services/session-sync.models';
 import { assertLayoutConsistent } from '../layout/layout-invariants.spec-util';
 import { layoutFeature } from '../layout/layout.reducer';
 import { LayoutActions } from '../layout/layout.actions';
@@ -75,10 +75,7 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       locked: false,
       visible: true,
     };
-    const drawings: Record<string, DrawingCollection> = {
-      EURUSD: { version: 1, items: [eurusdDrawing] },
-      GBPUSD: { version: 1, items: [gbpusdDrawing] },
-    };
+    const drawings = { version: 2 as const, items: [eurusdDrawing, gbpusdDrawing] };
 
     const input: PayloadInput = {
       trading: defaultTradingData(10000),
@@ -112,10 +109,11 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
 
     // wire: feed the restored values through the actual restore actions
     // against FRESH feature reducers (mirrors what workspaceRestored/
-    // thenRestore dispatch in production). The drawings store now holds the
+    // thenRestore dispatch in production). The drawings store holds the
     // WHOLE session (every symbol) in one entity map, hydrated in a single
-    // `restoreDrawings` call from the flattened record — per-symbol scoping
-    // becomes a filter over the composed entities, not a separate action.
+    // `restoreDrawings` call from the already-flat V3 set — per-symbol
+    // scoping becomes a filter over the composed entities, not a separate
+    // action.
     const layoutState = layoutFeature.reducer(
       undefined,
       LayoutActions.restoreLayout({ layout: restored.layout, panels: restored.panels }),
@@ -124,10 +122,9 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       undefined,
       LinkGroupsActions.restoreGroups({ groups: restored.linkGroups }),
     );
-    const flattened = Object.values(restored.drawings).flatMap((c) => c.items);
     const drawingsState = drawingsFeature.reducer(
       undefined,
-      DrawingsActions.restoreDrawings({ drawings: flattened }),
+      DrawingsActions.restoreDrawings({ drawings: restored.drawings.items }),
     );
     const bySymbol = (symbol: string) =>
       Object.values(drawingsState.entities).filter((d) => d.symbol === symbol);
@@ -218,7 +215,7 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       activeTf: 'M1',
       customTfMinutes: null,
       playbackSpeed: 1,
-      drawings: {},
+      drawings: { version: 2, items: [] },
       notes: [],
       selectedTfs: ['M1', 'M15'],
       startRange: 1699000000,
