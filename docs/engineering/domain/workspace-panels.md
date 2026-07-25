@@ -150,8 +150,10 @@ parked, so the global controls never target an off-screen panel.
 
 Layout + linkGroups + owner-tagged drawings travel inside the single
 `SessionPayloadV3` (one LWW cycle, never two — D9); on the wire drawings are
-`{version: 3, items: Drawing[]}`, a flat owner-tagged set rather than the V2
-per-symbol collection. IndexedDB lifts pre-RFC-017 legacy shapes at read time.
+`{version: 2, items: Drawing[]}` — the drawings COLLECTION's own version field
+(distinct from the payload's `schemaVersion: 3`), a flat owner-tagged set
+rather than the V2 payload's per-symbol collection. IndexedDB lifts
+pre-RFC-017 legacy shapes at read time.
 Details and migration rules: `session-sync.md` (predates RFC-017 — its Payload
 rules section still describes the V2 wire shape; updating it is documentation
 debt not gated by RFC-017's own closure).
