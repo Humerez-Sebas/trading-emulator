@@ -25,6 +25,27 @@ export interface Drawing {
   visible: boolean;
 }
 
+/** One recorded drawing lifecycle mutation, invertible for undo/redo. */
+export interface DrawingCommand {
+  kind: 'add' | 'move' | 'delete';
+  drawingId: string;
+  before: Drawing | null; // null for add
+  after: Drawing | null; // null for delete
+  resultRev: number; // revisions[drawingId] AFTER this command applied
+}
+
+/** A single panel's undo/redo command stacks. */
+export interface PanelHistory {
+  undo: DrawingCommand[];
+  redo: DrawingCommand[];
+}
+
+/**
+ * Per-panel undo stack depth. A bounded stack keeps memory flat across a long
+ * session while staying far deeper than any realistic correction run.
+ */
+export const HISTORY_LIMIT = 50;
+
 export interface DrawingsState {
   /** All session drawings, every symbol and owner, keyed by id. */
   entities: Record<string, Drawing>;
@@ -35,6 +56,10 @@ export interface DrawingsState {
   activeTool: DrawingTool;
   /** Monotonic z-order counter; every new drawing takes `nextZ` and bumps it. */
   nextZ: number;
+  /** Runtime-only, monotonic per-drawing revision counter; never persisted. */
+  revisions: Record<string, number>;
+  /** Runtime-only, panelId -> that panel's undo/redo stacks; never persisted. */
+  history: Record<string, PanelHistory>;
 }
 
 /** Standard Fibonacci retracement levels. */

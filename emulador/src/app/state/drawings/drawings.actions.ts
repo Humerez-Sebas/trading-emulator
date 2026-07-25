@@ -32,5 +32,9 @@ export const DrawingsActions = createActionGroup({
      * for the multi-panel tab-close case.
      */
     'Purge Panel Drawings': props<{ panelIds: string[] }>(),
+    /** Pops that panel's undo stack; stale/locked guard decides whether it applies (see reducer). */
+    'Undo': props<{ panelId: string }>(),
+    /** Pops that panel's redo stack; symmetric with `undo`. */
+    'Redo': props<{ panelId: string }>(),
   },
 });

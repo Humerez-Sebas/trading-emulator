@@ -1,6 +1,6 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { DrawingsActions } from './drawings.actions';
-import { Drawing, DrawingsState } from './drawings.models';
+import { Drawing, DrawingCommand, DrawingsState, HISTORY_LIMIT, PanelHistory } from './drawings.models';
 import { ownerKeyOf } from './drawing-ownership';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
 import { LinkGroupsActions } from '../link-groups/link-groups.actions';
@@ -15,6 +15,8 @@ const initialState: DrawingsState = {
   selection: {},
   activeTool: 'none',
   nextZ: 0,
+  revisions: {},
+  history: {},
 };
 
 /**
@@ -71,6 +73,154 @@ function clearSelectionsAmong(
   return changed ? next : null;
 }
 
+/** Bumps a drawing's revision counter (absent -> starts at 1). */
+function bumpRevision(revisions: Record<string, number>, id: string): Record<string, number> {
+  return { ...revisions, [id]: (revisions[id] ?? 0) + 1 };
+}
+
+/** Discards the oldest entries once a command stack exceeds `HISTORY_LIMIT`. */
+function capped(commands: readonly DrawingCommand[]): DrawingCommand[] {
+  return commands.length > HISTORY_LIMIT
+    ? commands.slice(commands.length - HISTORY_LIMIT)
+    : [...commands];
+}
+
+/**
+ * Records a freshly-applied panel-authored command: pushes it onto that
+ * panel's undo stack (capped), and clears the panel's redo stack (a new
+ * command invalidates whatever could have been redone).
+ */
+function pushCommand(
+  history: Record<string, PanelHistory>,
+  panelId: string,
+  command: DrawingCommand,
+): Record<string, PanelHistory> {
+  const hist = history[panelId] ?? { undo: [], redo: [] };
+  return { ...history, [panelId]: { undo: capped([...hist.undo, command]), redo: [] } };
+}
+
+type InverseOutcome = 'stale' | 'locked' | { state: DrawingsState; mirrored: DrawingCommand };
+
+/**
+ * Computes the effect of inverting one recorded command against the CURRENT
+ * state: stale when another mutation touched the drawing since (revision
+ * mismatch, or the entity is absent when the inverse needs it present),
+ * locked when the live entity blocks it, or the applied result plus the
+ * mirrored command to push onto the other stack (undo <-> redo). Used
+ * identically by both `undo` and `redo` — redo's "inverse" of a mirrored
+ * command reproduces the original forward mutation.
+ */
+function applyInverse(state: DrawingsState, command: DrawingCommand): InverseOutcome {
+  if ((state.revisions[command.drawingId] ?? 0) !== command.resultRev) return 'stale';
+  const existing = state.entities[command.drawingId];
+
+  if (command.kind === 'add') {
+    // inverse: delete the entity that was added — it must still be there.
+    if (!existing) return 'stale';
+    if (existing.locked) return 'locked';
+    const entities = { ...state.entities };
+    delete entities[command.drawingId];
+    const key = ownerKeyOf(existing.owner);
+    const ownerIndex = {
+      ...state.ownerIndex,
+      [key]: (state.ownerIndex[key] ?? []).filter((id) => id !== command.drawingId),
+    };
+    const selection = clearSelectionsOf(state.selection, command.drawingId);
+    const revisions = bumpRevision(state.revisions, command.drawingId);
+    const mirrored: DrawingCommand = {
+      kind: 'delete',
+      drawingId: command.drawingId,
+      before: existing,
+      after: null,
+      resultRev: revisions[command.drawingId],
+    };
+    return { state: { ...state, entities, ownerIndex, selection, revisions }, mirrored };
+  }
+
+  if (command.kind === 'move') {
+    // inverse: restore `before` geometry onto the still-existing entity.
+    if (!existing) return 'stale';
+    if (existing.locked) return 'locked';
+    const restored = command.before!;
+    const entities = { ...state.entities, [command.drawingId]: restored };
+    const revisions = bumpRevision(state.revisions, command.drawingId);
+    const mirrored: DrawingCommand = {
+      kind: 'move',
+      drawingId: command.drawingId,
+      before: existing,
+      after: restored,
+      resultRev: revisions[command.drawingId],
+    };
+    return { state: { ...state, entities, revisions }, mirrored };
+  }
+
+  // kind === 'delete': inverse recreates `before` — the entity is normally
+  // absent here (that IS the applies case); owner is restored verbatim.
+  if (existing?.locked) return 'locked';
+  const restored = command.before!;
+  const key = ownerKeyOf(restored.owner);
+  const entities = { ...state.entities, [command.drawingId]: restored };
+  const ownerIndex = {
+    ...state.ownerIndex,
+    [key]: [...(state.ownerIndex[key] ?? []), command.drawingId],
+  };
+  const revisions = bumpRevision(state.revisions, command.drawingId);
+  const mirrored: DrawingCommand = {
+    kind: 'add',
+    drawingId: command.drawingId,
+    before: null,
+    after: restored,
+    resultRev: revisions[command.drawingId],
+  };
+  return { state: { ...state, entities, ownerIndex, revisions }, mirrored };
+}
+
+/**
+ * Shared undo/redo mechanics (§5): pop the panel's `popFrom` stack, dropping
+ * stale entries and continuing to the next older one, until a command
+ * applies, one is blocked by a lock (retained, popping stops), or the stack
+ * empties. An applied command pushes its mirror onto `pushTo`.
+ */
+function popAndApply(
+  state: DrawingsState,
+  panelId: string,
+  popFrom: 'undo' | 'redo',
+): DrawingsState {
+  const pushTo: 'undo' | 'redo' = popFrom === 'undo' ? 'redo' : 'undo';
+  const hist = state.history[panelId] ?? { undo: [], redo: [] };
+  let working = hist[popFrom];
+  if (working.length === 0) return state; // nothing to do: identity return
+
+  let droppedAny = false;
+
+  while (working.length > 0) {
+    const command = working[working.length - 1];
+    const outcome = applyInverse(state, command);
+
+    if (outcome === 'stale') {
+      working = working.slice(0, -1); // drop it, continue to the next older command
+      droppedAny = true;
+      continue;
+    }
+
+    if (outcome === 'locked') {
+      if (!droppedAny) return state; // nothing changed at all: pure identity return
+      const nextHist: PanelHistory = { ...hist, [popFrom]: working }; // command retained on top
+      return { ...state, history: { ...state.history, [panelId]: nextHist } };
+    }
+
+    // applies: consume it, push the mirrored command onto the other stack
+    const remaining = working.slice(0, -1);
+    const otherStack = capped([...(hist[pushTo] ?? []), outcome.mirrored]);
+    const nextHist: PanelHistory = { ...hist, [popFrom]: remaining, [pushTo]: otherStack };
+    return { ...outcome.state, history: { ...outcome.state.history, [panelId]: nextHist } };
+  }
+
+  // every candidate was stale: stack fully drained, nothing applied
+  const nextHist: PanelHistory = { ...hist, [popFrom]: working };
+  return { ...state, history: { ...state.history, [panelId]: nextHist } };
+}
+
 /**
  * Cascade-deletes the given panels' OWN drawings (never group-owned ones):
  * drops every entity under each panel's owner key, the key itself, that
@@ -84,6 +234,7 @@ function purgePanelIds(state: DrawingsState, panelIds: readonly string[]): Drawi
   const entities = { ...state.entities };
   const ownerIndex = { ...state.ownerIndex };
   const selection = { ...state.selection };
+  const history = { ...state.history };
   const deletedIds = new Set<string>();
 
   for (const panelId of panelIds) {
@@ -101,13 +252,17 @@ function purgePanelIds(state: DrawingsState, panelIds: readonly string[]): Drawi
       changed = true;
       delete selection[panelId];
     }
+    if (panelId in history) {
+      changed = true;
+      delete history[panelId];
+    }
   }
   if (!changed) return state;
 
   for (const [pid, selectedId] of Object.entries(selection)) {
     if (selectedId != null && deletedIds.has(selectedId)) selection[pid] = null;
   }
-  return { ...state, entities, ownerIndex, selection };
+  return { ...state, entities, ownerIndex, selection, history };
 }
 
 export const drawingsFeature = createFeature({
@@ -119,6 +274,14 @@ export const drawingsFeature = createFeature({
     on(DrawingsActions.addDrawing, (state, { panelId, drawing }): DrawingsState => {
       const stamped: Drawing = { ...drawing, zIndex: state.nextZ };
       const key = ownerKeyOf(stamped.owner);
+      const revisions = bumpRevision(state.revisions, stamped.id);
+      const command: DrawingCommand = {
+        kind: 'add',
+        drawingId: stamped.id,
+        before: null,
+        after: stamped,
+        resultRev: revisions[stamped.id],
+      };
       return {
         ...state,
         entities: { ...state.entities, [stamped.id]: stamped },
@@ -126,13 +289,29 @@ export const drawingsFeature = createFeature({
         nextZ: state.nextZ + 1,
         selection: { ...state.selection, [panelId]: stamped.id },
         activeTool: 'none',
+        revisions,
+        history: pushCommand(state.history, panelId, command),
       };
     }),
 
-    on(DrawingsActions.moveDrawing, (state, { id, p1, p2 }): DrawingsState => {
+    on(DrawingsActions.moveDrawing, (state, { panelId, id, p1, p2 }): DrawingsState => {
       const existing = state.entities[id];
       if (!existing || existing.locked) return state; // absent or locked: identity return, never mutated
-      return { ...state, entities: { ...state.entities, [id]: { ...existing, p1, p2 } } };
+      const after: Drawing = { ...existing, p1, p2 };
+      const revisions = bumpRevision(state.revisions, id);
+      const command: DrawingCommand = {
+        kind: 'move',
+        drawingId: id,
+        before: existing,
+        after,
+        resultRev: revisions[id],
+      };
+      return {
+        ...state,
+        entities: { ...state.entities, [id]: after },
+        revisions,
+        history: pushCommand(state.history, panelId, command),
+      };
     }),
 
     on(DrawingsActions.selectDrawing, (state, { panelId, id }): DrawingsState => {
@@ -157,7 +336,22 @@ export const drawingsFeature = createFeature({
         ...state.ownerIndex,
         [key]: (state.ownerIndex[key] ?? []).filter((existingId) => existingId !== id),
       };
-      return { ...state, entities, ownerIndex, selection: clearSelectionsOf(state.selection, id) };
+      const revisions = bumpRevision(state.revisions, id);
+      const command: DrawingCommand = {
+        kind: 'delete',
+        drawingId: id,
+        before: existing,
+        after: null,
+        resultRev: revisions[id],
+      };
+      return {
+        ...state,
+        entities,
+        ownerIndex,
+        selection: clearSelectionsOf(state.selection, id),
+        revisions,
+        history: pushCommand(state.history, panelId, command),
+      };
     }),
 
     on(DrawingsActions.setDrawingLocked, (state, { id, locked }): DrawingsState => {
@@ -179,6 +373,8 @@ export const drawingsFeature = createFeature({
         ...rebuildFromDrawings(drawings),
         selection: {},
         activeTool: 'none',
+        revisions: {},
+        history: {},
       }),
     ),
 
@@ -190,6 +386,8 @@ export const drawingsFeature = createFeature({
         ...rebuildFromDrawings(workspace.drawings),
         selection: {},
         activeTool: 'none',
+        revisions: {},
+        history: {},
       }),
     ),
 
@@ -233,6 +431,13 @@ export const drawingsFeature = createFeature({
     ),
     on(DrawingsActions.purgePanelDrawings, (state, { panelIds }): DrawingsState =>
       purgePanelIds(state, panelIds),
+    ),
+
+    on(DrawingsActions.undo, (state, { panelId }): DrawingsState =>
+      popAndApply(state, panelId, 'undo'),
+    ),
+    on(DrawingsActions.redo, (state, { panelId }): DrawingsState =>
+      popAndApply(state, panelId, 'redo'),
     ),
   ),
 });
