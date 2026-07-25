@@ -30,6 +30,52 @@ import {
 } from './workspaces.actions';
 import { emptyWorkspace, Workspace, WorkspaceMeta } from './workspaces.models';
 import type { LinkGroup } from '../link-groups/link-groups.models';
+import type { Drawing } from '../drawings/drawings.models';
+import type { WorkspaceLayout, PanelDescriptor } from '../layout/layout.models';
+import {
+  liftLegacyDrawing,
+  ownerPanelFor,
+  type LegacyDrawingItem,
+} from '../../services/drawings-migration';
+import { singlePanelLayoutFor } from '../../services/session-migration';
+
+/**
+ * Read-time shape-guard (parse, don't trust) for `Workspace.drawings` records
+ * written before ownership existed: an item missing `owner` is legacy and is
+ * lifted with the workspace's own symbol + its own layout's matching panel
+ * (falling back to `singlePanelLayoutFor` when the workspace predates
+ * RFC-011's persisted layout/panels); an already owner-tagged item passes
+ * through untouched. `ownerPanelFor` is resolved at most once per call (it
+ * depends only on symbol/layout/panels, not on the item), and identity is
+ * preserved when nothing needed lifting.
+ */
+function liftWorkspaceDrawings(ws: Workspace): Drawing[] {
+  const items = ws.drawings ?? [];
+  let changed = false;
+  let layout: WorkspaceLayout | undefined;
+  let panels: Record<string, PanelDescriptor> | undefined;
+  let ownerPanelId: string | null = null;
+
+  const lifted = items.map((item, index) => {
+    if ((item as Partial<Drawing>).owner != null) return item;
+    changed = true;
+    if (!layout || !panels) {
+      const fallback = singlePanelLayoutFor(ws.symbol, ws.activeTf ?? 'M1');
+      layout = ws.layout ?? fallback.layout;
+      panels = ws.panels ?? fallback.panels;
+    }
+    ownerPanelId ??= ownerPanelFor(ws.symbol, layout, panels);
+    return liftLegacyDrawing(item as unknown as LegacyDrawingItem, ws.symbol, ownerPanelId, index);
+  });
+
+  return changed ? lifted : items;
+}
+
+/** Applies `liftWorkspaceDrawings`, returning the same reference when nothing needed lifting. */
+function withLiftedDrawings(ws: Workspace): Workspace {
+  const drawings = liftWorkspaceDrawings(ws);
+  return drawings === ws.drawings ? ws : { ...ws, drawings };
+}
 
 // Key for remembering the last active asset across restarts.
 const CURRENT_KEY = 'emulador.currentAsset';
@@ -151,7 +197,7 @@ export class WorkspacesEffects {
       const actions: Action[] = [WorkspacesActions.assetsLoaded({ assets, current })];
       if (current) {
         const ws = await this.db.getWorkspace(current);
-        if (ws) actions.push(WorkspacesActions.workspaceRestored({ workspace: ws }));
+        if (ws) actions.push(WorkspacesActions.workspaceRestored({ workspace: withLiftedDrawings(ws) }));
       }
       return actions;
     } catch {
@@ -218,7 +264,7 @@ export class WorkspacesEffects {
     }
     const actions: Action[] = [
       WorkspacesActions.workspaceRestored({
-        workspace: applySelectedTfs(ws ?? emptyWorkspace(symbol)),
+        workspace: withLiftedDrawings(applySelectedTfs(ws ?? emptyWorkspace(symbol))),
       }),
     ];
     // 3) then load freshly parsed CSVs (persistSeries$ stores each of them)

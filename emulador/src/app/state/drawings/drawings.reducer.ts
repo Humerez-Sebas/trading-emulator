@@ -23,7 +23,10 @@ const initialState: DrawingsState = {
 /**
  * Rebuilds `entities`/`ownerIndex`/`nextZ` from a flat drawing set — the one
  * sovereign every hydration path (import restore, workspace switch) funnels
- * through, so the map and its index can never disagree.
+ * through, so the map and its index can never disagree. A record lacking a
+ * usable `owner` (a legacy shape that reached the store without going through
+ * the read-time lift) is skipped rather than crashing `ownerKeyOf` — the last
+ * line of defence on a hydration path, not a second migration.
  */
 function rebuildFromDrawings(
   drawings: readonly Drawing[],
@@ -32,6 +35,7 @@ function rebuildFromDrawings(
   const ownerIndex: Record<string, string[]> = {};
   let maxZ = -1;
   for (const d of drawings) {
+    if (!d.owner) continue;
     entities[d.id] = d;
     const key = ownerKeyOf(d.owner);
     (ownerIndex[key] ??= []).push(d.id);
