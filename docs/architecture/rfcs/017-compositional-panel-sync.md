@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| **Estado** | Especificación formal — aprobada para implementación |
+| **Estado** | Implementada (Tasks 1–6 completas; Tasks 7–8 supersedidas por TEDS — ver §6); Task 9 cierra invariantes y documentación; auditoría final de rama pendiente antes del PR a `develop` |
 | **Fecha** | 2026-07-17 (diseño aprobado) · 2026-07-16 (formalización) |
 | **Bloque** | Mastery Block — Fase 4 |
 | **Documentos Rectores** | [TRADER_KNOWLEDGE_MODEL.md](../TRADER_KNOWLEDGE_MODEL.md), [DOMAIN_MODEL.md](../DOMAIN_MODEL.md), `DESIGN_SYSTEM.md` |
@@ -349,3 +349,62 @@ sesión mono-símbolo preservada; dibujos session-scoped).
 - Compartición de dibujos entre sesiones (siguen session-scoped, decisión
   congelada de 008-012).
 - Operaciones de reordenado de zIndex (traer al frente / enviar al fondo).
+
+---
+
+## 13. Desviaciones e implementación (Task 9, cierre del run)
+
+Este RFC se implementó en las Tasks 1–6 (Tasks 7–8, la capa de visualización
+de trades, quedaron fuera de alcance — supersedidas por TEDS, ver §6). Lo que
+sigue documenta dónde la implementación real difirió de, o añadió a, lo
+especificado arriba; ninguno de estos puntos reabre una decisión ya tomada
+sin decirlo.
+
+1. **Cascada de borrado al cerrar un panel — decisión de producto NUEVA que
+   este RFC nunca tomó, escalada al dueño del repositorio durante la Task 3 y
+   respondida por él.** Cerrar un panel (o una pestaña completa) **borra en
+   cascada los dibujos PROPIOS de ese panel**, reflejando la regla de borrado
+   de grupo de D17.L; los dibujos de propiedad de un grupo sobreviven. Ambos
+   controles de cierre (pestaña y panel) lo declaran en español mediante
+   `aria-label` **y** `title` ("…y sus dibujos locales" — "locales" es la
+   palabra que carga el significado). La reasignación automática sigue
+   prohibida por el Invariante 1. **Racional:** los ids de panel son UUIDs
+   efímeros — un `panel:<uuid>` huérfano jamás puede reclamarse, así que sin
+   la cascada esos dibujos quedarían permanentemente sin renderizar y sin
+   poder borrarse, creciendo cada payload para siempre.
+
+2. **El predicado de gating de la capa de trades (§5.1) NO se implementó en
+   este run.** Se movió, junto con las Tasks 7–8, al plan de TEDS (ver la
+   nota de supersesión de §6, que ya lo declara). Este punto no lo contradice
+   — §5.1 sigue siendo el contrato normativo de *dónde* debe pintarse la capa
+   de trades; implementarlo es responsabilidad del plan TEDS, no de este
+   cierre.
+
+3. **Matiz de fidelidad del `DrawingSnapshot` de telemetría (RFC-014 G3).**
+   El hecho de telemetría queda acotado a los dibujos *visibles* del activo
+   activo, lo que restaura exactamente la semántica previa a RFC-017 — pero
+   sigue sin ser literalmente "lo que estaba en pantalla" para un panel
+   composicional: un dibujo en una pestaña inactiva, detrás de un hermano de
+   grid, o en un grupo con `syncDrawings` desactivado cuenta para el snapshot
+   sin haber sido pintado; a la inversa, los dibujos de un panel secundario
+   de observación (símbolo distinto al activo) quedan excluidos. La
+   fidelidad exacta por panel composicional es una pregunta de diseño
+   abierta de RFC-017/RFC-014, no un defecto de implementación. El
+   comentario de doc de `selectActiveAssetVisibleDrawings`
+   (`emulador/src/app/state/selectors.ts`), que afirmaba más fidelidad de la
+   que la implementación entrega, fue suavizado como parte de este cierre.
+
+4. **Dos limitaciones de persistencia**, ambas dictaminadas no-fix en la
+   auditoría de Task 6 y llevadas adelante como preguntas de diseño, no
+   defectos: `parseSessionPayload` ya no aplica el fallback defensivo de
+   layout a V3 (el arreglo ingenuo huerfanaría dibujos cuyo `owner` apunta al
+   layout descartado); y la vía de escritura hacia la nube puede sellar
+   `schemaVersion: 3` sobre un `meta.drawings` legado aún no elevado por el
+   lift — sigue siendo estrictamente mejor que el puente V2 eliminado, y se
+   autorepara a través del lift en tiempo de lectura.
+
+5. **Limitación residual de la migración**, ya declarada en la spec técnica
+   §7 y en §10 de este documento: cuando varios paneles V2 mostraban el
+   mismo símbolo, tras migrar solo el primero conserva esos dibujos — la
+   duplicación la prohíbe el Invariante 1; compartir vía grupo es el camino
+   hacia delante.
