@@ -77,10 +77,14 @@ export const selectAllDrawings = createSelector(drawingsFeature.selectEntities, 
 );
 
 /**
- * The active asset's own visible drawings — what a trader could actually see
- * painted on screen at any instant. A panel showing a DIFFERENT symbol (a
- * secondary observation panel), or a drawing toggled invisible, never counts:
- * this is the fact content a telemetry `DrawingSnapshot` must capture.
+ * The active asset's visible drawings — the fact content a telemetry
+ * `DrawingSnapshot` captures. A panel showing a DIFFERENT symbol (a
+ * secondary observation panel) is excluded, as is any drawing toggled
+ * invisible. NOT literally "what was painted on screen" for a composed
+ * panel, though — a drawing in an inactive tab, behind a grid-cell sibling,
+ * or in a group with `syncDrawings` off still counts here without having
+ * been rendered. Exact composed-panel fidelity is an open design question,
+ * not an implementation gap.
  */
 export const selectActiveAssetVisibleDrawings = createSelector(
   drawingsFeature.selectEntities,

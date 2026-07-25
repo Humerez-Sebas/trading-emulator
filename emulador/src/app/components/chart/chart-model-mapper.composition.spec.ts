@@ -258,8 +258,8 @@ describe('ChartModelMapper.panelDrawings$ composition (RFC-017 pipeline)', () =>
     const mapper = mapperFor(descriptor({ id: 'p1' }), entities, ownerIndex, {}, {});
     const first = latest(mapper);
 
-    // an emission on a selector this mapper does NOT compose from — the five
-    // composition inputs (entities/ownerIndex/selection/groups/descriptor)
+    // an emission on a selector this mapper does NOT compose from — the six
+    // composition inputs (descriptor/entities/ownerIndex/selection/groups/currentAsset)
     // keep their exact references.
     store.overrideSelector(selectActiveTfShortfall, 123);
     store.refreshState();
