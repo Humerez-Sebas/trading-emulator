@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { Actions, createEffect, ofType, ROOT_EFFECTS_INIT } from '@ngrx/effects';
 import { Action, Store } from '@ngrx/store';
-import { from, firstValueFrom } from 'rxjs';
+import { from } from 'rxjs';
 import {
   concatMap,
   debounceTime,
@@ -20,7 +20,6 @@ import { ExecutionCosts } from '../trading/execution-costs';
 import { DrawingsActions } from '../drawings/drawings.actions';
 import { LayoutActions } from '../layout/layout.actions';
 import { LinkGroupsActions } from '../link-groups/link-groups.actions';
-import { linkGroupsFeature } from '../link-groups/link-groups.reducer';
 import { normalizeLinkGroup } from '../link-groups/link-groups.models';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
 import {
@@ -355,15 +354,16 @@ export class WorkspacesEffects {
       // a modern `.session.json` export whose panel/group ids don't exist in
       // whatever layout ends up installed here (a different machine, a
       // cleared profile, a fresh workspace). Resolving a group owner needs to
-      // know which groups will actually be in effect: the ones this restore
-      // itself carries, or — when it carries none, as every real
-      // `.session.json` export does today — the ones already active in the
-      // store, so re-importing back into the SAME still-open workspace keeps
-      // resolving against its own live groups instead of flattening them.
+      // know which groups this restore actually leaves installed: the ones
+      // the restore itself carries (which, when present, overwrite
+      // everything else once dispatched below), or — when it carries none,
+      // as every real `.session.json` export does today — the target
+      // workspace's own persisted groups, which is exactly what the
+      // `workspaceRestored` action already dispatched above installs,
+      // whether the target is the workspace already open or a different one
+      // entirely.
       const resolvableGroupIds = new Set(
-        thenRestore.linkGroups
-          ? thenRestore.linkGroups.map((g) => g.id)
-          : Object.keys(await firstValueFrom(this.store.select(linkGroupsFeature.selectGroups))),
+        (thenRestore.linkGroups ?? ws?.linkGroups ?? []).map((g) => g.id),
       );
       actions.push(
         DrawingsActions.restoreDrawings({

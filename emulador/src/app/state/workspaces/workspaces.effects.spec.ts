@@ -648,11 +648,15 @@ describe('WorkspacesEffects', () => {
       );
     });
 
-    it('2r7. thenRestore with a group-owned drawing whose group still exists in the CURRENT store (no thenRestore.linkGroups) arrives untouched — importing back into the same workspace preserves the shared layer, it is not unconditionally flattened', async () => {
+    it('2r7. same-workspace import: the workspace being restored already owns the group in its OWN persisted linkGroups (no thenRestore.linkGroups) — the group-owned drawing arrives untouched', async () => {
       setupTestBed();
-      db.getWorkspace!.mockResolvedValue(undefined);
+      // Re-importing while already on this workspace: current === symbol, and
+      // the live store reflects this same workspace's own groups.
+      store.overrideSelector(selectCurrentAsset, SYMBOL);
       store.overrideSelector(linkGroupsFeature.selectGroups, { g1: createLinkGroup('g1', '#f00') });
       store.refreshState();
+      const ws = workspace({ symbol: SYMBOL, linkGroups: [createLinkGroup('g1', '#f00')] });
+      db.getWorkspace!.mockResolvedValue(ws);
 
       const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
       const trading = defaultTradingData();
@@ -660,7 +664,7 @@ describe('WorkspacesEffects', () => {
         {
           id: 'd1',
           symbol: SYMBOL,
-          owner: { type: 'group' as const, id: 'g1' }, // still exists in the current store
+          owner: { type: 'group' as const, id: 'g1' }, // exists in the target workspace's own persisted groups
           kind: 'line' as const,
           p1: { time: 0, price: 1 },
           p2: { time: 1, price: 2 },
@@ -689,6 +693,103 @@ describe('WorkspacesEffects', () => {
       expect(result![3]).toEqual(DrawingsActions.restoreDrawings({ drawings }));
       expect((result![3] as ReturnType<typeof DrawingsActions.restoreDrawings>).drawings).toBe(
         drawings,
+      );
+    });
+
+    it('2r7b. cross-workspace import: the CURRENT store holds a different (outgoing) workspace\'s groups, but the workspace being restored has the group in its OWN persisted linkGroups — the group-owned drawing must still arrive untouched', async () => {
+      setupTestBed();
+      // The user is currently on a different, unrelated workspace (OTHER) and
+      // imports a `.session.json` for SYMBOL. Nothing has been dispatched yet
+      // at this point in doSwitch, so the store still reflects OTHER's own
+      // groups, not SYMBOL's — this is the realistic shape of the bug.
+      store.overrideSelector(selectCurrentAsset, OTHER);
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g2: createLinkGroup('g2', '#0f0') });
+      store.refreshState();
+      const ws = workspace({ symbol: SYMBOL, linkGroups: [createLinkGroup('g1', '#f00')] });
+      db.getWorkspace!.mockResolvedValue(ws);
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+      const drawings = [
+        {
+          id: 'd1',
+          symbol: SYMBOL,
+          owner: { type: 'group' as const, id: 'g1' }, // exists in the target workspace's own persisted groups, NOT in the current store
+          kind: 'line' as const,
+          p1: { time: 0, price: 1 },
+          p2: { time: 1, price: 2 },
+          zIndex: 0,
+          locked: false,
+          visible: true,
+        },
+      ];
+
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          thenLoad: [csvH1],
+          thenRestore: {
+            trading,
+            drawings,
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+          },
+        }),
+      );
+
+      const result = await p;
+      expect(result![3]).toEqual(DrawingsActions.restoreDrawings({ drawings }));
+      expect((result![3] as ReturnType<typeof DrawingsActions.restoreDrawings>).drawings).toBe(
+        drawings,
+      );
+    });
+
+    it('2r7c. genuinely dead group: neither thenRestore.linkGroups nor the target workspace\'s own persisted linkGroups contain the id (even though the current store holds an unrelated group) — the drawing is re-homed to a panel that exists', async () => {
+      setupTestBed();
+      store.overrideSelector(selectCurrentAsset, OTHER);
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g2: createLinkGroup('g2', '#0f0') });
+      store.refreshState();
+      const ws = workspace({ symbol: SYMBOL, linkGroups: [] });
+      db.getWorkspace!.mockResolvedValue(ws);
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+      const drawings = [
+        {
+          id: 'd1',
+          symbol: SYMBOL,
+          owner: { type: 'group' as const, id: 'ghost-group' },
+          kind: 'line' as const,
+          p1: { time: 0, price: 1 },
+          p2: { time: 1, price: 2 },
+          zIndex: 0,
+          locked: false,
+          visible: true,
+        },
+      ];
+
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          thenLoad: [csvH1],
+          thenRestore: {
+            trading,
+            drawings,
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+          },
+        }),
+      );
+
+      const result = await p;
+      expect(result![3]).toEqual(
+        DrawingsActions.restoreDrawings({
+          drawings: [{ ...drawings[0], owner: { type: 'panel', id: 'panel-migrated-1' } }],
+        }),
       );
     });
 
