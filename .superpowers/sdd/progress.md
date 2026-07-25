@@ -263,10 +263,74 @@ empirically). Both are documented rather than smoothed over, because the pattern
 asserting *which state* a value should be read from without checking dispatch ordering — is
 the one worth catching earlier next time.
 
+### M-1 RE-AUDIT: **FAIL** (1 Medium, 1 Low) — 2026-07-25
+
+**The code fix passed on every axis.** The auditor re-ran all five gates itself
+(156 files / 1936 tests, lint 0, build 648.07 kB, sentinel clean — reproducing every figure
+above), re-derived the arithmetic by running the **full suite at both endpoints** rather
+than counting `it(` (1934 at `c17fd81`, 1936 at `7b02726`, net +2 ✓), and **empirically
+verified the TDD claim instead of accepting it**: it reverted only the production file,
+kept the three specs, and observed exactly one failure — `2r7b`, owner flattened to
+`{type:'panel', id:'panel-migrated-1'}`. It also traced `ws.linkGroups` through
+`link-groups.reducer.ts:50-57` to confirm the installed group set is exactly what the fix
+resolves against, including the `ws === undefined` and `thenRestore.linkGroups: []` edges,
+and re-confirmed Invariant 1 branch-wide (`grep "owner:" drawings.reducer.ts` → nothing;
+the only four owner assignments in app code are two fresh-`Drawing` construction sites, the
+V2→V3 migration, and the hydration-boundary re-home). No environment damage — it used
+in-place `git checkout` of two files rather than a worktree, deliberately avoiding the
+junction hazard that cost a previous auditor `node_modules`.
+
+**M-2 (Medium, blocking) — the branch's normative record still stated the deleted rule.**
+`017-compositional-panel-sync.md` §13 point 6 specified group resolvability as "si ese id de
+grupo sigue existiendo **en el store** en el momento de la restauración", with a parenthetical
+*arguing for* it. `git log -L 412,424` attributes that paragraph to `f2d8a4a` — the same
+commit that introduced M-1 — so the RFC encoded the defect as intended design. Not doc
+drift: a live contradiction between shipped code and a level-2/3 authority document
+(PHILOSOPHY §3.1, §5.6), on the exact axis that returned FAIL twice. Failure scenario is
+M-1's own: an engineer reimplementing from the RFC restores `Object.keys(store groups)`, and
+the resulting owner-flattening is irreversible in-app.
+
+**Root cause is the orchestrator's brief again — the THIRD of this run.** `m1-fix-brief.md`
+said "Do NOT touch anything else" and enumerated only the effect and the spec; a brief that
+changes a rule must schedule the update to the document stating it. Recorded as a pattern,
+not an incident: all three brief errors (L1's literal fix, M-1's state source, M-2's missing
+doc scope) share a shape — asserting *what* to change without checking what else asserts it.
+
+**L-1 (Low) —** `workspaces.effects.spec.ts:68-71`'s bootstrap comment stated the deleted
+store-read rule as current, over a now-inert `overrideSelector`. The auditor declined to
+rule it no-fix on the grounds that a written rationale outliving the code it justified is
+precisely what produced M-1.
+
+### M-2 / L-1 FIX — DONE, closure orchestrator-verified (re-check pending)
+
+**Commit `e0b79fa`** `docs(rfc-017): correct the stale group-resolution rule from M-1's fix
+wave` — 2 files (`017-compositional-panel-sync.md`, `workspaces.effects.spec.ts`), +31/−12.
+**Zero production files.**
+
+The RFC clause now states the real rule — resolvable if the file carries `linkGroups`, else
+if the id exists among the groups of the workspace *that restoration installs* ("sus propios
+`linkGroups` persistidos, no los del store") — with a parenthetical carrying the *correct*
+reasoning: resolving against the workspace being installed is what makes both cases right at
+once. The `ownerPanelFor` rule, the hydration-boundary/Invariant-1 argument and the
+before-this-correction history are preserved intact. A **"Nota de corrección"** paragraph
+was added naming what the original redaction got wrong and why, so the document's own
+history cannot be mined for the defective rule. The spec comment now states that the
+override is inert for production and is kept so `2r7`/`2r7b`/`2r7c` can each override it
+independently — which is what lets `2r7b` demonstrate the store's contents never affect the
+outcome.
+
+**Gates re-run by the orchestrator, raw, exit status read:** tsc app `0` · tsc spec `0` ·
+`ng test` `0`, **156 files / 1936 tests** · lint `0` · build `0`, **648.07 kB**, sentinel
+clean. **Every figure unchanged from `e4d8928`** — which is the proof the change was
+prose-only.
+
 ### PR body — what the auditor requires it to disclose (once M-1 is closed and re-audited)
 
-Owner re-anchoring at the `.session.json` hydration boundary (RFC addendum §6): what
-re-homes, what does not, and that the IndexedDB read path is deliberately excluded · the
+Owner re-anchoring at the `.session.json` hydration boundary (RFC §13.6, **as corrected by
+`e0b79fa`** — resolvability is judged against the groups/layout the restore *installs*, never
+the outgoing workspace's store state; the RFC's first redaction of this rule was itself
+defective and carries a "Nota de corrección"): what re-homes, what does not, and that the
+IndexedDB read path is deliberately excluded · the
 panel/tab close cascade (owner decision, RFC §13.1) · `SessionPayloadV3` + V2→V3 migration
 + IndexedDB lift, with the same-symbol-multi-panel residual limitation (§13.5) · the two
 persistence limitations ruled no-fix (§13.4) · the RFC-014 G3 `DrawingSnapshot` fidelity
