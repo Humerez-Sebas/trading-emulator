@@ -39,7 +39,7 @@
 - [x] Task 2: Drawing schema expansion + target resolution + pure migration functions — DONE 2026-07-24
 - [x] Task 3: Entity store + owner index + per-panel selection + mapper composition + chart cutover ⟨per-task audit⟩ — implemented 2026-07-24, audit pending
 - [x] Task 4: Panel-scoped undo/redo with revision guard (D17.F) — DONE 2026-07-24
-- [ ] Task 5: Clipboard (D17.G) + per-panel shared-layer toggle (D17.H)
+- [x] Task 5: Clipboard (D17.G) + per-panel shared-layer toggle (D17.H) — DONE 2026-07-24
 - [ ] Task 6: SessionPayloadV3 + migration chain + IndexedDB lift (D17.J) ⟨per-task audit⟩
 - [ ] ~~Task 7: Trade layer gating + Ghost Rails primitives~~ — SUPERSEDED by TEDS (out of scope)
 - [ ] ~~Task 8: Position HUD chip + Design System token registration~~ — SUPERSEDED by TEDS (out of scope)
@@ -336,10 +336,42 @@ New findings:
   keyboard wiring is unverified by automation — the accumulated `ChartComponent` coverage
   gap is worth a ruling at final audit.
 
+### Task 5 — Clipboard (D17.G) + per-panel shared-layer toggle (D17.H) — DONE
+
+- **Commits:** `995fdc8` (clipboard state), `e278857` (layout toggle + composition),
+  `57a20d4` (keyboard + panel-header control). Range `0dd3ae8..57a20d4`.
+- **Evidence (implementer, raw, exit 0 on all four):** tsc app ✓, tsc spec ✓, lint 0,
+  `ng test` **155 files / 1905 tests passed**.
+- **Test-count arithmetic (orchestrator-verified):** 1882 → 1905 = **+23** = 13 `it()` in
+  the new `drawings.clipboard.spec.ts` + 7 in the new `layout.hide-shared.spec.ts` + 3
+  added to the existing composition spec; files 153 → 155 = the two new files. Consistent.
+- **Scope (orchestrator diff-scan):** 12 files, +652/−25 — exactly the brief's file list.
+  **No pre-existing spec touched**, as an additive task should manage.
+- **Grep (orchestrator):** zero RFC/decision/task ids in NEW non-spec comments.
+- **Orchestrator spot-check of the two risky hunks:** the composition change is a
+  one-condition guard (`!descriptor.hideSharedDrawings && …`) on the shared union only —
+  entities untouched, other panels unaffected, and the descriptor was already one of the
+  six memoized references so no seventh input was added. The `applyNewDrawing` extraction
+  is verbatim-identical to the previous `addDrawing` body; `addDrawing` still resets
+  `activeTool: 'none'` while paste deliberately does not (commented distinction).
+- **Deviations — inert (3):** Ctrl+C/Ctrl+V wired into `chart.component.ts`'s existing
+  keyboard surface rather than `chart-panel.component.ts` as the plan sketched (the brief
+  mandated this — Task 4 made `chart.component` the single focused-panel-gated keyboard
+  surface, and a second surface would reintroduce the multi-panel defect Task 4 fixed);
+  `addDrawing`'s body extracted into a shared `applyNewDrawing` helper reused by paste, so
+  the two creation paths cannot drift (behavior-preserving, pre-existing assertions
+  unchanged); a defensive selected/clipboard-presence guard added on the Ctrl+C/Ctrl+V
+  interception beyond the brief's literal text.
+- **FINAL-AUDIT ATTENTION:** paste is the ONLY new drawing-creating path and it routes
+  through `resolveDrawingTarget` — the same rule as hand-drawing — so RFC Invariant 1
+  (zero *implicit* copying) holds by construction; worth confirming no other path clones.
+  Also worth reading: `applyNewDrawing` sits on Task 4's audited history path, and the
+  clipboard is runtime-only (reset by both hydration paths, never persisted or synced).
+
 ### RUN STATE
 
-Tasks 1, 2, 3 (+ two fix waves), 4 complete and green at **153 files / 1882 tests**.
-Next: Task 5 → Task 6 ⟨per-task audit⟩ → Task 9 → final whole-branch audit → PR to
+Tasks 1, 2, 3 (+ two fix waves), 4, 5 complete and green at **155 files / 1905 tests**.
+Next: **Task 6 ⟨per-task audit REQUIRED⟩** → Task 9 → final whole-branch audit → PR to
 `develop`.
 
 (further entries recorded as tasks complete)
