@@ -258,6 +258,30 @@ function popAndApply(
 }
 
 /**
+ * Every drawing id that some panel's undo/redo stack could still resurrect
+ * under the given owner key: a drawing already spliced out of the live owner
+ * index (deleted individually before its owner disappears) leaves no trace
+ * there, so a caller that only reads CURRENT ownership can't find it — this
+ * reads what the recorded commands themselves still point at, in either
+ * direction (`before` for a delete/move, `after` for an add/move).
+ */
+function idsReferencingOwner(
+  history: Record<string, PanelHistory>,
+  ownerKey: string,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const hist of Object.values(history)) {
+    for (const command of [...hist.undo, ...hist.redo]) {
+      const referencesOwner =
+        (command.before != null && ownerKeyOf(command.before.owner) === ownerKey) ||
+        (command.after != null && ownerKeyOf(command.after.owner) === ownerKey);
+      if (referencesOwner) ids.add(command.drawingId);
+    }
+  }
+  return ids;
+}
+
+/**
  * Cascade-deletes the given panels' OWN drawings (never group-owned ones):
  * drops every entity under each panel's owner key, the key itself, that
  * panel's own selection slot, and nulls any OTHER panel's selection that
@@ -411,21 +435,38 @@ export const drawingsFeature = createFeature({
       }),
     ),
 
-    // a group's namespace dies with it: its owned drawings go too, never reassigned
+    // A group's namespace dies with it: its owned drawings go too, never
+    // reassigned. That alone isn't enough to keep a group's id from coming
+    // back from the dead, though: a drawing deleted individually (by
+    // whichever panel had it selected) is spliced out of the owner index
+    // immediately, before the group itself is ever removed, so this cascade
+    // can't see it there — yet the delete command sits untouched on that
+    // panel's undo stack, and its revision still matches. Undoing it later
+    // would restore the drawing with its recorded group owner, resurrecting
+    // it into a namespace nothing resolves anymore. Clearing the revision of
+    // every id any panel's history still references under this owner key —
+    // live or already-deleted — makes that undo stale instead: the same
+    // guard that already rejects every other command whose target moved on
+    // without it.
     on(LinkGroupsActions.removeGroup, (state, { groupId }): DrawingsState => {
       const key = ownerKeyOf({ type: 'group', id: groupId });
-      const ids = state.ownerIndex[key];
-      if (ids === undefined) return state; // nothing owned by this group: identity return
-      const idSet = new Set(ids);
+      const liveIds = state.ownerIndex[key];
+      const staleIds = idsReferencingOwner(state.history, key);
+      if (liveIds === undefined && staleIds.size === 0) return state; // nothing owned, live or recorded: identity return
+
+      const idSet = new Set(liveIds ?? []);
       const entities = { ...state.entities };
-      for (const id of ids) delete entities[id];
+      for (const id of idSet) delete entities[id];
       const ownerIndex = { ...state.ownerIndex };
-      delete ownerIndex[key];
+      if (liveIds !== undefined) delete ownerIndex[key];
+      const revisions = { ...state.revisions };
+      for (const id of idSet) delete revisions[id];
+      for (const id of staleIds) delete revisions[id];
       const selection: Record<string, string | null> = {};
       for (const [panelId, selectedId] of Object.entries(state.selection)) {
         selection[panelId] = selectedId != null && idSet.has(selectedId) ? null : selectedId;
       }
-      return { ...state, entities, ownerIndex, selection };
+      return { ...state, entities, ownerIndex, selection, revisions };
     }),
 
     // disabling shared composition invalidates any selection of a now-invisible group drawing
@@ -439,6 +480,15 @@ export const drawingsFeature = createFeature({
 
     // a panel losing/changing its link group may no longer compose its previously-selected shared drawing
     on(LayoutActions.setPanelLinkGroup, (state, { panelId }): DrawingsState => {
+      const selectedId = state.selection[panelId];
+      if (selectedId == null) return state;
+      if (state.entities[selectedId]?.owner.type !== 'group') return state;
+      return { ...state, selection: { ...state.selection, [panelId]: null } };
+    }),
+
+    // hiding a panel's shared layer stops composing its group-owned drawings, so a selection among them goes stale
+    on(LayoutActions.setPanelHideSharedDrawings, (state, { panelId, hidden }): DrawingsState => {
+      if (!hidden) return state; // showing the shared layer again never invalidates a selection
       const selectedId = state.selection[panelId];
       if (selectedId == null) return state;
       if (state.entities[selectedId]?.owner.type !== 'group') return state;

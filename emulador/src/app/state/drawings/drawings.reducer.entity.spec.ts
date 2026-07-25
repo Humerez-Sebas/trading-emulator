@@ -400,6 +400,59 @@ describe('drawings reducer: stale-selection invalidation on sync/link changes', 
     );
     expect(next).toBe(s);
   });
+
+  it('turning hideSharedDrawings ON nulls the panel\'s selection when it points at a group-owned drawing', () => {
+    const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
+    const s: DrawingsState = {
+      ...initial(),
+      entities: { 'g-d1': groupDrawing },
+      ownerIndex: { 'group:g1': ['g-d1'] },
+      selection: { 'panel-1': 'g-d1' },
+    };
+
+    const next = reducer(
+      s,
+      LayoutActions.setPanelHideSharedDrawings({ panelId: 'panel-1', hidden: true }),
+    );
+
+    expect(next.selection['panel-1']).toBeNull();
+  });
+
+  it('turning hideSharedDrawings OFF is a no-op returning state by identity', () => {
+    const s: DrawingsState = {
+      ...initial(),
+      selection: { 'panel-1': 'g-d1' },
+    };
+    const next = reducer(
+      s,
+      LayoutActions.setPanelHideSharedDrawings({ panelId: 'panel-1', hidden: false }),
+    );
+    expect(next).toBe(s);
+  });
+
+  it('turning hideSharedDrawings ON for a panel whose selection is NOT group-owned is a no-op returning state by identity', () => {
+    const panelDrawing = drawing({ id: 'p-d1', owner: { type: 'panel', id: 'panel-1' } });
+    const s: DrawingsState = {
+      ...initial(),
+      entities: { 'p-d1': panelDrawing },
+      ownerIndex: { 'panel:panel-1': ['p-d1'] },
+      selection: { 'panel-1': 'p-d1' },
+    };
+    const next = reducer(
+      s,
+      LayoutActions.setPanelHideSharedDrawings({ panelId: 'panel-1', hidden: true }),
+    );
+    expect(next).toBe(s);
+  });
+
+  it('turning hideSharedDrawings ON for a panel with no selection at all is a no-op returning state by identity', () => {
+    const s = initial();
+    const next = reducer(
+      s,
+      LayoutActions.setPanelHideSharedDrawings({ panelId: 'panel-1', hidden: true }),
+    );
+    expect(next).toBe(s);
+  });
 });
 
 describe('drawings reducer: panel-close cascade (removePanel / purgePanelDrawings)', () => {

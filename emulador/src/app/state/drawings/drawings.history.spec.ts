@@ -353,6 +353,59 @@ describe('drawings history: group-deletion cascade pushes no command', () => {
   });
 });
 
+describe('drawings history: removeGroup neutralizes a delete already off the owner index', () => {
+  it('undoing a delete recorded BEFORE its group was removed no longer resurrects the drawing into the dead namespace', () => {
+    const shared = drawing({ id: 'd1', owner: { type: 'group', id: 'g1' } });
+    let state: DrawingsState = {
+      ...initial(),
+      entities: { d1: shared },
+      ownerIndex: { 'group:g1': ['d1'] },
+      selection: { 'panel-p': 'd1' },
+    };
+
+    // panel P deletes the shared drawing: gone from entities/ownerIndex,
+    // but the delete command (and its matching revision) still exists.
+    state = reducer(state, DrawingsActions.deleteSelected({ panelId: 'panel-p' }));
+    expect(state.entities['d1']).toBeUndefined();
+    expect(state.ownerIndex['group:g1']).toEqual([]); // spliced out already, not the empty-array case removeGroup sees directly
+    expect(state.revisions['d1']).toBe(1);
+    expect(state.history['panel-p'].undo).toHaveLength(1);
+
+    // the group itself is removed afterward -- d1 is no longer listed under
+    // it, so a fix that only reads current ownership can't reach it.
+    state = reducer(state, LinkGroupsActions.removeGroup({ groupId: 'g1' }));
+
+    // Ctrl+Z in P: must be dropped as stale, not resurrect d1 into 'group:g1'.
+    const next = reducer(state, DrawingsActions.undo({ panelId: 'panel-p' }));
+
+    expect(next.entities['d1']).toBeUndefined();
+    expect(next.ownerIndex['group:g1']).toBeUndefined();
+    expect(next.history['panel-p'].undo).toEqual([]); // stale command dropped, stack drained
+  });
+
+  it('a group member that is still alive (never individually deleted) also has its revision cleared, so a later undo of its creation is stale too', () => {
+    let state = initial();
+    state = reducer(
+      state,
+      DrawingsActions.addDrawing({
+        panelId: 'panel-p',
+        drawing: drawing({ id: 'd1', owner: { type: 'group', id: 'g1' } }),
+      }),
+    );
+    expect(state.entities['d1']).toBeDefined();
+    expect(state.revisions['d1']).toBe(1);
+
+    state = reducer(state, LinkGroupsActions.removeGroup({ groupId: 'g1' }));
+    expect(state.entities['d1']).toBeUndefined();
+    expect(state.revisions['d1']).toBeUndefined();
+
+    // Ctrl+Z would recreate an 'add' -- already guarded by entity-presence,
+    // but the revision guard now agrees, closing the same gap defensively.
+    const next = reducer(state, DrawingsActions.undo({ panelId: 'panel-p' }));
+    expect(next.entities['d1']).toBeUndefined();
+  });
+});
+
 describe('drawings history: empty-stack undo/redo is an identity return', () => {
   it('undo on a panel with no history at all is an identity return', () => {
     const s = initial();
