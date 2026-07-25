@@ -313,7 +313,7 @@ if the id exists among the groups of the workspace *that restoration installs* (
 reasoning: resolving against the workspace being installed is what makes both cases right at
 once. The `ownerPanelFor` rule, the hydration-boundary/Invariant-1 argument and the
 before-this-correction history are preserved intact. A **"Nota de corrección"** paragraph
-was added naming what the original redaction got wrong and why, so the document's own
+was added naming what the original wording got wrong and why, so the document's own
 history cannot be mined for the defective rule. The spec comment now states that the
 override is inert for production and is kept so `2r7`/`2r7b`/`2r7c` can each override it
 independently — which is what lets `2r7b` demonstrate the store's contents never affect the
@@ -324,11 +324,64 @@ outcome.
 clean. **Every figure unchanged from `e4d8928`** — which is the proof the change was
 prose-only.
 
+### FINAL RE-CHECK: **PASS** — 2026-07-25 · the branch is cleared for PR to `develop`
+
+Zero Critical, zero High, zero Medium. The auditor re-ran all five gates itself and
+reproduced every figure exactly (**156 files / 1936 tests**, lint 0, `648.07 kB`, sentinel
+clean, no new chunk types) — invariance from `e4d8928` confirmed. It then proved prose-only
+**structurally** rather than only empirically: filtering the spec-file diff to non-comment
+changed lines returns **nothing**.
+
+Verified beyond the ask:
+- **§13.6 now matches the code in all four branches** — `thenRestore.linkGroups` (traced to
+  `link-groups.reducer.ts:40-47`, wholesale replacement), the `ws` branch (confirmed neither
+  `applySelectedTfs` nor `withLiftedDrawings` touches `linkGroups`, so the installed set is
+  *exactly* `ws.linkGroups`), `ws === undefined`, and `thenRestore.linkGroups === []`.
+- **The same-workspace parenthetical is stronger than it reads and holds:** `doSwitch`
+  `putMeta`s the outgoing meta *before* `getWorkspace` reads `META_STORE`
+  (`workspace-db.service.ts:168-180`), so on a same-workspace reimport the live groups
+  genuinely round-trip into `ws.linkGroups`.
+- **Reconstruction test: negative.** An engineer implementing solely from the corrected
+  §13.6 has no path back to a store read — the store is named only to exclude it.
+- **The Nota's history is accurate**, verified independently by `git log -S`: the defective
+  clause was added by `f2d8a4a` and removed by `e0b79fa`.
+- **No other document or comment states the old rule** — swept `docs/`, `.superpowers/`, and
+  both rewritten code comments.
+- **The inert `overrideSelector` kept at `workspaces.effects.spec.ts:74` is load-bearing as a
+  tripwire:** if the store read were ever reintroduced, `2r7b`'s per-test override turns it
+  red — which is exactly what the prior audit's revert experiment observed.
+- All standing invariants re-greped clean (deps, engine purity, `syncPriceScale` zero
+  production read sites, D8, no spec-util import, protected files zero-diff, and Invariant 1
+  — the only four `owner:` writes in app code are two creation sites, the V2→V3 migration,
+  and the hydration-boundary re-home).
+
+**Two Lows, both ruled NO-FIX with written reasons — do not re-open without new evidence:**
+
+- **Low-1** `workspaces.effects.spec.ts:799,802` — `2r8`'s title and fixture comment still
+  frame the store as an input, omitting the condition that actually governs the assertion
+  (`db.getWorkspace → undefined`). Risk confined to test code; the fixture and assertion are
+  correct and pass for the right reason; blast radius is one `it()` (not the shared
+  bootstrap, which is what made L-1 different); the governing rule is now stated correctly
+  three times in the same file; and `2r7b`/`2r7c` pin the behaviour so a misreading cannot
+  survive a code change.
+- **Low-2** `017-compositional-panel-sync.md:417` — §13.6's first branch elides the
+  membership test ("si el propio archivo trae `linkGroups`" without "si ese id está entre
+  los que trae"). **Pre-existing** (`f2d8a4a`), untouched by this diff, so no regression. The
+  item's head clause and the parenthetical both establish membership as the test, and the
+  strict-literal misreading is self-defeating (it would make re-anchoring inert for every
+  modern export, contradicting the paragraph's stated purpose). If §13.6 is ever edited
+  again, tighten branch 1.
+
+**Ledger correction made in response:** the auditor flagged that this ledger used
+"redaction" where Spanish *redacción* means wording/drafting — in English it reads as
+removal or censoring, i.e. the opposite of what happened. Corrected in both places before
+any of it reached the PR description.
+
 ### PR body — what the auditor requires it to disclose (once M-1 is closed and re-audited)
 
 Owner re-anchoring at the `.session.json` hydration boundary (RFC §13.6, **as corrected by
 `e0b79fa`** — resolvability is judged against the groups/layout the restore *installs*, never
-the outgoing workspace's store state; the RFC's first redaction of this rule was itself
+the outgoing workspace's store state; the RFC's first wording of this rule was itself
 defective and carries a "Nota de corrección"): what re-homes, what does not, and that the
 IndexedDB read path is deliberately excluded · the
 panel/tab close cascade (owner decision, RFC §13.1) · `SessionPayloadV3` + V2→V3 migration
