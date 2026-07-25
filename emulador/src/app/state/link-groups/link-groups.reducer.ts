@@ -1,6 +1,6 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { LinkGroupsActions } from './link-groups.actions';
-import { createInitialLinkGroupsState, LinkGroupsState } from './link-groups.models';
+import { createInitialLinkGroupsState, LinkGroupsState, normalizeLinkGroup } from './link-groups.models';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
 
 export const linkGroupsFeature = createFeature({
@@ -40,14 +40,19 @@ export const linkGroupsFeature = createFeature({
     }),
     on(
       LinkGroupsActions.restoreGroups,
+      // A group hydrated from a payload that predates the composition flags
+      // normalizes to the migration defaults, not `undefined` — the same
+      // rule every hydration path into this feature applies.
       (_state, { groups }): LinkGroupsState => ({
-        groups: Object.fromEntries(groups.map((g) => [g.id, g])),
+        groups: Object.fromEntries(groups.map((g) => [g.id, normalizeLinkGroup(g)])),
       }),
     ),
     on(
       WorkspacesActions.workspaceRestored,
       (_state, { workspace }): LinkGroupsState => ({
-        groups: Object.fromEntries((workspace.linkGroups ?? []).map((g) => [g.id, g])),
+        groups: Object.fromEntries(
+          (workspace.linkGroups ?? []).map((g) => [g.id, normalizeLinkGroup(g)]),
+        ),
       }),
     ),
   ),

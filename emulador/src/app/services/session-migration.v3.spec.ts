@@ -18,6 +18,7 @@ import { toPayload, fromPayload } from './session-sync.mapping';
 import { defaultTradingData } from '../state/trading/trading.models';
 import type { Drawing } from '../state/drawings/drawings.models';
 import type { WorkspaceLayout, PanelDescriptor } from '../state/layout/layout.models';
+import type { LinkGroup } from '../state/link-groups/link-groups.models';
 
 /**
  * A two-panel layout: p1 shows GBPUSD, p2 shows EURUSD. Neither shows
@@ -245,6 +246,19 @@ describe('migrateV2ToV3 — fidelity table', () => {
       GBPUSD: { version: 1, items: [legacyItem('d2', 2)] },
     });
     expect(migrateV2ToV3(v2)).toEqual(migrateV2ToV3(v2));
+  });
+
+  it('a linkGroup missing the composition flags (predates them) normalizes to syncDrawings:false, syncTrades:true', () => {
+    const legacyGroup = {
+      id: 'g1',
+      color: '#f00',
+      syncCrosshair: true,
+      syncTimeRange: true,
+    } as unknown as LinkGroup;
+    const v2 = v2Fixture({});
+    const v3 = migrateV2ToV3({ ...v2, linkGroups: [legacyGroup] });
+    expect(v3.linkGroups[0].syncDrawings).toBe(false);
+    expect(v3.linkGroups[0].syncTrades).toBe(true);
   });
 });
 

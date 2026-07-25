@@ -15,6 +15,7 @@ import { isLayoutConsistentPure } from '../state/layout/layout-invariants';
 import type { Timeframe } from '../models';
 import type { Drawing } from '../state/drawings/drawings.models';
 import { liftLegacyDrawing, ownerPanelFor } from './drawings-migration';
+import { normalizeLinkGroup } from '../state/link-groups/link-groups.models';
 
 /** Builds the vision-mandated migration default (single tab/cell/panel). Pure, deterministic id (no crypto.randomUUID — keeps round-trip tests reproducible; the id only needs to be internally unique within this one payload, which a fixed literal satisfies). */
 export function singlePanelLayoutFor(
@@ -126,7 +127,10 @@ export function migrateV2ToV3(v2: SessionPayloadV2): SessionPayloadV3 {
     requiredDatasets: v2.requiredDatasets,
     layout: v2.layout,
     panels: v2.panels,
-    linkGroups: v2.linkGroups,
+    // A group predating the composition flags normalizes to the migration
+    // defaults here too, the same rule every other hydration path applies —
+    // parse, don't trust: a legacy payload may carry no linkGroups at all.
+    linkGroups: (v2.linkGroups ?? []).map(normalizeLinkGroup),
   };
 }
 
