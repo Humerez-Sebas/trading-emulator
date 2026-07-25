@@ -45,9 +45,106 @@
 - [ ] ~~Task 8: Position HUD chip + Design System token registration~~ — SUPERSEDED by TEDS (out of scope)
 - [x] Task 9: Finalization — invariant greps, build, docs closure — DONE 2026-07-25
 
-**Run status: all in-scope tasks complete.** Remaining gate: the ONE final whole-branch
-Opus audit, which must return PASS with zero Critical/High/Medium before the PR to
-`develop` is opened.
+**Run status: all in-scope tasks complete.** Final whole-branch audit #1 returned FAIL
+(1 High, 1 Medium, 4 Low); the fix wave landed (`f2d8a4a`, `102b97e`, `9e0c744`,
+`b84f5a4`). Remaining gate: a scoped re-audit of that fix wave returning PASS before the
+PR to `develop` is opened.
+
+### FINAL WHOLE-BRANCH AUDIT #1: **FAIL** (1 High, 1 Medium, 4 Low) — 2026-07-25
+
+The auditor re-ran all five gates plus the dist sentinel, **twice** (once on a freshly
+reinstalled dependency tree), with identical results: 156 files / 1922 tests, lint 0,
+build `647.21 kB`, no new chunk types, sentinel clean. It also ran `npm ci` (exit 0),
+confirming the committed lockfile installs cleanly — the npm-11 EUSAGE trap is not armed.
+
+**It verified the ledger's arithmetic to the unit at every milestone** by counting
+`it()`/`test()` across `emulador/src/**/*.spec.ts` at each commit: base `af3d8ca` 1787/146
+→ baseline 1798/148 → T2 1809 → T3 1843 → T3 fix 1861 → T3 re-fix 1862 → T4 1882 → T5 1905
+→ T6 1921 → T6 fix 1922 → HEAD 1922. **Every delta matches; the ledger is honest.**
+Commit counts confirmed (47 on the branch). All eleven invariant greps re-run plus four of
+its own; **all eight I-18 detectors grep verbatim against real spec files — none invented.**
+
+**Bundle attribution, measured not assumed:** it built base `af3d8ca` in a throwaway
+worktree — **639.07 kB** vs HEAD **647.21 kB**, so this branch adds **+8.14 kB (+1.3 %)**,
+all first-party TypeScript, zero new dependencies, no new chunk types.
+
+Verified correct adversarially: engine purity and closed core; `assertNoCandles` on every
+write path; D8 with no factory selectors repo-wide; **the zero-allocation contract end to
+end** (unchanged references produce NO emission at all, because `gated()` appends
+`distinctUntilChanged()`, so `pushDrawings()` never even runs); `combineLatest` cannot
+re-fire per replay tick (a `history`- or `clipboard`-only mutation never reaches the
+composition); Invariant 1 holds by construction; the clipboard is runtime-only and both
+hydration paths reset every runtime slice consistently; all 008-012 frozen non-goals
+intact.
+
+Findings:
+- **H1 (High)** — the exact **mirror** of Task 6's M1: `liftLegacyDrawings` lifted
+  owner-LESS items but passed owner-TAGGED items through **unvalidated**. Since
+  `SessionFileV1` carries no layout/panels/linkGroups, the canonical backup/restore case
+  (export → cleared IndexedDB or another machine → import) installs
+  `singlePanelLayoutFor`'s `panel-migrated-1` while every drawing still points at
+  `panel:panel-1` → composed nowhere. UI reports success, **every drawing gone from the
+  screen**, persisted onward with dead owner keys, unrecoverable in-app. The existing spec
+  locked the bug in by asserting byte-for-byte passthrough rather than the outcome.
+- **M1 (Medium)** — Task 5's `hideSharedDrawings` added a **third** way for a drawing to
+  leave a panel's composition without the stale-selection invalidation Task 3's audit had
+  established for the other two, so the toolbar (which reads the RAW selection, unlike the
+  keyboard path which reads the composed one) could globally delete a drawing that looked
+  unselected.
+- **L1** undo of a `delete` after `removeGroup` resurrects into a dead namespace;
+  **L2** `normalizeLinkGroup` ran on only one of three hydration paths, so `syncTrades`
+  did not default to `true` per D17.I (inert today, live the moment TEDS implements the
+  gate); **L3** `workspace-panels.md` stated the wrong drawings wire version.
+- **Rulings requested by the ledger, both ACCEPTED:** the `ChartComponent` keyboard-wiring
+  coverage gap is **non-blocking** (structural and pre-existing; what is untested is a thin
+  declarative key→dispatch mapping whose semantics are covered by 20 history + 13 clipboard
+  specs) — **but the auditor notes it is no longer free: M1 is exactly the defect class it
+  hides**, and recommends closing it before a fourth task adds keyboard surface. The bundle
+  overage is accepted; `CLAUDE.md`'s "~609 kB" was **already ~30 kB stale on `develop`**
+  before this branch.
+- **Environment note:** while measuring the base bundle the auditor's temp worktree removal
+  followed a junction and deleted `emulador/node_modules`. It restored it with `npm ci`
+  (exit 0) and re-ran all five gates plus the sentinel on the fresh tree — identical
+  results. Orchestrator confirmed afterwards: tree clean, `node_modules` present, the seven
+  pre-existing worktrees untouched, no temp worktree left.
+
+### FINAL FIX WAVE — DONE (re-audit pending)
+
+- **Commits:** `f2d8a4a` (H1 owner re-homing), `102b97e` (M1 + L1), `9e0c744` (L2),
+  `b84f5a4` (L3 doc). Range `83b6ca1..b84f5a4`.
+- **Evidence (implementer, raw, exit 0 on all five):** tsc app ✓, tsc spec ✓, lint 0,
+  `ng test` **156 files / 1934 tests passed**, build `648.33 kB`, sentinel clean.
+- **Arithmetic (orchestrator-verified):** +13 `it()` / −1 = net **+12**; 1922 → 1934 ✓;
+  files unchanged at 156 (all additions extend existing spec files).
+- **Scope (orchestrator diff-scan):** 12 files, +476/−30, every file traceable to a named
+  finding.
+- **DEVIATION — the implementer overrode the fix brief on L1, and was right to.** The brief
+  said to clear `revisions[id]` for the ids in `removeGroup`'s purge set. The implementer
+  wrote the repro, ran it against that literal fix, and **empirically showed it does not
+  close the scenario**: `deleteSelected` splices the id out of `ownerIndex` *before* the
+  group is ever removed, so the deleted drawing is never in the purge set and its revision
+  survives untouched. **Orchestrator verified this reasoning against the reducer and
+  confirms the brief was wrong.** The landed fix scans every panel's undo/redo stack for
+  commands whose `before`/`after` owner key matches the removed group and clears those
+  revisions too, so the existing staleness guard rejects them — closing the orphan path
+  while preserving technical spec §5's ruling that undoing a delete restores `before`
+  verbatim. Classified **inert and superior**; flagged for the re-audit precisely because
+  it departed from explicit instructions.
+- **Orchestrator spot-check of H1:** re-homing keys on **each item's own `symbol`** (not
+  the workspace's), carries every other field verbatim, preserves array-reference
+  stability, and is gated behind an OPTIONAL `resolvableGroupIds` parameter that the
+  IndexedDB read path deliberately omits — so that path's behavior is provably unchanged.
+  Group owners resolve against `thenRestore.linkGroups` when present, else the store's
+  live groups, so re-importing into the same still-open workspace does not flatten its
+  shared layer.
+- **Two disclosed consequences:** landing H1's tests surfaced a genuine **pre-existing**
+  `isolate:false` selector leak in `workspaces.effects.spec.ts` (missing
+  `store.resetSelectors()` in `afterEach`) that broke 6 unrelated tests in another file
+  until fixed per `testing.md`'s mandatory pattern. And one pre-existing spec
+  (`sesiones-page.component.spec.ts:765`) had an assertion corrected because L2's fix
+  changes real output on the exact path it tests — **orchestrator verified this is a
+  strengthening, not a weakening**: it now expects the normalized group
+  (`syncDrawings: false, syncTrades: true`) instead of the un-normalized fixture.
 
 ## Task entries
 
