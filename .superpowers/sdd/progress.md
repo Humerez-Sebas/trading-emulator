@@ -209,6 +209,60 @@ a panel-less layout, so a corrupted record could mint `owner: {type:'panel', id:
 identical exposure existed on the legacy-lift branch before this fix wave; layout
 invariants make it unreachable.
 
+### M-1 FIX — DONE, closure orchestrator-verified (re-audit pending)
+
+**Commit `e4d8928`** `fix(workspaces): resolve group-owned drawing ownership against the
+incoming workspace` — 2 files (`workspaces.effects.ts`, `workspaces.effects.spec.ts`),
++114/−13. Brief: `.superpowers/sdd/m1-fix-brief.md`.
+
+`resolvableGroupIds` now reads `(thenRestore.linkGroups ?? ws?.linkGroups ?? [])`. `ws` is
+the **incoming** workspace (`await this.db.getWorkspace(symbol)`), and `workspaceRestored({
+workspace: ... ws ?? emptyWorkspace(symbol) })` is pushed as the **first** action in the
+array — so `ws.linkGroups` is exactly what this restore leaves installed. This restores
+source symmetry with the panel branch, which already resolves against `ws?.layout`/
+`ws?.panels` via `resolveOwnerLayout`. The now-dead `firstValueFrom` and `linkGroupsFeature`
+imports were removed (the two surviving `linkGroupsFeature` mentions in the file are prose
+in unrelated doc comments, not imports — orchestrator-checked by grep).
+
+**The stale comment was rewritten too** (an addition to the brief made at dispatch): the
+block at `:355-362` explicitly *argued for* the store read — "the ones already active in the
+store, so re-importing back into the SAME still-open workspace keeps resolving against its
+own live groups". That was the error written down as rationale and would have outlived the
+code fix as an actively misleading justification. It now states the real rule.
+
+**TDD honoured and observed, this time.** Guard spec `2r7` (which encoded an unreachable
+state) was replaced by three specs, run against the **unfixed** code first: 37 passed /
+**1 failed**, with `2r7b` failing exactly as predicted — owner flattened from
+`{type:'group', id:'g1'}` to `{type:'panel', id:'panel-migrated-1'}`. 38/38 after the fix.
+
+- `2r7` **same-workspace** — store and the target workspace's own persisted `linkGroups`
+  both hold `g1`; the group-owned drawing arrives untouched, asserted by `toEqual` **and**
+  by reference identity (`toBe(drawings)`), so it pins the no-change path as well.
+- `2r7b` **cross-workspace (the regression)** — the store holds the outgoing workspace's
+  `{g2}` while the incoming `ws` holds `g1`. Orchestrator-checked that this genuinely
+  discriminates: under a store read, `resolvableGroupIds = {g2}`, `g1` is judged
+  unresolvable, and the drawing flattens. It cannot pass against the old code.
+- `2r7c` **genuinely dead group** — `ghost-group` in neither source; re-homed to
+  `panel-migrated-1`. (Does not discriminate store-vs-`ws`; it is a completeness guard for
+  the re-homing path, which is what the brief asked of it.)
+- Pre-existing `2r8` (group absent from both sources, `getWorkspace → undefined`) survives
+  untouched.
+
+**Gates re-run by the orchestrator, raw, exit status read — not taken from the report:**
+tsc app `0` · tsc spec `0` · `ng test` `0`, **156 files / 1936 tests passed** · lint `0`
+problems · `npm run build` `0`, `Initial total 648.07 kB`, only the known-accepted budget
+warning, no new chunk types, `grep -rl vitest dist/emulador/browser` empty.
+
+**Arithmetic:** 1934 → 1936 = net **+2** — one `it()` removed (`2r7` as it stood), three
+added. ✓ Bundle 648.33 → **648.07 kB** (−0.26 kB, the removed store read). File count
+unchanged at 156.
+
+**Root cause is recorded as the orchestrator's, not the implementer's:** this is the second
+brief error of the run (the first being L1's literal fix, which the implementer disproved
+empirically). Both are documented rather than smoothed over, because the pattern — a brief
+asserting *which state* a value should be read from without checking dispatch ordering — is
+the one worth catching earlier next time.
+
 ### PR body — what the auditor requires it to disclose (once M-1 is closed and re-audited)
 
 Owner re-anchoring at the `.session.json` hydration boundary (RFC addendum §6): what
@@ -220,8 +274,8 @@ caveat (§13.3) · Tasks 7–8 out of scope, §5.1 trade gating not implemented 
 (§13.2) · the L1 deviation and why the brief's literal fix was empirically insufficient ·
 `normalizeLinkGroup` on all three hydration paths, `syncTrades` defaulting true per D17.I
 (inert until TEDS) · the pre-existing `isolate:false` selector leak fixed in
-`workspaces.effects.spec.ts` · bundle 639.07 → 648.33 kB, no new dependencies, no new chunk
-types, `CLAUDE.md`'s "~609 kB" stale independently of this branch · the `ChartComponent`
+`workspaces.effects.spec.ts` · bundle 639.07 → **648.07 kB**, no new dependencies, no new
+chunk types, `CLAUDE.md`'s "~609 kB" stale independently of this branch · the `ChartComponent`
 keyboard-wiring coverage gap, accepted and non-blocking, with the standing recommendation
 to close it before more keyboard surface lands.
 
