@@ -21,6 +21,8 @@ import { defaultTradingData } from '../trading/trading.models';
 import { createInitialLayoutState } from '../layout/layout.models';
 import { LayoutActions } from '../layout/layout.actions';
 import { LinkGroupsActions } from '../link-groups/link-groups.actions';
+import { linkGroupsFeature } from '../link-groups/link-groups.reducer';
+import { createLinkGroup } from '../link-groups/link-groups.models';
 import { singlePanelLayoutFor } from '../../services/session-migration';
 
 const CURRENT_KEY = 'emulador.currentAsset';
@@ -63,6 +65,10 @@ describe('WorkspacesEffects', () => {
     effects = TestBed.inject(WorkspacesEffects);
     store.overrideSelector(selectCurrentAsset, null);
     store.overrideSelector(selectWorkspaceMetaSnapshot, metaSnap);
+    // Default: no groups currently in the store. A `thenRestore` without its
+    // own `linkGroups` reads this one-shot to resolve group-owned drawing
+    // owners against; tests exercising that path override it explicitly.
+    store.overrideSelector(linkGroupsFeature.selectGroups, {});
     store.refreshState();
   }
 
@@ -76,6 +82,10 @@ describe('WorkspacesEffects', () => {
 
   afterEach(() => {
     localStorage.removeItem(CURRENT_KEY);
+    // isolate:false discipline (testing.md): overrideSelector forces a result
+    // onto the module-level NgRx singleton selector, which otherwise poisons
+    // later spec files that read the same selector for real.
+    store.resetSelectors();
     TestBed.resetTestingModule();
     vi.restoreAllMocks();
   });
@@ -305,12 +315,17 @@ describe('WorkspacesEffects', () => {
       ]);
     });
 
-    it('2r. thenRestore with a matching loaded TF → restoreSession, restoreDrawings, changeTimeframe, changeSpeed (in order, after csvLoaded)', async () => {
+    it('2r. thenRestore with an owner-tagged drawing whose owner does NOT resolve against the installed layout is re-homed to a panel that DOES exist in it (not passed through verbatim)', async () => {
       setupTestBed();
-      db.getWorkspace!.mockResolvedValue(undefined);
+      db.getWorkspace!.mockResolvedValue(undefined); // no persisted workspace -> single-panel migration default installed
 
       const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
       const trading = { ...defaultTradingData(), balance: 12345, sessionName: 'Restaurada' };
+      // Owned by a panel id that cannot exist in the layout this restore
+      // installs (the single-panel migration default only ever mints
+      // 'panel-migrated-1') — exactly the shape of a `.session.json` exported
+      // from a cold-start session (panel id 'panel-1') and re-imported on a
+      // fresh profile / cleared IndexedDB / another machine.
       const drawings = [
         {
           id: 'd1',
@@ -349,7 +364,16 @@ describe('WorkspacesEffects', () => {
         }),
         MarketActions.csvLoaded(csvH1),
         TradingActions.restoreSession({ trading }),
-        DrawingsActions.restoreDrawings({ drawings }),
+        DrawingsActions.restoreDrawings({
+          drawings: [
+            {
+              ...drawings[0],
+              // re-homed to the panel the installed layout actually has —
+              // NOT the byte-for-byte 'panel-1' the file carried.
+              owner: { type: 'panel', id: 'panel-migrated-1' },
+            },
+          ],
+        }),
         MarketActions.changeTimeframe({ tf: 'H1' }),
         ReplayActions.changeSpeed({ msPerCandle: 250 }),
         ReplayActions.setReplayResolution({ minutes: 5 }),
@@ -576,6 +600,138 @@ describe('WorkspacesEffects', () => {
               visible: true,
             },
           ],
+        }),
+      );
+    });
+
+    it('2r6. thenRestore with an owner-tagged drawing whose owner DOES resolve against the installed layout arrives untouched (same array reference — nothing needed re-homing)', async () => {
+      setupTestBed();
+      db.getWorkspace!.mockResolvedValue(undefined); // single-panel migration default: panel-migrated-1
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+      const drawings = [
+        {
+          id: 'd1',
+          symbol: SYMBOL,
+          owner: { type: 'panel' as const, id: 'panel-migrated-1' }, // exists in the installed default layout
+          kind: 'line' as const,
+          p1: { time: 0, price: 1 },
+          p2: { time: 1, price: 2 },
+          zIndex: 0,
+          locked: false,
+          visible: true,
+        },
+      ];
+
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          thenLoad: [csvH1],
+          thenRestore: {
+            trading,
+            drawings,
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+          },
+        }),
+      );
+
+      const result = await p;
+      expect(result![3]).toEqual(DrawingsActions.restoreDrawings({ drawings }));
+      // identity, not merely equality: liftLegacyDrawings must return the same
+      // array reference when every owner already resolves.
+      expect((result![3] as ReturnType<typeof DrawingsActions.restoreDrawings>).drawings).toBe(
+        drawings,
+      );
+    });
+
+    it('2r7. thenRestore with a group-owned drawing whose group still exists in the CURRENT store (no thenRestore.linkGroups) arrives untouched — importing back into the same workspace preserves the shared layer, it is not unconditionally flattened', async () => {
+      setupTestBed();
+      db.getWorkspace!.mockResolvedValue(undefined);
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: createLinkGroup('g1', '#f00') });
+      store.refreshState();
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+      const drawings = [
+        {
+          id: 'd1',
+          symbol: SYMBOL,
+          owner: { type: 'group' as const, id: 'g1' }, // still exists in the current store
+          kind: 'line' as const,
+          p1: { time: 0, price: 1 },
+          p2: { time: 1, price: 2 },
+          zIndex: 0,
+          locked: false,
+          visible: true,
+        },
+      ];
+
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          thenLoad: [csvH1],
+          thenRestore: {
+            trading,
+            drawings,
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+          },
+        }),
+      );
+
+      const result = await p;
+      expect(result![3]).toEqual(DrawingsActions.restoreDrawings({ drawings }));
+      expect((result![3] as ReturnType<typeof DrawingsActions.restoreDrawings>).drawings).toBe(
+        drawings,
+      );
+    });
+
+    it('2r8. thenRestore with a group-owned drawing whose group exists nowhere (not in thenRestore, not in the current store) is re-homed to a panel — group namespaces are never auto-created', async () => {
+      setupTestBed();
+      db.getWorkspace!.mockResolvedValue(undefined); // single-panel migration default: panel-migrated-1
+      // setupTestBed's default already overrides linkGroupsFeature.selectGroups to {}
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+      const drawings = [
+        {
+          id: 'd1',
+          symbol: SYMBOL,
+          owner: { type: 'group' as const, id: 'ghost-group' },
+          kind: 'line' as const,
+          p1: { time: 0, price: 1 },
+          p2: { time: 1, price: 2 },
+          zIndex: 0,
+          locked: false,
+          visible: true,
+        },
+      ];
+
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          thenLoad: [csvH1],
+          thenRestore: {
+            trading,
+            drawings,
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+          },
+        }),
+      );
+
+      const result = await p;
+      expect(result![3]).toEqual(
+        DrawingsActions.restoreDrawings({
+          drawings: [{ ...drawings[0], owner: { type: 'panel', id: 'panel-migrated-1' } }],
         }),
       );
     });

@@ -408,3 +408,19 @@ sin decirlo.
    mismo símbolo, tras migrar solo el primero conserva esos dibujos — la
    duplicación la prohíbe el Invariante 1; compartir vía grupo es el camino
    hacia delante.
+
+6. **Re-anclaje de propietario al restaurar un `.session.json` (auditoría
+   final, hallazgo High).** Un dibujo importado cuyo `owner` (panel o grupo)
+   no resuelve contra el layout/grupos que esa restauración instala se
+   re-ancla mediante la misma regla de primer-panel-que-muestra-el-símbolo
+   que usa la migración V2→V3 (`ownerPanelFor`) — un grupo se considera
+   resoluble si el propio archivo trae `linkGroups`, o si no los trae, si ese
+   id de grupo sigue existiendo en el store en el momento de la restauración
+   (así reimportar sobre el mismo workspace que aún conserva sus grupos no
+   aplana la capa compartida). Esto es un acto de migración en un límite de
+   hidratación — exactamente igual que `migrateV2ToV3` asignando owners — no
+   una mutación de propiedad en tiempo de ejecución, así que el Invariante 1
+   se mantiene. Antes de esta corrección, un dibujo con owner ya no resoluble
+   pasaba sin validar y quedaba huérfano (invisible, sin poder borrarse,
+   persistido para siempre) — una regresión frente a `develop` para el caso
+   canónico de backup/restore entre perfiles o máquinas.
