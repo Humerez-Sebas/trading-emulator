@@ -38,7 +38,7 @@
 - [x] Task 1: LinkGroup composition channels (`syncDrawings`, `syncTrades`) — cherry-picked, re-verified 2026-07-24
 - [x] Task 2: Drawing schema expansion + target resolution + pure migration functions — DONE 2026-07-24
 - [x] Task 3: Entity store + owner index + per-panel selection + mapper composition + chart cutover ⟨per-task audit⟩ — implemented 2026-07-24, audit pending
-- [ ] Task 4: Panel-scoped undo/redo with revision guard (D17.F)
+- [x] Task 4: Panel-scoped undo/redo with revision guard (D17.F) — DONE 2026-07-24
 - [ ] Task 5: Clipboard (D17.G) + per-panel shared-layer toggle (D17.H)
 - [ ] Task 6: SessionPayloadV3 + migration chain + IndexedDB lift (D17.J) ⟨per-task audit⟩
 - [ ] ~~Task 7: Trade layer gating + Ghost Rails primitives~~ — SUPERSEDED by TEDS (out of scope)
@@ -297,10 +297,49 @@ New findings:
   re-reviews this diff along with everything else.** Task 3 is treated as PASSED for the
   purpose of proceeding to Task 4; the final audit remains the true gate.
 
+### Task 4 — Panel-scoped undo/redo with revision guard (D17.F) — DONE
+
+- **Commits:** `f76efee` (models + actions + reducer), `71bb34a` (focused-panel keyboard
+  gating), `328d7fd` (edge-rulings specs). Range `d72a970..328d7fd`.
+- **Evidence (implementer, raw, exit 0 on all four):** tsc app ✓, tsc spec ✓, lint 0,
+  `ng test` **153 files / 1882 tests passed**.
+- **Test-count arithmetic (orchestrator-verified):** 1862 → 1882 = **+20**, matching
+  exactly 20 `it()` in the new `drawings.history.spec.ts`; files 152 → 153 = that one new
+  file. Consistent.
+- **Scope (orchestrator diff-scan):** 5 files, +634/−8 — exactly the brief's file list,
+  nothing else. Additive task: **no pre-existing spec needed adapting**, as predicted.
+- **Grep (orchestrator):** zero RFC/decision/task ids in NEW non-spec comments.
+- **In-scope extension, deliberate and disclosed:** the brief also directed a fix to the
+  pre-existing `Delete` key handler. `chart.component.ts`'s `onKeyDown` is a **window-level
+  listener registered once per panel**, so with two panels each holding a selection of a
+  *different* drawing (explicitly allowed by per-panel selection, D17.E) a single Delete
+  keypress deleted in BOTH panels. Delete is now gated on `focusedPanelId` and guarded
+  against input focus, the same idiom undo/redo establishes. Same defect class the idiom
+  exists to prevent.
+- **Deviation — requires attention (coverage, pre-existing):** the focused-panel keyboard
+  specs (Ctrl+Z on an unfocused panel; the input-focus guard suppressing undo and Delete)
+  were **not written**, using the brief's own escape hatch. There is no
+  `chart.component.spec.ts` in this repo and no harness for one: every spec touching
+  `ChartComponent` (`chart-panel.component.spec.ts`) replaces it with a template-only stub
+  because the real component boots a live `ChartEngine`/lightweight-charts canvas in
+  `ngAfterViewInit`. The sibling component using the identical input-focus-guard idiom
+  (`drawing-toolbar.component.ts`) also has no spec — a pre-existing gap in this class of
+  components, not one introduced here. The dispatched actions are fully covered by the 20
+  reducer specs; only the DOM-event→dispatch wiring is unverified, at the same coverage
+  level the pre-existing `Delete` handler already had.
+- **FINAL-AUDIT ATTENTION:** the undo/redo reducer mechanics are the correctness core —
+  in particular the load-bearing difference between the **stale** path (command DROPPED,
+  pop continues within the same action) and the **locked** path (command RETAINED, identity
+  return, no further popping). Also worth a read: that undo restores `owner` verbatim from
+  the recorded command rather than recomputing it, and that recreate/delete undos keep
+  `entities` and `ownerIndex` in agreement. This is the third consecutive task whose
+  keyboard wiring is unverified by automation — the accumulated `ChartComponent` coverage
+  gap is worth a ruling at final audit.
+
 ### RUN STATE
 
-Tasks 1, 2, 3 (+ two fix waves) complete and green at **152 files / 1862 tests**.
-Next: Task 4 → Task 5 → Task 6 ⟨per-task audit⟩ → Task 9 → final whole-branch audit → PR
-to `develop`.
+Tasks 1, 2, 3 (+ two fix waves), 4 complete and green at **153 files / 1882 tests**.
+Next: Task 5 → Task 6 ⟨per-task audit⟩ → Task 9 → final whole-branch audit → PR to
+`develop`.
 
 (further entries recorded as tasks complete)
