@@ -221,13 +221,86 @@ section.**
   spec adaptations lean on a specific NgRx `MockStore` `overrideSelector` behavior for
   nested-selector resolution (implementer verified it against `node_modules` source).
 
-### RUN STATE — PAUSED at owner's request (credit conservation)
+### Task 3 — PER-TASK AUDIT #2: **FAIL** (1 Medium, 4 Low) — 2026-07-24
 
-Stopped after the Task 3 fix wave. **Nothing has been dispatched since.**
-**Next step on resume: re-audit Task 3** (`branch-auditor`, Opus) — the run protocol
-requires a PASS before Task 4 is dispatched, and audit #1 returned FAIL. The re-audit
-dispatch brief is ready at `.superpowers/sdd/task-3-reaudit-brief.md`.
-Remaining after that: Task 4 → Task 5 → Task 6 ⟨audit⟩ → Task 9 → final whole-branch
-audit → PR to `develop`.
+`branch-auditor` (Opus) re-ran all four gates **plus `npm run build`** personally: tsc app
+✓, tsc spec ✓, lint 0, `ng test` **152 files / 1861 tests**, build exit 0 with
+`Initial total 642.43 kB` — **no new chunk types**, and `grep -rl vitest dist/…` empty
+(the vitest-sentinel check is clean). It re-derived the arithmetic for BOTH ranges
+independently (fix wave +18 with 0 removed and no new files → 1861; Task 3 itself
+44 added − 10 removed = +34 → 1843) and re-ran every invariant grep.
+
+**Every audit-#1 finding confirmed genuinely closed**, each by adversarial reading rather
+than by trusting the report:
+- **H1 CLOSED** — the auditor swept every `descriptor.symbol` read repo-wide; the only
+  other one (`PanelChartView.symbol`) has zero consumers. The zero-allocation contract
+  still holds at six references: `Store.select` carries `distinctUntilChanged` and
+  `selectCurrentAsset` only changes at boot or on `workspaceRestored`, so `combineLatest`
+  does not re-fire per replay tick.
+- **M1 CLOSED** — it enumerated every path that can drop a drawing out of a panel's
+  composition and confirmed each is handled or unreachable (`setDrawingVisible` has zero
+  dispatch sites; there is no `setPanelSymbol`; `workspaceRestored` resets `selection`).
+- **M2 CLOSED on state** — `purgePanelIds` provably touches only `panel:` owner keys;
+  group-owned drawings survive; the tab path's panel ids match exactly what the layout
+  reducer removes, parked cells included. **The tab path's non-atomicity was RULED
+  ACCEPTABLE**: both dispatches are synchronous in one call stack, and the only observer
+  (`persistMeta$`) is `debounceTime(300)`, collapsing the pair into one write.
+- **M3 CLOSED** — the auditor verified the spec is genuinely sensitive rather than a mock
+  artifact: with 3 fixtures it fails under every wrong implementation (old selector → 3,
+  symbol-only → 2, visible-only → 2, non-flowing override → 0), and `resetSelectors()` in
+  `afterEach` prevents `isolate:false` leakage.
+- **L1 CLOSED** — the one remaining citation is pre-existing code merely re-indented.
+- It also read `396398e` in full and confirmed no unmentioned fourth change was hiding at
+  file granularity.
+
+New findings:
+- **M-1 (Medium)** — the panel/tab close cascade was disclosed **only via `aria-label`**,
+  which renders nothing for a sighted user, so a trader could lose drawings with no
+  warning they could see (and no undo until Task 4). The repo's own precedent added by
+  this same task (`link-groups-menu.component.ts:75-76`) sets BOTH `aria-label` and
+  `title`; the mirror was half-built, and the two specs asserted only `aria-label`,
+  locking in the incomplete version.
+- **L-1 (Low, not ruled no-fix)** — `closeTab()` dispatched the irreversible purge BEFORE
+  `LayoutActions.closeTab`, which the layout reducer no-ops on the last tab; only a
+  template guard ~350 lines away made it unreachable.
+- Ruled **no-fix** with written reasons: **L-2** — active-asset scoping still is not
+  literally "what was on screen" for RFC-014 G3 (a drawing in an inactive tab or behind a
+  cell sibling counts; a secondary-symbol panel's drawings do not), but it restores exact
+  pre-RFC-017 semantics and strictly narrows audit #1's over-capture, so it is a repair,
+  not a regression — **exact composed-panel fidelity is a new RFC-017/RFC-014 design
+  question, and the selector's doc comment overclaims and should be softened → Task 9**.
+  **L-3** — an unreachable defensive branch in `purgePanelIds` is untested (revisit if
+  Task 4/5 make cross-panel selection of a local drawing possible). **L-4** — a stale
+  "five composition inputs" comment in the composition spec → Task 9 docs sweep.
+- **Doc drift noted for Task 9:** `CLAUDE.md` cites the accepted bundle overage as
+  "~609 kB"; the real figure is now **642.43 kB**.
+
+### Task 3 — RE-AUDIT FIX WAVE — DONE, closure orchestrator-verified
+
+- **Commit:** `4cb80f8` (2 files, +31/−2). Range `1ea48a1..4cb80f8`.
+- **Evidence (implementer, raw, exit 0 on all four):** tsc app ✓, tsc spec ✓, lint 0,
+  `ng test` **152 files / 1862 tests passed** (1861 → 1862 = +1, a new last-tab guard
+  spec; the two M-1 specs were widened in place, adding assertions without adding cases).
+- **Orchestrator verification (mechanical diff-read against the auditor's own acceptance
+  criteria, both findings being attribute-presence/statement-order facts):**
+  M-1 — `[attr.title]` now present on BOTH close controls, carrying strings identical to
+  their `aria-label`s (`'Cerrar ' + tab.name + ' y sus dibujos locales'` and
+  `'Cerrar ' + panelLabel(pid) + ' y sus dibujos locales'`); no `TooltipDirective`
+  introduced, matching the precedent. **CLOSED.**
+  L-1 — `if (this.workspace().tabs.length <= 1) return;` now sits immediately after
+  `event.stopPropagation()`, ahead of the purge dispatch; both dispatches remain in one
+  synchronous call stack. Implementer used `<= 1` rather than `=== 1` deliberately
+  (fail-safe, stricter than the reducer). **CLOSED.**
+- **Decision (recorded, not improvised):** a third full `branch-auditor` dispatch was NOT
+  spent on a two-attribute/one-statement change. Both findings are mechanically
+  verifiable facts, verified above, and **the mandatory final whole-branch Opus audit
+  re-reviews this diff along with everything else.** Task 3 is treated as PASSED for the
+  purpose of proceeding to Task 4; the final audit remains the true gate.
+
+### RUN STATE
+
+Tasks 1, 2, 3 (+ two fix waves) complete and green at **152 files / 1862 tests**.
+Next: Task 4 → Task 5 → Task 6 ⟨per-task audit⟩ → Task 9 → final whole-branch audit → PR
+to `develop`.
 
 (further entries recorded as tasks complete)
