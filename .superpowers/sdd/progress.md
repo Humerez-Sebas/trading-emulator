@@ -537,4 +537,193 @@ should be softened); sweep the stale "five composition inputs" comment at
 `chart-model-mapper.composition.spec.ts:261`; and `CLAUDE.md`'s accepted bundle overage is
 stale — it says "~609 kB", the measured figure is now **642.43 kB**.
 
-(further entries recorded as tasks complete)
+### Task 9 — Finalization: invariant greps, build, docs closure — DONE
+
+Ships no new behavior: five gates, eleven invariant greps, one stale comment corrected,
+one overclaiming doc comment softened, three documentation files written, this ledger
+closed.
+
+**Gates (fresh, raw, run from `emulador/`, exit status read — none piped through
+`tail`/`head`):**
+
+| Gate | Result |
+| :--- | :--- |
+| `npx tsc -p tsconfig.app.json --noEmit` | exit 0, no errors |
+| `npx tsc -p tsconfig.spec.json --noEmit` | exit 0, no errors |
+| `npx ng test --watch=false` | exit 0 — **156 files / 1922 tests passed** |
+| `npm run lint` | exit 0 — "All files pass linting." |
+| `npm run build` | exit 0 — **`Initial total 647.21 kB`**, budget-warning only (known/accepted) |
+
+All five re-run a second time, raw, after the comment-sweep + doc-comment edits landed
+(the only code touched this task): identical results — 156/1922, lint 0, build
+`647.21 kB` again. `grep -rl vitest emulador/dist/emulador/browser` → empty both times
+(vitest-sentinel check clean, kernel invariant #7 holds).
+
+**Invariant greps (all 11, raw command + result):**
+
+1. `grep -rn "selectChartView(" emulador/src/app --include="*.ts" | grep -v spec` → one
+   hit, `chart-model-mapper.service.ts:469-470`, a doc comment describing the D8 ban
+   itself ("Deliberately NOT a shared NgRx factory selector (`selectChartView(panelId)`)
+   ...") — not an implementation. **HOLDS.**
+2. `grep -rn "syncPriceScale" emulador/src/app --include="*.ts"` → 7 hits: the model
+   declaration (`link-groups.models.ts:11`) and spec fixtures/assertions
+   (`link-groups.channels.spec.ts`, `link-groups.reducer.spec.ts`) only. Zero read sites.
+   **HOLDS.**
+3. `grep -n "owner" emulador/src/app/state/drawings/drawings.reducer.ts` → every hit is
+   `ownerIndex`, an import, a comment, or a READ (`ownerKeyOf(...)` or a direct
+   `!d.owner`/`.owner.type` guard); no action ever writes `owner:` onto an *existing*
+   entity. Proof: `drawings.reducer.entity.spec.ts`'s
+   `describe('drawings reducer: ownership immutability')` (moveDrawing/setDrawingLocked/
+   setDrawingVisible/selectDrawing all assert `owner` unchanged, one by reference).
+   **HOLDS.**
+4. `grep -rn "assertNoCandles" emulador/src/app --include="*.ts"` → single definition
+   (`session-sync.mapping.ts:75`), imported (never duplicated) into
+   `lessons-db.service.ts`, `playbook-db.service.ts`, `session-sync.service.ts`,
+   `telemetry-db.service.ts`, called on every one of their write paths plus the
+   `toPayload` path (`session-sync.mapping.ts:197`). **HOLDS.**
+5. `grep -rn "spec-util" emulador/src/app --include="*.ts" | grep -v "\.spec\.ts"` → 2
+   hits, both prose in `layout-invariants.ts` comments describing the companion
+   `layout-invariants.spec-util.ts` file — no import statement. **HOLDS.**
+6. `git diff af3d8ca..HEAD -- emulador/package.json emulador/package-lock.json` → empty.
+   **HOLDS.**
+7. `grep -rn "@angular\|@ngrx" emulador/src/app/domain/chart/ --include="*.ts"` → zero
+   hits (grep exit 1). **HOLDS.**
+8. `git diff af3d8ca..HEAD -- emulador/src/app/domain/chart/render-model.ts` → empty.
+   **HOLDS.**
+9. `git diff af3d8ca..HEAD -- emulador/src/app/services/workspace-db.service.ts` → empty
+   (the file was not touched anywhere in this run); `DB_VERSION` unchanged, no
+   `createObjectStore` added. **HOLDS.**
+10. `grep -rn "groupDrawingsBySymbol" emulador/src/app --include="*.ts"` → zero hits (grep
+    exit 1). **HOLDS.**
+11. `grep -rn "clearDrawings\|restoreDrawingsForSymbol\|selectItems\|selectSelectedId"
+    emulador/src/app --include="*.ts"` → 2 hits, both prose comments in
+    `drawings.reducer.spec.ts` explaining why the actions were retired (no code
+    reference). **HOLDS.**
+
+All eleven invariants hold. No BLOCKED condition arose.
+
+**Small sweep (the only code change):**
+`chart-model-mapper.composition.spec.ts:261-262` — "the five composition inputs
+(entities/ownerIndex/selection/groups/descriptor)" corrected to "the six composition
+inputs (descriptor/entities/ownerIndex/selection/groups/currentAsset)", matching the
+service's own "six input references" comment and field order
+(`chart-model-mapper.service.ts:375,387`). No assertion touched.
+
+**Docs written:**
+
+- `docs/architecture/rfcs/017-compositional-panel-sync.md` — **Estado** updated to
+  "Implementada" (keeping the two-column table format); new **§13 Desviaciones e
+  implementación** records, in order: (1) the owner-decided panel-close cascade — a
+  product decision this RFC never made, escalated during Task 3 and answered by the
+  repo owner, with its full unreclaimable-UUID-owner-key rationale; (2) the §5.1
+  trade-layer gating predicate NOT implemented this run (moved to TEDS, consistent with
+  §6's existing supersession note); (3) the RFC-014 G3 `DrawingSnapshot` fidelity caveat,
+  cross-referencing the softened selector doc comment; (4) the two Task-6-audit no-fix
+  persistence limitations (`parseSessionPayload`'s V3 fallback scope,
+  the cloud write path's un-lifted `schemaVersion: 3` stamp); (5) the migration's
+  residual same-symbol-multi-panel limitation (already in §10, cross-referenced not
+  duplicated).
+- `docs/engineering/domain/workspace-panels.md` — new **"Drawing composition &
+  ownership (RFC-017)"** section: the flat entity store + `ownerIndex`, the two D17.K
+  sync families (event-channel vs composition), per-panel composition inside each
+  `ChartModelMapper` instance (D8 intact, six-reference memo named), the `''`
+  active-asset sentinel and `effectivePanelSymbol`, per-panel selection/undo-redo/
+  clipboard, `hideSharedDrawings`, and the panel-close cascade. Also corrected two
+  stale references to the retired per-symbol/V2 drawings shape (the opening "shape of
+  the system" bullet and the **Persistence** section, now naming `SessionPayloadV3`) so
+  the new section does not contradict the surrounding prose — **inert deviation beyond
+  the brief's literal "add" instruction, same file, docs-only, zero behavior risk**.
+  Flagged in the same edit: `session-sync.md` (out of scope for this task) still
+  describes the V2 wire shape and was NOT touched — recorded as documentation debt, not
+  fixed here.
+- `docs/architecture/DOMAIN_MODEL.md` — new **I-18 Drawings Ownership Invariants
+  (RFC-017)** section mirroring I-16/I-17's exact format (intro paragraph +
+  `| Id | Invariant | Detector |` table, Spanish content matching I-17's neighbouring
+  language), seven invariants (`W-1`..`W-7`): ownership immutability, exactly-one-owner,
+  LinkGroups-resolve-not-store, composition-not-copying, the two delete cascades,
+  per-panel selection, and revision-guarded undo determinism. **Every cited detector
+  (8 `describe()` strings across 4 spec files) was grepped verbatim against the actual
+  spec files before citing it** — none invented.
+- `emulador/src/app/state/selectors.ts` — the `selectActiveAssetVisibleDrawings` doc
+  comment softened per the brief's item 4a-3 authorization: no longer claims the
+  selector captures "what a trader could actually see painted on screen at any
+  instant"; now states the composed-panel fidelity gap directly (inactive-tab/
+  cell-sibling/`syncDrawings`-off drawings count without being painted; secondary
+  observation-panel drawings are excluded) without citing RFC/decision ids in the code
+  comment itself (kept consistent with the plan's Global Constraint against task/RFC
+  names in comments, the same rule Tasks 3 and 6's L1 findings enforced).
+
+**Two items for the owner (surfaced, not acted on):**
+
+1. `CLAUDE.md` cites the accepted bundle overage as "~609 kB"; the figure measured on
+   this branch (Task 3's audit and now Task 9, independently) is **~647 kB**
+   (642.43 kB at Task 3's audit, 647.21 kB now — a further ~5 kB drift across Tasks 4-6).
+   `CLAUDE.md` is owner-protected; recommend updating the figure, not doing so here.
+2. The accumulated **`ChartComponent` keyboard-wiring coverage gap**: Tasks 4 and 5
+   added focused-panel gating, undo/redo, and clipboard shortcuts to a component with
+   **no spec file at all** (every spec touching it substitutes a template-only stub,
+   because the real component boots a live `ChartEngine`/lightweight-charts canvas).
+   Three tasks now depend on untested DOM-event→dispatch wiring. Flagged for a ruling at
+   the final audit; no harness was built in this task (out of scope, per the brief).
+
+**Test-count arithmetic across the whole run (explicit, checked):**
+
+| Step | Delta | Running total | Files |
+| :--- | ---: | ---: | ---: |
+| Baseline (re-verified at run resume) | — | 1798 | 148 |
+| Task 2 | +11 | 1809 | 150 |
+| Task 3 (implementation) | +34 | 1843 | 152 |
+| Task 3 fix wave (audit #1) | +18 | 1861 | 152 |
+| Task 3 re-audit fix wave | +1 | 1862 | 152 |
+| Task 4 | +20 | 1882 | 153 |
+| Task 5 | +23 | 1905 | 155 |
+| Task 6 (implementation, +24/−8) | +16 | 1921 | 156 |
+| Task 6 audit fix wave | +1 | 1922 | 156 |
+| Task 9 (comment-only, no new specs) | +0 | **1922** | **156** |
+
+1798 + 11 + 34 + 18 + 1 + 20 + 23 + 16 + 1 + 0 = **1922** ✓, matching the fresh `ng test`
+run above exactly (156 files / 1922 tests).
+
+**Commit range:** base `af3d8ca` (origin/develop) → pre-Task-9 HEAD `78b39c7` is 43
+commits (Tasks 1–6 + their audits/fix-waves). Task 9 adds its own commits on top (see
+this task's own commit hashes in `task-9-report.md`, not duplicated here to avoid a
+stale hash the moment a fix-up commit is added).
+
+**FINAL-AUDIT ATTENTION — consolidated (everything an auditor should read line-by-line,
+gathered from every task in one place):**
+
+- **Task 2:** `chart.component.ts`'s `handleClick` (the one construction site for every
+  new `Drawing` field) has no dedicated spec — pre-existing gap, not introduced here.
+- **Task 3 (largest diff of the run, 24 files +1004/−206):** the telemetry/export
+  widening from retiring `selectItems`/`selectSelectedId` (both `.session.json` export
+  and the RFC-014 `DrawingSnapshot` fact briefly widened to whole-session scope before
+  M3 narrowed it back); the `ownerIndex` incremental-maintenance/mapper reference-
+  stability memo as the correctness core; the sentinel-symbol fix (H1) and its six-
+  reference memo; the tab-close two-dispatch non-atomicity (ruled acceptable —
+  `persistMeta$` is `debounceTime(300)`).
+- **Task 4:** the stale/locked undo-path distinction (command DROPPED vs RETAINED); undo
+  restores `owner` verbatim rather than recomputing it; the Delete-key focused-panel fix
+  applied to a pre-existing multi-panel defect.
+- **Task 5:** paste is the only new drawing-creation path and it is provably routed
+  through the same `resolveDrawingTarget` rule as hand-drawing (Invariant 1 by
+  construction); the clipboard is runtime-only.
+- **Task 6:** `migrateV2ToV3` and `liftWorkspaceDrawings`/`withLiftedDrawings` (and its
+  fix-wave replacement `resolveOwnerLayout`/`liftLegacyDrawings`) are the two genuinely
+  new logic blocks; the rewritten cloud-open assertion in
+  `sesiones-page.component.spec.ts`; the implementer's verified-correct override of the
+  fix brief (resolving owner against the target workspace's OWN persisted layout, not
+  the store's current one) — checked line-by-line against `layout.reducer.ts:279-289`
+  by the orchestrator.
+- **Task 9 (this task):** the `selectors.ts` doc-comment edit and the DOMAIN_MODEL.md
+  I-18 table are prose-only — no code paths changed; verify the 8 cited detector
+  `describe()` strings still match if anything upstream renames them before the PR
+  merges.
+- **Standing, cross-task:** the `ChartComponent` keyboard-wiring coverage gap (owner
+  item 2 above) and the `CLAUDE.md` bundle-figure staleness (owner item 1 above).
+
+### RUN CLOSED
+
+Tasks 1–6 + 9 done, green at **156 files / 1922 tests**, lint 0, build `647.21 kB`
+(budget warning known/accepted), all 11 invariants holding, zero BLOCKED conditions.
+Tasks 7–8 remain out of scope (superseded by TEDS). Next: the mandatory final
+whole-branch Opus audit, then PR to `develop`.
