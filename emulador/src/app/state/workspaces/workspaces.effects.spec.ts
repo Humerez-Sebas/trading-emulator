@@ -158,6 +158,79 @@ describe('WorkspacesEffects', () => {
     });
   });
 
+  // ─── workspaceRestored — legacy drawing lift (read-time, parse-don't-trust) ─
+
+  describe('workspaceRestored — legacy drawing lift', () => {
+    it('drawings missing `owner` (pre-RFC-017 IndexedDB records) hydrate as fully-formed Drawings owned by a real panel', async () => {
+      setupTestBed();
+      const { layout, panels } = singlePanelLayoutFor(SYMBOL, 'M1');
+      const legacyItem = {
+        id: 'd1',
+        kind: 'line' as const,
+        p1: { time: 0, price: 1.1 },
+        p2: { time: 10, price: 1.2 },
+      };
+      const ws = workspace({ symbol: SYMBOL, drawings: [legacyItem as never], layout, panels });
+      db.list!.mockResolvedValue([assetMeta]);
+      db.getWorkspace!.mockResolvedValue(ws);
+      localStorage.setItem(CURRENT_KEY, SYMBOL);
+
+      const p = effects.init$.pipe(take(2), toArray()).toPromise();
+      actions$.next({ type: ROOT_EFFECTS_INIT });
+
+      const result = await p;
+      expect(result).toEqual([
+        WorkspacesActions.assetsLoaded({ assets: [assetMeta], current: SYMBOL }),
+        WorkspacesActions.workspaceRestored({
+          workspace: {
+            ...ws,
+            drawings: [
+              {
+                id: 'd1',
+                symbol: SYMBOL,
+                owner: { type: 'panel', id: 'panel-migrated-1' },
+                kind: 'line',
+                p1: { time: 0, price: 1.1 },
+                p2: { time: 10, price: 1.2 },
+                zIndex: 0,
+                locked: false,
+                visible: true,
+              },
+            ],
+          },
+        }),
+      ]);
+    });
+
+    it('a record already holding owner-tagged items passes through untouched', async () => {
+      setupTestBed();
+      const alreadyLifted = {
+        id: 'd1',
+        symbol: SYMBOL,
+        owner: { type: 'panel' as const, id: 'panel-1' },
+        kind: 'line' as const,
+        p1: { time: 0, price: 1.1 },
+        p2: { time: 10, price: 1.2 },
+        zIndex: 0,
+        locked: false,
+        visible: true,
+      };
+      const ws = workspace({ symbol: SYMBOL, drawings: [alreadyLifted] });
+      db.list!.mockResolvedValue([assetMeta]);
+      db.getWorkspace!.mockResolvedValue(ws);
+      localStorage.setItem(CURRENT_KEY, SYMBOL);
+
+      const p = effects.init$.pipe(take(2), toArray()).toPromise();
+      actions$.next({ type: ROOT_EFFECTS_INIT });
+
+      const result = await p;
+      expect(result).toEqual([
+        WorkspacesActions.assetsLoaded({ assets: [assetMeta], current: SYMBOL }),
+        WorkspacesActions.workspaceRestored({ workspace: ws }),
+      ]);
+    });
+  });
+
   // ─── switch$ / doSwitch ───────────────────────────────────────────────────
 
   describe('switch$ / doSwitch — REGRESSION #4: exact action order', () => {

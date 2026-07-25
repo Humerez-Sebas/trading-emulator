@@ -304,6 +304,20 @@ describe('drawings reducer: hydration rebuild (restoreDrawings / workspaceRestor
     expect(next.selection).toEqual({});
     expect(next.activeTool).toBe('none');
   });
+
+  it('skips a record with no usable owner instead of throwing (last-line-of-defence guard on malformed input)', () => {
+    const good = drawing({ id: 'd1', zIndex: 1, owner: { type: 'panel', id: 'panel-1' } });
+    const ownerless = { ...drawing({ id: 'd2', zIndex: 5 }), owner: undefined } as unknown as Drawing;
+
+    let next!: DrawingsState;
+    expect(() => {
+      next = reducer(initial(), DrawingsActions.restoreDrawings({ drawings: [good, ownerless] }));
+    }).not.toThrow();
+
+    expect(next.entities).toEqual({ d1: good });
+    expect(next.ownerIndex).toEqual({ 'panel:panel-1': ['d1'] });
+    expect(next.nextZ).toBe(2); // only the valid record's zIndex counts
+  });
 });
 
 describe('drawings reducer: stale-selection invalidation on sync/link changes', () => {
