@@ -161,9 +161,31 @@ describe('WorkspacesEffects', () => {
   // ─── workspaceRestored — legacy drawing lift (read-time, parse-don't-trust) ─
 
   describe('workspaceRestored — legacy drawing lift', () => {
-    it('drawings missing `owner` (pre-RFC-017 IndexedDB records) hydrate as fully-formed Drawings owned by a real panel', async () => {
+    it('drawings missing `owner` (pre-RFC-017 IndexedDB records) hydrate owned by the REAL panel that matches the symbol, not the single-panel migration default', async () => {
       setupTestBed();
-      const { layout, panels } = singlePanelLayoutFor(SYMBOL, 'M1');
+      // Two-panel layout where the panel matching SYMBOL is NOT the first one
+      // overall: only a genuine `ws.layout`/`ws.panels` read (not a fallback
+      // that ignores them) can land on 'panel-b' here. An implementation that
+      // always used `singlePanelLayoutFor` would produce 'panel-migrated-1'
+      // instead and this assertion would catch it.
+      const layout = {
+        tabs: [
+          {
+            id: 'tab-1',
+            name: 'Principal',
+            template: '2h' as const,
+            cells: [
+              { panelIds: ['panel-a'], activePanelId: 'panel-a' },
+              { panelIds: ['panel-b'], activePanelId: 'panel-b' },
+            ],
+          },
+        ],
+        activeTabId: 'tab-1',
+      };
+      const panels = {
+        'panel-a': { id: 'panel-a', symbol: OTHER, timeframe: 'M1' as const, linkGroupId: null },
+        'panel-b': { id: 'panel-b', symbol: SYMBOL, timeframe: 'M1' as const, linkGroupId: null },
+      };
       const legacyItem = {
         id: 'd1',
         kind: 'line' as const,
@@ -188,7 +210,7 @@ describe('WorkspacesEffects', () => {
               {
                 id: 'd1',
                 symbol: SYMBOL,
-                owner: { type: 'panel', id: 'panel-migrated-1' },
+                owner: { type: 'panel', id: 'panel-b' },
                 kind: 'line',
                 p1: { time: 0, price: 1.1 },
                 p2: { time: 10, price: 1.2 },
@@ -425,12 +447,21 @@ describe('WorkspacesEffects', () => {
       ]);
     });
 
-    it('2r4. thenRestore without layout/panels/linkGroups (legacy .session.json export) → no restoreLayout/restoreGroups dispatched (RFC-011 Task 5)', async () => {
+    it('2r4. thenRestore without layout/panels/linkGroups (legacy .session.json export) lifts owner-less drawings against the installed layout instead of dropping them, no restoreLayout/restoreGroups dispatched', async () => {
       setupTestBed();
       db.getWorkspace!.mockResolvedValue(undefined);
 
       const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
       const trading = defaultTradingData();
+      // A genuinely legacy `.session.json` export: a bare {id,kind,p1,p2}
+      // item with no `owner` at all (never a Drawing at runtime, whatever
+      // the `Drawing[]` cast at the call site claims).
+      const legacyItem = {
+        id: 'd1',
+        kind: 'line' as const,
+        p1: { time: 0, price: 1.1 },
+        p2: { time: 10, price: 1.2 },
+      };
 
       const p = effects.switch$.pipe(take(7), toArray()).toPromise();
       actions$.next(
@@ -440,7 +471,7 @@ describe('WorkspacesEffects', () => {
           thenLoad: [csvH1],
           thenRestore: {
             trading,
-            drawings: [],
+            drawings: [legacyItem as never],
             intervalMinutes: 60,
             playbackSpeed: 250,
             replayResolution: 5,
@@ -455,13 +486,98 @@ describe('WorkspacesEffects', () => {
         }),
         MarketActions.csvLoaded(csvH1),
         TradingActions.restoreSession({ trading }),
-        DrawingsActions.restoreDrawings({ drawings: [] }),
+        // getWorkspace resolved undefined → no persisted layout for this
+        // symbol → the installed layout is the single-panel migration
+        // default, and that IS the panel this drawing must land on.
+        DrawingsActions.restoreDrawings({
+          drawings: [
+            {
+              id: 'd1',
+              symbol: SYMBOL,
+              owner: { type: 'panel', id: 'panel-migrated-1' },
+              kind: 'line',
+              p1: { time: 0, price: 1.1 },
+              p2: { time: 10, price: 1.2 },
+              zIndex: 0,
+              locked: false,
+              visible: true,
+            },
+          ],
+        }),
         MarketActions.changeTimeframe({ tf: 'H1' }),
         ReplayActions.changeSpeed({ msPerCandle: 250 }),
         ReplayActions.setReplayResolution({ minutes: 5 }),
       ]);
       expect(result!.some((a) => a.type === LayoutActions.restoreLayout.type)).toBe(false);
       expect(result!.some((a) => a.type === LinkGroupsActions.restoreGroups.type)).toBe(false);
+    });
+
+    it('2r5. thenRestore without layout/panels, targeting a workspace with its OWN persisted multi-panel layout, resolves owner against THAT layout (not the single-panel fallback)', async () => {
+      setupTestBed();
+      const { layout: ownLayout, panels: ownPanels } = singlePanelLayoutFor(OTHER, 'M1');
+      // Give the target workspace a real second panel matching SYMBOL, so a
+      // naive `singlePanelLayoutFor(SYMBOL, ...)` fallback (which would mint
+      // 'panel-migrated-1', a panel that does not exist here) is
+      // distinguishable from correctly reading the target's own layout.
+      const layout = {
+        ...ownLayout,
+        tabs: [
+          {
+            ...ownLayout.tabs[0],
+            cells: [...ownLayout.tabs[0].cells, { panelIds: ['panel-b'], activePanelId: 'panel-b' }],
+          },
+        ],
+      };
+      const panels = {
+        ...ownPanels,
+        'panel-b': { id: 'panel-b', symbol: SYMBOL, timeframe: 'M1' as const, linkGroupId: null },
+      };
+      const ws = workspace({ symbol: SYMBOL, layout, panels });
+      db.getWorkspace!.mockResolvedValue(ws);
+
+      const csvH1 = { tf: 'H1' as const, candles: series(3), fileName: 'h1.csv' };
+      const trading = defaultTradingData();
+      const legacyItem = {
+        id: 'd1',
+        kind: 'line' as const,
+        p1: { time: 0, price: 1.1 },
+        p2: { time: 10, price: 1.2 },
+      };
+
+      const p = effects.switch$.pipe(take(7), toArray()).toPromise();
+      actions$.next(
+        WorkspacesActions.switchAsset({
+          symbol: SYMBOL,
+          selectedTfs: ['H1'],
+          thenLoad: [csvH1],
+          thenRestore: {
+            trading,
+            drawings: [legacyItem as never],
+            intervalMinutes: 60,
+            playbackSpeed: 250,
+            replayResolution: 5,
+          },
+        }),
+      );
+
+      const result = await p;
+      expect(result![3]).toEqual(
+        DrawingsActions.restoreDrawings({
+          drawings: [
+            {
+              id: 'd1',
+              symbol: SYMBOL,
+              owner: { type: 'panel', id: 'panel-b' },
+              kind: 'line',
+              p1: { time: 0, price: 1.1 },
+              p2: { time: 10, price: 1.2 },
+              zIndex: 0,
+              locked: false,
+              visible: true,
+            },
+          ],
+        }),
+      );
     });
 
     it('3. thenImport with trades → [workspaceRestored, sessionImported, goToTime(lastClose)]', async () => {

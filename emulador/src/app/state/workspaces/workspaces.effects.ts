@@ -40,35 +40,58 @@ import {
 import { singlePanelLayoutFor } from '../../services/session-migration';
 
 /**
- * Read-time shape-guard (parse, don't trust) for `Workspace.drawings` records
- * written before ownership existed: an item missing `owner` is legacy and is
- * lifted with the workspace's own symbol + its own layout's matching panel
- * (falling back to `singlePanelLayoutFor` when the workspace predates
- * RFC-011's persisted layout/panels); an already owner-tagged item passes
- * through untouched. `ownerPanelFor` is resolved at most once per call (it
- * depends only on symbol/layout/panels, not on the item), and identity is
- * preserved when nothing needed lifting.
+ * All-or-nothing resolution of the (layout, panels) pair that should own a
+ * symbol's drawings: both fields present -> those, verbatim; otherwise the
+ * migration-default single-panel layout for the given symbol/timeframe. Pure
+ * and total (never partially-defined), so every caller gets a real,
+ * self-consistent layout to resolve an owner against.
  */
-function liftWorkspaceDrawings(ws: Workspace): Drawing[] {
-  const items = ws.drawings ?? [];
-  let changed = false;
-  let layout: WorkspaceLayout | undefined;
-  let panels: Record<string, PanelDescriptor> | undefined;
-  let ownerPanelId: string | null = null;
+function resolveOwnerLayout(
+  symbol: string,
+  activeTf: Timeframe | null | undefined,
+  layout: WorkspaceLayout | undefined,
+  panels: Record<string, PanelDescriptor> | undefined,
+): { layout: WorkspaceLayout; panels: Record<string, PanelDescriptor> } {
+  if (layout && panels) return { layout, panels };
+  return singlePanelLayoutFor(symbol, activeTf ?? 'M1');
+}
 
+/**
+ * Lifts every legacy (owner-less) item in `items` against a resolved
+ * (layout, panels) pair: an item missing `owner` gets the symbol's matching
+ * panel and the fields legacy records never carried; an already owner-tagged
+ * item passes through untouched. `ownerPanelFor` is resolved at most once per
+ * call (it depends only on symbol/layout/panels, not on the item), and
+ * identity is preserved when nothing needed lifting. Shared by every read
+ * site that can receive a pre-ownership drawing, so they never drift apart.
+ */
+function liftLegacyDrawings(
+  items: Drawing[],
+  symbol: string,
+  layout: WorkspaceLayout,
+  panels: Record<string, PanelDescriptor>,
+): Drawing[] {
+  let changed = false;
+  let ownerPanelId: string | null = null;
   const lifted = items.map((item, index) => {
     if ((item as Partial<Drawing>).owner != null) return item;
     changed = true;
-    if (!layout || !panels) {
-      const fallback = singlePanelLayoutFor(ws.symbol, ws.activeTf ?? 'M1');
-      layout = ws.layout ?? fallback.layout;
-      panels = ws.panels ?? fallback.panels;
-    }
-    ownerPanelId ??= ownerPanelFor(ws.symbol, layout, panels);
-    return liftLegacyDrawing(item as unknown as LegacyDrawingItem, ws.symbol, ownerPanelId, index);
+    ownerPanelId ??= ownerPanelFor(symbol, layout, panels);
+    return liftLegacyDrawing(item as unknown as LegacyDrawingItem, symbol, ownerPanelId, index);
   });
-
   return changed ? lifted : items;
+}
+
+/**
+ * Read-time shape-guard (parse, don't trust) for `Workspace.drawings`
+ * records written before ownership existed: lifts against the workspace's
+ * own symbol and its own persisted layout (falling back to
+ * `singlePanelLayoutFor` for a workspace saved before layout/panels were
+ * persisted).
+ */
+function liftWorkspaceDrawings(ws: Workspace): Drawing[] {
+  const { layout, panels } = resolveOwnerLayout(ws.symbol, ws.activeTf, ws.layout, ws.panels);
+  return liftLegacyDrawings(ws.drawings ?? [], ws.symbol, layout, panels);
 }
 
 /** Applies `liftWorkspaceDrawings`, returning the same reference when nothing needed lifting. */
@@ -278,7 +301,23 @@ export class WorkspacesEffects {
     // `thenGoTo` below, exactly as in the wizard flow.
     if (thenRestore) {
       actions.push(TradingActions.restoreSession({ trading: thenRestore.trading }));
-      actions.push(DrawingsActions.restoreDrawings({ drawings: thenRestore.drawings }));
+      // A `.session.json` restore can carry drawings from before ownership
+      // existed (a legacy export with bare {id,kind,p1,p2} items), possibly
+      // with no layout/panels of its own — in that case nothing below
+      // dispatches restoreLayout, so the owner must be resolved against
+      // whichever layout the workspaceRestored action above actually
+      // installed for this symbol (the target workspace's own persisted
+      // layout, or its single-panel migration default), never a layout
+      // minted fresh for an unrelated context.
+      const { layout: ownerLayout, panels: ownerPanels } =
+        thenRestore.layout && thenRestore.panels
+          ? { layout: thenRestore.layout, panels: thenRestore.panels }
+          : resolveOwnerLayout(symbol, ws?.activeTf, ws?.layout, ws?.panels);
+      actions.push(
+        DrawingsActions.restoreDrawings({
+          drawings: liftLegacyDrawings(thenRestore.drawings, symbol, ownerLayout, ownerPanels),
+        }),
+      );
       if (thenRestore.layout && thenRestore.panels) {
         actions.push(
           LayoutActions.restoreLayout({ layout: thenRestore.layout, panels: thenRestore.panels }),
