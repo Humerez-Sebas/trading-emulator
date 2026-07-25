@@ -47,8 +47,10 @@
 
 **Run status: all in-scope tasks complete.** Final whole-branch audit #1 returned FAIL
 (1 High, 1 Medium, 4 Low); the fix wave landed (`f2d8a4a`, `102b97e`, `9e0c744`,
-`b84f5a4`). Remaining gate: a scoped re-audit of that fix wave returning PASS before the
-PR to `develop` is opened.
+`b84f5a4`). The scoped re-audit of that fix wave then returned **FAIL on one Medium
+(M-1)**, caused by an error in the orchestrator's own fix brief. **RUN PAUSED here at the
+owner's request (session limit).** Next step: the M-1 fix, brief ready at
+`.superpowers/sdd/m1-fix-brief.md`. Then a narrow re-audit, then the PR to `develop`.
 
 ### FINAL WHOLE-BRANCH AUDIT #1: **FAIL** (1 High, 1 Medium, 4 Low) — 2026-07-25
 
@@ -145,6 +147,83 @@ Findings:
   changes real output on the exact path it tests — **orchestrator verified this is a
   strengthening, not a weakening**: it now expects the normalized group
   (`syncDrawings: false, syncTrades: true`) instead of the un-normalized fixture.
+
+### FINAL FIX-WAVE RE-AUDIT: **FAIL** (1 Medium) — 2026-07-25
+
+All six gates re-run personally: tsc app ✓, tsc spec ✓, `ng test` **156 files / 1934
+tests**, lint 0, build `648.33 kB` with no new chunk types, dist vitest sentinel clean.
+Arithmetic re-derived independently (`git grep` at both endpoints): 1922 → 1934 = **+12**,
+with +13 `it(` / −1 (the −1 is `2r` **renamed in place**, its ordered-action-list assertion
+surviving verbatim), and `--diff-filter=A|D` both empty → 156 files correct. Every branch
+invariant re-run and clean after the fix wave.
+
+**Four of the five findings confirmed genuinely closed**, each by adversarial reading:
+- **H1 closed.** Re-homing keys on each item's **own** `symbol` (cached per distinct
+  symbol); the legacy branch still correctly uses the workspace symbol since legacy items
+  carry none; reference stability asserted with `.toBe`; **the IndexedDB read path is
+  provably unchanged** (it omits the optional parameter and the check short-circuits before
+  running); the rewritten specs assert the OUTCOME, replacing the byte-for-byte passthrough
+  assertion that had locked the bug in.
+- **M1 closed, and NO fourth path exists** — the auditor enumerated every gate in
+  `composePanelDrawings` (owner membership, `hideSharedDrawings`, `group.syncDrawings`,
+  `linkGroupId`, symbol, `visible`), confirmed there is no `Set Panel Symbol` action, that
+  asset switch resets `selection: {}`, and that `setDrawingVisible` has **no dispatcher
+  anywhere in app code**.
+- **L1 closed and the deviation ruled sound and superior to the brief.** It re-derived the
+  implementer's empirical claim and confirmed the literal brief would not have closed the
+  scenario. It also specifically hunted the revision-reuse hazard (clearing a **live**
+  drawing's revision, letting it re-bump from 0 into a value that falsely re-validates an
+  old command) and proved it **unreachable**: since no action mutates an existing drawing's
+  owner, every command in a history epoch references the same owner key, so
+  `staleIds \ liveIds` contains only ids whose entity is already gone. Technical spec §5's
+  rulings all preserved; cost bounded (panels × 2 × `HISTORY_LIMIT`, on an explicit user
+  action).
+- **L2 closed** — `linkGroupsFeature` has exactly two state entry points and both normalize;
+  `createGroup` is exempt because `createLinkGroup` sets both flags explicitly; the
+  cloud-open write reaches `migrateV2ToV3` too. **L3 closed** — verified against all three
+  producers.
+- Both disclosed consequences check out: the `resetSelectors()` addition is verbatim
+  `testing.md`'s mandatory pattern and fixes the leak **at its source** (no victim spec
+  adapted, no assertion relaxed), and the `sesiones-page` assertion change is a
+  strengthening.
+
+**M-1 (Medium, blocking) — caused by an ERROR IN THE ORCHESTRATOR'S OWN FIX BRIEF.**
+The brief specified "the groups currently in the store" as the fallback source for
+`resolvableGroupIds` (`workspaces.effects.ts:363-367`). That is the **outgoing** workspace's
+groups: nothing in `doSwitch` is dispatched until the action array is returned, and
+`restoreGroups` is never dispatched on this path (`sesiones-page.component.ts:734-740` is
+the only `thenRestore` construction site and sets no `linkGroups`), so the store branch is
+the **only live branch in production**, not a fallback. The panel branch reads `ws.panels`
+(the incoming workspace) — the group branch should read `ws.linkGroups` and does not.
+**Empirically reproduced** by the auditor against the real effect: a shared drawing owned by
+a live group is **flattened to a local panel owner** on a cross-workspace `.session.json`
+import, then persisted — and since no action changes an existing drawing's owner, it is
+irreversible in-app. This is a regression the fix wave introduced and is precisely the
+automatic reassignment RFC-017 §7 forbids; the addendum §6 licenses re-homing only for an
+owner that does **not** resolve, and here it does. Guard spec `2r7` missed it by encoding a
+state that cannot arise (`selectCurrentAsset: null` with groups already in the store).
+**Fix + the three specs it needs: `.superpowers/sdd/m1-fix-brief.md`.**
+
+Informational, recorded so it is not rediscovered as new: `ownerPanelFor` returns `''` for
+a panel-less layout, so a corrupted record could mint `owner: {type:'panel', id:''}` —
+identical exposure existed on the legacy-lift branch before this fix wave; layout
+invariants make it unreachable.
+
+### PR body — what the auditor requires it to disclose (once M-1 is closed and re-audited)
+
+Owner re-anchoring at the `.session.json` hydration boundary (RFC addendum §6): what
+re-homes, what does not, and that the IndexedDB read path is deliberately excluded · the
+panel/tab close cascade (owner decision, RFC §13.1) · `SessionPayloadV3` + V2→V3 migration
++ IndexedDB lift, with the same-symbol-multi-panel residual limitation (§13.5) · the two
+persistence limitations ruled no-fix (§13.4) · the RFC-014 G3 `DrawingSnapshot` fidelity
+caveat (§13.3) · Tasks 7–8 out of scope, §5.1 trade gating not implemented this run
+(§13.2) · the L1 deviation and why the brief's literal fix was empirically insufficient ·
+`normalizeLinkGroup` on all three hydration paths, `syncTrades` defaulting true per D17.I
+(inert until TEDS) · the pre-existing `isolate:false` selector leak fixed in
+`workspaces.effects.spec.ts` · bundle 639.07 → 648.33 kB, no new dependencies, no new chunk
+types, `CLAUDE.md`'s "~609 kB" stale independently of this branch · the `ChartComponent`
+keyboard-wiring coverage gap, accepted and non-blocking, with the standing recommendation
+to close it before more keyboard surface lands.
 
 ## Task entries
 
