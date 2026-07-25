@@ -65,9 +65,12 @@ describe('WorkspacesEffects', () => {
     effects = TestBed.inject(WorkspacesEffects);
     store.overrideSelector(selectCurrentAsset, null);
     store.overrideSelector(selectWorkspaceMetaSnapshot, metaSnap);
-    // Default: no groups currently in the store. A `thenRestore` without its
-    // own `linkGroups` reads this one-shot to resolve group-owned drawing
-    // owners against; tests exercising that path override it explicitly.
+    // Inert for production: the effect never resolves group-owned drawing
+    // owners against the store — only against whichever workspace this
+    // restore installs (`thenRestore.linkGroups` if present, else the
+    // incoming workspace's own persisted `linkGroups`). Left at `{}` so
+    // 2r7/2r7b/2r7c can each override it independently, which is what lets
+    // 2r7b demonstrate that the store's contents never affect the outcome.
     store.overrideSelector(linkGroupsFeature.selectGroups, {});
     store.refreshState();
   }

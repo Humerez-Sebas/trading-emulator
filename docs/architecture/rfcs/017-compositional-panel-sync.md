@@ -415,12 +415,28 @@ sin decirlo.
    re-ancla mediante la misma regla de primer-panel-que-muestra-el-símbolo
    que usa la migración V2→V3 (`ownerPanelFor`) — un grupo se considera
    resoluble si el propio archivo trae `linkGroups`, o si no los trae, si ese
-   id de grupo sigue existiendo en el store en el momento de la restauración
-   (así reimportar sobre el mismo workspace que aún conserva sus grupos no
-   aplana la capa compartida). Esto es un acto de migración en un límite de
-   hidratación — exactamente igual que `migrateV2ToV3` asignando owners — no
-   una mutación de propiedad en tiempo de ejecución, así que el Invariante 1
-   se mantiene. Antes de esta corrección, un dibujo con owner ya no resoluble
-   pasaba sin validar y quedaba huérfano (invisible, sin poder borrarse,
-   persistido para siempre) — una regresión frente a `develop` para el caso
-   canónico de backup/restore entre perfiles o máquinas.
+   id de grupo existe entre los grupos del workspace que esa restauración
+   instala (sus propios `linkGroups` persistidos, no los del store). Resolver
+   contra el workspace que se está instalando es lo que hace correctos ambos
+   casos a la vez: reimportar sobre ese mismo workspace sigue encontrando sus
+   propios grupos vivos (porque son exactamente los que quedan instalados), y
+   una importación cruzada entre workspaces encuentra los grupos persistidos
+   del destino en lugar de aplanar la capa compartida contra el conjunto de
+   grupos de un workspace de salida no relacionado. Esto es un acto de
+   migración en un límite de hidratación — exactamente igual que
+   `migrateV2ToV3` asignando owners — no una mutación de propiedad en tiempo
+   de ejecución, así que el Invariante 1 se mantiene. Antes de esta
+   corrección, un dibujo con owner ya no resoluble pasaba sin validar y
+   quedaba huérfano (invisible, sin poder borrarse, persistido para siempre)
+   — una regresión frente a `develop` para el caso canónico de backup/restore
+   entre perfiles o máquinas.
+
+   **Nota de corrección:** la primera redacción de este punto (introducida
+   junto con el propio fix de re-anclaje) describía por error la regla
+   intermedia — resolver contra los grupos *del store* en el momento de la
+   restauración — que un re-audit posterior encontró defectuosa: el store en
+   ese punto de `doSwitch` todavía contiene los grupos del workspace
+   *saliente*, no el que se está restaurando, así que una importación entre
+   workspaces distintos podía aplanar un dibujo de grupo a un owner de panel
+   local de forma irreversible. La regla ya corregida es la que describe el
+   párrafo anterior.
