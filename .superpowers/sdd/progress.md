@@ -40,7 +40,7 @@
 - [x] Task 3: Entity store + owner index + per-panel selection + mapper composition + chart cutover ⟨per-task audit⟩ — implemented 2026-07-24, audit pending
 - [x] Task 4: Panel-scoped undo/redo with revision guard (D17.F) — DONE 2026-07-24
 - [x] Task 5: Clipboard (D17.G) + per-panel shared-layer toggle (D17.H) — DONE 2026-07-24
-- [ ] Task 6: SessionPayloadV3 + migration chain + IndexedDB lift (D17.J) ⟨per-task audit⟩
+- [x] Task 6: SessionPayloadV3 + migration chain + IndexedDB lift (D17.J) ⟨per-task audit⟩ — implemented 2026-07-24, audit pending
 - [ ] ~~Task 7: Trade layer gating + Ghost Rails primitives~~ — SUPERSEDED by TEDS (out of scope)
 - [ ] ~~Task 8: Position HUD chip + Design System token registration~~ — SUPERSEDED by TEDS (out of scope)
 - [ ] Task 9: Finalization — invariant greps, build, docs closure
@@ -368,10 +368,62 @@ New findings:
   Also worth reading: `applyNewDrawing` sits on Task 4's audited history path, and the
   clipboard is runtime-only (reset by both hydration paths, never persisted or synced).
 
-### RUN STATE
+### Task 6 — `SessionPayloadV3` + V2→V3 migration + IndexedDB lift (D17.J) — IMPLEMENTED (audit pending)
 
-Tasks 1, 2, 3 (+ two fix waves), 4, 5 complete and green at **155 files / 1905 tests**.
-Next: **Task 6 ⟨per-task audit REQUIRED⟩** → Task 9 → final whole-branch audit → PR to
-`develop`.
+- **Commits:** `076e73c` (V3 wire shape + `migrateV2ToV3`), `dfbf56d` (toPayload/fromPayload
+  cutover + V2 bridge deletion), `a7e9983` (IndexedDB read-time lift + reducer guard),
+  `0fd060d` (new specs), `4ef196b` (STOP-exception adaptations).
+  Range `133c09e..4ef196b`.
+- **Evidence (implementer, raw, exit 0 on all four):** tsc app ✓, tsc spec ✓, lint 0,
+  `ng test` **156 files / 1921 tests passed**.
+- **Test-count arithmetic (orchestrator-verified):** counted `it()` in the range —
+  **+24 added, −8 removed = net +16**; 1905 → 1921 ✓. Files 155 → 156 = the single new
+  `session-migration.v3.spec.ts`. The 8 removals are the deleted `groupDrawingsBySymbol`
+  bridge tests plus superseded V2-shape cases. Consistent.
+- **Scope (orchestrator diff-scan):** 19 files, +707/−174. All in the brief's declared
+  scope or its STOP-exception class. One out-of-domain touch,
+  `state/playbook/playbook-invariants.spec.ts`, is a **single-line fixture update**
+  (`drawings: {}` → `drawings: { version: 2, items: [] }`) forced by the `PayloadInput`
+  type change — verified minimal, no assertion touched.
+- **Deviation — REQUIRES ATTENTION (process):** the implementer **self-disclosed that it
+  wrote the production code BEFORE the new specs** (`session-migration.v3.spec.ts`, the
+  reducer-guard test, the workspace-legacy-lift test), inverting the mandatory TDD order.
+  The tests exist and were run fresh (the first full run surfaced exactly the 5 expected
+  STOP-exception failures and nothing outside that class), but they were never watched red
+  against a missing implementation. **This is the material risk of this task**: specs
+  written after the code can encode what the code does rather than what the spec requires.
+  Forwarded to the audit as its primary lead.
+- **Deviations — inert (2, per report):** `migrateV2ToV3` always re-derives
+  owner/zIndex/locked/visible rather than conditionally preserving an already-tagged item
+  (harmless — no real V2 payload can carry one); `isSessionPayloadV3` adds a
+  `layout`/`panels` shape check beyond the brief's literal spec (strictly more
+  conservative).
+- **Observation for the auditor to rule on (orchestrator grep, not pre-judged):** three
+  NEW non-spec comments carry decision/RFC citations, which the plan's Global Constraints
+  forbid and which branch commit `257fdea` and the Task 3 audit's L1 both enforced —
+  `session-sync.mapping.ts` ("(D9)"), `session-sync.models.ts` ("V3 extends V2 in place
+  (D9)"), `workspaces.effects.ts` ("RFC-011's persisted layout/panels"). Mitigating
+  context: the models one deliberately parallels the adjacent pre-existing V2 doc comment,
+  which uses the identical phrasing.
+- **FINAL-AUDIT ATTENTION:** the two genuinely new logic blocks are `migrateV2ToV3` and
+  `liftWorkspaceDrawings`/`withLiftedDrawings`; and the cloud-open assertion in
+  `sesiones-page.component.spec.ts` was **rewritten rather than merely re-shaped** — its
+  behavioral proof changed, so it needs its own read.
+
+### RUN STATE — PAUSED at owner's request (credit conservation)
+
+Stopped after Task 6's implementation. **Nothing has been dispatched since.**
+**Next step on resume: the Task 6 per-task audit** (`branch-auditor`, Opus) — the run
+protocol requires a PASS before Task 9. The dispatch brief is ready at
+`.superpowers/sdd/task-6-audit-brief.md`.
+Remaining after that: Task 9 (invariant greps, `npm run build`, docs closure) → final
+whole-branch audit → PR to `develop`.
+
+Task 9 carries a docs backlog accumulated by the audits, recorded here so it is not lost:
+RFC deviations section must record **the owner's panel-close cascade decision** and the
+**`selectActiveAssetVisibleDrawings` fidelity caveat** (its doc comment overclaims and
+should be softened); sweep the stale "five composition inputs" comment at
+`chart-model-mapper.composition.spec.ts:261`; and `CLAUDE.md`'s accepted bundle overage is
+stale — it says "~609 kB", the measured figure is now **642.43 kB**.
 
 (further entries recorded as tasks complete)
