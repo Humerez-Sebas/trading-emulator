@@ -105,7 +105,9 @@ export interface PanelDrawingsView {
  * an empty shared layer rather than throwing. The panel's own selection is
  * re-resolved against the composed set: pointing at a drawing that fell out
  * of composition (deleted, hidden, wrong symbol, unlinked) renders as
- * unselected.
+ * unselected. `descriptor.hideSharedDrawings` drops the shared union for
+ * THIS panel only — the entities and every other member panel's own
+ * composition are untouched.
  */
 export function composePanelDrawings(
   entities: Record<string, StateDrawing>,
@@ -118,7 +120,7 @@ export function composePanelDrawings(
   const localIds = ownerIndex[ownerKeyOf({ type: 'panel', id: descriptor.id })] ?? [];
   const group = descriptor.linkGroupId != null ? groups[descriptor.linkGroupId] : undefined;
   const sharedIds =
-    group?.syncDrawings && descriptor.linkGroupId != null
+    !descriptor.hideSharedDrawings && group?.syncDrawings && descriptor.linkGroupId != null
       ? (ownerIndex[ownerKeyOf({ type: 'group', id: descriptor.linkGroupId })] ?? [])
       : [];
   const ids = sharedIds.length ? [...localIds, ...sharedIds] : localIds;

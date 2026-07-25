@@ -268,6 +268,71 @@ describe('ChartModelMapper.panelDrawings$ composition (RFC-017 pipeline)', () =>
     expect(second.items).toBe(first.items); // same array instance, not a re-allocated equal one
   });
 
+  describe('hideSharedDrawings composition filter', () => {
+    it('a linked panel with hideSharedDrawings composes local drawings only, while a sibling panel in the same group still composes the shared ones', () => {
+      const local = drawing({ id: 'd1', owner: { type: 'panel', id: 'p1' } });
+      const shared = drawing({ id: 'd2', owner: { type: 'group', id: 'g1' } });
+      const entities = { d1: local, d2: shared };
+      const ownerIndex = { 'panel:p1': ['d1'], 'group:g1': ['d2'] };
+      const groups = { g1: group({ syncDrawings: true }) };
+
+      const hidingMapper = mapperFor(
+        descriptor({ id: 'p1', linkGroupId: 'g1', hideSharedDrawings: true }),
+        entities,
+        ownerIndex,
+        {},
+        groups,
+      );
+      expect(latest(hidingMapper).items).toEqual([local]);
+
+      const siblingMapper = mapperFor(
+        descriptor({ id: 'p2', linkGroupId: 'g1' }),
+        entities,
+        ownerIndex,
+        {},
+        groups,
+      );
+      expect(latest(siblingMapper).items).toEqual([shared]); // the sibling still sees the shared layer
+    });
+
+    it('the toggle does not delete or alter any entity — the shared drawing still exists, untouched', () => {
+      const shared = drawing({ id: 'd1', owner: { type: 'group', id: 'g1' } });
+      const entities = { d1: shared };
+      const ownerIndex = { 'group:g1': ['d1'] };
+      const groups = { g1: group({ syncDrawings: true }) };
+      const mapper = mapperFor(
+        descriptor({ id: 'p1', linkGroupId: 'g1', hideSharedDrawings: true }),
+        entities,
+        ownerIndex,
+        {},
+        groups,
+      );
+
+      expect(latest(mapper).items).toEqual([]); // composed away for THIS panel...
+      expect(entities['d1']).toBe(shared); // ...but the entity itself is untouched
+    });
+
+    it('reference stability still holds across an unrelated emission when hideSharedDrawings is set', () => {
+      const local = drawing({ id: 'd1', owner: { type: 'panel', id: 'p1' } });
+      const entities = { d1: local };
+      const ownerIndex = { 'panel:p1': ['d1'] };
+      const mapper = mapperFor(
+        descriptor({ id: 'p1', hideSharedDrawings: true }),
+        entities,
+        ownerIndex,
+        {},
+        {},
+      );
+      const first = latest(mapper);
+
+      store.overrideSelector(selectActiveTfShortfall, 456);
+      store.refreshState();
+
+      const second = latest(mapper);
+      expect(second.items).toBe(first.items); // same array instance, not a re-allocated equal one
+    });
+  });
+
   it('8 mapper instances each compose only their own panel drawings set (no cross-panel memo thrash)', () => {
     const entities: Record<string, Drawing> = {};
     const ownerIndex: Record<string, readonly string[]> = {};
