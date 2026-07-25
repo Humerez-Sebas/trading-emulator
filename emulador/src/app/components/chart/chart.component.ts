@@ -48,6 +48,7 @@ import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
 import { resolveDrawingTarget } from '../../state/drawings/drawing-ownership';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
+import { layoutFeature } from '../../state/layout/layout.reducer';
 import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
 import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
 import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
@@ -462,6 +463,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   /** This panel's composed drawing layer: local ∪ shared group, symbol-filtered, z-ordered. */
   private panelDrawings: PanelDrawingsView = { items: [], selectedId: null };
   private linkGroups = this.store.selectSignal(linkGroupsFeature.selectGroups);
+  /** Gates window-level keyboard shortcuts (Delete, undo/redo) to the ONE focused panel — every
+   * chart instance shares the same window keydown listener, so N panels would otherwise all react. */
+  private focusedPanelId = this.store.selectSignal(layoutFeature.selectFocusedPanelId);
   /** Resolves a panel's `''` sentinel symbol to the active asset before a new drawing is stamped. */
   private currentAsset = this.store.selectSignal(selectCurrentAsset);
   private shiftSecs = 0; // time zone offset applied to the chart
@@ -490,16 +494,36 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     y2: number;
   } | null = null;
 
+  /** True while the user is typing into a field; the browser's own text-undo must win there. */
+  private isTypingTarget(e: KeyboardEvent): boolean {
+    const el = e.target as HTMLElement | null;
+    return !!el && (el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName));
+  }
+
   // DOM listeners kept by reference so they can be removed
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.destroyed) return;
     if (e.key === 'Shift') this.shiftKey = true;
-    if (e.key === 'Delete' && this.panelDrawings.selectedId) {
-      const panelId = this.mapper.descriptor()?.id;
-      if (panelId) {
+
+    // Delete/undo/redo are window-level (one listener per panel instance), so they must be
+    // gated to the ONE focused panel — otherwise a keypress fires in every panel at once.
+    const panelId = this.mapper.descriptor()?.id;
+    if (panelId && panelId === this.focusedPanelId() && !this.isTypingTarget(e)) {
+      if (e.key === 'Delete' && this.panelDrawings.selectedId) {
         this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected({ panelId })));
       }
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          this.zone.run(() => this.store.dispatch(DrawingsActions.undo({ panelId })));
+        } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+          e.preventDefault();
+          this.zone.run(() => this.store.dispatch(DrawingsActions.redo({ panelId })));
+        }
+      }
     }
+
     if (e.key === 'Escape') {
       if (this.placing()) this.zone.run(() => this.cancelPlacing());
       if (this.menu()) this.zone.run(() => this.menu.set(null));
