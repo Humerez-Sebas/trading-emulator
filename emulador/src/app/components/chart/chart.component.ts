@@ -45,7 +45,7 @@ import {
 import { DialogService } from '../ui/dialog.service';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
-import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
+import { ClipboardEntry, Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
 import { resolveDrawingTarget } from '../../state/drawings/drawing-ownership';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import { layoutFeature } from '../../state/layout/layout.reducer';
@@ -468,6 +468,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private focusedPanelId = this.store.selectSignal(layoutFeature.selectFocusedPanelId);
   /** Resolves a panel's `''` sentinel symbol to the active asset before a new drawing is stamped. */
   private currentAsset = this.store.selectSignal(selectCurrentAsset);
+  /** The one-slot session clipboard: geometry and kind only, runtime-only, never persisted. */
+  private clipboard = this.store.selectSignal(drawingsFeature.selectClipboard);
   private shiftSecs = 0; // time zone offset applied to the chart
   private accent = CHART_ACCENT;
   private up = DARK_CHART_COLORS.upColor;
@@ -520,6 +522,18 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
           e.preventDefault();
           this.zone.run(() => this.store.dispatch(DrawingsActions.redo({ panelId })));
+        } else if (key === 'c' && this.panelDrawings.selectedId) {
+          // a live text selection means the user is copying text, not a drawing —
+          // the browser's native copy must win (the isTypingTarget guard above only
+          // covers focused form fields, not a text selection elsewhere in the DOM).
+          const selection = window.getSelection();
+          if (!selection || selection.isCollapsed) {
+            e.preventDefault();
+            this.zone.run(() => this.store.dispatch(DrawingsActions.copySelected({ panelId })));
+          }
+        } else if (key === 'v' && this.clipboard()) {
+          e.preventDefault();
+          this.zone.run(() => this.pasteClipboardAt(panelId));
         }
       }
     }
@@ -1242,6 +1256,34 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       visible: true,
     };
     this.store.dispatch(DrawingsActions.addDrawing({ panelId: descriptor.id, drawing }));
+  }
+
+  /**
+   * Builds the new `Drawing` from the clipboard's captured geometry and
+   * dispatches the paste — component-side, so ids are minted here and never
+   * in the reducer (purity). Owner resolution reuses `resolveDrawingTarget`,
+   * the exact same rule hand-drawn creation uses, so a paste always lands
+   * where this panel would draw by hand. A clipboard entry is required to
+   * build a drawing at all; an empty clipboard is simply nothing to paste.
+   */
+  private pasteClipboardAt(panelId: string): void {
+    const clip: ClipboardEntry | null = this.clipboard();
+    const descriptor = this.mapper.descriptor();
+    if (!clip || !descriptor) return;
+    const symbol = effectivePanelSymbol(descriptor, this.currentAsset());
+    if (!symbol) return;
+    const drawing: Drawing = {
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      symbol,
+      owner: resolveDrawingTarget(descriptor, this.linkGroups()),
+      kind: clip.kind,
+      p1: clip.p1,
+      p2: clip.p2,
+      zIndex: 0, // placeholder — the reducer owns real z-order assignment
+      locked: false,
+      visible: true,
+    };
+    this.store.dispatch(DrawingsActions.pasteClipboard({ panelId, drawing }));
   }
 
   private handleCrosshair(param: MouseEventParams<Time>): void {
