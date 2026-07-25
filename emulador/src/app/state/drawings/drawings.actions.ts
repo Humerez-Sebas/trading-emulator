@@ -36,5 +36,15 @@ export const DrawingsActions = createActionGroup({
     'Undo': props<{ panelId: string }>(),
     /** Pops that panel's redo stack; symmetric with `undo`. */
     'Redo': props<{ panelId: string }>(),
+    /** Captures {kind, p1, p2} from the panel's own selection. No-op when nothing (valid) is selected. */
+    'Copy Selected': props<{ panelId: string }>(),
+    /**
+     * The dispatching component builds `drawing` (fresh id, destination symbol,
+     * owner pre-resolved via `resolveDrawingTarget`, `locked:false`, `visible:true`,
+     * geometry from the clipboard) — purity: ids are minted component-side, never
+     * in the reducer. The reducer lands it exactly like `addDrawing`. No-op when
+     * the clipboard is empty.
+     */
+    'Paste Clipboard': props<{ panelId: string; drawing: Drawing }>(),
   },
 });

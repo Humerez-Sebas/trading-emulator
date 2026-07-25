@@ -17,6 +17,7 @@ const initialState: DrawingsState = {
   nextZ: 0,
   revisions: {},
   history: {},
+  clipboard: null,
 };
 
 /**
@@ -97,6 +98,37 @@ function pushCommand(
 ): Record<string, PanelHistory> {
   const hist = history[panelId] ?? { undo: [], redo: [] };
   return { ...history, [panelId]: { undo: capped([...hist.undo, command]), redo: [] } };
+}
+
+/**
+ * Shared bookkeeping for landing a brand-new drawing (fresh id) into the
+ * store: stamps its real zIndex, appends it to the owner index, bumps its
+ * revision, records the panel's `add` command (undo stack, redo cleared),
+ * and selects it in the acting panel. Used identically by hand-drawn
+ * creation (`addDrawing`) and clipboard paste (`pasteClipboard`) — the only
+ * two paths that mint a new drawing id — so the bookkeeping can never drift
+ * between them.
+ */
+function applyNewDrawing(state: DrawingsState, panelId: string, drawing: Drawing): DrawingsState {
+  const stamped: Drawing = { ...drawing, zIndex: state.nextZ };
+  const key = ownerKeyOf(stamped.owner);
+  const revisions = bumpRevision(state.revisions, stamped.id);
+  const command: DrawingCommand = {
+    kind: 'add',
+    drawingId: stamped.id,
+    before: null,
+    after: stamped,
+    resultRev: revisions[stamped.id],
+  };
+  return {
+    ...state,
+    entities: { ...state.entities, [stamped.id]: stamped },
+    ownerIndex: { ...state.ownerIndex, [key]: [...(state.ownerIndex[key] ?? []), stamped.id] },
+    nextZ: state.nextZ + 1,
+    selection: { ...state.selection, [panelId]: stamped.id },
+    revisions,
+    history: pushCommand(state.history, panelId, command),
+  };
 }
 
 type InverseOutcome = 'stale' | 'locked' | { state: DrawingsState; mirrored: DrawingCommand };
@@ -271,28 +303,10 @@ export const drawingsFeature = createFeature({
     initialState,
     on(DrawingsActions.pickTool, (state, { tool }): DrawingsState => ({ ...state, activeTool: tool })),
 
-    on(DrawingsActions.addDrawing, (state, { panelId, drawing }): DrawingsState => {
-      const stamped: Drawing = { ...drawing, zIndex: state.nextZ };
-      const key = ownerKeyOf(stamped.owner);
-      const revisions = bumpRevision(state.revisions, stamped.id);
-      const command: DrawingCommand = {
-        kind: 'add',
-        drawingId: stamped.id,
-        before: null,
-        after: stamped,
-        resultRev: revisions[stamped.id],
-      };
-      return {
-        ...state,
-        entities: { ...state.entities, [stamped.id]: stamped },
-        ownerIndex: { ...state.ownerIndex, [key]: [...(state.ownerIndex[key] ?? []), stamped.id] },
-        nextZ: state.nextZ + 1,
-        selection: { ...state.selection, [panelId]: stamped.id },
-        activeTool: 'none',
-        revisions,
-        history: pushCommand(state.history, panelId, command),
-      };
-    }),
+    on(DrawingsActions.addDrawing, (state, { panelId, drawing }): DrawingsState => ({
+      ...applyNewDrawing(state, panelId, drawing),
+      activeTool: 'none', // hand-drawn creation returns to selection mode; paste does not
+    })),
 
     on(DrawingsActions.moveDrawing, (state, { panelId, id, p1, p2 }): DrawingsState => {
       const existing = state.entities[id];
@@ -375,6 +389,7 @@ export const drawingsFeature = createFeature({
         activeTool: 'none',
         revisions: {},
         history: {},
+        clipboard: null,
       }),
     ),
 
@@ -388,6 +403,7 @@ export const drawingsFeature = createFeature({
         activeTool: 'none',
         revisions: {},
         history: {},
+        clipboard: null,
       }),
     ),
 
@@ -439,5 +455,20 @@ export const drawingsFeature = createFeature({
     on(DrawingsActions.redo, (state, { panelId }): DrawingsState =>
       popAndApply(state, panelId, 'redo'),
     ),
+
+    // copy is geometry+kind only: no id/owner/locked/visible ever leaves via the clipboard
+    on(DrawingsActions.copySelected, (state, { panelId }): DrawingsState => {
+      const id = state.selection[panelId];
+      if (!id) return state; // nothing selected: identity return
+      const source = state.entities[id];
+      if (!source) return state; // stale selection: identity return
+      return { ...state, clipboard: { kind: source.kind, p1: source.p1, p2: source.p2 } };
+    }),
+
+    // paste lands through the exact same bookkeeping as a hand-drawn add (applyNewDrawing)
+    on(DrawingsActions.pasteClipboard, (state, { panelId, drawing }): DrawingsState => {
+      if (!state.clipboard) return state; // nothing copied: identity return
+      return applyNewDrawing(state, panelId, drawing);
+    }),
   ),
 });

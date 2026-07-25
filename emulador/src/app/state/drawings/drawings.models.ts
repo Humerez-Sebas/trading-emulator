@@ -25,6 +25,17 @@ export interface Drawing {
   visible: boolean;
 }
 
+/**
+ * The one-slot runtime clipboard: geometry and shape only. Identity, owner,
+ * lock and visibility are deliberately NOT captured — what comes back out of
+ * a paste can never smuggle another drawing's identity or ownership.
+ */
+export interface ClipboardEntry {
+  kind: DrawingType;
+  p1: DrawingPoint;
+  p2: DrawingPoint;
+}
+
 /** One recorded drawing lifecycle mutation, invertible for undo/redo. */
 export interface DrawingCommand {
   kind: 'add' | 'move' | 'delete';
@@ -60,6 +71,8 @@ export interface DrawingsState {
   revisions: Record<string, number>;
   /** Runtime-only, panelId -> that panel's undo/redo stacks; never persisted. */
   history: Record<string, PanelHistory>;
+  /** Runtime-only, one-slot session clipboard; never persisted, never synced. */
+  clipboard: ClipboardEntry | null;
 }
 
 /** Standard Fibonacci retracement levels. */
