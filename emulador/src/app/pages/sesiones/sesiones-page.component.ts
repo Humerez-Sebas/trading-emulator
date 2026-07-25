@@ -19,6 +19,7 @@ import { fromPayload } from '../../services/session-sync.mapping';
 import {
   SessionPayloadV1,
   SessionPayloadV2,
+  SessionPayloadV3,
   SessionSummary,
 } from '../../services/session-sync.models';
 import { authFeature } from '../../state/auth/auth.reducer';
@@ -73,7 +74,11 @@ type Density = 'card' | 'row';
  */
 type PendingDownload =
   | { kind: 'jsonImport'; session: SessionFileV1 }
-  | { kind: 'cloudOpen'; card: SessionCard; payload: SessionPayloadV1 | SessionPayloadV2 };
+  | {
+      kind: 'cloudOpen';
+      card: SessionCard;
+      payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3;
+    };
 
 /** One row in the folder navigator sidebar. */
 interface SidebarItem {
@@ -828,7 +833,7 @@ export class SesionesPageComponent {
    */
   private async materializeAndOpen(
     card: SessionCard,
-    payload: SessionPayloadV1 | SessionPayloadV2,
+    payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3,
   ): Promise<void> {
     if (!card.id) return;
     const restored = fromPayload(payload, card.symbol);
@@ -856,9 +861,10 @@ export class SesionesPageComponent {
     meta.layout = restored.layout;
     meta.panels = restored.panels;
     meta.linkGroups = restored.linkGroups;
-    // Flatten every symbol's bucket (not just card.symbol's) so drawings on
-    // secondary observation panels survive a cloud restore too.
-    meta.drawings = Object.values(restored.drawings).flatMap((c) => c.items);
+    // V3's drawing set is already flat and owner-tagged (every panel's
+    // drawings included, not just card.symbol's), so it threads straight
+    // through with no per-symbol flattening.
+    meta.drawings = restored.drawings.items;
     await this.db.putMeta(meta);
     await this.reload();
     await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });
