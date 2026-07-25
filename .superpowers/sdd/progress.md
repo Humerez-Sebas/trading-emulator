@@ -481,10 +481,46 @@ weaker** — verified against the fixture that `p1` really is the first panel in
 showing `XAUUSD`, and the test now proves the migration end-to-end through the real
 cloud-open path instead of asserting passthrough.
 
+### Task 6 — AUDIT FIX WAVE — DONE, closure orchestrator-verified
+
+- **Commit:** `74a25a2` (2 files, +184/−29). Range `7f5e0f7..74a25a2`.
+- **Evidence (implementer, raw, exit 0 on all four):** tsc app ✓, tsc spec ✓, lint 0,
+  `ng test` **156 files / 1922 tests passed** (1921 → 1922 = +1: the new `2r5` case; `2r4`
+  was rewritten in place).
+- **M1 fixed** by extracting `resolveOwnerLayout` + `liftLegacyDrawings` out of
+  `liftWorkspaceDrawings` and lifting `thenRestore.drawings` before the `restoreDrawings`
+  dispatch — one shared helper, so the two read paths cannot drift.
+- **The implementer OVERRODE the fix brief on owner resolution, and was right to.** The
+  brief said to resolve against the store's CURRENT layout; the implementer used the
+  target workspace `ws`'s own persisted layout instead, reasoning that the current/`meta`
+  layout is the outgoing asset's. **Orchestrator verified this against
+  `layout.reducer.ts:279-289`:** `workspaceRestored` installs
+  `ws.layout && ws.panels ? those : singlePanelLayoutFor(ws.symbol, ws.activeTf ?? 'M1')`,
+  and `resolveOwnerLayout(symbol, ws?.activeTf, ws?.layout, ws?.panels)` returns **exactly
+  that same pair** — so the owner resolves against the layout `workspaceRestored` actually
+  installs, not an approximation. The brief's instruction would have resolved against the
+  pre-switch layout and orphaned the drawings. Deviation classified **inert and superior**.
+- **L3 fixed:** the workspace-lift fixture now uses a two-panel layout with non-default
+  ids where the matching panel is not first, so it can no longer pass under an
+  implementation that ignores `ws.layout`/`ws.panels`.
+- **L1 fixed:** the "RFC-011" citation stripped from `workspaces.effects.ts`; the two
+  no-fix sites left untouched as ruled. The implementer also corrected the false
+  "no task/RFC/decision IDs" claim in its own Task 6 report.
+- **Side effect worth noting:** `resolveOwnerLayout` is all-or-nothing by construction,
+  which incidentally closes **L2** (the layout/panels pairing asymmetry the auditor ruled
+  no-fix-because-unreachable) — the mixed pair is now unrepresentable.
+- **Decision (recorded, not improvised):** as with Task 3's second fix wave, a further full
+  `branch-auditor` dispatch was NOT spent here. The load-bearing logic was verified by the
+  orchestrator directly against the reducer it must mirror, and **the mandatory final
+  whole-branch Opus audit re-reviews this diff along with everything else.** Task 6 is
+  treated as PASSED for the purpose of proceeding to Task 9; the final audit remains the
+  true gate.
+
 ### RUN STATE
 
-Task 6 implemented; **audit returned FAIL on M1**. Next: the M1 fix wave (+ L1/L3 folded
-in), then Task 9, then the final whole-branch audit → PR to `develop`.
+Tasks 1–6 complete and green at **156 files / 1922 tests**. Next: **Task 9**
+(invariant greps, `npm run build`, docs closure) → final whole-branch audit → PR to
+`develop`.
 
 Task 9 docs/sweep backlog (accumulated, do not lose): RFC deviations section must record
 **the owner's panel-close cascade decision** and the
