@@ -37,13 +37,17 @@
 
 - [x] Task 1: LinkGroup composition channels (`syncDrawings`, `syncTrades`) — cherry-picked, re-verified 2026-07-24
 - [x] Task 2: Drawing schema expansion + target resolution + pure migration functions — DONE 2026-07-24
-- [x] Task 3: Entity store + owner index + per-panel selection + mapper composition + chart cutover ⟨per-task audit⟩ — implemented 2026-07-24, audit pending
+- [x] Task 3: Entity store + owner index + per-panel selection + mapper composition + chart cutover ⟨per-task audit⟩ — DONE; audited TWICE (both FAIL), all findings fixed, closure verified
 - [x] Task 4: Panel-scoped undo/redo with revision guard (D17.F) — DONE 2026-07-24
 - [x] Task 5: Clipboard (D17.G) + per-panel shared-layer toggle (D17.H) — DONE 2026-07-24
-- [x] Task 6: SessionPayloadV3 + migration chain + IndexedDB lift (D17.J) ⟨per-task audit⟩ — implemented 2026-07-24, audit pending
+- [x] Task 6: SessionPayloadV3 + migration chain + IndexedDB lift (D17.J) ⟨per-task audit⟩ — DONE; audited (FAIL on M1 legacy-import data loss), fixed, closure verified
 - [ ] ~~Task 7: Trade layer gating + Ghost Rails primitives~~ — SUPERSEDED by TEDS (out of scope)
 - [ ] ~~Task 8: Position HUD chip + Design System token registration~~ — SUPERSEDED by TEDS (out of scope)
-- [ ] Task 9: Finalization — invariant greps, build, docs closure
+- [x] Task 9: Finalization — invariant greps, build, docs closure — DONE 2026-07-25
+
+**Run status: all in-scope tasks complete.** Remaining gate: the ONE final whole-branch
+Opus audit, which must return PASS with zero Critical/High/Medium before the PR to
+`develop` is opened.
 
 ## Task entries
 
