@@ -235,6 +235,19 @@ export const layoutFeature = createFeature({
       }
       return { ...state, panels: { ...state.panels, [panelId]: next } };
     }),
+    on(LayoutActions.setPanelHideTrades, (state, { panelId, hidden }): LayoutState => {
+      const panel = state.panels[panelId];
+      if (!panel || (panel.hideTrades ?? false) === hidden) return state;
+      // absent means false: toggling off CLEARS the field rather than writing
+      // `false` explicitly, so descriptors that never toggled stay untouched by shape.
+      const next = { ...panel };
+      if (hidden) {
+        next.hideTrades = true;
+      } else {
+        delete next.hideTrades;
+      }
+      return { ...state, panels: { ...state.panels, [panelId]: next } };
+    }),
     on(LayoutActions.setFocusedPanel, (state, { panelId }): LayoutState => {
       if (!state.panels[panelId] || state.focusedPanelId === panelId) return state;
       return { ...state, focusedPanelId: panelId };
