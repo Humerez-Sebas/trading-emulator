@@ -424,6 +424,65 @@ correct end state for this task — Tasks 3, 4 and 6 wire them up.
 | 3 | `effect()` used as a **field initializer** — the first such use in the app. | **Inert** | Orchestrator-checked: `@ViewChild('container', { static: true })` (`chart.component.ts:327`) resolves before first change detection, so the effect's `cancelPlacing()` → `clearPlacing()` path cannot touch an undefined `container`. Field initializers run in an injection context, so the `effect()` call is legal. No crash risk. |
 | 4 | The new spec had to invent a harness: no prior spec exercises `ChartComponent` directly (parents stub it, because `ngAfterViewInit` builds a real `lightweight-charts` engine jsdom cannot host). It stubs `ChartComponent.prototype.ngAfterViewInit` via `vi.spyOn`. | **Requires attention** | Novel test pattern likely to become precedent. **FINAL-AUDIT ATTENTION:** verify the harness does not neuter what it claims to test, and that it interacts safely with the vitest `isolate:false` module-state leakage documented in `docs/engineering/testing.md`. |
 
+#### Task 3 — Gate `tradeChartView$` in the mapper (D18.C) — **COMPLETE ⟨AUDITED: PASS⟩**
+
+| Field | Value |
+| :--- | :--- |
+| Commit | `c259316` — `feat(rfc-018): gate the pane trade layer with panelRendersTrades (D18.C)` |
+| Base | `74fcee1` |
+| Scope | 3 files: `chart-model-mapper.service.ts` (+128/−14), the R18-4 setup touch in `chart-model-mapper.service.spec.ts` (**+12/−0**), new `chart-model-mapper.trade-gating.spec.ts` (+211) |
+| Gates | tsc app **0**, tsc spec **0**, lint **0 problems**, `ng test` **160 files / 1968 tests** exit 0 |
+| Tests | 1961 → **1968** (+7) |
+| Audit | **Per-task Opus audit — PASS ("Ship it"), zero Critical/High/Medium, 2 Lows ruled no-fix** |
+
+**Implementation shape:** `combineLatest([panelDescriptor$.pipe(startWith(null)), selectTradeChartView, selectCurrentAsset])`, memo slot keyed on **exactly 3** references, `panelRendersTrades` applied inside the `map`, `this.gated()` last — the `panelDrawings$` house idiom. Gate-closed emissions return the module-level, deeply-frozen `EMPTY_TRADE_CHART_VIEW` by reference (R18-3).
+
+**Audit evidence (auditor re-ran everything personally — reports were treated as claims):**
+- All four gates re-run raw: confirmed **160 / 1968**, exit 0. The auditor additionally ran
+  `npm run build` ahead of schedule given the risk tier: exit 0, **648.36 kB**, the known-accepted
+  budget warning, **no new chunk types**, and `grep -rl vitest` over the built bundle → empty
+  (no vitest sentinel).
+- **Mutation probes** — the decisive evidence that the new tests are real detectors, not
+  passengers. Each mutation was applied, the suite re-run, then reverted:
+
+  | Probe | Mutation | Result |
+  | :--- | :--- | :--- |
+  | 1 | gate replaced with `true` | **5 of 7 fail** (T-1, T-2, flip, R18-3, R18-1) |
+  | 2 | shared constant → fresh literal | **exactly 1 fails — R18-3** |
+  | 3 | `startWith(null)` removed | **exactly 1 fails — R18-1** |
+  | 4 | T-1 symbol clause dropped, `hideTrades` kept | **exactly 2 fail**; T-2 correctly still passes |
+
+  Each test fails for its **own** reason rather than as collateral. Tree confirmed clean and HEAD
+  unchanged after the probes.
+- **R18-4 discharged structurally:** the pre-existing spec diff is **+12/−0**. A weakened assertion
+  is impossible — it would have to appear as a deletion. No `it(` block was added there either.
+- Memo key verified as 3; `linkGroupsFeature.selectGroups` appears only in `panelDrawings$`, never
+  on the trade path (RFC-018 §4.3 honoured).
+- D8 ban intact: `selectTradeChartView` remains a single param-free `createSelector`; gating lives
+  in the per-panel-provided mapper instance. Engine boundary uncrossed (`domain/chart/**` still has
+  zero Angular/NgRx imports).
+- The `frozenEmptyArray<T>()` `readonly T[] → T[]` cast was traced to **every** consumer:
+  `pushTrading()` (`chart.component.ts:1154`) is the only site feeding `trading:` into the engine,
+  and all downstream capability code is read-only (`.map()` before `setMarkers`, iteration only in
+  `trade-boxes-primitive.ts`). **No legitimate path can throw.** The freeze in fact converts a
+  previously-silent memo-corruption bug class into a loud throw.
+- `isolate: false` leakage assessed and cleared: the constant is deeply frozen with no mutation
+  path, and both spec files reset forced selectors in `afterEach` per `docs/engineering/testing.md`.
+
+**Deviations:**
+
+| # | Item | Class | Disposition |
+| :--- | :--- | :--- | :--- |
+| 1 | The implementer's first R18-3 test asserted two emissions on one live subscription and failed — `distinctUntilChanged()` correctly suppresses a second identical-reference emission. Rewritten to use two independent subscriptions with a forced memo miss between. | **Inert** | Auditor examined this specifically for a test weakened into passing and ruled the opposite: probe 2 shows the rewritten test fails **exactly and only** when the shared constant is replaced. The original test could never have passed against a *correct* implementation — the rewrite fixed a wrong test, it did not soften a right one. |
+
+**Lows ruled no-fix (written reasons, so they are not re-litigated):**
+- **L-1** — no `currentAsset === null` case in the gating spec. The null branch lives in
+  `panelRendersTrades` and already carries its own detector in Task 2's 6-case truth table; the
+  mapper only delegates on that path, so a duplicate would test the predicate twice, not the gate.
+- **L-2** — the spec helper `latest()` returns `view!`, so a non-emitting stream fails with a
+  `TypeError` rather than an assertion diff. Probe 3 confirms the detector *does* fire; only the
+  failure message is less legible. Test-only ergonomics (PHILOSOPHY §3.5).
+
 ---
 
 ## 9. Next actions
