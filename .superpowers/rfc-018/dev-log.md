@@ -302,7 +302,64 @@ RFC-017 state and nothing has drifted.
 
 ### 8.3 Task log
 
-*(appended as tasks complete)*
+#### Task 1 — Retire `syncTrades` from `LinkGroup` (D18.A) — **COMPLETE**
+
+| Field | Value |
+| :--- | :--- |
+| Commit | `62effac` — `feat(rfc-018): retire syncTrades as a LinkGroup channel (D18.A)` |
+| Base | `e0eec96` |
+| Scope | 18 files: 4 production (`link-groups.models.ts`, `link-groups.actions.ts`, `link-groups.reducer.ts`, `link-groups-menu.component.ts`) + 14 spec |
+| Gates | tsc app **0**, tsc spec **0**, lint **0 problems**, `ng test` **156 files / 1935 tests** exit 0 |
+| Tests | 1936 → **1935** (net −1) |
+| Audit | Batched (no per-task audit) — orchestrator mechanical verification only |
+
+**Orchestrator verification (mechanical, not an audit):**
+- `git show --stat 62effac` — every path is on the brief's list; no unrelated file swept in;
+  working tree clean apart from untracked run artifacts.
+- Test arithmetic checked against the diff itself: `+10` / `−11` `it(` cases = net **−1**,
+  matching 1936 → 1935 exactly.
+- Live-channel probes all clean: `grep -rn "Set Sync Trades\|setSyncTrades"` → empty;
+  `grep -rn "sync-trades\|toggleTrades"` → only a spec asserting the control's **absence**;
+  no production property read of `.syncTrades` survives.
+- Production diff read line by line: the reducer case, the action, and the UI `<label>` +
+  `toggleTrades()` are deleted and nothing adjacent is touched. `normalizeLinkGroup` is now
+  built field by field (C3 discharged). The pre-existing stray `</button>` was correctly
+  left alone.
+
+**Deviations:**
+
+| # | Deviation | Class |
+| :--- | :--- | :--- |
+| 1 | **C6 was one file short.** `state/link-groups/link-groups.reducer.spec.ts` was on the brief's *literal-only* list but held two full behavioral tests asserting the retired `syncTrades: true` normalization default. The implementer applied the already-blessed C6 rewrite pattern (keep `syncDrawings === false`, retitle, swap the stale assertion for the anti-leak `'syncTrades' in … === false`). | **Inert.** Same mechanical class, third application, no design judgment. Final fan-out: 4 production + 14 spec files. |
+| 2 | The `syncTrades` invariant grep is **non-empty**, and cannot be empty — see R18-12 below. | **Requires attention** (owner-facing; resolved as a plan-text defect, not a code defect). |
+
+#### R18-12 — the `syncTrades` invariant grep is refined to the *live-channel* form
+
+**The plan contradicts itself.** Task 1 Step 2 mandates, verbatim, that `LinkGroupWire`
+declare `syncTrades?: boolean` as a `@deprecated` legacy-only optional, and the plan's own
+"Tests to add" mandate anti-leak assertions of the form `expect('syncTrades' in x).toBe(false)`.
+Both make the literal string appear in `emulador/src/`. Yet plan §3 and DoD §5 both demand
+`grep -rn "syncTrades" emulador/src/` return **zero**. Those cannot both hold.
+
+**RFC-018 §10 is the higher authority and settles it:** *«`LinkGroupWire` lo mantiene como
+opcional para tolerancia de lectura»* — the wire-level tolerance is required by the design,
+by name. The grep-zero line in the plan is shorthand for *no live channel*, written before
+Step 2's legacy-tolerance type existed on paper.
+
+**Ruling:** the binding invariant is **zero live `syncTrades` channel** — no action, no reducer
+case, no UI control, no production read site. Verified:
+
+```
+grep -rn "Set Sync Trades\|setSyncTrades" emulador/src/   → empty
+grep -rn "sync-trades\|toggleTrades"      emulador/src/   → only an absence assertion in a spec
+grep -rnE "\.syncTrades" emulador/src/                    → empty
+```
+
+Every surviving textual hit is exactly one of: the `LinkGroupWire` deprecated optional, its
+JSDoc, or a test asserting the key's **absence**. That is the RFC's design, not a leak.
+
+**Owner-facing:** plan §3 and DoD §5 should be corrected to the live-channel grep. Filed for
+the documentation pass; the code is correct as it stands.
 
 ---
 
