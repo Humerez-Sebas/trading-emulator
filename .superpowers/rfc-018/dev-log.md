@@ -169,15 +169,47 @@ when a trader with an unlinked panel would want the new Trades toggle.
   `onDocClick` closes only `linkChipMenuOpen`. The new `document:keydown.escape` host
   binding closes the eye popover **and** the link-chip menu — extending Esc to the older
   menu is a free consistency win, but it is a behavior change and is logged as such.
-- **Disabled-row tooltip vs `pointer-events: none`.** The dimmed row must still surface
-  its tooltip; `pointer-events: none` would suppress it. The implementer picks a
-  mechanism (wrapper-level `title`, or `aria-disabled` + click guard) and records the
-  choice here.
-- **`hideTrades: true` also retires the pane's order verbs.** RFC-018 §8 records this as a
-  **UI rule**, not an invariant: `panelMayExecute` stays symbol-only. Rationale: a pane the
-  trader asked to keep clean is not an order-entry surface, and placing an order that is
-  then invisible violates FP-2. The panel-agnostic Dock remains available. Revocable
-  without touching the domain predicate.
+- **Inert-row mechanism — RESOLVED as R18-7 (Option B), owner-confirmed 2026-07-26.**
+  See §6 for the ruling and §4.1 below for the reasoning.
+- **`hideTrades: true` also retires the pane's order verbs — CONFIRMED AS BINDING**
+  (owner, 2026-07-26). No longer "registered, revocable": RFC-018 §8 now states it as a
+  binding UI rule and the plan enforces it at all four guard points.
+
+### 4.1 — Inert drawings row: why Option B (R18-7)
+
+Three mechanisms were on the table for the "Dibujos compartidos" row when no group
+shares drawings:
+
+| Option | Mechanism | Verdict |
+| :--- | :--- | :--- |
+| A | Native `disabled` + `pointer-events: none` | **Rejected.** `disabled` suppresses the element's `title` tooltip entirely, removes it from the accessibility tree as an interactive control, and behaves inconsistently across browsers. `pointer-events: none` independently kills hover. The row would go silent exactly when it has something to say. |
+| **B** | `aria-disabled="true"` + `tabindex="-1"` + click guard, no `pointer-events` change | **Adopted.** Full manual control of visual and interactive state; the native tooltip works because the element stays hoverable; `aria-disabled` carries the semantics for assistive tech; the click guard (`canHideDrawings() && toggle($event)`) is what actually prevents the action. |
+| C | Hide the row entirely when inapplicable | **Rejected earlier in design.** A row that vanishes teaches nothing; a row that explains its own inertness teaches the group/drawings relationship. This is why the tooltip exists at all — killing it (Option A) would have quietly reduced C's rejection to a lie. |
+
+Styling follows from the mechanism: `opacity: 0.45; cursor: default;` — `default`, not
+`not-allowed`, because the row is not an error state but a control awaiting a
+precondition. Hover highlight is suppressed on the inert row so visual feedback does not
+promise interactivity the click guard will refuse.
+
+### 4.2 — Why the §8 rule is binding but still not an invariant
+
+Confirming the rule as binding raised the question of whether it should be promoted into
+`panelMayExecute`. It should not, and the plan says so explicitly:
+
+- `panelMayExecute` is a **domain** predicate (T-3): symbol-only, amended by RFC.
+- The §8 rule is a **presentation** rule: amended by a UI decision.
+- They **compose** in `ChartComponent` (`tradeVerbsEnabled = mayExecute && !hideTrades`),
+  they do not merge.
+
+This is the same principle RFC-018 §2.3 applied to RFC-017's §5.1 predicate — fusing an
+invariant with a preference in one expression is precisely the modelling error this RFC
+exists to correct. Repeating it one layer up, in the opposite direction, would be ironic
+and wrong. "Binding" describes how firmly the rule holds, not which layer owns it.
+
+The consistency clause is what makes it binding in practice: menu and dispatch must
+agree. Offering less than you execute is a trap; executing less than you offer is a
+silent failure. All four guard points therefore use the composed signal, never the bare
+domain predicate.
 
 ---
 
@@ -208,6 +240,9 @@ C3 is the one that would have shipped a silent data defect. Recorded prominently
 | **R18-4** | `chart-model-mapper.service.spec.ts`'s `tradeChartView$` block gets `configurePanel` added to its setup — a **declared spec touch**. | Under R18-1 those specs would observe zero emissions. This is *added required setup*, not a weakened assertion: every reference-stability expectation stays byte-identical. RFC-017's run held a "never touch existing specs" rule; this exception is declared rather than silent. |
 | **R18-5** | F3 (Task 5) sequences **after** Task 3. | Both edit `chart-model-mapper.service.ts`; sequencing avoids an intra-tree conflict. |
 | **R18-6** | The plan lives at `docs/superpowers/plans/<date>-<slug>.md`, not the brief's suggested path. | The brief offered a choice; repo convention (`CLAUDE.md` §Conventions, matching `2026-07-16-rfc-017-implementation-plan.md`) is the stronger signal. The dev log uses the brief's path as given. |
+| **R18-7** | The inert drawings row uses `aria-disabled` + `tabindex="-1"` + a click guard. **Never** the native `disabled` attribute; **never** `pointer-events: none`. | Owner-confirmed 2026-07-26 (Option B). Native `disabled` suppresses the `title` tooltip and behaves inconsistently across browsers; `pointer-events: none` kills hover independently. The tooltip is the reason the row stays visible instead of disappearing, so any mechanism that suppresses it defeats the design. Full comparison in §4.1. |
+| **R18-8** | `anyLayerHidden` includes a `canHideDrawings()` term: `hideTrades() \|\| (canHideDrawings() && hideSharedDrawings())`. | `hideSharedDrawings` is persisted and is **not** cleared on unlink (`setPanelLinkGroup` does not touch it, and D17.H says nothing about it). Without the term, unlinking a panel that had hidden its shared layer leaves the header eye permanently dimmed with nothing hidden and no enabled control to un-dim it — a dead-end state reachable in two clicks. The indicator must report reality, not stored intent. |
+| **R18-9** | `hideTrades` flipping true mid-placement cancels the in-progress placement. | Guard point 2 catches the commit, but preview price lines would otherwise stay painted on a pane that no longer shows trades. Covered by an `effect` and a test. |
 
 ---
 
@@ -231,9 +266,10 @@ coordinates, so wrong-grid coordinates would propagate the error into the whole 
 
 ## 8. Next actions
 
-- [ ] Owner review of RFC-018 §5 (D18.A–D) and §8 (UI rules) before implementation starts
-- [ ] Confirm the §8 product rule (hidden layer ⇒ no order verbs) — the one item flagged as an owner call
+- [x] Owner review of RFC-018 §5 (D18.A–D) and §8 (UI rules) — **done 2026-07-26**
+- [x] §8 rule (hidden layer ⇒ no order verbs) — **decided: yes, binding.** Enforced at all four guard points via `tradeVerbsEnabled()`; `panelMayExecute` stays symbol-only (§4.2)
+- [x] Inert-row mechanism — **decided: Option B (R18-7)**, `aria-disabled` + click guard
 - [ ] Execute the plan task-by-task; commit per task with pathspec `git add`
-- [ ] Record R18-1..R18-6 outcomes and any deviations in this log as they happen
+- [ ] Record R18-1..R18-9 outcomes and any deviations in this log as they happen
 - [ ] Land the RFC-017 supersession notes (§5, §5.1, D17.I, D17.K) on this branch
 - [ ] PR to `develop` (never to `main` — RFC track)

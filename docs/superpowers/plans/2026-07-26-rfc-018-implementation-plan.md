@@ -434,25 +434,66 @@ private readonly mayExecute = computed(() => {
 `this.currentAsset` already exists (line ~470, `selectCurrentAsset`). No new store
 subscription is required.
 
-**Unconfigured-mapper ruling:** `descriptor() == null` ⇒ `mayExecute` is `false`
+**Unconfigured-mapper ruling (R18-2):** `descriptor() == null` ⇒ `mayExecute` is `false`
 (refuse). Same reasoning as Task 3 Step 3 — a command is even less forgiving than a
 render.
 
-### Step 2 — Three guard points
+### Step 1b — The UI rule layered on top (RFC-018 §8, **binding**)
+
+A panel with `hideTrades: true` offers **and executes** no order verbs. This is a
+presentation rule composed *over* the domain predicate — it does **not** change
+`panelMayExecute`, which stays symbol-only (T-3).
+
+Keep the two concerns as two named signals so the split is legible in the code, and
+guard every site with the composed one:
+
+```typescript
+/** T-3 (domain): symbol-only. Never consults hideTrades. */
+private readonly mayExecute = computed(() => {
+  const d = this.mapper.descriptor();
+  return d != null && panelMayExecute(d, this.currentAsset());
+});
+
+/** RFC-018 §8 (UI rule, binding): a pane the trader asked to keep clean is not an order-entry surface. */
+private readonly hideTrades = computed(() => this.mapper.descriptor()?.hideTrades ?? false);
+
+/** The condition every pane-originated trading verb is guarded by. */
+private readonly tradeVerbsEnabled = computed(() => this.mayExecute() && !this.hideTrades());
+```
+
+**Consistency requirement (RFC-018 §8):** all four guard points use
+`tradeVerbsEnabled()`, never `mayExecute()` alone. Offering less than you execute is a
+trap; executing less than you offer is a silent failure. Do not guard the menu with the
+composed condition and the dispatch with the bare one.
+
+**Do not fold `hideTrades` into `panelMayExecute`.** The predicate in `layout.models.ts`
+is a domain invariant; this is a UI rule with a different amendment path (a UI decision,
+not an RFC). RFC-018 §4.2 states the composition rule: *un invariante y una preferencia
+se componen, no se funden*.
+
+### Step 2 — Four guard points
+
+All four use `tradeVerbsEnabled()`.
 
 1. **`handleContextMenu`** (~line 862): keep the placing-flow early return and the box
-   hit-test intact. Guard only the **order options**: when `mayExecute()` is false, leave
-   `options` empty so no Buy/Sell Limit/Stop entries are offered. "Fit", "Ir a fecha…",
-   "Programar fin…" and the closed-box hide/delete verbs remain available — they are not
-   trading verbs.
-2. **`finishPlacing`** (~line 1068): early return (routed through `clearPlacing()`, so no
-   orphan preview price lines survive) when `mayExecute()` is false.
+   hit-test intact. Guard only the **order options**: when `tradeVerbsEnabled()` is
+   false, leave `options` empty so no Buy/Sell Limit/Stop entries are offered. "Fit",
+   "Ir a fecha…", "Programar fin…" and the closed-box hide/delete verbs remain available
+   — they are not trading verbs, and the closed-box verbs act on the *record*, not the
+   book.
+2. **`finishPlacing`** (~line 1068): early return routed through `clearPlacing()` (so no
+   orphan preview price lines survive) when `tradeVerbsEnabled()` is false.
 3. **`dragTradeLine`** (~line 1131): early return before the `modifyPosition` /
-   `modifyOrder` dispatch when `mayExecute()` is false.
+   `modifyOrder` dispatch when `tradeVerbsEnabled()` is false.
+4. **Cancel / close** (~lines 1373-1376, `cancelOrder` / `closePosition`): same guard.
+   These are trading verbs originating from the pane and fall under the same rule.
 
-Also guard the pending-order/position **close/cancel** dispatches (~lines 1373-1376,
-`cancelOrder` / `closePosition`) — they are trading verbs originating from the pane and
-belong under the same rule.
+**Edge case to handle deliberately:** a panel may acquire `hideTrades: true` *while* an
+order placement is in progress (the trader flips the toggle mid-placement). Guard point 2
+already catches the commit, but `clearPlacing()` should also run when the flag flips, so
+no preview lines are left painted on a pane that no longer shows trades. Add an `effect`
+that calls `cancelPlacing()` when `tradeVerbsEnabled()` goes false, and cover it with a
+test.
 
 ### Step 3 — Defense in depth, not UI-only
 
@@ -467,7 +508,12 @@ entries leaves the drag and keyboard paths open.
 | Panel symbol `'NAS100'`, asset `'US30'`, right-click | `menu().options` is empty; "Fit" / date verbs still available |
 | Same, `finishPlacing` invoked directly | no `TradingActions.placeOrder` dispatched; placing state cleared |
 | Same, `dragTradeLine` invoked | no `modifyPosition` / `modifyOrder` dispatched |
+| Same, cancel / close invoked | no `cancelOrder` / `closePosition` dispatched |
 | Mapper never configured | no order options, no dispatch |
+| **T-1/UI split** — symbol `'US30'`, asset `'US30'`, `hideTrades: true`, right-click | `menu().options` is empty (§8 UI rule) |
+| Same, `finishPlacing` / `dragTradeLine` / cancel / close | no dispatch — menu and dispatch agree |
+| Same descriptor | `panelMayExecute(d, 'US30')` still returns **true** — the domain predicate is untouched by `hideTrades` |
+| `hideTrades` flips true during an in-progress placement | placing state cleared, no orphan preview price lines |
 
 ---
 
@@ -550,10 +596,11 @@ eye is now always present, sits in a `position: relative` anchor (mirroring
         class="eye-menu-item"
         role="menuitemcheckbox"
         [class.disabled]="!canHideDrawings()"
-        [disabled]="!canHideDrawings()"
+        [attr.aria-disabled]="!canHideDrawings()"
+        [attr.tabindex]="canHideDrawings() ? 0 : -1"
         [attr.aria-checked]="!hideSharedDrawings()"
-        [attr.title]="drawingsRowTitle()"
-        (click)="toggleHideSharedDrawings($event)"
+        [title]="drawingsRowTitle()"
+        (click)="canHideDrawings() && toggleHideSharedDrawings($event)"
       >
         <!-- eye / eye-off SVG --> Dibujos compartidos
       </button>
@@ -585,9 +632,35 @@ readonly canHideDrawings = computed(() => {
   return id !== null && this.linkGroups()[id]?.syncDrawings === true;
 });
 
-/** Combined header indicator: dimmed when ANY layer is hidden, not just drawings. */
-readonly anyLayerHidden = computed(() => this.hideTrades() || this.hideSharedDrawings());
+/**
+ * Combined header indicator: dimmed when ANY layer is ACTUALLY suppressed.
+ * `hideSharedDrawings` only counts when a shared layer exists to suppress — a stale
+ * `true` left on a panel that has since been unlinked hides nothing, and the indicator
+ * must report reality, not stored intent.
+ */
+readonly anyLayerHidden = computed(
+  () => this.hideTrades() || (this.canHideDrawings() && this.hideSharedDrawings()),
+);
 ```
+
+> The `canHideDrawings()` term is deliberate. `hideSharedDrawings` is persisted and is
+> **not** cleared when a panel leaves its group (D17.H says nothing about unlink, and
+> `setPanelLinkGroup` does not touch it). Without the term, unlinking a panel that had
+> hidden its shared layer would leave the header eye permanently dimmed with no layer
+> hidden and no enabled control to un-dim it — a dead-end state reachable in two clicks.
+
+> **Inert-row mechanism — ruled (R18-7, Option B).** The disabled drawings row uses
+> `aria-disabled="true"` + `tabindex="-1"` + a click guard, and **never** the native
+> `disabled` attribute. Rationale: native `disabled` suppresses the element's `title`
+> tooltip, removes it from the accessibility tree as an interactive control, and
+> behaves inconsistently across browsers. The row must stay hoverable — a tooltip that
+> explains why the control is inert is the entire point (RFC-018 §8), and an
+> unreachable tooltip explains nothing. The click guard
+> (`canHideDrawings() && toggle($event)`) is what actually prevents the action; the
+> attributes carry the semantics.
+>
+> The `Trades` row is never inert, so it needs none of this: plain `tabindex` default,
+> no `aria-disabled`.
 
 Spanish labels, following the existing `hideSharedLabel` idiom (the label names the
 action that flips the current state):
@@ -636,26 +709,39 @@ column flex, 4px padding, `min-width: 150px` for the two Spanish labels), and
 ```css
 .eye-menu-item.disabled {
   opacity: 0.45;
-  pointer-events: none;
+  cursor: default;
 }
 ```
 
-> `pointer-events: none` suppresses the native tooltip. Put `title` on the **row's
-> wrapper** or keep the row focusable-but-inert (`aria-disabled` + a click guard) if the
-> tooltip must remain reachable. Pick one and state it in the dev log — the disabled-row
-> tooltip is a stated requirement of RFC-018 §8 and must actually be reachable.
+> **No `pointer-events: none`** (R18-7). The row must keep receiving hover so its native
+> `title` tooltip renders — that tooltip is the whole reason the row stays visible
+> instead of disappearing. `cursor: default` (not `not-allowed`) signals inertness
+> without the "you did something wrong" tone; the row is not an error state, it is a
+> control awaiting a precondition.
+>
+> Also add `.eye-menu-item.disabled:hover { background: none; }` so the inert row does
+> not pick up the hover highlight that `.link-chip-menu-item` siblings use — visual
+> feedback must not promise interactivity the click guard will refuse.
 
 Keep the eye SVG inline (matching `.panel-hide-shared` today). Do **not** extract an icon
 component in this task — that is unrelated refactoring inside an RFC commit.
 
 Rename `.panel-hide-shared` → `.panel-eye`, preserving the existing hover/active rules.
 
-### Step 6 — UI rule from RFC-018 §8
+### Step 6 — UI rule from RFC-018 §8 (binding)
 
-When `hideTrades()` is true, the panel's context menu also retires its order verbs. This
-is enforced in `ChartComponent` (Task 4's guard point 1) as a **UI rule layered on top of
-T-3**, not by changing `panelMayExecute`. Implement it as a separate condition so the
-domain predicate stays symbol-only.
+When `hideTrades()` is true, the panel offers **and executes** no order verbs. Enforced
+in `ChartComponent` via `tradeVerbsEnabled()` at all four guard points (Task 4, Steps 1b
+and 2) — **not** by changing `panelMayExecute`, which stays symbol-only.
+
+This is binding for RFC-018, not an optional polish item: a pane whose trade layer is
+hidden must not be an order-entry surface, and the menu and the dispatch must agree.
+Task 6 owns only the *state* (`hideTrades` on the descriptor, flipped from this popover);
+Task 4 owns the *enforcement*. If Task 6 lands first, the toggle is inert with respect to
+order verbs until Task 4 lands — acceptable mid-branch, **not** acceptable at PR.
+
+Cross-task acceptance: the branch is not done until a panel toggled to `hideTrades: true`
+from this popover demonstrably stops offering Buy/Sell in its context menu.
 
 ### Tests — extend `chart-panel.component.spec.ts`
 
@@ -667,10 +753,16 @@ domain predicate stays symbol-only.
 | Linked panel, `syncDrawings: false` | the row is still `.disabled` |
 | Linked panel, `syncDrawings: true` | the row is enabled; clicking dispatches `setPanelHideSharedDrawings` with THIS panel id |
 | Any panel | the "Trades" row is always enabled; clicking dispatches `setPanelHideTrades` with THIS panel id |
+| **Inert row (R18-7)** | carries `aria-disabled="true"` and `tabindex="-1"`, and does **not** carry the native `disabled` attribute |
+| **Inert row, clicked** | dispatches **nothing** (the click guard holds even though the element is clickable) |
+| **Inert row** | keeps a non-empty `title` — the tooltip stays reachable |
+| Enabled row | `aria-disabled` is `false`/absent and `tabindex` is `0` |
 | `hideTrades: true` | the header eye carries `.active` |
-| `hideSharedDrawings: true` | the header eye carries `.active` |
+| Linked + `syncDrawings: true` + `hideSharedDrawings: true` | the header eye carries `.active` |
+| **Unlinked + stale `hideSharedDrawings: true`** | the header eye does **not** carry `.active` (no layer is actually suppressed) |
 | Click outside | popover closes |
 | Esc | popover closes |
+| Esc | also closes the link-chip menu (declared side-effect, Step 4) |
 | Link-chip menu tests (lines 226-290) | **still pass untouched** |
 
 ---
@@ -730,7 +822,9 @@ lockfile.
 | Spec fan-out leaves `tsc -p tsconfig.spec.json` red mid-task | Medium | Task 1 is atomic: field removal and all 12 spec files in **one** commit |
 | Task 3's closed-until-configured gate silently blanks a legitimate panel | Medium | The mapper is configured by an `effect` in `ChartPanelComponent`'s constructor, so configuration precedes first paint; covered by the "never configured" test |
 | Empty-view allocation per tick defeats the engine short-circuit | Medium | Frozen shared constant + the reference-identity test in Task 3 |
-| Task 6's `pointer-events: none` kills the required disabled tooltip | Low | Called out in Step 5; pick a mechanism and record it |
+| The inert drawings row loses its tooltip or becomes silently clickable | Low | **Resolved by R18-7** (Option B): `aria-disabled` + `tabindex="-1"` + click guard, no native `disabled`, no `pointer-events: none`. Four dedicated tests in Task 6 |
+| Menu and dispatch disagree under the §8 UI rule (one guarded, the other not) | Medium | Single composed signal `tradeVerbsEnabled()` used at all four guard points; paired menu/dispatch tests for the `hideTrades` case |
+| Stale `hideSharedDrawings` on an unlinked panel dims the eye with nothing hidden | Low | `anyLayerHidden` includes the `canHideDrawings()` term; dedicated test |
 | Cloud sessions written by a pre-RFC-018 client keep re-adding `syncTrades` | Low | Read-side normalization drops it every time; no data loss, self-healing on the next write |
 | Task 5 double-derives custom timeframes per panel | Low | Reuse `panelChartView$`'s candle array; do not call `generateCustomSeries` a second time |
 
@@ -742,8 +836,10 @@ lockfile.
 - [ ] D18.B — `hideTrades` + both predicates exist; reducer follows the D17.H idiom exactly
 - [ ] D18.C — `tradeChartView$` gated inside the mapper instance; 3 memo inputs; no store/engine gating; no factory selector
 - [ ] D18.D — all four trading-verb entry points guarded; menu **and** dispatch
+- [ ] §8 UI rule (binding) — `hideTrades: true` retires the order verbs at all four points via `tradeVerbsEnabled()`; `panelMayExecute` remains symbol-only
 - [ ] F3 — per-panel marker/box geometry derived from the panel's own candles
-- [ ] Eye popover ships with both rows, disabled state, outside-click and Esc close
+- [ ] Eye popover ships with both rows, outside-click and Esc close
+- [ ] R18-7 — inert row uses `aria-disabled` + `tabindex="-1"` + click guard; no native `disabled`, no `pointer-events: none`; tooltip verified reachable
 - [ ] RFC-017 carries supersession notes for §5, §5.1, D17.I, D17.K
 - [ ] TEDS/EXPERIENCE_DOMAINS/UBIQUITOUS_LANGUAGE references re-pointed
 - [ ] All four gates green with fresh raw output, plus `npm run build`

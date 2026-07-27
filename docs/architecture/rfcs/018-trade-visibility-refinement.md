@@ -231,9 +231,16 @@ flowchart LR
 ```
 
 Nótese que `panelMayExecute` **ignora deliberadamente `hideTrades`** a nivel de
-dominio: ocultar la capa es una preferencia visual, no un bloqueo de trading. La
-decisión de producto de retirar además los verbos del menú en un panel con la capa
-oculta se registra en §7.3 como regla de UI, no como invariante.
+dominio: ocultar la capa es una preferencia visual, no un bloqueo de trading, y el
+predicado de dominio queda definido **solo** por el símbolo.
+
+Sobre ese predicado puro se aplica una **segunda capa de guardia, en la UI** (§8,
+vinculante): un panel con `hideTrades: true` tampoco ofrece ni ejecuta verbos de orden.
+Ambas capas se componen en `ChartComponent` —`panelMayExecute(d, primary) &&
+!hideTrades`— sin que ninguna contamine a la otra: T-3 sigue siendo un invariante de
+símbolo, y la regla de capa oculta sigue siendo de presentación. Es el mismo principio
+que §2.3 aplicó al predicado de §5.1: un invariante y una preferencia **se componen, no
+se funden**.
 
 ### 4.3 Coste bajo D8
 
@@ -361,17 +368,33 @@ minimizar. Se unifican bajo un solo control:
 - El popover contiene dos filas independientes:
   - **`Dibujos compartidos`** — activa **solo** si `linkGroupId !== null` **y**
     `group.syncDrawings === true`. Inactiva se muestra atenuada, con tooltip
-    *«Vincula el panel a un grupo para compartir dibujos»*.
+    *«Vincula el panel a un grupo para compartir dibujos»*. La fila inactiva
+    **debe seguir siendo hovereable**: explica su propia inercia en lugar de
+    desaparecer, y un tooltip inalcanzable no explica nada (mecanismo en el plan de
+    implementación, Task 6 Step 5: `aria-disabled` + guardia de click, nunca el
+    atributo nativo `disabled` ni `pointer-events: none`).
   - **`Trades`** — **siempre** activa y conmutable (T-2 no depende de ningún grupo).
 - El ojo de la cabecera actúa como **indicador de estado combinado**: normal cuando
   todo es visible, atenuado cuando alguna capa está oculta.
 
-**Regla de producto (registrada, revocable):** un panel con `hideTrades: true` tampoco
-ofrece los verbos de orden en su menú contextual. Un pane que el trader pidió mantener
-limpio no es una superficie de entrada de órdenes, y colocar una orden que después no
-se ve contradice FP-2 (*«ningún dato de trade sin ancla en el chart»*). El Dock lateral
-sigue disponible y es panel-agnóstico. Esta regla es de UI, no un invariante: T-3 sigue
-definido solo por el símbolo.
+**Regla de UI (vinculante en este RFC):** un panel con `hideTrades: true` tampoco ofrece
+los verbos de orden en su menú contextual **ni los ejecuta por ninguna otra vía del
+pane** (`finishPlacing`, arrastre de SL/TP, cancelar/cerrar). Un pane que el trader pidió
+mantener limpio no es una superficie de entrada de órdenes, y colocar una orden que
+después no se ve contradice FP-2 (*«ningún dato de trade sin ancla en el chart»*).
+
+**Consistencia exigida:** si el verbo no aparece en el menú, tampoco puede existir la
+acción desde ese panel por otra ruta. Ofrecer menos de lo que se ejecuta es una trampa;
+ejecutar menos de lo que se ofrece es un fallo silencioso.
+
+El Dock lateral sigue disponible y es panel-agnóstico — la ejecución apunta al **libro**
+(símbolo), nunca a un pane, de modo que ocultar una capa jamás deja al trader sin vía de
+ejecución.
+
+**Ámbito.** Esta regla vive en `ChartComponent`, como capa de presentación *sobre* el
+predicado de dominio. **No modifica `panelMayExecute`**, que sigue definido solo por el
+símbolo (T-3, §4.2). Vinculante no significa promovida a invariante: sigue siendo una
+regla de UI, y como tal se enmienda con una decisión de UI, no con un RFC.
 
 ---
 
