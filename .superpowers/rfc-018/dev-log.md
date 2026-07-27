@@ -526,6 +526,80 @@ state half and the enforcement half now meet.
 | 2 | Added a new `.eye-menu-item:hover { background: var(--surface-2); }` rule — the copied `.link-chip-menu-item` had no hover rule of its own. | **Inert** | Required for coherence: the plan mandates `.disabled:hover { background: none; }`, which suppresses nothing unless an enabled hover state exists. |
 | 3 | Clicking the **inert** row dispatches no layer action (test-verified) but still bubbles to the host `(click)` → `onPanelClick()` → `setFocusedPanel`, because the click guard short-circuits before reaching `stopPropagation()`. | **Inert** | Orchestrator-checked and ruled correct: focusing a panel on click is the panel's ambient behavior, identical to clicking any inert header area, and `onDocClick`'s host-containment test means the popover correctly stays open. "Dispatches nothing" in the brief means no *layer toggle*. **FINAL-AUDIT ATTENTION** anyway, as the implementer requested a second look. |
 
+#### Task 5 / F3 — Per-panel trade geometry — **COMPLETE ⟨AUDITED: FAIL → fixed → PASS⟩**
+
+| Field | Value |
+| :--- | :--- |
+| Commits | `74e17ef` — `fix(rfc-018): derive trade geometry from each panel's own candles (F3)`; `51836a9` — `test(rfc-018): cover the global-eye-off rule on the per-panel trade path` (audit fix) |
+| Base | `de668e2` |
+| Scope | `chart-model-mapper.service.ts`, `state/selectors.ts` (export `snapToCandle` + `selectTradeMarkers`, bodies byte-identical), 2 rewired specs, 1 new geometry spec |
+| Gates | tsc app **0**, tsc spec **0**, lint **0 problems**, `ng test` **161 files / 1989 tests** exit 0; `npm run build` **0** — 648.37 kB, no new chunk types, no vitest sentinel |
+| Tests | 1984 → 1988 (+4 geometry) → **1989** (+1 audit fix) |
+| Audit | **Per-task Opus audit: FAIL (1 Medium) → fix → re-review PASS ("Ship it")**, zero Critical/High/Medium |
+
+**What F3 fixed:** `selectTradeMarkers` snapped markers against `selectActiveCandles` — the
+**global** timeframe's series — so a panel on H4 received markers snapped to the global TF's grid
+(typically M1). Geometry was wrong per panel, in production. The mapper now resolves **this
+panel's own** candles via a shared per-instance `resolvePanelCandles` memo and derives markers and
+boxes from the raw trading slices against that array.
+
+**Final memo key (7, as R18-13 sanctions):** `descriptor`, `candles`, `positions`, `orders`,
+`history`, `boxesVisible`, `currentAsset`. **`groups` correctly excluded** (RFC-018 §4.3) —
+auditor-verified: `selectGroups` appears exactly once in the mapper, inside `panelDrawings$`.
+
+**Audit round 1 — FAIL, one Medium (F1):** F3 relocated the toolbar-eye rule (`boxesVisible`
+false ⇒ no trade boxes) out of `selectTradeChartView` and into the mapper. The behavior was
+correct, but the auditor's **mutation probe deleted the entire rule and all 1988 tests stayed
+green** — every mapper spec pinned `selectTradeBoxesVisible` to `true`. The old detector in
+`selectors.spec.ts` survived but now guards a selector with **zero production consumers**, so the
+coverage state actively misled. With TEDS Phase 4 Task 6 chartered to dismantle `tradeChartView$`
+(`teds-plan-amendments.md` A2), that refactor could have silently repealed the toolbar eye on every
+panel. Ruled Medium, not Low: an unprotected *production* path created by this task is not
+test-pragmatism (`decision-frameworks.md` §6).
+
+**Fix (`51836a9`)** — one test, gate **OPEN**, `boxesVisible` flipped `false` *after* the mapper is
+live, asserting `boxes` empty **while `markers`/`positions`/`orders` keep flowing** (the clause that
+distinguishes "the eye blanked the boxes" from "the gate closed everything"). Re-review re-ran the
+probe independently: **exactly one test fails, the new one**, all 7 pre-existing gating tests green.
+Spec diff **+21/−0** — structural proof that none of Task 3's seven gating guarantees was altered.
+
+**F2 (Low, fixed in the same commit):** the doc comment justifying the fine-grained memo helpers
+claimed `.projector` "bypasses NgRx's own memoization." **False** — `createSelector` returns
+`memoizedProjector.memoized` (`ngrx-store.mjs:883`). The caches are still right, for the real
+reason now recorded: NgRx's projector memo is **one module-global slot shared by every caller**, so
+at N panels it thrashes at ~0% — precisely the D8 pathology. The false claim in the task report was
+struck through, not erased.
+
+**Auditor's independent findings beyond the brief:**
+- **Both re-triggered assertions ruled legitimate, not weakened.** The originals had become *false
+  premises*: post-F3 a `positions` change necessarily invalidates markers *and* boxes, so the old
+  expectations would assert something untrue. Keeping the old trigger and relaxing to "1 of 4
+  stable" would have been the actual weakening R18-13b forbids. A probe dropping `candles` from
+  `resolveMarkers`'s key fails **exactly** the re-triggered test — it is a live detector.
+- **The `panelChartView$` refactor is a net improvement, not just behavior-preserving.** Pre-F3,
+  `generateCustomSeries` ran on **every** emission for a custom `M*` timeframe and returned a fresh
+  array, so the memo could never hit and the panel view recomputed on every replay tick. The shared
+  `(series, timeframe)`-keyed cache fixes both, and being *keyed* (not a bare last-value slot) means
+  no stale entry can be returned under a different key regardless of subscriber ordering — no
+  diamond-glitch window.
+- Nesting `panelChartView$` inside `tradeChartView$` was correctly ruled out: it has no
+  `startWith(null)`, so nesting would have made `tradeChartView$` silent before `configurePanel` and
+  broken R18-1.
+- `generateCustomSeries` call sites: **2 before, 2 after** — unchanged.
+- **R18-14 honoured:** `selectTradeMarkers`, `selectTradeBoxes`, `selectTradeChartView` all kept,
+  bodies byte-identical. `selectTradeChartView` now has **zero production consumers** — declared,
+  and TEDS Phase 4 Task 6 owns its removal.
+
+**Lows ruled no-fix (written reasons):**
+- **F3-L** — the fine-grained memo helpers have no detector. Performance property, not correctness:
+  a global slot would still return correct results, only slower. The correctness-bearing half (the
+  candle cache) is guarded by four tests. A call-count spy on two private methods is test-only
+  machinery for a non-correctness property (PHILOSOPHY §3.5).
+- **F4-L** — geometry-spec `seedAndRead` never unsubscribes; gating-spec expectations are computed
+  with the same `.projector` the SUT calls. Per-test mapper instances plus `resetSelectors()` in
+  `afterEach` close the `isolate: false` leakage vector, and the gating spec's charter is the gate,
+  not the snapping arithmetic — which `selectors.spec.ts` and the geometry spec own.
+
 ---
 
 ## 9. Next actions
