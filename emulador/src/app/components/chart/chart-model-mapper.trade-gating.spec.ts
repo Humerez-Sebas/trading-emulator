@@ -172,6 +172,27 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
     expect(opened.boxes).toEqual(expectedBoxes);
   });
 
+  it('global eye off (boxesVisible:false), gate OPEN — boxes emptied while markers/positions/orders keep flowing (RFC-018 F3 relocation of the global eye-off rule, chart-model-mapper.service.ts:600-602)', () => {
+    // Gate stays OPEN (matching symbol, hideTrades false) — only the global `boxesVisible`
+    // flag (the toolbar eye) flips false AFTER the mapper is already live. This is what
+    // distinguishes "the eye blanked the boxes" from "the T-1/T-2 gate closed everything":
+    // if the ternary at chart-model-mapper.service.ts:600-602 were ever dropped or inverted,
+    // `view.boxes` would stop being empty here while every other assertion in this file
+    // stayed green (nothing else exercises `boxesVisible:false` with the gate open).
+    const mapper = seed('US30', descriptor({ symbol: 'US30' }));
+
+    store.overrideSelector(selectTradeBoxesVisible, false);
+    store.refreshState();
+    const view = latest(mapper);
+
+    expect(view.boxes).toEqual([]);
+    expect(view.positions).toHaveLength(1);
+    expect((view.positions[0] as { id: string }).id).toBe('p1');
+    expect(view.orders).toHaveLength(1);
+    expect((view.orders[0] as { id: string }).id).toBe('o1');
+    expect(view.markers).toEqual(expectedMarkers);
+  });
+
   it('R18-3: two consecutive gate-closed reads return the SAME empty-view reference', () => {
     // Two INDEPENDENT subscriptions, not two emissions on one subscription: `gated()` ends
     // in `distinctUntilChanged()`, so a single live subscription would never see a "second"

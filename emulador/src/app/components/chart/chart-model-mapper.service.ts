@@ -454,13 +454,16 @@ export class ChartModelMapper {
    * `resolvePanelCandles` above), `positions`, and `history`. Calls `selectTradeMarkers`'s
    * `.projector` directly — the EXACT snapping + ordering logic the (kept-alive, R18-14)
    * global selector uses, just fed this panel's candles instead of the global active
-   * series (the defect). Calling `.projector` as a plain function bypasses the NgRx store's
-   * OWN memoization (which only activates through `store.select(...)`, and is keyed on the
-   * global candles besides), so this local cache is what restores the reference stability
-   * the global selector gave the pre-RFC-018 path for free: a `tradeChartView$` recompute
-   * triggered by something irrelevant to trade content (e.g. the descriptor object being
-   * rebuilt for an unrelated field such as a panel rename) must not reallocate the marker
-   * array.
+   * series (the defect). `.projector` itself IS memoized by NgRx (`createSelector` wraps it
+   * in `memoizedProjector.memoized`) — but that memoization is ONE slot, module-global,
+   * shared by every caller of the selector. At N panels, each feeding a different candle
+   * array, that single shared slot thrashes at a ~0% hit rate: exactly the pathology the D8
+   * factory-selector ban (kernel invariant 5, `CLAUDE.md`) exists to prevent — a shared
+   * memoized function does not scale to N independently-keyed callers. This local,
+   * per-mapper-instance cache is what actually gives this panel its own hit rate: a
+   * `tradeChartView$` recompute triggered by something irrelevant to trade content (e.g. the
+   * descriptor object being rebuilt for an unrelated field such as a panel rename) must not
+   * reallocate the marker array.
    */
   private lastMarkerInputs: {
     candles: Candle[];
