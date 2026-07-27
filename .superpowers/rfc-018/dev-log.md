@@ -483,6 +483,49 @@ correct end state for this task — Tasks 3, 4 and 6 wire them up.
   `TypeError` rather than an assertion diff. Probe 3 confirms the detector *does* fire; only the
   failure message is less legible. Test-only ergonomics (PHILOSOPHY §3.5).
 
+#### Task 6 — Panel eye popover (RFC-018 §8) — **COMPLETE**
+
+| Field | Value |
+| :--- | :--- |
+| Commit | `9c2f3cb` — `feat(rfc-018): unify the panel layer toggles under an eye popover (§8)` |
+| Base | `f6b9b2f` |
+| Scope | 2 files: `chart-panel.component.ts` (+203/−15), `chart-panel.component.spec.ts` (**+173/−0**) |
+| Gates | tsc app **0**, tsc spec **0**, lint **0 problems**, `ng test` **160 files / 1984 tests** exit 0 |
+| Tests | 1968 → **1984** (+16) |
+| Audit | Batched — orchestrator mechanical verification only |
+
+**Orchestrator verification (mechanical):**
+- **The spec diff is +173/−0.** No pre-existing test was weakened or deleted; the link-chip menu
+  coverage passes untouched, as required.
+- `it(` delta = **+16**, matching 1968 → 1984 exactly.
+- `grep -rn "panel-hide-shared" emulador/src/` → **none**: the rename to `.panel-eye` left no
+  stale reference behind.
+- **R18-7 verified in the template:** the inert row carries `[attr.aria-disabled]`,
+  `[attr.tabindex]="… ? 0 : -1"`, `[attr.title]`, and the click guard
+  `(click)="canHideDrawings() && toggleHideSharedDrawings($event)"`. The native `disabled`
+  attribute is **absent**, and the styles carry `opacity: 0.45; cursor: default` plus
+  `.eye-menu-item.disabled:hover { background: none; }` with **no** `pointer-events: none`.
+  The row stays hoverable, so its tooltip is reachable — the whole point of the design.
+- **R18-8 verified:** `anyLayerHidden = hideTrades() || (canHideDrawings() && hideSharedDrawings())`.
+- Esc host binding `'(document:keydown.escape)': 'onEscape()'` added; `onDocClick` extended to the
+  eye menu. `stopPropagation()` preserved on the popover buttons, so the host `(click)` →
+  `setFocusedPanel` behavior is unchanged.
+- Popover mechanism is plain DOM copied from `link-chip-menu` — no CDK, no new dependency.
+
+**Cross-task acceptance (RFC-018 §8) — confirmed by tracing the chain:** `toggleHideTrades()` →
+`LayoutActions.setPanelHideTrades` → reducer `layout.reducer.ts:238-250` → `PanelDescriptor` →
+`ChartModelMapper.configurePanel()` → `ChartComponent.hideTrades` (`chart.component.ts:398`) →
+`tradeVerbsEnabled()`, which Task 4 (`d4ddfd8`) already applies at all four guard points. The
+state half and the enforcement half now meet.
+
+**Deviations / judgment calls:**
+
+| # | Item | Class | Disposition |
+| :--- | :--- | :--- | :--- |
+| 1 | `drawingsRowTitle()`'s *active* string reuses the existing `hideSharedLabel()` computed verbatim rather than inventing new copy. | **Inert** | The plan specified the inert-state string exactly but left the active-state wording as "the flip action". Reusing the established idiom is the conservative reading. |
+| 2 | Added a new `.eye-menu-item:hover { background: var(--surface-2); }` rule — the copied `.link-chip-menu-item` had no hover rule of its own. | **Inert** | Required for coherence: the plan mandates `.disabled:hover { background: none; }`, which suppresses nothing unless an enabled hover state exists. |
+| 3 | Clicking the **inert** row dispatches no layer action (test-verified) but still bubbles to the host `(click)` → `onPanelClick()` → `setFocusedPanel`, because the click guard short-circuits before reaching `stopPropagation()`. | **Inert** | Orchestrator-checked and ruled correct: focusing a panel on click is the panel's ambient behavior, identical to clicking any inert header area, and `onDocClick`'s host-containment test means the popover correctly stays open. "Dispatches nothing" in the brief means no *layer toggle*. **FINAL-AUDIT ATTENTION** anyway, as the implementer requested a second look. |
+
 ---
 
 ## 9. Next actions
