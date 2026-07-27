@@ -387,6 +387,43 @@ the documentation pass; the code is correct as it stands.
 **Deviations:** none. Zero consumers of the new predicates outside their specs, which is the
 correct end state for this task — Tasks 3, 4 and 6 wire them up.
 
+#### Task 4 — T-3 execution guard (D18.D) — **COMPLETE**
+
+| Field | Value |
+| :--- | :--- |
+| Commit | `d4ddfd8` — `feat(rfc-018): guard pane-originated trading verbs with T-3 (D18.D)` |
+| Base | `475d19e` |
+| Scope | 2 files: `chart.component.ts` (+58/−2) and the new `chart.component.trade-guard.spec.ts` (+337) |
+| Gates | tsc app **0**, tsc spec **0**, lint **0 problems**, `ng test` **159 files / 1961 tests** exit 0 |
+| Tests | 1948 → **1961** (+13) |
+| Audit | Batched — orchestrator mechanical verification only |
+
+**Orchestrator verification (mechanical):**
+- Production diff read line by line. All four guard points read the **composed**
+  `tradeVerbsEnabled()` signal — none reads the bare `mayExecute()`. Menu and dispatch agree,
+  which was the specific failure mode this task had to avoid.
+  - `handleContextMenu:914` — guards only the `options` array; the menu still opens, and Fit /
+    date verbs / closed-box hide-delete survive.
+  - `finishPlacing:1113` — early return through `clearPlacing()`, no orphan preview lines.
+  - `dragTradeLine:1177` — early return **before** the `modifyPosition`/`modifyOrder` dispatch.
+  - cancel/close in `handleMouseDown:1417` — early return before both dispatches.
+- The three signals are kept **separate and named** (`mayExecute` / `hideTrades` /
+  `tradeVerbsEnabled`), so the invariant-vs-preference boundary stays legible (RFC-018 §4.2).
+- **`git diff` of `state/layout/layout.models.ts` against Task 2 is empty** — `panelMayExecute`
+  was not modified. The UI rule composes over the domain predicate; it was not fused into it.
+- No Dock / trade-panel file touched; `package.json` and the lockfile untouched.
+- R18-9 discharged by `cancelPlacingOnGuardLoss`, an `effect()` that cancels an in-flight
+  placement when the guard drops.
+
+**Deviations / judgment calls:**
+
+| # | Item | Class | Disposition |
+| :--- | :--- | :--- | :--- |
+| 1 | The commit initially swept in `.superpowers/rfc-018/task-4-report.md`. Amended out (`3570f74` → `d4ddfd8`); code content byte-identical. A `.superpowers/rfc-018/.gitignore` now keeps briefs/reports local while `dev-log.md` stays tracked, per `sdd-orchestration.md` §Artifacts. | **Inert** | Fixed. |
+| 2 | The guarded cancel/close path calls `e.preventDefault()` before returning, consuming the click so it cannot fall through into the drawing hit-tests below. The brief left this implicit. | **Inert** | Correct as written — without it, an ×-button click on a guarded pane would be reinterpreted as a drawing gesture. Flagged to the final audit. |
+| 3 | `effect()` used as a **field initializer** — the first such use in the app. | **Inert** | Orchestrator-checked: `@ViewChild('container', { static: true })` (`chart.component.ts:327`) resolves before first change detection, so the effect's `cancelPlacing()` → `clearPlacing()` path cannot touch an undefined `container`. Field initializers run in an injection context, so the `effect()` call is legal. No crash risk. |
+| 4 | The new spec had to invent a harness: no prior spec exercises `ChartComponent` directly (parents stub it, because `ngAfterViewInit` builds a real `lightweight-charts` engine jsdom cannot host). It stubs `ChartComponent.prototype.ngAfterViewInit` via `vi.spyOn`. | **Requires attention** | Novel test pattern likely to become precedent. **FINAL-AUDIT ATTENTION:** verify the harness does not neuter what it claims to test, and that it interacts safely with the vitest `isolate:false` module-state leakage documented in `docs/engineering/testing.md`. |
+
 ---
 
 ## 9. Next actions
