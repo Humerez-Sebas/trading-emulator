@@ -136,6 +136,14 @@ Los canales se dividen en dos familias mecánicamente distintas:
 | **Eventos** | `syncCrosshair`, `syncTimeRange` | `ChartSyncBus` → `ChartSyncRouter` (exclusión de origen + aplicación idempotente). Sin cambios en este RFC. |
 | **Composición** | `syncDrawings`, `syncTrades` | Estado compartido por construcción: dos paneles que resuelven el mismo grupo componen la misma capa desde el mismo snapshot del store. Nada viaja por el bus; no existe eco que suprimir. |
 
+> **Nota de supersesión (RFC-018, D18.A).** `syncTrades` queda **retirado** como
+> canal de `LinkGroup`: nunca compuso nada —un solo `TradingBook` por sesión, sin
+> espacio de nombres de grupo que resolver— por lo que solo podía sustraer de una
+> capa ya idéntica. La familia **Composición** pasa a tener **un único miembro**,
+> `syncDrawings`; la tesis de esta tabla (dos familias mecánicamente distintas)
+> permanece intacta. Su preocupación pasa a `PanelDescriptor.hideTrades` (T-2).
+> Ver RFC-018 §2 y §5.1 (actualización de D17.K).
+
 Esto mantiene honesto el Invariante 3: el grupo resuelve un espacio de nombres
 (`group:<id>` en el índice); jamás almacena ni reenvía datos de dibujo.
 
@@ -156,6 +164,17 @@ La capa de trades se renderiza en un panel si y solo si
 overlay fantasma sobre paneles de otro símbolo, corrección declarada) **y**
 (panel sin grupo **o** `syncTrades` del grupo activo). `syncTrades` es un
 resolutor de visibilidad, no un canal de datos.
+
+> **Nota de supersesión (RFC-018, D18.C).** La cláusula de grupo de este
+> predicado (`panel sin grupo` **o** `syncTrades` del grupo activo) queda
+> **reemplazada** por T-2 (`!descriptor.hideTrades`, preferencia local de panel —
+> RFC-018 §4, §2.3 razona el error de modelado corregido). La cláusula de
+> símbolo (`panel.symbol === primarySymbol`) **sobrevive verbatim** como T-1,
+> elevada explícitamente a invariante no conmutable. La frase «`syncTrades` es un
+> resolutor de visibilidad, no un canal de datos» queda superada por
+> construcción: al dejar de ser un canal de `LinkGroup`, no hay nada que resolver
+> a ese nivel — la resolución de visibilidad vive enteramente en
+> `PanelDescriptor.hideTrades`.
 
 **Paneles secundarios de observación (multi-símbolo de solo-vista).** El libro
 mono-símbolo (D1) restringe la *operación*, no la *observación*. En un layout de
@@ -337,6 +356,14 @@ sesión mono-símbolo preservada; dibujos session-scoped).
 | D17.J | `SessionPayloadV3` + migración V2→V3 con owner = primer panel cuyo símbolo coincide (fallback primer panel). |
 | D17.K | Dos familias de sincronización: eventos (bus/router) y composición (store). Dibujos y trades JAMÁS viajan por el bus. |
 | D17.L | Borrar un grupo borra en cascada sus dibujos poseídos (atómico, declarado en UI); reasignación automática prohibida. |
+
+> **Nota de supersesión (RFC-018).** **D17.I** — el default de `syncTrades`
+> (`true` en ambos caminos de migración) **desaparece con el campo** (D18.A); el
+> de `syncDrawings` no cambia. Preservación de comportamiento exacta: `hideTrades`
+> ausente = capa visible = exactamente lo que hacía `syncTrades: true` (RFC-018
+> §5.2). **D17.K** — la tesis (dos familias mecánicamente distintas) permanece
+> intacta; se corrige la membresía: la familia de composición pasa a tener **un
+> único miembro**, `syncDrawings` (RFC-018 §5.1, actualización de D17.K).
 
 ---
 

@@ -183,8 +183,9 @@ symptom that this taxonomy was missing. Resolution:
   for cognitive replay") is X-2 applied.
 - **RFC-015 / RFC-016** — the Knowledge domain's aggregates (Playbook, Lesson) and
   its projection surfaces (Journal, Reflection Cabin).
-- **RFC-017** — panel composition serves the Market/Trade render path; `syncTrades`
-  gates where the Trade domain may speak.
+- **RFC-017** / **RFC-018** — panel composition serves the Market/Trade render path;
+  the RFC-018 T-1/T-2 gating (`panelRendersTrades`) decides where the Trade domain
+  may speak, retiring the `syncTrades` LinkGroup channel this line used to cite.
 
 ## 8. References
 

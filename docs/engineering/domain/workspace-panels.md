@@ -56,17 +56,50 @@ required `DrawingOwner` field (`{type:'panel'|'group', id}`), immutable after
 creation — no action reassigns it (invariant grep +
 `drawings.reducer.entity.spec.ts`'s "ownership immutability" suite).
 
-### Two sync families (D17.K)
+### Two sync families (D17.K, membership corrected by RFC-018)
 
 - **Event-channel sync** (`syncCrosshair`, `syncTimeRange`): routed through
   `ChartSyncBus` → `ChartSyncRouter`, origin-excluded and idempotent (see
   Synchronization above — unchanged by this RFC).
-- **Composition sync** (`syncDrawings`, `syncTrades`): shared state BY
-  CONSTRUCTION. Two panels resolving the same link group compose the same layer
-  from the same store snapshot — nothing travels the bus, there is no echo to
-  suppress. This keeps Invariant 3 honest: a `LinkGroup` resolves a namespace
+- **Composition sync** (`syncDrawings`, sole member as of RFC-018): shared state
+  BY CONSTRUCTION. Two panels resolving the same link group compose the same
+  layer from the same store snapshot — nothing travels the bus, there is no echo
+  to suppress. This keeps Invariant 3 honest: a `LinkGroup` resolves a namespace
   (`group:<id>` in the owner index) but never stores or forwards drawing data — it
-  has no drawings field at all.
+  has no drawings field at all. `syncTrades` was retired from this family by
+  RFC-018 (D18.A) — it never composed anything (one `TradingBook` singleton per
+  session means every symbol-matching panel already renders an identical set),
+  so it could only ever *subtract* from an already-identical layer. See "Trade
+  layer gating" below for what replaced it.
+
+### Trade layer gating (RFC-018)
+
+The trade layer has no panel or group affinity: it derives independently and
+identically from the singleton `TradingBook` (D1) in every panel whose symbol
+matches. RFC-018 replaces the retired `syncTrades` group channel with two
+independent clauses, structurally identical to `composePanelDrawings`'s symbol
+filter + local opt-out:
+
+- **T-1** (correctness invariant, **not** togglable) — a panel renders the trade
+  layer only if its effective symbol is the book's `primarySymbol`. Painting one
+  instrument's levels on another's price axis is a false statement about the
+  market, not a visibility preference.
+- **T-2** (panel-local preference) — whether a T-1-eligible panel actually paints
+  the layer is `PanelDescriptor.hideTrades` (same D17.H idiom as
+  `hideSharedDrawings`: absent = false, never persisted as an explicit `false`).
+- **T-3** (command-boundary invariant) — a trading verb (context-menu order
+  options, `finishPlacing`, drag SL/TP, cancel/close) may originate only from a
+  panel satisfying T-1 (`panelMayExecute`). The predicate deliberately ignores
+  `hideTrades` — hiding the layer is a visual preference, not a trading lockout.
+  `ChartComponent` composes a UI-layer rule *over* T-3 (RFC-018 §8, binding):
+  `tradeVerbsEnabled = panelMayExecute(...) && !hideTrades`, so a panel whose
+  trade layer is hidden also offers and executes no order verbs, without
+  changing `panelMayExecute` itself.
+
+Both predicates (`panelRendersTrades`, `panelMayExecute`) live in
+`layout.models.ts` beside `effectivePanelSymbol`, and the gate is applied inside
+the per-panel `ChartModelMapper` instance (D8) — never in the store, never in
+the engine.
 
 ### Per-panel composition (D8 intact)
 
@@ -106,6 +139,10 @@ active asset.
   per-panel toggle that hides the composed GROUP layer in that panel only — it never
   deletes or mutates the underlying shared drawings, and sibling panels in the same
   group keep composing them normally.
+- **`hideTrades`** (D18.B, optional on `PanelDescriptor`, persisted): the T-2
+  panel-local preference from "Trade layer gating" above, same idiom as
+  `hideSharedDrawings` (absent = false, delete-on-false) — but for the trade
+  layer, and with no group dependency at all.
 
 ### Panel-close cascade
 

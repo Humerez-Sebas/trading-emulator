@@ -336,8 +336,16 @@ behaviors is a downstream plan, not a reopening of the grammar.
   label (trade levels never emit axis tags; they live on their Stems). **What
   survives from that work:** the span-scoped geometry principle (it *is* INV-08),
   the retirement of full-width price lines, MAE/MFE surfaced as first-class facts
-  (RFC-014 §3), the panel gating predicate (RFC-017 §5.1), and `syncTrades`
-  composition (RFC-017 §5) — all consistent with this grammar.
+  (RFC-014 §3), and the panel gating predicate — originally RFC-017 §5.1
+  (`panel.symbol === primarySymbol` ∧ `syncTrades`), now `panelRendersTrades`
+  (RFC-018 §4, T-1/T-2; the group clause was retired and replaced by the
+  panel-local `hideTrades` preference, D18.A/D18.C) — all consistent with this
+  grammar. RFC-018 §9 confirms explicitly that this same gating predicate
+  survives the render-engine change this document makes (`TradeBoxes →
+  TradeObjectPrimitive`); only the predicate's own internals were amended by
+  RFC-018, independently of this grammar's supersession. (`syncTrades`
+  composition, RFC-017 §5, was itself retired by RFC-018 D18.A — see that RFC's
+  §5.1 and the RFC-017 supersession note.)
 - **Term reassignment:** "Ghost Rails" now names exclusively the E9 drag
   conversation. The RFC-017 spec's Concept A is referred to historically as
   "span-scoped geometry (2026-07-16 exploration)".

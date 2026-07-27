@@ -28,7 +28,7 @@ its assumptions do not hold. **Implementers must follow this section, not the br
 | C2 | Update `produceLinkGroupWire` / `normalizeLinkGroupWire` in `session-sync.mapping.ts` | **Neither function exists.** `toPayload`/`fromPayload` pass `linkGroups` through wholesale; the only normalization point is `parseSessionPayload` → `normalizeLinkGroup` (`session-migration.ts:133`) | Task 1 touches `session-sync.mapping.ts` **not at all**; the wire work is entirely in `link-groups.models.ts` |
 | C3 | `hideTrades` removal is a pure field deletion | `normalizeLinkGroup` returns `{ ...g, ... }` — a **spread**. After deleting the field, a legacy `syncTrades` key would be copied into runtime state and re-serialized into the next V3 payload forever | `normalizeLinkGroup` must be rewritten to construct the group **field by field** (see Task 1, Step 3) |
 | C4 | `chart.component.ts` "receives panelId via input" | `ChartComponent` has **no panel input**. It reads its identity from the injected per-panel mapper: `this.mapper.descriptor()` (see `chart.component.ts:512`) | Task 4 resolves the descriptor from the mapper signal, not an input |
-| C5 | Task 1 is a small change | Removing the field breaks **12 spec files** that build `LinkGroup` object literals (TS excess-property checks fire) | Task 1 carries a mechanical fan-out; full file list in Task 1, Step 6 |
+| C5 | Task 1 is a small change | Removing the field breaks **14 spec files** (corrected from 12 by C6, landed in the docs pass) that build `LinkGroup` object literals (TS excess-property checks fire) | Task 1 carries a mechanical fan-out; full file list in Task 1, Step 6 |
 
 Additional verified facts that shape the plan:
 
@@ -82,7 +82,7 @@ propagate the key back out.
 | `state/link-groups/link-groups.actions.ts` | Delete `'Set Sync Trades'` |
 | `state/link-groups/link-groups.reducer.ts` | Delete the `setSyncTrades` `on(...)` case |
 | `components/workspace/link-groups-menu.component.ts` | Delete the "Trades" `<label>` + `toggleTrades()` |
-| *(12 spec files)* | Remove `syncTrades` from object literals; rewrite the channel specs |
+| *(14 spec files — corrected from 12, C6)* | Remove `syncTrades` from object literals; rewrite the channel specs |
 
 **Do NOT touch** `session-sync.mapping.ts` (C2) and **do not create**
 `link-groups.effects.ts` (C1).
@@ -171,7 +171,23 @@ and Dibujos untouched.
 ### Step 6 — Spec fan-out (mechanical, unavoidable)
 
 TypeScript excess-property checks fire on every `LinkGroup` object literal still
-carrying `syncTrades`. **`tsc -p tsconfig.spec.json` stays red until all 12 are done.**
+carrying `syncTrades`. **`tsc -p tsconfig.spec.json` stays red until all 14 are done.**
+
+> **Post-hoc correction (C6, landed in the docs pass).** This section originally
+> listed **12** files; the real fan-out was **14**
+> (`grep -rln "syncTrades" emulador/src/` → 17 files: 3 production + 14 spec).
+> Two files were missing entirely — `services/session-migration.v3.spec.ts` and
+> `pages/sesiones/sesiones-page.component.spec.ts` — both carrying **behavioral**
+> assertions on the `syncTrades: true` migration default
+> (`session-migration.v3.spec.ts:251-262`, `sesiones-page.component.spec.ts:768`),
+> not inert literals, so each needed a rewrite rather than a line deletion
+> (`migrateV2ToV3` normalizes through `normalizeLinkGroup`,
+> `session-migration.ts:133` — the same C3 boundary this plan already
+> identified). A third file, `state/link-groups/link-groups.reducer.spec.ts`,
+> was on the original literal-only list below but itself held two full
+> behavioral tests asserting the retired `syncTrades: true` normalization
+> default — reclassified below to the behavioral-rewrites bucket. See
+> `dev-log.md` §8.2 (C6) and §8.3 (Task 1 deviation #1) for the full ruling.
 
 *Literal-only removals (delete the `syncTrades: …` line):*
 - `components/chart/chart-model-mapper.composition.spec.ts`
@@ -180,7 +196,6 @@ carrying `syncTrades`. **`tsc -p tsconfig.spec.json` stays red until all 12 are 
 - `services/session-sync.service.spec.ts`
 - `services/workspace-db.service.spec.ts`
 - `state/drawings/drawing-ownership.spec.ts`
-- `state/link-groups/link-groups.reducer.spec.ts`
 - `state/workspaces/session-persistence.e2e.spec.ts`
 - `state/workspaces/workspaces.effects.spec.ts`
 - `components/workspace/link-groups-menu.component.spec.ts`
@@ -194,6 +209,16 @@ carrying `syncTrades`. **`tsc -p tsconfig.spec.json` stays red until all 12 are 
   `'renders a Spanish "Trades" toggle reflecting group.syncTrades'` and the
   `dispatched.group.syncTrades` assertion. **Add** an assertion that no `.sync-trades`
   control renders.
+- **`state/link-groups/link-groups.reducer.spec.ts`** (C6) — held two full
+  behavioral tests asserting the retired `syncTrades: true` normalization
+  default, not an inert literal as originally filed. Keep the
+  `syncDrawings === false` assertions, retitle, and swap the stale `syncTrades`
+  assertion for the anti-leak `expect('syncTrades' in x).toBe(false)`.
+- **`services/session-migration.v3.spec.ts`** (C6) — rewrite the `syncTrades: true`
+  migration-default assertion (originally lines 251-262) through
+  `normalizeLinkGroup`, asserting the key's absence rather than its value.
+- **`pages/sesiones/sesiones-page.component.spec.ts`** (C6) — same rewrite for
+  the `syncTrades` assertion originally at line 768.
 
 ### Tests to add
 
@@ -218,10 +243,20 @@ In `link-groups-menu.component.channels.spec.ts`:
 cd emulador && npx tsc -p tsconfig.spec.json --noEmit
 ```
 
-Invariant grep — must return **zero** hits outside this plan, the RFC, and the dev log:
+> **Post-hoc correction (R18-12, landed in the docs pass).** The line below
+> originally demanded `grep -rn "syncTrades" emulador/src/` return zero, which
+> directly contradicts Step 2 above (the `LinkGroupWire` legacy-tolerance
+> optional) and the anti-leak assertions this same section mandates
+> (`expect('syncTrades' in normalized).toBe(false)`) — both make the literal
+> string appear in `emulador/src/` by design. RFC-018 §10 settles it: the wire
+> tolerance is required. The binding invariant is **zero live `syncTrades`
+> channel**, verified by the live-channel greps below (see `dev-log.md` §8,
+> R18-12, for the full ruling).
 
 ```bash
-grep -rn "syncTrades" emulador/src/
+grep -rn "Set Sync Trades\|setSyncTrades" emulador/src/   # must be empty
+grep -rn "sync-trades\|toggleTrades"      emulador/src/   # only an absence assertion in a spec
+grep -rnE "\.syncTrades" emulador/src/                    # must be empty
 ```
 
 ---
@@ -803,10 +838,19 @@ At branch finalization additionally:
 npm run build
 ```
 
-Plus the RFC-018 invariant greps (all must be empty in `emulador/src/`):
+Plus the RFC-018 invariant greps:
+
+> **Post-hoc correction (R18-12).** This originally read
+> `grep -rn "syncTrades" emulador/src/` (must be empty) — self-contradicting
+> Task 1 Step 2's `LinkGroupWire` legacy-tolerance optional and its own mandated
+> anti-leak assertions. RFC-018 §10 settles it in favor of the wire tolerance;
+> corrected here to the live-channel form that actually shipped and passed
+> (`dev-log.md` §8, R18-12).
 
 ```bash
-grep -rn "syncTrades" emulador/src/
+grep -rn "Set Sync Trades\|setSyncTrades" emulador/src/   # empty
+grep -rn "sync-trades\|toggleTrades"      emulador/src/   # only an absence assertion in a spec
+grep -rnE "\.syncTrades" emulador/src/                    # empty
 ```
 
 No `npm install` is expected; if one happens, `npm ci --dry-run` before committing the
@@ -819,7 +863,7 @@ lockfile.
 | Risk | Severity | Mitigation |
 | :--- | :--- | :--- |
 | Legacy `syncTrades` leaks back into V3 payloads via the spread (C3) | **High** — silently immortal | Explicit field-by-field `normalizeLinkGroup` + the `'syncTrades' in normalized === false` test |
-| Spec fan-out leaves `tsc -p tsconfig.spec.json` red mid-task | Medium | Task 1 is atomic: field removal and all 12 spec files in **one** commit |
+| Spec fan-out leaves `tsc -p tsconfig.spec.json` red mid-task | Medium | Task 1 is atomic: field removal and all 14 spec files (C6 — corrected from 12, see Task 1 Step 6) in **one** commit |
 | Task 3's closed-until-configured gate silently blanks a legitimate panel | Medium | The mapper is configured by an `effect` in `ChartPanelComponent`'s constructor, so configuration precedes first paint; covered by the "never configured" test |
 | Empty-view allocation per tick defeats the engine short-circuit | Medium | Frozen shared constant + the reference-identity test in Task 3 |
 | The inert drawings row loses its tooltip or becomes silently clickable | Low | **Resolved by R18-7** (Option B): `aria-disabled` + `tabindex="-1"` + click guard, no native `disabled`, no `pointer-events: none`. Four dedicated tests in Task 6 |
@@ -832,7 +876,9 @@ lockfile.
 
 ## 5. Definition of Done
 
-- [ ] D18.A — zero `syncTrades` in `emulador/src/`; legacy payloads read clean and do not re-emit the key
+- [ ] D18.A — zero LIVE `syncTrades` channel (no action, reducer case, UI control, or
+      production read site — the `LinkGroupWire` legacy-tolerance optional is exempt by
+      design, R18-12); legacy payloads read clean and do not re-emit the key
 - [ ] D18.B — `hideTrades` + both predicates exist; reducer follows the D17.H idiom exactly
 - [ ] D18.C — `tradeChartView$` gated inside the mapper instance; 3 memo inputs; no store/engine gating; no factory selector
 - [ ] D18.D — all four trading-verb entry points guarded; menu **and** dispatch
