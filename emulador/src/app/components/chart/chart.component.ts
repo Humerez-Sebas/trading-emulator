@@ -7,6 +7,7 @@ import {
   OnDestroy,
   ViewChild,
   computed,
+  effect,
   inject,
   output,
   signal,
@@ -31,7 +32,7 @@ import {
   selectPlacementTime,
   selectTradePanelView,
 } from '../../state/selectors';
-import { effectivePanelSymbol } from '../../state/layout/layout.models';
+import { effectivePanelSymbol, panelMayExecute } from '../../state/layout/layout.models';
 import { selectRuleSlotMap } from '../../state/playbook/playbook.selectors';
 import { ChartModelMapper, PanelDrawingsView } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -377,6 +378,41 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   readonly chartFocused = output<void>();
 
   // --- right-click menu + interactive order placement ---
+  /**
+   * RFC-018 (T-3, domain): may a trading verb originate from THIS pane? A pane whose
+   * symbol is not the book's is view-only w.r.t. trades. Deliberately symbol-only —
+   * never consults `hideTrades` (that composition happens below, in `tradeVerbsEnabled`).
+   * `descriptor() == null` (mapper never configured) refuses: a command is even less
+   * forgiving than a render (R18-2).
+   */
+  private readonly mayExecute = computed(() => {
+    const d = this.mapper.descriptor();
+    return d != null && panelMayExecute(d, this.currentAsset());
+  });
+  /**
+   * RFC-018 §8 (UI rule, binding): a pane the trader asked to keep clean (`hideTrades`)
+   * is not an order-entry surface either. A presentation preference, NOT a domain
+   * invariant — composed over `mayExecute`, never folded into it (RFC-018 §4.2: an
+   * invariant and a preference compose, they do not fuse).
+   */
+  private readonly hideTrades = computed(() => this.mapper.descriptor()?.hideTrades ?? false);
+  /**
+   * The condition every pane-originated trading verb (menu offer AND command dispatch)
+   * is guarded by. Both the offer and the act must read this SAME composed signal —
+   * guarding the menu with it and a dispatch with the bare `mayExecute` is the specific
+   * failure this invariant exists to prevent.
+   */
+  private readonly tradeVerbsEnabled = computed(() => this.mayExecute() && !this.hideTrades());
+  /**
+   * R18-9: a panel can acquire `hideTrades: true` WHILE a placement is already in
+   * progress (the trader flips the toggle mid-placement). The `finishPlacing` guard
+   * catches the eventual commit, but without this the preview SL/TP price lines would
+   * stay painted on a pane that no longer trades.
+   */
+  private readonly cancelPlacingOnGuardLoss = effect(() => {
+    if (!this.tradeVerbsEnabled()) this.cancelPlacing();
+  });
+
   /** Current price/risk context for placing orders from the chart. */
   private tradeCtx = this.store.selectSignal(selectTradePanelView);
   /** D14.B: pending-order placement stamps createdAt at the reveal horizon, not the raw cursor. */
@@ -875,7 +911,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const current = this.tradeCtx().price;
 
     const options: MenuOrderOption[] = [];
-    if (raw !== null && current !== null) {
+    // RFC-018 (T-3 / §8): a pane that may not trade offers no order verbs — the menu
+    // still opens (Fit / date verbs / closed-box hide-delete are not trading verbs).
+    if (this.tradeVerbsEnabled() && raw !== null && current !== null) {
       const price = this.roundToPoint(raw);
       const label = this.formatPrice(price);
       if (price < current) {
@@ -1072,6 +1110,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.cancelPlacing();
       return;
     }
+    // RFC-018 (T-3 / §8): the pane lost (or never had) the right to trade this book —
+    // drop the preview instead of committing a wrong-instrument / wrong-price order.
+    if (!this.tradeVerbsEnabled()) {
+      this.clearPlacing();
+      return;
+    }
     this.store.dispatch(
       TradingActions.placeOrder({
         side: placing.side,
@@ -1130,6 +1174,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    */
   private dragTradeLine(y: number): void {
     if (!this.lineDrag || !this.series) return;
+    // RFC-018 (T-3 / §8): dragging a trade level modifies the book — the same guard
+    // as the menu offer and finishPlacing, or the drag path leaves a bypass open.
+    if (!this.tradeVerbsEnabled()) return;
     const raw = this.series.coordinateToPrice(y);
     if (raw === null) return;
     const price = this.roundToPoint(raw);
@@ -1367,6 +1414,13 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // ×-button on an entry line: cancel the order / close the position
     const del = tradingCap?.hitTestDelete(x, y);
     if (del) {
+      // RFC-018 (T-3 / §8): cancel/close originate from this pane and modify the
+      // book — same guard as the menu offer, finishPlacing, and dragTradeLine. The
+      // click is still consumed (no fallthrough into the drawing hit-tests below).
+      if (!this.tradeVerbsEnabled()) {
+        e.preventDefault();
+        return;
+      }
       const ctx = this.tradeCtx();
       this.zone.run(() => {
         if (del.target === 'order') {
