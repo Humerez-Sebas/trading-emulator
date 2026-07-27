@@ -646,11 +646,99 @@ state the Task 5 re-review audited (161/1989, `npm run build` green, no new chun
 
 ---
 
-## 9. Run status at session end (2026-07-27)
+#### FINAL WHOLE-BRANCH OPUS AUDIT — **PASS ("Ship it")**, 2026-07-27
 
-**All six implementation tasks and the documentation pass are complete, committed and green.**
-The run stopped here at the owner's instruction (session usage limit); the final whole-branch audit
-and the PR are the only remaining steps.
+Audited `4e005d6..e5d2ef8` — 20 commits, 42 files, +4070/−249.
+**Zero Critical / High / Medium. Three Lows, all ruled no-fix with written reasons.**
+
+**Gates re-run personally by the auditor on the clean tree:**
+
+| Gate | Result |
+| :--- | :--- |
+| `npx tsc -p tsconfig.app.json --noEmit` | exit **0** |
+| `npx tsc -p tsconfig.spec.json --noEmit` | exit **0** |
+| `npm run lint` | exit **0** — "All files pass linting" |
+| `npx ng test --watch=false` | exit **0** — **161 files / 1989 tests** |
+| `npm run build` | exit **0** — 648.37 kB, known-accepted budget warning, **no new chunk types**; `grep -rl vitest dist/` and `grep -rl spec-util dist/` both **empty** (no sentinel) |
+
+**Ledger arithmetic verified independently** from per-commit `it(`/`test(` deltas, not from the
+reports: 1936 −1 → 1935 +13 → 1948 +13 → 1961 +7 → 1968 +16 → 1984 +4 → 1988 +1 → **1989**. All
+seven hashes exist with the claimed scopes. Tasks 2/3/4/6 and the audit fix are **+N/−0** —
+structural proof no pre-existing assertion was weakened. Task 5 is the only commit with
+substantive spec deletions and was re-derived line by line (see below).
+
+**Invariants:** R18-12 live-channel form clean — all 16 surviving `syncTrades` hits are exactly
+the exempt categories (the `LinkGroupWire` deprecated optional, its JSDoc, anti-leak assertions).
+`syncPriceScale` still zero read sites. Kernel 1, 5, 7, 8 all hold; `package.json`/lockfile
+**zero-diff**; `session-sync.mapping.ts` and `domain/` zero-diff; `assertNoCandles` intact;
+**no `schemaVersion` bump**; `link-groups.effects.ts` correctly never created (C1).
+
+**12 mutation probes, each reverted, tree certified clean afterward** — every guarantee the
+branch claims has a live detector: removing each of the four guard points fails 2-3 tests each;
+dropping the `hideTrades` term from `tradeVerbsEnabled` fails **5**; repealing the render gate
+fails 5; repealing T-1 fails 4, T-2 fails 3; neutering the R18-9 effect, breaking the D17.H
+delete-on-false idiom, dropping `candles` from the marker memo key, and staling `memoizeMap` each
+fail **exactly 1**.
+
+**All four FINAL-AUDIT ATTENTION flags resolved with no finding:**
+1. The `vi.spyOn(…, 'ngAfterViewInit')` harness **does not neuter what it tests** — it stubs only
+   engine construction; the real `tradeVerbsEnabled → mayExecute → panelMayExecute` composition
+   runs against the real `selectCurrentAsset`. It carries a positive control, and probes 1-6 prove
+   the guard points are live. `isolate: false` safe: `vi.restoreAllMocks()` in `afterEach`, and the
+   only sibling specs touching `ChartComponent` remove it via `TestBed.overrideComponent`. **Sound
+   as precedent.**
+2. `e.preventDefault()` on the guarded cancel/close path mirrors the ungated path exactly; without
+   it an ×-button click would fall through into the drawing hit-tests. Defense in depth — the path
+   is in fact unreachable (gate closed ⇒ empty arrays ⇒ `hitTestDelete` finds nothing).
+3. Inert-row focus bubbling → **L-1**, no-fix.
+4. `selectTradeChartView` orphan → **L-3**, no-fix. Auditor swept for others: `snapToCandle`,
+   `selectTradeMarkers`, `selectTradeBoxes` all retain live mapper consumers. Nothing else orphaned.
+
+**Cross-cutting findings (the whole-branch view's real value):**
+- **The six tasks compose.** Traced end to end: `toggleHideTrades()` → `setPanelHideTrades` →
+  reducer → `PanelDescriptor` → `ChartPanelComponent`'s `effect` → `configurePanel` →
+  **one `panelDescriptor$` feeding both** the Task 3 render gate and the Task 4 command guard.
+- **The render gate and the command guard cannot disagree — provably.** Both expand to the identical
+  conjunction `d != null ∧ asset != null ∧ effectivePanelSymbol(d, asset) === asset ∧ !d.hideTrades`,
+  over the same descriptor emission and the same selector, propagating inside one synchronous
+  `.next()` — so there is no transient window either. A second independent barrier exists: gate
+  closed ⇒ `EMPTY_TRADE_CHART_VIEW` ⇒ nothing rendered ⇒ every hit-test finds no target, making the
+  guarded paths unreachable rather than merely refused. All **five** book-mutating verbs are
+  covered; the three unguarded dispatches are visual/date verbs, correctly out of scope.
+- **Persistence holds end to end.** `panels` travels by reference through `session-sync.mapping.ts`
+  (no field-by-field reconstruction), so `hideTrades` round-trips exactly as `hideSharedDrawings`
+  already does. Probe 10 is the D17.H detector.
+- **A point stronger than this ledger claimed:** at `4e005d6`, `syncTrades` had **no render or
+  gating read site at all** — only the checkbox binding and its own storage plumbing. It was a
+  genuinely dead toggle, so D18.A is behavior-preserving for **every** value, not merely the `true`
+  default RFC-018 §5.2 argues from.
+- **TEDS A2 unobstructed** — the gate is an exported pure predicate applied at a single site plus a
+  frozen constant; carrying it to `tradeObjects$` is a straight port. F3's exports of `snapToCandle`
+  and `selectTradeMarkers` are a net help to A3.
+- **All six RFC-017 supersession notes verified against the shipped code.** None misstates what
+  shipped.
+
+**Lows ruled NO-FIX (written reasons, not to be re-litigated):**
+- **L-1** — the inert eye row bubbles to `setFocusedPanel` while enabled rows do not. Focusing a
+  panel on an interior click is that panel's ambient behavior; `setFocusedPanel` returns state
+  identity when already focused; the popover correctly stays open. No failure scenario — the
+  asymmetry is cosmetic, and "dispatches nothing" meant no *layer* action, which holds.
+- **L-2** — three of the four guard points have only negative assertions (no gate-open positive
+  control), so a future harness change could render them vacuously green. Test-robustness against a
+  hypothetical future edit, not an unprotected production path: probes 2-4 supply exactly the
+  evidence a positive control would, today (PHILOSOPHY §3.5).
+- **L-3** — `selectTradeChartView` retained with zero production consumers. Deliberate under R18-14;
+  zero runtime cost (a lazy selector nothing subscribes to); its doc comment warns against
+  re-pointing the pane render at it; TEDS Phase 4 Task 6 owns removal and A2 still relies on its
+  `selectors.spec.ts` coverage.
+
+---
+
+## 9. Run status (2026-07-27)
+
+**The run is complete.** All six implementation tasks, the documentation pass, and the final
+whole-branch Opus audit are done. The audit returned **PASS** with zero Critical/High/Medium,
+clearing the branch for its PR to `develop`.
 
 | Step | State |
 | :--- | :--- |
@@ -661,8 +749,9 @@ and the PR are the only remaining steps.
 | Task 6 — eye popover (§8) | ✅ `9c2f3cb` |
 | Task 5 / F3 — per-panel geometry | ✅ `74e17ef` + `51836a9` — **Opus audit FAIL → fixed → PASS** |
 | Documentation (§2) | ✅ `55c4b71` + `dbdebcc` |
-| **Final whole-branch Opus audit** | ⬜ **NOT RUN — next action** |
-| **PR to `develop`** | ⬜ **NOT OPENED** |
+| R18-12 owner acceptance | ✅ `e5d2ef8` |
+| **Final whole-branch Opus audit** | ✅ **PASS** — 0 Critical/High/Medium, 3 Lows no-fix, 12 mutation probes |
+| **PR to `develop`** | ✅ opened (see §9.2) |
 
 **Verified state at HEAD `dbdebcc`:** working tree clean; branch **0 behind** `origin/develop`;
 42 files changed vs `develop` (+4070/−249); tests **1936 → 1989**; all four gates exit 0 and
