@@ -264,7 +264,49 @@ coordinates, so wrong-grid coordinates would propagate the error into the whole 
 
 ---
 
-## 8. Next actions
+## 8. Implementation run — ledger
+
+### 8.0 Run header
+
+| Field | Value |
+| :--- | :--- |
+| **Branch** | `feature/rfc-018-trade-visibility-refinement` |
+| **Base** | `develop` @ `4e005d6` (RFC-017 merge / PR #45) — branch verified **0 behind, 2 ahead** of `origin/develop` at run start; no merge needed |
+| **Design commits** | `33a068c` (RFC + plan + amendments + log), `a87645a` (§8 binding + R18-7) |
+| **Plan** | `docs/superpowers/plans/2026-07-26-rfc-018-implementation-plan.md` |
+| **RFC** | `docs/architecture/rfcs/018-trade-visibility-refinement.md` |
+| **Run mode** | **TIERED** — per-task Opus audit on Task 3 and Task 5 (the two correctness/complexity risks); Tasks 1, 2, 4, 6 batched (orchestrator mechanical verification only) and covered by the single final whole-branch Opus audit that gates the PR. |
+| **PR target** | `develop` (RFC track — never `main`) |
+
+### 8.1 Baseline (orchestrator-run, fresh raw output, 2026-07-26)
+
+All four gates from `emulador/`, raw, unpiped:
+
+| Gate | Result |
+| :--- | :--- |
+| `npx tsc -p tsconfig.app.json --noEmit` | exit **0** |
+| `npx tsc -p tsconfig.spec.json --noEmit` | exit **0** |
+| `npx ng test --watch=false` | exit **0** — **156 files / 1936 tests passed** |
+| `npm run lint` | exit **0** — "All files pass linting" |
+
+`1936` matches the count RFC-017 closed at, confirming the branch baseline is the merged
+RFC-017 state and nothing has drifted.
+
+### 8.2 Run decisions (orchestrator)
+
+| Id | Decision | Rationale |
+| :--- | :--- | :--- |
+| **R18-10** | **Sequential dispatch in one working tree** — Tasks 1, 2 and 4 are *not* dispatched in parallel, despite being independent by file. | Plan Risk Register: Task 1 deliberately leaves `tsc -p tsconfig.spec.json` **red** until all its spec files land. Any implementer running concurrently in the same tree would read that red as its own failure. True isolation would need one git worktree per task, each requiring its own `npm ci` — which carries the known npm 11.x optional-dep lockfile-prune hazard (`docs/engineering/testing.md`) for zero architectural gain on mechanical work. Order: **1 → 2 → 4 → 3 ⟨audit⟩ → 6 → 5 ⟨audit⟩ → docs → final audit**, which respects every dependency in plan §1. |
+| **R18-11** | Task 4 is sequenced **after** Task 2, not alongside it. | The orchestration brief listed Task 4 as depending on nothing; plan §1 states it depends on Task 2 (`panelMayExecute` must exist). The plan is the authority (`CLAUDE.md`: repo docs win). |
+| **C6** | **The Task 1 spec fan-out is 14 files, not the 12 the plan lists.** Adds `services/session-migration.v3.spec.ts` and `pages/sesiones/sesiones-page.component.spec.ts`. | Verified by `grep -rln "syncTrades" emulador/src/` → 17 files (3 production + 14 spec). Both omitted files carry **behavioral** assertions on the `syncTrades: true` migration default (`session-migration.v3.spec.ts:251-262`, `sesiones-page.component.spec.ts:768`), not inert literals, so each needs a rewrite rather than a line deletion. `migrateV2ToV3` normalizes through `normalizeLinkGroup` (`session-migration.ts:133`), so this is the same C3 boundary the plan already identified — a completeness correction to the plan's file list, **not** a change of approach. Carried into `task-1-brief.md`; classified *inert* (mechanical, no design consequence). |
+
+### 8.3 Task log
+
+*(appended as tasks complete)*
+
+---
+
+## 9. Next actions
 
 - [x] Owner review of RFC-018 §5 (D18.A–D) and §8 (UI rules) — **done 2026-07-26**
 - [x] §8 rule (hidden layer ⇒ no order verbs) — **decided: yes, binding.** Enforced at all four guard points via `tradeVerbsEnabled()`; `panelMayExecute` stays symbol-only (§4.2)
