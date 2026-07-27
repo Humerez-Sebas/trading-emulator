@@ -203,6 +203,20 @@ congelado (008-012), y esta cláusula no lo reabre.
 > no a este run de RFC-017; por eso las **Tasks 7–8 quedan fuera de alcance**. El
 > texto de abajo se conserva como registro histórico de la exploración.
 
+> **Nota de supersesión (RFC-018, D18.C).** El predicado que el párrafo anterior
+> describe como superviviente cambió en ambas mitades. La cláusula pasa a ser
+> `panel.symbol === primarySymbol` ∧ `!panel.hideTrades` (T-1 ∧ T-2, RFC-018 §5) —
+> ya sin ningún grupo involucrado. Y su implementación **no** migró al plan TEDS:
+> RFC-018 la trajo de vuelta y la envió en esta misma rama, Task 3 (`c259316`),
+> dentro de la instancia de `ChartModelMapper` — antes de que TEDS Fase 4 llegara
+> a tocarla. El contrato que sobrevive es el mismo *en especie*: el gate sigue
+> decidiendo *dónde* pueden pintarse los trades; solo cambiaron sus cláusulas y
+> su dueño. RFC-018 §7 arregla además, por separado, la geometría de marcadores y
+> cajas por panel (F3) — ortogonal a este predicado, pero enviado en la misma
+> rama. El lado TEDS de este traspaso queda registrado en
+> `docs/superpowers/teds-plan-amendments.md` A1 (el predicado sale del plan
+> TEDS) y A2 (debe migrar a `tradeObjects$`, no morir con `tradeChartView$`).
+
 La exploración obligatoria de tres conceptos (A «Ghost Rails», B «Command
 HUD», C «Path Narrative») con su evaluación contra legibilidad/carga
 cognitiva, usabilidad en replay y jerarquía frente a velas está en la
@@ -406,6 +420,14 @@ sin decirlo.
    — §5.1 sigue siendo el contrato normativo de *dónde* debe pintarse la capa
    de trades; implementarlo es responsabilidad del plan TEDS, no de este
    cierre.
+
+   > **Nota de supersesión (RFC-018).** Esta afirmación queda **superada**: el
+   > predicado de gating **sí se implementó**, pero en RFC-018 (Task 3,
+   > `c259316`), no en el plan TEDS. RFC-018 D18.C reemplaza la cláusula de
+   > grupo por T-2 (`!hideTrades`) y además hace cumplir la cláusula de
+   > símbolo del lado de comandos (T-3, D18.D) — ver RFC-018 §5. El traspaso de
+   > responsabilidad al plan TEDS que este punto declaraba queda registrado y
+   > corregido en `docs/superpowers/teds-plan-amendments.md` A1.
 
 3. **Matiz de fidelidad del `DrawingSnapshot` de telemetría (RFC-014 G3).**
    El hecho de telemetría queda acotado a los dibujos *visibles* del activo
