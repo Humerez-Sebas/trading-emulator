@@ -602,7 +602,88 @@ struck through, not erased.
 
 ---
 
-## 9. Next actions
+#### Documentation pass (plan §2) — **COMPLETE**
+
+| Field | Value |
+| :--- | :--- |
+| Commits | `55c4b71` — `docs(rfc-018): re-point the trade-gating references and supersede RFC-017 §5/§5.1` (7 files, +166/−21); `dbdebcc` — `docs(rfc-018): supersede RFC-017 §6 and §13 on the trade-gating predicate` (1 file, +22) |
+| Base | `5c3c3d8` |
+| Gates | Re-run raw after the edits: all four exit 0, **161 files / 1989 tests** — unchanged, as a docs-only change requires |
+| Audit | Covered by the final whole-branch audit |
+
+**Both commits are docs-only.** Verified mechanically:
+`git diff --stat 51836a9 HEAD -- emulador/` is **empty** — the code tree is byte-identical to the
+state the Task 5 re-review audited (161/1989, `npm run build` green, no new chunk types).
+
+**Landed:**
+- `docs/engineering/domain/workspace-panels.md` — composition family reduced to `syncDrawings`
+  alone; `hideTrades` added beside `hideSharedDrawings`; T-1/T-2/T-3 summary added, including the
+  note that the §8 UI rule composes over T-3 in `ChartComponent` without changing `panelMayExecute`.
+- `docs/architecture/TEDS_INTERACTION.md` §7, `EXPERIENCE_DOMAINS.md` §7, `TEDS_GRAMMAR.md` §10 —
+  all three `syncTrades`-gating references re-pointed to the RFC-018 T-1/T-2 predicate.
+- `docs/architecture/UBIQUITOUS_LANGUAGE.md` — new **Trade Layer Gating** entry (T-1/T-2/T-3).
+- `docs/architecture/rfcs/017-compositional-panel-sync.md` — **six** supersession notes (§5, §5.1,
+  D17.I, D17.K, plus §6 and §13 item 2 — see the deviation table).
+- `docs/superpowers/plans/2026-07-26-rfc-018-implementation-plan.md` — **R18-12** (grep corrected to
+  the live-channel form) and **C6** (12 → 14 spec files) landed, at every recurrence.
+
+**Deviations:**
+
+| # | Item | Class | Disposition |
+| :--- | :--- | :--- | :--- |
+| 1 | **Two RFC-017 sites beyond the plan's four needed notes.** §6's supersession note still described the surviving gate as `symbol === primarySymbol ∧ syncTrades` with its implementation "migrating to the TEDS plan"; §13 item 2 stated outright that the predicate "NO se implementó en este run… es responsabilidad del plan TEDS". | **Requires attention → resolved** | Both were **load-bearing falsehoods** after RFC-018, not stale phrasing: the predicate's clauses changed (D18.C) *and* RFC-018 took the implementation back from TEDS — it shipped here as Task 3 (`c259316`). A reader following either would have rebuilt the gate inside the TEDS plan, duplicating working code. `teds-plan-amendments.md` A1 already records the hand-back from the TEDS side; RFC-017 asserting the opposite from this side is exactly the silent drift the supersession mechanism exists to prevent. The implementer correctly flagged rather than decided; the orchestrator ruled them in scope and they landed in `dbdebcc`. |
+| 2 | The plan asked to "drop `syncTrades`" from the `Link Group` glossary entry, but that entry **never listed it** (`git log` confirms RFC-017 never touched it). | **Inert** | Nothing to drop. Entry left unchanged and cross-referenced from the new **Trade Layer Gating** entry. Backfilling `syncDrawings` (also absent) is pre-existing RFC-017 documentation debt and does not belong in an RFC-018 commit. |
+| 3 | C6 and R18-12 each appeared in one more place in the plan than the brief's line pointers named; all recurrences were fixed. | **Inert** | Leaving one stale instance beside a corrected one would have reintroduced the exact defect the pass exists to remove. |
+
+---
+
+## 9. Run status at session end (2026-07-27)
+
+**All six implementation tasks and the documentation pass are complete, committed and green.**
+The run stopped here at the owner's instruction (session usage limit); the final whole-branch audit
+and the PR are the only remaining steps.
+
+| Step | State |
+| :--- | :--- |
+| Task 1 — retire `syncTrades` (D18.A) | ✅ `62effac` |
+| Task 2 — `hideTrades` + predicates (D18.B) | ✅ `658fc76` |
+| Task 4 — T-3 execution guard (D18.D) | ✅ `d4ddfd8` |
+| Task 3 — gate `tradeChartView$` (D18.C) | ✅ `c259316` — **Opus audit PASS** |
+| Task 6 — eye popover (§8) | ✅ `9c2f3cb` |
+| Task 5 / F3 — per-panel geometry | ✅ `74e17ef` + `51836a9` — **Opus audit FAIL → fixed → PASS** |
+| Documentation (§2) | ✅ `55c4b71` + `dbdebcc` |
+| **Final whole-branch Opus audit** | ⬜ **NOT RUN — next action** |
+| **PR to `develop`** | ⬜ **NOT OPENED** |
+
+**Verified state at HEAD `dbdebcc`:** working tree clean; branch **0 behind** `origin/develop`;
+42 files changed vs `develop` (+4070/−249); tests **1936 → 1989**; all four gates exit 0 and
+`npm run build` green (648.37 kB, no new chunk types, no vitest sentinel) as of `51836a9`, and the
+code tree is byte-identical since then.
+
+**Nothing has been pushed.** `origin` has no RFC-018 branch yet.
+
+### 9.1 How to resume
+
+1. `git checkout feature/rfc-018-trade-visibility-refinement` and confirm HEAD is `dbdebcc`,
+   tree clean, and the branch is not behind `origin/develop`.
+2. Re-run the four gates from `emulador/` raw for a fresh baseline.
+3. Dispatch the **final whole-branch Opus audit** (`branch-auditor`) over `4e005d6..HEAD`. Point it
+   at the FINAL-AUDIT ATTENTION flags collected in §8.3:
+   - **Task 4 dev. 4** — the novel `vi.spyOn(ChartComponent.prototype, 'ngAfterViewInit')` harness
+     in `chart.component.trade-guard.spec.ts` (first spec to exercise `ChartComponent` directly);
+     verify it does not neuter what it claims to test and is safe under `isolate: false`.
+   - **Task 4 dev. 2** — `e.preventDefault()` on the guarded cancel/close path.
+   - **Task 6 dev. 3** — the inert eye row still bubbling to `setFocusedPanel`.
+   - **Task 5** — `selectTradeChartView` now has **zero production consumers** (kept per R18-14;
+     TEDS Phase 4 Task 6 owns its removal).
+   - Ledger arithmetic: 1936 → 1935 → 1948 → 1961 → 1968 → 1984 → 1988 → 1989.
+   - Invariant greps: live-`syncTrades` channel (R18-12 form, **not** the plain grep — see §8.3),
+     `syncPriceScale` zero read sites, no factory selectors, no new dependencies, engine boundary.
+4. On **PASS** with zero Critical/High/Medium, push and open the PR **to `develop`** via the GitHub
+   MCP — **never to `main`** (RFC track). CI does **not** run on PRs to `develop` (RFC-017 run
+   finding), so the gate evidence in the PR body is the record.
+
+## 10. Next actions
 
 - [x] Owner review of RFC-018 §5 (D18.A–D) and §8 (UI rules) — **done 2026-07-26**
 - [x] §8 rule (hidden layer ⇒ no order verbs) — **decided: yes, binding.** Enforced at all four guard points via `tradeVerbsEnabled()`; `panelMayExecute` stays symbol-only (§4.2)
