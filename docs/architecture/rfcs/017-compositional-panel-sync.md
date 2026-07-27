@@ -136,6 +136,14 @@ Los canales se dividen en dos familias mecánicamente distintas:
 | **Eventos** | `syncCrosshair`, `syncTimeRange` | `ChartSyncBus` → `ChartSyncRouter` (exclusión de origen + aplicación idempotente). Sin cambios en este RFC. |
 | **Composición** | `syncDrawings`, `syncTrades` | Estado compartido por construcción: dos paneles que resuelven el mismo grupo componen la misma capa desde el mismo snapshot del store. Nada viaja por el bus; no existe eco que suprimir. |
 
+> **Nota de supersesión (RFC-018, D18.A).** `syncTrades` queda **retirado** como
+> canal de `LinkGroup`: nunca compuso nada —un solo `TradingBook` por sesión, sin
+> espacio de nombres de grupo que resolver— por lo que solo podía sustraer de una
+> capa ya idéntica. La familia **Composición** pasa a tener **un único miembro**,
+> `syncDrawings`; la tesis de esta tabla (dos familias mecánicamente distintas)
+> permanece intacta. Su preocupación pasa a `PanelDescriptor.hideTrades` (T-2).
+> Ver RFC-018 §2 y §5.1 (actualización de D17.K).
+
 Esto mantiene honesto el Invariante 3: el grupo resuelve un espacio de nombres
 (`group:<id>` en el índice); jamás almacena ni reenvía datos de dibujo.
 
@@ -156,6 +164,17 @@ La capa de trades se renderiza en un panel si y solo si
 overlay fantasma sobre paneles de otro símbolo, corrección declarada) **y**
 (panel sin grupo **o** `syncTrades` del grupo activo). `syncTrades` es un
 resolutor de visibilidad, no un canal de datos.
+
+> **Nota de supersesión (RFC-018, D18.C).** La cláusula de grupo de este
+> predicado (`panel sin grupo` **o** `syncTrades` del grupo activo) queda
+> **reemplazada** por T-2 (`!descriptor.hideTrades`, preferencia local de panel —
+> RFC-018 §4, §2.3 razona el error de modelado corregido). La cláusula de
+> símbolo (`panel.symbol === primarySymbol`) **sobrevive verbatim** como T-1,
+> elevada explícitamente a invariante no conmutable. La frase «`syncTrades` es un
+> resolutor de visibilidad, no un canal de datos» queda superada por
+> construcción: al dejar de ser un canal de `LinkGroup`, no hay nada que resolver
+> a ese nivel — la resolución de visibilidad vive enteramente en
+> `PanelDescriptor.hideTrades`.
 
 **Paneles secundarios de observación (multi-símbolo de solo-vista).** El libro
 mono-símbolo (D1) restringe la *operación*, no la *observación*. En un layout de
@@ -183,6 +202,20 @@ congelado (008-012), y esta cláusula no lo reabre.
 > migra al plan TEDS (`docs/superpowers/specs/2026-07-TEDS-implementation-plan.md`),
 > no a este run de RFC-017; por eso las **Tasks 7–8 quedan fuera de alcance**. El
 > texto de abajo se conserva como registro histórico de la exploración.
+
+> **Nota de supersesión (RFC-018, D18.C).** El predicado que el párrafo anterior
+> describe como superviviente cambió en ambas mitades. La cláusula pasa a ser
+> `panel.symbol === primarySymbol` ∧ `!panel.hideTrades` (T-1 ∧ T-2, RFC-018 §5) —
+> ya sin ningún grupo involucrado. Y su implementación **no** migró al plan TEDS:
+> RFC-018 la trajo de vuelta y la envió en esta misma rama, Task 3 (`c259316`),
+> dentro de la instancia de `ChartModelMapper` — antes de que TEDS Fase 4 llegara
+> a tocarla. El contrato que sobrevive es el mismo *en especie*: el gate sigue
+> decidiendo *dónde* pueden pintarse los trades; solo cambiaron sus cláusulas y
+> su dueño. RFC-018 §7 arregla además, por separado, la geometría de marcadores y
+> cajas por panel (F3) — ortogonal a este predicado, pero enviado en la misma
+> rama. El lado TEDS de este traspaso queda registrado en
+> `docs/superpowers/teds-plan-amendments.md` A1 (el predicado sale del plan
+> TEDS) y A2 (debe migrar a `tradeObjects$`, no morir con `tradeChartView$`).
 
 La exploración obligatoria de tres conceptos (A «Ghost Rails», B «Command
 HUD», C «Path Narrative») con su evaluación contra legibilidad/carga
@@ -338,6 +371,14 @@ sesión mono-símbolo preservada; dibujos session-scoped).
 | D17.K | Dos familias de sincronización: eventos (bus/router) y composición (store). Dibujos y trades JAMÁS viajan por el bus. |
 | D17.L | Borrar un grupo borra en cascada sus dibujos poseídos (atómico, declarado en UI); reasignación automática prohibida. |
 
+> **Nota de supersesión (RFC-018).** **D17.I** — el default de `syncTrades`
+> (`true` en ambos caminos de migración) **desaparece con el campo** (D18.A); el
+> de `syncDrawings` no cambia. Preservación de comportamiento exacta: `hideTrades`
+> ausente = capa visible = exactamente lo que hacía `syncTrades: true` (RFC-018
+> §5.2). **D17.K** — la tesis (dos familias mecánicamente distintas) permanece
+> intacta; se corrige la membresía: la familia de composición pasa a tener **un
+> único miembro**, `syncDrawings` (RFC-018 §5.1, actualización de D17.K).
+
 ---
 
 ## 12. No-goals de este RFC
@@ -379,6 +420,14 @@ sin decirlo.
    — §5.1 sigue siendo el contrato normativo de *dónde* debe pintarse la capa
    de trades; implementarlo es responsabilidad del plan TEDS, no de este
    cierre.
+
+   > **Nota de supersesión (RFC-018).** Esta afirmación queda **superada**: el
+   > predicado de gating **sí se implementó**, pero en RFC-018 (Task 3,
+   > `c259316`), no en el plan TEDS. RFC-018 D18.C reemplaza la cláusula de
+   > grupo por T-2 (`!hideTrades`) y además hace cumplir la cláusula de
+   > símbolo del lado de comandos (T-3, D18.D) — ver RFC-018 §5. El traspaso de
+   > responsabilidad al plan TEDS que este punto declaraba queda registrado y
+   > corregido en `docs/superpowers/teds-plan-amendments.md` A1.
 
 3. **Matiz de fidelidad del `DrawingSnapshot` de telemetría (RFC-014 G3).**
    El hecho de telemetría queda acotado a los dibujos *visibles* del activo

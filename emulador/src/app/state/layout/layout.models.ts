@@ -27,6 +27,8 @@ export interface PanelDescriptor {
   linkGroupId: string | null;
   /** Per-panel local toggle: drops the shared group layer from THIS panel's composition only. Absent = false; never persisted as an explicit `false`. */
   hideSharedDrawings?: boolean;
+  /** Per-panel local toggle (T-2): drops the trade layer from THIS panel only. Absent = false; never persisted as an explicit `false`. */
+  hideTrades?: boolean;
 }
 
 /** '' on a descriptor means "whatever asset is active"; resolve it before use. */
@@ -35,6 +37,37 @@ export function effectivePanelSymbol(
   activeSymbol: string | null,
 ): string {
   return descriptor.symbol || activeSymbol || '';
+}
+
+/**
+ * RFC-018 (T-1 ∧ T-2): where the Trade domain may speak. T-1 (the symbol clause) is a
+ * correctness invariant and is NOT user-togglable — painting one instrument's levels on
+ * another's price axis is a false statement about the market. T-2 (`hideTrades`) is a
+ * panel-local preference. Mirrors `composePanelDrawings`: symbol filter + local opt-out.
+ */
+export function panelRendersTrades(
+  descriptor: PanelDescriptor,
+  primarySymbol: string | null,
+): boolean {
+  if (primarySymbol == null) return false;
+  if (effectivePanelSymbol(descriptor, primarySymbol) !== primarySymbol) return false;
+  return !descriptor.hideTrades;
+}
+
+/**
+ * RFC-018 (T-3): may a trading verb originate from this pane? Deliberately ignores
+ * `hideTrades` — hiding the layer is a visual preference, not a trading lockout. The
+ * UI rule that a hidden-layer panel also retires its order verbs lives in the component
+ * (RFC-018 §8), not in this predicate.
+ */
+export function panelMayExecute(
+  descriptor: PanelDescriptor,
+  primarySymbol: string | null,
+): boolean {
+  return (
+    primarySymbol != null &&
+    effectivePanelSymbol(descriptor, primarySymbol) === primarySymbol
+  );
 }
 
 /** A tab-group inside one grid cell: stacked panels, one visible at a time. */

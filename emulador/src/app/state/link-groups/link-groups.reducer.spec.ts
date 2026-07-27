@@ -13,7 +13,6 @@ const group = (id: string): LinkGroup => ({
   syncCrosshair: true,
   syncTimeRange: true,
   syncDrawings: true,
-  syncTrades: true,
 });
 
 describe('linkGroupsFeature reducer', () => {
@@ -91,7 +90,7 @@ describe('linkGroupsFeature reducer', () => {
       expect(state.groups).toEqual({});
     });
 
-    it('a group missing the composition flags (predates them) normalizes to syncDrawings:false, syncTrades:true', () => {
+    it('a group missing the composition flags (predates them) normalizes to syncDrawings:false and drops any legacy syncTrades key (D18.A)', () => {
       const legacyGroup = {
         id: 'g1',
         color: '#ff6b6b',
@@ -103,7 +102,7 @@ describe('linkGroupsFeature reducer', () => {
         LinkGroupsActions.restoreGroups({ groups: [legacyGroup] }),
       );
       expect(state.groups['g1'].syncDrawings).toBe(false);
-      expect(state.groups['g1'].syncTrades).toBe(true);
+      expect('syncTrades' in state.groups['g1']).toBe(false);
     });
   });
 
@@ -127,7 +126,7 @@ describe('linkGroupsFeature reducer', () => {
       expect(state.groups).toEqual({});
     });
 
-    it('a restored group missing the composition flags normalizes to syncDrawings:false, syncTrades:true', () => {
+    it('a restored group missing the composition flags normalizes to syncDrawings:false and drops any legacy syncTrades key (D18.A)', () => {
       const legacyGroup = {
         id: 'g1',
         color: '#ff6b6b',
@@ -141,7 +140,7 @@ describe('linkGroupsFeature reducer', () => {
         }),
       );
       expect(state.groups['g1'].syncDrawings).toBe(false);
-      expect(state.groups['g1'].syncTrades).toBe(true);
+      expect('syncTrades' in state.groups['g1']).toBe(false);
     });
   });
 });

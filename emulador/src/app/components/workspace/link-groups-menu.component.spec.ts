@@ -48,7 +48,6 @@ describe('LinkGroupsMenuComponent', () => {
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
         g2: {
           id: 'g2',
@@ -56,7 +55,6 @@ describe('LinkGroupsMenuComponent', () => {
           syncCrosshair: false,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
       },
     });
@@ -75,7 +73,6 @@ describe('LinkGroupsMenuComponent', () => {
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
       },
     });
@@ -103,7 +100,6 @@ describe('LinkGroupsMenuComponent', () => {
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
       ]),
     );
@@ -126,7 +122,6 @@ describe('LinkGroupsMenuComponent', () => {
           syncCrosshair: false,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
       },
     });
@@ -149,7 +144,6 @@ describe('LinkGroupsMenuComponent', () => {
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
       },
     });
@@ -182,7 +176,6 @@ describe('LinkGroupsMenuComponent', () => {
             syncCrosshair: true,
             syncTimeRange: true,
             syncDrawings: true,
-            syncTrades: true,
           },
           g2: {
             id: 'g2',
@@ -190,7 +183,6 @@ describe('LinkGroupsMenuComponent', () => {
             syncCrosshair: true,
             syncTimeRange: true,
             syncDrawings: true,
-            syncTrades: true,
           },
         },
       },
@@ -221,7 +213,6 @@ describe('LinkGroupsMenuComponent', () => {
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
       },
     });

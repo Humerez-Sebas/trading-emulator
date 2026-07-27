@@ -248,7 +248,7 @@ describe('migrateV2ToV3 — fidelity table', () => {
     expect(migrateV2ToV3(v2)).toEqual(migrateV2ToV3(v2));
   });
 
-  it('a linkGroup missing the composition flags (predates them) normalizes to syncDrawings:false, syncTrades:true', () => {
+  it('a linkGroup missing the composition flags (predates them) normalizes to syncDrawings:false and drops any legacy syncTrades key (D18.A)', () => {
     const legacyGroup = {
       id: 'g1',
       color: '#f00',
@@ -258,7 +258,7 @@ describe('migrateV2ToV3 — fidelity table', () => {
     const v2 = v2Fixture({});
     const v3 = migrateV2ToV3({ ...v2, linkGroups: [legacyGroup] });
     expect(v3.linkGroups[0].syncDrawings).toBe(false);
-    expect(v3.linkGroups[0].syncTrades).toBe(true);
+    expect('syncTrades' in v3.linkGroups[0]).toBe(false);
   });
 });
 

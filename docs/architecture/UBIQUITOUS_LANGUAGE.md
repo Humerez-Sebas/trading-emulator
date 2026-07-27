@@ -530,6 +530,32 @@ An explicit, user-created synchronization group carrying `syncCrosshair` and
 *Technical implication:* `ChartSyncRouter` fans out group-scoped with origin exclusion
 and value-keyed idempotent application — the structural defense against echo loops.
 
+**Trade Layer Gating** (RFC-018, D18.A–D).
+Where the Trade domain may speak on a panel — never a Link Group concern: the trade
+layer has no panel or group affinity, deriving independently and identically from
+the singleton `TradingBook` (D1) in every symbol-matching panel. Two clauses of
+different natures, deliberately not fused: **T-1** — a panel renders the trade
+layer only if its effective symbol is the book's `primarySymbol`; a correctness
+invariant, never user-togglable (painting one instrument's levels on another's
+price axis is a false statement about the market, not a visibility preference).
+**T-2** — whether a T-1-eligible panel actually paints the layer is a panel-local
+preference, `PanelDescriptor.hideTrades` (mirrors `hideSharedDrawings`'s D17.H
+idiom: absent = false, never persisted as an explicit `false`). **T-3** — a
+trading verb (context-menu order options, `finishPlacing`, drag SL/TP,
+cancel/close) may originate only from a panel satisfying T-1; `panelMayExecute`
+is symbol-only and deliberately ignores `hideTrades`. A presentation-layer UI
+rule composes over T-3 in `ChartComponent`
+(`tradeVerbsEnabled = panelMayExecute(...) && !hideTrades`, RFC-018 §8, binding)
+so a panel with a hidden trade layer also offers no order verbs — composition,
+not a change to the domain predicate, is how the two concerns stay separate.
+Retires the `LinkGroup.syncTrades` channel entirely (D18.A): it never composed
+anything (one `TradingBook` singleton, no group namespace to resolve), so it
+could only ever subtract from an already-identical layer.
+*Technical implication:* `panelRendersTrades`/`panelMayExecute`
+(`state/layout/layout.models.ts`), exported alongside `effectivePanelSymbol`;
+gated inside the per-panel `ChartModelMapper` instance (D8) — never a store or
+engine concern.
+
 **Drawing.**
 A session-scoped geometric annotation, stored per symbol under the Session aggregate.
 Drawings are the material form of Zones of Interest and other analysis; the domain never

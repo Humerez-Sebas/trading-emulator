@@ -3,11 +3,9 @@ export interface LinkGroup {
   color: string;
   syncCrosshair: boolean;
   syncTimeRange: boolean;
-  /** Composition channel: group members compose the same drawing ownership namespace (`group:<id>`). */
+  /** Composition channel (sole member, RFC-018 §5.1): group members compose the same drawing ownership namespace (`group:<id>`). */
   syncDrawings: boolean;
-  /** Composition channel: gates trade-overlay visibility across group members (visibility resolver, not a data channel). */
-  syncTrades: boolean;
-  /** (R3) RESERVED — accepted and stored, never read/applied by any RFC-010 code. */
+  /** (R3) RESERVED — accepted and stored, never read/applied by any code. */
   syncPriceScale?: boolean;
 }
 
@@ -20,26 +18,34 @@ export function createInitialLinkGroupsState(): LinkGroupsState {
 }
 
 /**
- * Wire/legacy shape of a hydrated link group: payloads and local records
- * created before the two composition flags existed carry every other field
- * but predate `syncDrawings`/`syncTrades`, so those two are optional here.
+ * Wire/legacy shape of a hydrated link group. Payloads created before RFC-017
+ * predate `syncDrawings`; payloads created between RFC-017 and RFC-018 additionally
+ * carry `syncTrades`, retired by RFC-018 (D18.A). Both are tolerated on read and
+ * neither is written back.
  */
-export type LinkGroupWire = Omit<LinkGroup, 'syncDrawings' | 'syncTrades'> &
-  Partial<Pick<LinkGroup, 'syncDrawings' | 'syncTrades'>>;
+export type LinkGroupWire = Omit<LinkGroup, 'syncDrawings'> &
+  Partial<Pick<LinkGroup, 'syncDrawings'>> & {
+    /** @deprecated RFC-018 D18.A — read-tolerated, never applied, never re-emitted. */
+    syncTrades?: boolean;
+  };
 
 /**
- * Hydration normalization: a group missing the composition flags defaults to
- * `syncDrawings: false` (no prior schema ever shared drawings across a group)
- * and `syncTrades: true` (the trade overlay was always-visible before this
- * flag existed) — the behavior-preservation defaults for migrated data.
- * Groups that already carry explicit values pass through unchanged.
+ * Hydration normalization: a group missing `syncDrawings` defaults to `false`
+ * (no pre-RFC-017 schema ever shared drawings across a group). Built field by
+ * field — NOT by spread — so retired/unknown wire keys (`syncTrades`, RFC-018
+ * D18.A) are dropped at the boundary and never re-enter a payload.
  */
 export function normalizeLinkGroup(g: LinkGroupWire): LinkGroup {
-  return {
-    ...g,
+  const normalized: LinkGroup = {
+    id: g.id,
+    color: g.color,
+    syncCrosshair: g.syncCrosshair,
+    syncTimeRange: g.syncTimeRange,
     syncDrawings: g.syncDrawings ?? false,
-    syncTrades: g.syncTrades ?? true,
   };
+  // `syncPriceScale` stays reserved: carried only when present, never defaulted.
+  if (g.syncPriceScale !== undefined) normalized.syncPriceScale = g.syncPriceScale;
+  return normalized;
 }
 
 /** Pure factory for a freshly created group: new groups start fully composed on every channel. */
@@ -50,6 +56,5 @@ export function createLinkGroup(id: string, color: string): LinkGroup {
     syncCrosshair: true,
     syncTimeRange: true,
     syncDrawings: true,
-    syncTrades: true,
   };
 }

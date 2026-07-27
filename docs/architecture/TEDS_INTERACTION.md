@@ -109,4 +109,4 @@ Per-form, as a fraction of **non-candle lit pixels** (the E6·M2 metric). Greysc
 - `TEDS_GRAMMAR.md` — the six primitives and seven laws these states are built from; hosts the TEDS-D ledger.
 - `TEDS_MOTION.md` — the choreography of every transition named here.
 - `EXPERIENCE_DOMAINS.md` — interaction state is Conversation-domain: derived, ephemeral, **never persisted** (X-1 / INV-12).
-- `RFC-017` — panel composition and the `syncTrades` gating that decides where a Trade Object may render (the substrate for §3.7 multi-panel echo).
+- `RFC-017` / `RFC-018` — panel composition and the `panelRendersTrades` (T-1/T-2) gating that decides where a Trade Object may render (RFC-018 retired the `LinkGroup.syncTrades` channel this line used to cite; the substrate for §3.7 multi-panel echo).

@@ -4,11 +4,13 @@ import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper, PanelChartView } from './chart-model-mapper.service';
 import {
   selectChartStyle,
-  selectTradeChartView,
+  selectTradeBoxesVisible,
+  selectCurrentAsset,
   selectCurrentTime,
   selectSeries,
   selectUtcOffset,
 } from '../../state/selectors';
+import { tradingFeature } from '../../state/trading/trading.reducer';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 import { Candle } from '../../models';
 
@@ -266,6 +268,7 @@ describe('ChartModelMapper', () => {
   });
 
   describe('tradeChartView$ array-mapper reference stability (audit T-01 guarantee)', () => {
+    const candles = [{ time: 0, open: 100, high: 105, low: 95, close: 102 }];
     const positions = [
       {
         id: 'p1',
@@ -294,28 +297,28 @@ describe('ChartModelMapper', () => {
         createdAt: 0,
       },
     ];
-    const markers = [
-      {
-        time: 1,
-        position: 'aboveBar' as const,
-        shape: 'arrowUp' as const,
-        color: 'up' as const,
-        text: 't',
-      },
-    ];
-    const boxes = [
-      {
-        id: 'b1',
-        status: 'open' as const,
-        side: 'buy' as const,
-        entry: 100,
-        sl: 95,
-        tp: 110,
-        from: 0,
-        to: null,
-        hidden: false,
-      },
-    ];
+    const history: never[] = [];
+
+    // RFC-018 (R18-4, D18.C) — declared spec touch. `tradeChartView$` now gates per panel
+    // (T-1 symbol invariant, T-2 `hideTrades`); an unconfigured mapper gates CLOSED (R18-1).
+    // This block's tests below subscribe without ever having called `configurePanel`, so
+    // without this setup every one of them would observe the gate-closed empty view instead
+    // of the data they assert on. This is ADDED required setup, not a weakened assertion —
+    // every reference-stability expectation below stays byte-identical.
+    //
+    // RFC-018 Task 5 (F3, R18-13b — declared spec touch): `tradeChartView$` no longer
+    // consumes `selectTradeChartView` (global candles); it now reads `selectSeries` + the
+    // three raw trading slices + `selectTradeBoxesVisible` and derives markers/boxes from
+    // THIS panel's own candles. Every override below was rewired to match.
+    beforeEach(() => {
+      store.overrideSelector(selectSeries, { M1: candles });
+      store.overrideSelector(tradingFeature.selectPositions, positions);
+      store.overrideSelector(tradingFeature.selectOrders, orders);
+      store.overrideSelector(tradingFeature.selectHistory, history);
+      store.overrideSelector(selectTradeBoxesVisible, true);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+      mapper.configurePanel({ id: 'p1', symbol: '', timeframe: 'M1', linkGroupId: null });
+    });
 
     function collect() {
       const emissions: any[] = [];
@@ -324,13 +327,12 @@ describe('ChartModelMapper', () => {
     }
 
     it('keeps all four output array references stable when all input array references are unchanged', () => {
-      store.overrideSelector(selectTradeChartView, { positions, orders, markers, boxes });
       store.refreshState();
       const { emissions, sub } = collect();
       const r1 = emissions[emissions.length - 1];
 
-      // Re-emit with the exact same source array references (simulates an unrelated state slice change).
-      store.overrideSelector(selectTradeChartView, { positions, orders, markers, boxes });
+      // Re-emit with the exact same source array references (simulates an unrelated state
+      // slice change elsewhere in the store that doesn't touch trading at all).
       store.refreshState();
       const r2 = emissions[emissions.length - 1];
 
@@ -341,40 +343,34 @@ describe('ChartModelMapper', () => {
       expect(r2.boxes).toBe(r1.boxes);
     });
 
-    it('recomputes only the output whose input array reference changed', () => {
-      store.overrideSelector(selectTradeChartView, { positions, orders, markers, boxes });
+    // RFC-018 F3 rewiring (R18-13b): the ORIGINAL trigger here changed ONLY `positions`
+    // while `markers`/`boxes` fixtures stayed pinned — that scenario is no longer
+    // constructible, because markers/boxes are now genuinely DERIVED from
+    // positions/orders/history/candles (`resolveMarkers`/`resolveBoxes` in the mapper)
+    // rather than independently injectable mock fields; a new position necessarily changes
+    // both the marker set (a new entry marker) and the box set (a new open-position box).
+    // The faithful analog, preserving the SAME rigor (exactly one of four outputs changes,
+    // the other three stay reference-stable) with a TRUE scenario under the corrected
+    // architecture: change ONLY this panel's own candles (`selectSeries`) — the ONE input
+    // that feeds markers alone, touching neither positions, orders, nor boxes.
+    it("recomputes only the output whose input reference changed (candles-only change recomputes markers alone — F3's whole point)", () => {
       store.refreshState();
       const { emissions, sub } = collect();
       const r1 = emissions[emissions.length - 1];
 
-      const newPositions = [
-        {
-          id: 'p2',
-          side: 'sell' as const,
-          entryPrice: 200,
-          sl: 205,
-          tp: 190,
-          lots: 2,
-          riskPct: 1,
-          riskUsd: 100,
-          openTime: 1,
-          origin: 'market' as const,
-        },
-      ];
-      store.overrideSelector(selectTradeChartView, {
-        positions: newPositions,
-        orders,
-        markers,
-        boxes,
+      // This panel's own M1 series gets a new candle array (a new reference); positions,
+      // orders, and history are untouched.
+      store.overrideSelector(selectSeries, {
+        M1: [...candles, { time: 60, open: 102, high: 106, low: 101, close: 104 }],
       });
       store.refreshState();
       const r2 = emissions[emissions.length - 1];
 
       sub.unsubscribe();
-      expect(r2.positions).not.toBe(r1.positions);
-      expect(r2.orders).toBe(r1.orders);
-      expect(r2.markers).toBe(r1.markers);
-      expect(r2.boxes).toBe(r1.boxes);
+      expect(r2.positions).toBe(r1.positions); // unaffected: mapPositions is keyed on `positions` alone
+      expect(r2.orders).toBe(r1.orders); // unaffected: mapOrders is keyed on `orders` alone
+      expect(r2.markers).not.toBe(r1.markers); // THE one output that depends on this panel's candles
+      expect(r2.boxes).toBe(r1.boxes); // boxes need no candles at all (raw open/close times)
     });
   });
 

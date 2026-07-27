@@ -768,7 +768,6 @@ describe('SessionSyncService.flushDirty — active session push', () => {
         syncCrosshair: true,
         syncTimeRange: false,
         syncDrawings: true,
-        syncTrades: true,
       },
     ];
     const meta = workspaceMeta({

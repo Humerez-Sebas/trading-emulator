@@ -230,7 +230,6 @@ describe('ChartPanelComponent', () => {
       syncCrosshair: true,
       syncTimeRange: true,
       syncDrawings: true,
-      syncTrades: true,
     };
     const groupB: LinkGroup = {
       id: 'g2',
@@ -238,7 +237,6 @@ describe('ChartPanelComponent', () => {
       syncCrosshair: true,
       syncTimeRange: true,
       syncDrawings: true,
-      syncTrades: true,
     };
 
     it('an unlinked panel shows a hollow (unfilled) chip', () => {
@@ -312,6 +310,179 @@ describe('ChartPanelComponent', () => {
       expect(dispatch).toHaveBeenCalledWith(
         LayoutActions.setPanelLinkGroup({ panelId: 'panel-1', linkGroupId: null }),
       );
+    });
+  });
+
+  describe('eye popover (RFC-018 §8, Task 6)', () => {
+    const groupSharing: LinkGroup = {
+      id: 'g1',
+      color: '#2962FF',
+      syncCrosshair: true,
+      syncTimeRange: true,
+      syncDrawings: true,
+    };
+    const groupNotSharing: LinkGroup = {
+      id: 'g1',
+      color: '#2962FF',
+      syncCrosshair: true,
+      syncTimeRange: true,
+      syncDrawings: false,
+    };
+
+    function eye(fixture: ReturnType<typeof create>): HTMLButtonElement {
+      return fixture.nativeElement.querySelector('.panel-eye');
+    }
+
+    function openEyeMenu(fixture: ReturnType<typeof create>): void {
+      eye(fixture).click();
+      fixture.detectChanges();
+    }
+
+    function eyeMenuItems(fixture: ReturnType<typeof create>): NodeListOf<HTMLButtonElement> {
+      return fixture.nativeElement.querySelectorAll('.eye-menu .eye-menu-item');
+    }
+
+    function drawingsRow(fixture: ReturnType<typeof create>): HTMLButtonElement {
+      return eyeMenuItems(fixture)[0];
+    }
+
+    function tradesRow(fixture: ReturnType<typeof create>): HTMLButtonElement {
+      return eyeMenuItems(fixture)[1];
+    }
+
+    it('renders the eye button on an unlinked panel (regression on the removed @if)', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      expect(eye(fixture)).toBeTruthy();
+    });
+
+    it('clicking the eye opens a popover with exactly two rows', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      openEyeMenu(fixture);
+      expect(eyeMenuItems(fixture)).toHaveLength(2);
+    });
+
+    it('unlinked panel: the "Dibujos compartidos" row is disabled and carries the Spanish hint', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      openEyeMenu(fixture);
+      const row = drawingsRow(fixture);
+      expect(row.textContent).toContain('Dibujos compartidos');
+      expect(row.classList.contains('disabled')).toBe(true);
+      expect(row.getAttribute('title')).toBe('Vincula el panel a un grupo para compartir dibujos');
+    });
+
+    it('linked panel, syncDrawings: false: the row is still disabled', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: groupNotSharing });
+      const fixture = create({ ...descriptor, linkGroupId: 'g1' });
+      openEyeMenu(fixture);
+      expect(drawingsRow(fixture).classList.contains('disabled')).toBe(true);
+    });
+
+    it('linked panel, syncDrawings: true: the row is enabled; clicking dispatches setPanelHideSharedDrawings with THIS panel id', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: groupSharing });
+      const fixture = create({ ...descriptor, linkGroupId: 'g1' });
+      openEyeMenu(fixture);
+      const row = drawingsRow(fixture);
+      expect(row.classList.contains('disabled')).toBe(false);
+      const dispatch = vi.spyOn(store, 'dispatch');
+      row.click();
+      expect(dispatch).toHaveBeenCalledWith(
+        LayoutActions.setPanelHideSharedDrawings({ panelId: 'panel-1', hidden: true }),
+      );
+    });
+
+    it('any panel: the "Trades" row is always enabled; clicking dispatches setPanelHideTrades with THIS panel id', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      openEyeMenu(fixture);
+      const row = tradesRow(fixture);
+      expect(row.textContent).toContain('Trades');
+      expect(row.hasAttribute('aria-disabled')).toBe(false);
+      const dispatch = vi.spyOn(store, 'dispatch');
+      row.click();
+      expect(dispatch).toHaveBeenCalledWith(
+        LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }),
+      );
+    });
+
+    it('R18-7: the inert row carries aria-disabled="true" and tabindex="-1", never the native disabled attribute', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      openEyeMenu(fixture);
+      const row = drawingsRow(fixture);
+      expect(row.getAttribute('aria-disabled')).toBe('true');
+      expect(row.getAttribute('tabindex')).toBe('-1');
+      expect(row.hasAttribute('disabled')).toBe(false);
+    });
+
+    it('R18-7: clicking the inert row dispatches nothing toggle-related (the click guard holds)', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      openEyeMenu(fixture);
+      const dispatch = vi.spyOn(store, 'dispatch');
+      drawingsRow(fixture).click();
+      expect(dispatch).not.toHaveBeenCalledWith(
+        LayoutActions.setPanelHideSharedDrawings(expect.anything()),
+      );
+    });
+
+    it('R18-7: the inert row keeps a non-empty title — the tooltip stays reachable', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      openEyeMenu(fixture);
+      const title = drawingsRow(fixture).getAttribute('title');
+      expect(title).toBeTruthy();
+      expect(title!.length).toBeGreaterThan(0);
+    });
+
+    it('enabled row: aria-disabled is false/absent and tabindex is 0', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: groupSharing });
+      const fixture = create({ ...descriptor, linkGroupId: 'g1' });
+      openEyeMenu(fixture);
+      const row = drawingsRow(fixture);
+      const ariaDisabled = row.getAttribute('aria-disabled');
+      expect(ariaDisabled === null || ariaDisabled === 'false').toBe(true);
+      expect(row.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('hideTrades: true makes the header eye carry .active', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null, hideTrades: true });
+      expect(eye(fixture).classList.contains('active')).toBe(true);
+    });
+
+    it('linked + syncDrawings: true + hideSharedDrawings: true makes the header eye carry .active', () => {
+      store.overrideSelector(linkGroupsFeature.selectGroups, { g1: groupSharing });
+      const fixture = create({ ...descriptor, linkGroupId: 'g1', hideSharedDrawings: true });
+      expect(eye(fixture).classList.contains('active')).toBe(true);
+    });
+
+    it('R18-8: unlinked + stale hideSharedDrawings: true does NOT make the header eye .active', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null, hideSharedDrawings: true });
+      expect(eye(fixture).classList.contains('active')).toBe(false);
+    });
+
+    it('clicking outside the popover closes it', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      openEyeMenu(fixture);
+      expect(fixture.nativeElement.querySelector('.eye-menu')).not.toBeNull();
+      document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.eye-menu')).toBeNull();
+    });
+
+    it('Escape closes the eye popover', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      openEyeMenu(fixture);
+      expect(fixture.nativeElement.querySelector('.eye-menu')).not.toBeNull();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.eye-menu')).toBeNull();
+    });
+
+    it('Escape also closes the link-chip menu (declared side-effect)', () => {
+      const fixture = create({ ...descriptor, linkGroupId: null });
+      const chip: HTMLButtonElement = fixture.nativeElement.querySelector('.panel-link-chip');
+      chip.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.link-chip-menu')).not.toBeNull();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.link-chip-menu')).toBeNull();
     });
   });
 });

@@ -50,7 +50,6 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
         syncCrosshair: true,
         syncTimeRange: true,
         syncDrawings: true,
-        syncTrades: true,
       },
     ];
     const eurusdDrawing: Drawing = {
@@ -191,7 +190,6 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       syncCrosshair: true,
       syncTimeRange: true,
       syncDrawings: true,
-      syncTrades: true,
     };
     linkGroupsState = linkGroupsFeature.reducer(
       linkGroupsState,

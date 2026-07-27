@@ -40,6 +40,7 @@ import { Timeframe } from '../../models';
   imports: [ChartComponent],
   host: {
     '(document:click)': 'onDocClick($event)',
+    '(document:keydown.escape)': 'onEscape()',
     '(click)': 'onPanelClick()',
   },
   template: `
@@ -82,14 +83,15 @@ import { Timeframe } from '../../models';
           </div>
         }
       </div>
-      @if (descriptor().linkGroupId !== null) {
+      <div class="eye-anchor">
         <button
           type="button"
-          class="panel-hide-shared"
-          [class.active]="hideSharedDrawings()"
-          [attr.aria-label]="hideSharedLabel()"
-          [attr.title]="hideSharedLabel()"
-          (click)="toggleHideSharedDrawings($event)"
+          class="panel-eye"
+          [class.active]="anyLayerHidden()"
+          [attr.aria-label]="eyeLabel()"
+          [attr.title]="eyeLabel()"
+          [attr.aria-expanded]="eyeMenuOpen()"
+          (click)="toggleEyeMenu($event)"
         >
           <svg
             viewBox="0 0 24 24"
@@ -104,12 +106,73 @@ import { Timeframe } from '../../models';
           >
             <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
             <circle cx="12" cy="12" r="3" />
-            @if (hideSharedDrawings()) {
+            @if (anyLayerHidden()) {
               <path d="M2 2l20 20" />
             }
           </svg>
         </button>
-      }
+        @if (eyeMenuOpen()) {
+          <div class="eye-menu" role="menu">
+            <button
+              type="button"
+              class="eye-menu-item"
+              role="menuitemcheckbox"
+              [class.disabled]="!canHideDrawings()"
+              [attr.aria-disabled]="!canHideDrawings()"
+              [attr.tabindex]="canHideDrawings() ? 0 : -1"
+              [attr.aria-checked]="!hideSharedDrawings()"
+              [attr.title]="drawingsRowTitle()"
+              (click)="canHideDrawings() && toggleHideSharedDrawings($event)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+                <circle cx="12" cy="12" r="3" />
+                @if (hideSharedDrawings()) {
+                  <path d="M2 2l20 20" />
+                }
+              </svg>
+              Dibujos compartidos
+            </button>
+            <button
+              type="button"
+              class="eye-menu-item"
+              role="menuitemcheckbox"
+              [attr.aria-checked]="!hideTrades()"
+              [attr.title]="tradesRowTitle()"
+              (click)="toggleHideTrades($event)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+                <circle cx="12" cy="12" r="3" />
+                @if (hideTrades()) {
+                  <path d="M2 2l20 20" />
+                }
+              </svg>
+              Trades
+            </button>
+          </div>
+        }
+      </div>
       @if (lastClose() !== null) {
         <span class="panel-price">{{ lastClose() }}</span>
       }
@@ -207,7 +270,11 @@ import { Timeframe } from '../../models';
         border-radius: 50%;
         flex-shrink: 0;
       }
-      .panel-hide-shared {
+      .eye-anchor {
+        position: relative;
+        display: flex;
+      }
+      .panel-eye {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -220,11 +287,47 @@ import { Timeframe } from '../../models';
         color: var(--text-muted);
         cursor: pointer;
       }
-      .panel-hide-shared:hover {
+      .panel-eye:hover {
         background: var(--surface-2);
       }
-      .panel-hide-shared.active {
+      .panel-eye.active {
         color: var(--accent);
+      }
+      .eye-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 4px;
+        min-width: 150px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+      .eye-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 6px;
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 11px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .eye-menu-item:hover {
+        background: var(--surface-2);
+      }
+      .eye-menu-item.disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .eye-menu-item.disabled:hover {
+        background: none;
       }
       .panel-chart {
         flex: 1;
@@ -309,6 +412,53 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
     this.hideSharedDrawings() ? 'Mostrar capa compartida' : 'Ocultar capa compartida',
   );
 
+  /** RFC-018 (Task 6): open/closed state of the panel's eye popover. */
+  readonly eyeMenuOpen = signal(false);
+
+  /** This panel's local trade-layer visibility toggle (T-2); absent means false. */
+  readonly hideTrades = computed(() => this.descriptor().hideTrades ?? false);
+
+  /**
+   * The shared-drawings row is meaningful only when a group actually shares drawings
+   * (RFC-018 §8): unlinked, or linked to a group with `syncDrawings === false`, leaves
+   * nothing for the toggle to act on.
+   */
+  readonly canHideDrawings = computed(() => {
+    const id = this.descriptor().linkGroupId;
+    return id !== null && this.linkGroups()[id]?.syncDrawings === true;
+  });
+
+  /**
+   * Combined header indicator: dimmed when ANY layer is ACTUALLY suppressed (R18-8).
+   * `hideSharedDrawings` only counts when a shared layer exists to suppress — a stale
+   * `true` left on a panel that has since been unlinked hides nothing, and the indicator
+   * must report reality, not stored intent.
+   */
+  readonly anyLayerHidden = computed(
+    () => this.hideTrades() || (this.canHideDrawings() && this.hideSharedDrawings()),
+  );
+
+  /** RFC-018 §8: the eye opens a menu of two independent toggles, not a single flip. */
+  eyeLabel(): string {
+    return 'Capas visibles del panel';
+  }
+
+  /**
+   * R18-7 (Option B): when the row is inert, the title explains WHY rather than naming a
+   * flip action — the tooltip is the entire reason the row stays visible instead of
+   * disappearing. When active, it follows the existing `hideSharedLabel` idiom.
+   */
+  readonly drawingsRowTitle = computed(() =>
+    this.canHideDrawings()
+      ? this.hideSharedLabel()
+      : 'Vincula el panel a un grupo para compartir dibujos',
+  );
+
+  /** Spanish label reflecting the CURRENT state as the action that flips it (T-2). */
+  readonly tradesRowTitle = computed(() =>
+    this.hideTrades() ? 'Mostrar trades' : 'Ocultar trades',
+  );
+
   /**
    * RFC-012 (pt 3): sticky "has this panel ever been visible" latch. Once true, never flips
    * back — preserving RFC-009 keep-alive (hiding after first show must NOT destroy the engine).
@@ -362,11 +512,34 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
     );
   }
 
-  /** RFC-013 (Task 4): plain-DOM outside-click-to-close (no CDK) — ignores clicks inside this component's own host. */
+  /** RFC-018 (Task 6): opens/closes the eye popover; stops propagation so the host's own document-click handler doesn't immediately close it again. */
+  toggleEyeMenu(event: Event): void {
+    event.stopPropagation();
+    this.eyeMenuOpen.update((v) => !v);
+  }
+
+  /** RFC-018 (Task 6, T-2): flips this panel's local trade-layer visibility toggle. Neither eye-menu row closes the popover — the trader may flip both in one visit. */
+  toggleHideTrades(event: Event): void {
+    event.stopPropagation();
+    this.store.dispatch(
+      LayoutActions.setPanelHideTrades({
+        panelId: this.descriptor().id,
+        hidden: !this.hideTrades(),
+      }),
+    );
+  }
+
+  /** RFC-013 (Task 4) / RFC-018 (Task 6): plain-DOM outside-click-to-close (no CDK) — ignores clicks inside this component's own host, closes both menus. */
   onDocClick(event: MouseEvent): void {
-    if (this.linkChipMenuOpen() && !this.host.nativeElement.contains(event.target as Node)) {
-      this.linkChipMenuOpen.set(false);
-    }
+    if (this.host.nativeElement.contains(event.target as Node)) return;
+    if (this.linkChipMenuOpen()) this.linkChipMenuOpen.set(false);
+    if (this.eyeMenuOpen()) this.eyeMenuOpen.set(false);
+  }
+
+  /** RFC-018 (Task 6): Esc closes both popovers — extending Esc to the link-chip menu is a declared side-effect of this task (new key handling on this component). */
+  onEscape(): void {
+    this.linkChipMenuOpen.set(false);
+    this.eyeMenuOpen.set(false);
   }
 
   /** RFC-009/RFC-010: registers this panel's live handle in the session ChartRegistry. */

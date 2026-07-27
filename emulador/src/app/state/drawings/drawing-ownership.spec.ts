@@ -14,7 +14,6 @@ function group(overrides: Partial<LinkGroup> = {}): LinkGroup {
     syncCrosshair: true,
     syncTimeRange: true,
     syncDrawings: true,
-    syncTrades: true,
     ...overrides,
   };
 }
