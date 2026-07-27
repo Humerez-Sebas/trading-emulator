@@ -361,6 +361,32 @@ JSDoc, or a test asserting the key's **absence**. That is the RFC's design, not 
 **Owner-facing:** plan §3 and DoD §5 should be corrected to the live-channel grep. Filed for
 the documentation pass; the code is correct as it stands.
 
+#### Task 2 — `hideTrades` model + predicates (D18.B) — **COMPLETE**
+
+| Field | Value |
+| :--- | :--- |
+| Commit | `658fc76` — `feat(rfc-018): add hideTrades and the trade-visibility predicates (D18.B)` |
+| Base | `a3a0aa0` |
+| Scope | 5 files, **purely additive** (169 insertions, 0 deletions): `layout.models.ts`, `layout.actions.ts`, `layout.reducer.ts`, + 2 new specs |
+| Gates | tsc app **0**, tsc spec **0**, lint **0 problems**, `ng test` **158 files / 1948 tests** exit 0 |
+| Tests | 1935 → **1948** (+13: 7 hide-trades reducer + 6 predicate truth-table) |
+| Audit | Batched — orchestrator mechanical verification only |
+
+**Orchestrator verification (mechanical):**
+- `git show --stat 658fc76` — exactly the five briefed files; zero deletions, so no pre-existing
+  behavior could have been altered.
+- Test arithmetic: +13 declared, 1935 + 13 = 1948 observed. Exact.
+- **T-1 invariant detector confirmed present** (`layout.trade-predicates.spec.ts:51-55`):
+  `symbol:'NAS100'`, `hideTrades:false`, primary `'US30'` ⇒ `panelRendersTrades` false. T-1 is
+  not overridable by T-2, as the plan requires.
+- **`panelMayExecute` read line by line: it does not reference `hideTrades`.** The domain
+  predicate stays symbol-only (RFC-018 §4.2); the §8 UI rule composes over it in Task 4.
+- Reducer case matches the plan verbatim, including the delete-on-false idiom and both identity
+  returns (`layout.reducer.ts:238-250`).
+
+**Deviations:** none. Zero consumers of the new predicates outside their specs, which is the
+correct end state for this task — Tasks 3, 4 and 6 wire them up.
+
 ---
 
 ## 9. Next actions
