@@ -42,7 +42,11 @@ import {
   TradeBoxOpacity,
 } from '../../domain/chart/render-model';
 import { lastIndexAtOrBefore, firstIndexAtOrAfter } from '../../state/trading/fill-engine';
-import { effectivePanelSymbol, PanelDescriptor } from '../../state/layout/layout.models';
+import {
+  effectivePanelSymbol,
+  panelRendersTrades,
+  PanelDescriptor,
+} from '../../state/layout/layout.models';
 import { Candle, Timeframe, TIMEFRAME_SECONDS } from '../../models';
 import { generateCustomSeries } from '../../state/market/custom-timeframe';
 
@@ -133,6 +137,51 @@ export function composePanelDrawings(
   const selectedId = selected != null && items.some((d) => d.id === selected) ? selected : null;
   return { items, selectedId };
 }
+
+/** This panel's gated trade overlay (RFC-018 T-1/T-2, D18.C): open positions, pending orders, markers, boxes. */
+interface TradeChartView {
+  positions: Position[];
+  orders: PendingOrder[];
+  markers: TradeMarker[];
+  boxes: TradeBoxItem[];
+}
+
+/**
+ * Builds a frozen empty array typed as `T[]` for a render-domain array field. `Object.freeze`
+ * widens the static type to `readonly T[]`; the cast back to `T[]` is confined to this one
+ * helper so `TradeChartView`'s fields keep the plain mutable element type every existing
+ * consumer (`ChartComponent`, the builder methods, the engine) already expects — the runtime
+ * freeze is unaffected by the cast.
+ */
+function frozenEmptyArray<T>(): T[] {
+  const empty: T[] = [];
+  return Object.freeze(empty) as T[];
+}
+
+/**
+ * RFC-018 (R18-3) — the single shared gate-closed emission for `tradeChartView$`. Allocated
+ * exactly ONCE at module load, never mutated, and returned by reference (never spread or
+ * cloned) on every gate-closed tick, for two reasons:
+ *
+ * 1. It IS the invariant detector: two consecutive gate-closed emissions must be the exact
+ *    same object (`toBe`, not `toEqual`) — a fresh `{ positions: [], … }` literal per tick
+ *    would make that assertion meaningless.
+ * 2. A fresh literal per tick would defeat the engine's referential short-circuit and
+ *    reintroduce per-frame allocation on a path RFC-017 §4 requires to cost zero ("cero
+ *    asignaciones en el camino sin cambios") — a panel with its trade layer gated closed
+ *    (a foreign symbol, or `hideTrades`) sits on this path for the entire replay session.
+ *
+ * `Object.freeze` on the outer object AND each inner array means a consumer mutation
+ * attempt (`view.positions.push(...)`, `view.orders = [...]`) throws `TypeError` at runtime
+ * — this app compiles to ES modules, which execute in strict mode unconditionally — instead
+ * of silently corrupting the shared instance for every other gate-closed panel.
+ */
+const EMPTY_TRADE_CHART_VIEW: TradeChartView = Object.freeze({
+  positions: frozenEmptyArray<Position>(),
+  orders: frozenEmptyArray<PendingOrder>(),
+  markers: frozenEmptyArray<TradeMarker>(),
+  boxes: frozenEmptyArray<TradeBoxItem>(),
+});
 
 /**
  * Anti-Corruption Layer (ACL) between NgRx state and the chart render domain.
@@ -348,19 +397,70 @@ export class ChartModelMapper {
     hidden: b.hidden,
   }));
 
-  /** Trade overlay: open positions, pending orders, markers, boxes. */
-  readonly tradeChartView$: Observable<{
-    positions: Position[];
-    orders: PendingOrder[];
-    markers: TradeMarker[];
-    boxes: TradeBoxItem[];
-  }> = this.store.select(selectTradeChartView).pipe(
-    map((data) => ({
-      positions: this.mapPositions(data.positions) as Position[],
-      orders: this.mapOrders(data.orders) as PendingOrder[],
-      markers: this.mapMarkers(data.markers) as TradeMarker[],
-      boxes: this.mapBoxes(data.boxes) as TradeBoxItem[],
-    })),
+  /**
+   * Trade-gate memo slot (RFC-018 D18.C): keyed on exactly 3 references — the panel
+   * descriptor, the raw slice from `selectTradeChartView`, and `currentAsset`. Deliberately
+   * excludes `groups` (RFC-018 §4.3): pulling the whole groups record in would invalidate
+   * every panel's trade layer whenever any group's colour changes elsewhere in the
+   * workspace. One slot per mapper instance — the same discipline as `lastDrawingsInputs`.
+   */
+  private lastTradeInputs: {
+    descriptor: PanelDescriptor | null;
+    data: {
+      positions: StatePosition[];
+      orders: StatePendingOrder[];
+      markers: StateTradeMarker[];
+      boxes: StateTradeBoxItem[];
+    };
+    currentAsset: string | null;
+  } | null = null;
+  private lastTradeChartView: TradeChartView | null = null;
+
+  /**
+   * Trade overlay: open positions, pending orders, markers, boxes — gated per panel by
+   * `panelRendersTrades` (RFC-018 T-1 symbol invariant ∧ T-2 `hideTrades` preference). Until
+   * this RFC the stream had no panel awareness at all: every panel painted the book's
+   * trades, including one showing a different instrument.
+   *
+   * R18-1: `panelDescriptor$` is a `ReplaySubject(1)` that emits only after `configurePanel`.
+   * `startWith(null)` makes an unconfigured mapper gate CLOSED rather than stay silent — a
+   * single frame of trade ink on an as-yet-unidentified pane would be a false statement
+   * about the market (T-1 is a correctness invariant, not a preference). The one-frame
+   * delay before ink appears on a freshly configured panel is harmless; the inverse is not.
+   * This deliberately differs from `panelDrawings$`, which simply does not emit until
+   * configured — a drawing layer with no data yet is not a false statement.
+   *
+   * Gate open: the existing four `memoizeMap` calls run exactly as before this RFC, so every
+   * pre-existing reference-stability guarantee on the four arrays survives verbatim. Gate
+   * closed: emits the single shared `EMPTY_TRADE_CHART_VIEW` (R18-3), never a fresh literal.
+   */
+  readonly tradeChartView$: Observable<TradeChartView> = combineLatest([
+    this.panelDescriptor$.pipe(startWith(null)),
+    this.store.select(selectTradeChartView),
+    this.store.select(selectCurrentAsset),
+  ]).pipe(
+    map(([descriptor, data, currentAsset]) => {
+      const last = this.lastTradeInputs;
+      if (
+        last &&
+        last.descriptor === descriptor &&
+        last.data === data &&
+        last.currentAsset === currentAsset
+      ) {
+        return this.lastTradeChartView!;
+      }
+      this.lastTradeInputs = { descriptor, data, currentAsset };
+      this.lastTradeChartView =
+        descriptor != null && panelRendersTrades(descriptor, currentAsset)
+          ? {
+              positions: this.mapPositions(data.positions) as Position[],
+              orders: this.mapOrders(data.orders) as PendingOrder[],
+              markers: this.mapMarkers(data.markers) as TradeMarker[],
+              boxes: this.mapBoxes(data.boxes) as TradeBoxItem[],
+            }
+          : EMPTY_TRADE_CHART_VIEW;
+      return this.lastTradeChartView;
+    }),
     this.gated(),
   );
 

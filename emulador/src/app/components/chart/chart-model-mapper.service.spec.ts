@@ -5,6 +5,7 @@ import { ChartModelMapper, PanelChartView } from './chart-model-mapper.service';
 import {
   selectChartStyle,
   selectTradeChartView,
+  selectCurrentAsset,
   selectCurrentTime,
   selectSeries,
   selectUtcOffset,
@@ -316,6 +317,17 @@ describe('ChartModelMapper', () => {
         hidden: false,
       },
     ];
+
+    // RFC-018 (R18-4, D18.C) — declared spec touch. `tradeChartView$` now gates per panel
+    // (T-1 symbol invariant, T-2 `hideTrades`); an unconfigured mapper gates CLOSED (R18-1).
+    // This block's tests below subscribe without ever having called `configurePanel`, so
+    // without this setup every one of them would observe the gate-closed empty view instead
+    // of the data they assert on. This is ADDED required setup, not a weakened assertion —
+    // every reference-stability expectation below stays byte-identical.
+    beforeEach(() => {
+      mapper.configurePanel({ id: 'p1', symbol: '', timeframe: 'M1', linkGroupId: null });
+      store.overrideSelector(selectCurrentAsset, 'US30');
+    });
 
     function collect() {
       const emissions: any[] = [];
