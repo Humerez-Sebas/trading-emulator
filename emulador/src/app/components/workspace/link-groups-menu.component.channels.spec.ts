@@ -47,7 +47,6 @@ describe('LinkGroupsMenuComponent — composition channel toggles (Dibujos / Tra
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: false,
-          syncTrades: true,
         },
       },
     });
@@ -61,29 +60,6 @@ describe('LinkGroupsMenuComponent — composition channel toggles (Dibujos / Tra
     expect(checkbox.checked).toBe(false);
   });
 
-  it('renders a Spanish "Trades" toggle reflecting group.syncTrades', () => {
-    const fixture = create({
-      groups: {
-        g1: {
-          id: 'g1',
-          color: '#2962FF',
-          syncCrosshair: true,
-          syncTimeRange: true,
-          syncDrawings: true,
-          syncTrades: false,
-        },
-      },
-    });
-    const label: HTMLLabelElement = fixture.nativeElement.querySelector(
-      '.group-row .sync-trades',
-    ).parentElement;
-    expect(label.textContent?.trim()).toBe('Trades');
-    const checkbox: HTMLInputElement = fixture.nativeElement.querySelector(
-      '.group-row .sync-trades',
-    );
-    expect(checkbox.checked).toBe(false);
-  });
-
   it('the Dibujos checkbox dispatches setSyncDrawings with the row groupId and the new enabled value', () => {
     const fixture = create({
       groups: {
@@ -93,7 +69,6 @@ describe('LinkGroupsMenuComponent — composition channel toggles (Dibujos / Tra
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: false,
-          syncTrades: true,
         },
       },
     });
@@ -107,7 +82,7 @@ describe('LinkGroupsMenuComponent — composition channel toggles (Dibujos / Tra
     );
   });
 
-  it('the Trades checkbox dispatches setSyncTrades with the row groupId and the new enabled value', () => {
+  it('renders no "Trades" toggle — retired as a LinkGroup channel (D18.A)', () => {
     const fixture = create({
       groups: {
         g1: {
@@ -116,21 +91,13 @@ describe('LinkGroupsMenuComponent — composition channel toggles (Dibujos / Tra
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
       },
     });
-    const dispatch = vi.spyOn(store, 'dispatch');
-    const checkbox: HTMLInputElement = fixture.nativeElement.querySelector(
-      '.group-row .sync-trades',
-    );
-    checkbox.click();
-    expect(dispatch).toHaveBeenCalledWith(
-      LinkGroupsActions.setSyncTrades({ groupId: 'g1', enabled: false }),
-    );
+    expect(fixture.nativeElement.querySelector('.group-row .sync-trades')).toBeNull();
   });
 
-  it('"Nuevo grupo" dispatches createGroup with both new composition flags true', () => {
+  it('"Nuevo grupo" dispatches createGroup with syncDrawings true and no syncTrades key', () => {
     const fixture = create({ groups: {} });
     const dispatch = vi.spyOn(store, 'dispatch');
     const addBtn: HTMLButtonElement = fixture.nativeElement.querySelector('.link-groups-add');
@@ -140,6 +107,6 @@ describe('LinkGroupsMenuComponent — composition channel toggles (Dibujos / Tra
       typeof LinkGroupsActions.createGroup
     >;
     expect(dispatched.group.syncDrawings).toBe(true);
-    expect(dispatched.group.syncTrades).toBe(true);
+    expect('syncTrades' in dispatched.group).toBe(false);
   });
 });

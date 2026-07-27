@@ -230,7 +230,6 @@ describe('ChartPanelComponent', () => {
       syncCrosshair: true,
       syncTimeRange: true,
       syncDrawings: true,
-      syncTrades: true,
     };
     const groupB: LinkGroup = {
       id: 'g2',
@@ -238,7 +237,6 @@ describe('ChartPanelComponent', () => {
       syncCrosshair: true,
       syncTimeRange: true,
       syncDrawings: true,
-      syncTrades: true,
     };
 
     it('an unlinked panel shows a hollow (unfilled) chip', () => {

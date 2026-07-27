@@ -435,7 +435,6 @@ describe('WorkspacesEffects', () => {
           syncCrosshair: true,
           syncTimeRange: true,
           syncDrawings: true,
-          syncTrades: true,
         },
       ];
 

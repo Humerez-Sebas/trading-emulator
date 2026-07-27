@@ -762,10 +762,10 @@ describe('SesionesPageComponent', () => {
     const metaArg = putMeta.mock.calls[0][0];
     expect(metaArg.layout).toEqual(multiPanelLayout);
     expect(metaArg.panels).toEqual(multiPanels);
-    // The fixture predates the composition flags (no syncDrawings/syncTrades)
-    // -- the V2->V3 migration now normalizes every group to the migration
-    // defaults on the way through, the same rule every hydration path applies.
-    expect(metaArg.linkGroups).toEqual([{ ...linkGroups[0], syncDrawings: false, syncTrades: true }]);
+    // The fixture predates the composition flags (no syncDrawings) -- the
+    // V2->V3 migration now normalizes every group to the migration default
+    // on the way through, the same rule every hydration path applies.
+    expect(metaArg.linkGroups).toEqual([{ ...linkGroups[0], syncDrawings: false }]);
     // The V2->V3 migration lifts the legacy item into an owner-tagged Drawing:
     // symbol from its record key (XAUUSD), owner = the first panel in layout
     // order showing that symbol (p1), zIndex 0, locked:false, visible:true —

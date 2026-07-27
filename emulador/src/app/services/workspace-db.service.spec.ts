@@ -47,7 +47,6 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
         syncCrosshair: true,
         syncTimeRange: true,
         syncDrawings: true,
-        syncTrades: true,
       },
     ];
     const meta: WorkspaceMeta = {

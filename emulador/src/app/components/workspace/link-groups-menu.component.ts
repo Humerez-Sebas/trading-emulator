@@ -61,15 +61,6 @@ export const LINK_GROUP_PALETTE = [
             />
             Dibujos
           </label>
-          <label class="group-toggle">
-            <input
-              type="checkbox"
-              class="sync-trades"
-              [checked]="group.syncTrades"
-              (change)="toggleTrades(group.id, group.syncTrades)"
-            />
-            Trades
-          </label>
           <button
             class="group-delete"
             [attr.aria-label]="'Eliminar grupo y sus dibujos compartidos'"
@@ -169,10 +160,6 @@ export class LinkGroupsMenuComponent {
 
   toggleDrawings(groupId: string, current: boolean): void {
     this.store.dispatch(LinkGroupsActions.setSyncDrawings({ groupId, enabled: !current }));
-  }
-
-  toggleTrades(groupId: string, current: boolean): void {
-    this.store.dispatch(LinkGroupsActions.setSyncTrades({ groupId, enabled: !current }));
   }
 
   /** RFC-013 (D6): also unlinks every panel currently in this group — the UI must never show a chip for a deleted group. */

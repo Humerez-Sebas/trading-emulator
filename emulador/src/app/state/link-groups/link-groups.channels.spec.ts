@@ -17,11 +17,10 @@ const group = (id: string): LinkGroup => ({
   syncCrosshair: true,
   syncTimeRange: true,
   syncDrawings: true,
-  syncTrades: true,
 });
 
-describe('LinkGroup composition channels (syncDrawings / syncTrades)', () => {
-  describe('setSyncDrawings / setSyncTrades reducer handlers', () => {
+describe('LinkGroup composition channels (syncDrawings)', () => {
+  describe('setSyncDrawings reducer handler', () => {
     it('setSyncDrawings flips the flag; no-op on unknown group id; no-op when value unchanged', () => {
       let state = reducer(
         createInitialLinkGroupsState(),
@@ -42,33 +41,10 @@ describe('LinkGroup composition channels (syncDrawings / syncTrades)', () => {
       );
       expect(unknown).toBe(state); // no-op: unknown group id (identity)
     });
-
-    it('setSyncTrades flips the flag independently of setSyncDrawings; no-op on unknown group id; no-op when value unchanged', () => {
-      let state = reducer(
-        createInitialLinkGroupsState(),
-        LinkGroupsActions.createGroup({ group: group('g1') }),
-      );
-      state = reducer(state, LinkGroupsActions.setSyncTrades({ groupId: 'g1', enabled: false }));
-      expect(state.groups['g1']).toEqual({ ...group('g1'), syncTrades: false });
-      // syncDrawings untouched by setSyncTrades
-      expect(state.groups['g1'].syncDrawings).toBe(true);
-
-      const unchanged = reducer(
-        state,
-        LinkGroupsActions.setSyncTrades({ groupId: 'g1', enabled: false }),
-      );
-      expect(unchanged).toBe(state); // no-op: value unchanged (identity)
-
-      const unknown = reducer(
-        state,
-        LinkGroupsActions.setSyncTrades({ groupId: 'nope', enabled: true }),
-      );
-      expect(unknown).toBe(state); // no-op: unknown group id (identity)
-    });
   });
 
-  describe('normalizeLinkGroup (D17.I hydration defaults)', () => {
-    it('defaults a group missing both flags to syncDrawings: false, syncTrades: true', () => {
+  describe('normalizeLinkGroup (D17.I hydration defaults; D18.A legacy tolerance)', () => {
+    it('defaults a group missing syncDrawings to false', () => {
       const legacy: LinkGroupWire = {
         id: 'g1',
         color: '#f00',
@@ -81,34 +57,56 @@ describe('LinkGroup composition channels (syncDrawings / syncTrades)', () => {
         syncCrosshair: true,
         syncTimeRange: true,
         syncDrawings: false,
-        syncTrades: true,
       });
     });
 
-    it('passes present flags through verbatim (does not overwrite explicit values)', () => {
+    it('passes an explicit syncDrawings value through verbatim (does not overwrite it)', () => {
       const g: LinkGroup = group('g1');
-      const withFlipped: LinkGroup = { ...g, syncDrawings: false, syncTrades: false };
+      const withFlipped: LinkGroup = { ...g, syncDrawings: false };
       expect(normalizeLinkGroup(withFlipped)).toEqual(withFlipped);
       expect(normalizeLinkGroup(g)).toEqual(g);
     });
 
-    it('passes syncPriceScale through untouched (reserved, never interpreted)', () => {
-      const legacy: LinkGroupWire = {
+    it('carries syncPriceScale through when present (reserved, never interpreted) and leaves it absent when not (R3)', () => {
+      const withReserved: LinkGroupWire = {
         id: 'g1',
         color: '#f00',
         syncCrosshair: true,
         syncTimeRange: true,
         syncPriceScale: true,
       };
-      const normalized = normalizeLinkGroup(legacy);
+      const normalized = normalizeLinkGroup(withReserved);
       expect(normalized.syncPriceScale).toBe(true);
       expect(normalized.syncDrawings).toBe(false);
-      expect(normalized.syncTrades).toBe(true);
+
+      const withoutReserved: LinkGroupWire = {
+        id: 'g2',
+        color: '#0f0',
+        syncCrosshair: true,
+        syncTimeRange: true,
+      };
+      expect('syncPriceScale' in normalizeLinkGroup(withoutReserved)).toBe(false);
+    });
+
+    it('accepts a legacy wire object carrying syncTrades without throwing, and drops the key rather than re-emitting it (D18.A, C3)', () => {
+      const legacyWithSyncTrades: LinkGroupWire = {
+        id: 'g1',
+        color: '#f00',
+        syncCrosshair: true,
+        syncTimeRange: true,
+        syncDrawings: true,
+        syncTrades: false,
+      };
+      let normalized!: LinkGroup;
+      expect(() => {
+        normalized = normalizeLinkGroup(legacyWithSyncTrades);
+      }).not.toThrow();
+      expect('syncTrades' in normalized).toBe(false);
     });
   });
 
   describe('createLinkGroup (creation default factory)', () => {
-    it('produces a freshly created group with both composition flags true', () => {
+    it('produces a freshly created group with syncDrawings true and no syncTrades key', () => {
       const g = createLinkGroup('g1', '#2962FF');
       expect(g).toEqual({
         id: 'g1',
@@ -116,8 +114,8 @@ describe('LinkGroup composition channels (syncDrawings / syncTrades)', () => {
         syncCrosshair: true,
         syncTimeRange: true,
         syncDrawings: true,
-        syncTrades: true,
       });
+      expect('syncTrades' in g).toBe(false);
     });
   });
 });
