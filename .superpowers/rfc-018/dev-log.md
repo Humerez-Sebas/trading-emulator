@@ -758,9 +758,15 @@ clearing the branch for its PR to `develop`.
 `npm run build` green (648.37 kB, no new chunk types, no vitest sentinel) as of `51836a9`, and the
 code tree is byte-identical since then.
 
-**Nothing has been pushed.** `origin` has no RFC-018 branch yet.
+### 9.2 PR
 
-### 9.1 How to resume
+**[PR #46](https://github.com/Humerez-Sebas/trading-emulator/pull/46) → `develop`** (RFC track —
+never `main`), opened 2026-07-27 after the final audit PASS. Branch pushed to `origin` at that
+point and not before, per the owner's instruction. The PR body carries the fresh gate evidence,
+the audit results, and the invariant checks — **CI does not run on PRs to `develop`**, so that
+evidence is the record.
+
+### 9.1 History — how this run was resumed mid-flight
 
 1. `git checkout feature/rfc-018-trade-visibility-refinement` and confirm HEAD is `dbdebcc`,
    tree clean, and the branch is not behind `origin/develop`.
