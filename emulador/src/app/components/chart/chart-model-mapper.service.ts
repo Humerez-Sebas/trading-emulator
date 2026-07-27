@@ -10,7 +10,9 @@ import {
   selectCurrentTime,
   selectSeries,
   selectSessionEnd,
-  selectTradeChartView,
+  selectTradeMarkers,
+  selectTradeBoxes,
+  selectTradeBoxesVisible,
   selectUtcOffset,
   selectResolutionMinutes,
   selectResolutionSeries,
@@ -19,9 +21,11 @@ import {
   TradeMarker as StateTradeMarker,
 } from '../../state/selectors';
 import {
+  ClosedTrade,
   PendingOrder as StatePendingOrder,
   Position as StatePosition,
 } from '../../state/trading/trading.models';
+import { tradingFeature } from '../../state/trading/trading.reducer';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { Drawing as StateDrawing } from '../../state/drawings/drawings.models';
 import { ownerKeyOf } from '../../state/drawings/drawing-ownership';
@@ -182,6 +186,18 @@ const EMPTY_TRADE_CHART_VIEW: TradeChartView = Object.freeze({
   markers: frozenEmptyArray<TradeMarker>(),
   boxes: frozenEmptyArray<TradeBoxItem>(),
 });
+
+/**
+ * RFC-018 F3 — shared stable reference for "this panel has no candles yet" (unconfigured,
+ * or its timeframe has no loaded/generated series). Reusing one module constant instead of
+ * a fresh `[]` per miss keeps `resolvePanelCandles`'s cache reference-stable across repeat
+ * misses on the same (series, timeframe) pair. Frozen like every other shared empty-array
+ * placeholder in this file (`frozenEmptyArray`): it is now a SINGLE instance shared across
+ * every `ChartModelMapper` instance (unlike the pre-F3 `candles ?? []` fallback, a fresh
+ * throwaway literal per call), so an accidental downstream mutation would otherwise corrupt
+ * every panel's "no data" placeholder silently instead of throwing.
+ */
+const EMPTY_CANDLES: Candle[] = frozenEmptyArray<Candle>();
 
 /**
  * Anti-Corruption Layer (ACL) between NgRx state and the chart render domain.
@@ -398,29 +414,132 @@ export class ChartModelMapper {
   }));
 
   /**
-   * Trade-gate memo slot (RFC-018 D18.C): keyed on exactly 3 references — the panel
-   * descriptor, the raw slice from `selectTradeChartView`, and `currentAsset`. Deliberately
-   * excludes `groups` (RFC-018 §4.3): pulling the whole groups record in would invalidate
-   * every panel's trade layer whenever any group's colour changes elsewhere in the
-   * workspace. One slot per mapper instance — the same discipline as `lastDrawingsInputs`.
+   * RFC-018 F3 — per-instance memo resolving THIS panel's own candle array for a
+   * `(series, timeframe)` pair. Shared by `panelChartView$` and `tradeChartView$` (below)
+   * so the M* synthetic-series path (`generateCustomSeries`) runs at most once per genuine
+   * change, never once per consumer — a second independent derivation would double the
+   * per-panel cost (plan Risk Register) AND add a second file call-site, which the run's
+   * invariant grep forbids. One slot per mapper instance, the same discipline as
+   * `lastPanelInputs`/`lastDrawingsInputs`; N panels ⇒ N independent slots (D8).
+   */
+  private lastCandlesInputs: {
+    series: Partial<Record<Timeframe, Candle[]>>;
+    timeframe: Timeframe;
+  } | null = null;
+  private lastCandlesOutput: Candle[] = EMPTY_CANDLES;
+
+  private resolvePanelCandles(
+    series: Partial<Record<Timeframe, Candle[]>>,
+    timeframe: Timeframe,
+  ): Candle[] {
+    const last = this.lastCandlesInputs;
+    if (last && last.series === series && last.timeframe === timeframe) {
+      return this.lastCandlesOutput;
+    }
+    let candles = series[timeframe];
+    if ((!candles || candles.length === 0) && timeframe.startsWith('M')) {
+      const minutes = parseInt(timeframe.substring(1), 10);
+      if (!isNaN(minutes)) {
+        candles = generateCustomSeries(series, minutes);
+      }
+    }
+    this.lastCandlesInputs = { series, timeframe };
+    this.lastCandlesOutput = candles ?? EMPTY_CANDLES;
+    return this.lastCandlesOutput;
+  }
+
+  /**
+   * RFC-018 F3 — fine-grained memo for the panel-parametrized marker geometry, keyed ONLY
+   * on the inputs that actually determine marker content: this panel's own candles (from
+   * `resolvePanelCandles` above), `positions`, and `history`. Calls `selectTradeMarkers`'s
+   * `.projector` directly — the EXACT snapping + ordering logic the (kept-alive, R18-14)
+   * global selector uses, just fed this panel's candles instead of the global active
+   * series (the defect). Calling `.projector` as a plain function bypasses the NgRx store's
+   * OWN memoization (which only activates through `store.select(...)`, and is keyed on the
+   * global candles besides), so this local cache is what restores the reference stability
+   * the global selector gave the pre-RFC-018 path for free: a `tradeChartView$` recompute
+   * triggered by something irrelevant to trade content (e.g. the descriptor object being
+   * rebuilt for an unrelated field such as a panel rename) must not reallocate the marker
+   * array.
+   */
+  private lastMarkerInputs: {
+    candles: Candle[];
+    positions: StatePosition[];
+    history: ClosedTrade[];
+  } | null = null;
+  private lastRawMarkers: StateTradeMarker[] = [];
+
+  private resolveMarkers(
+    candles: Candle[],
+    positions: StatePosition[],
+    history: ClosedTrade[],
+  ): StateTradeMarker[] {
+    const last = this.lastMarkerInputs;
+    if (last && last.candles === candles && last.positions === positions && last.history === history) {
+      return this.lastRawMarkers;
+    }
+    this.lastMarkerInputs = { candles, positions, history };
+    this.lastRawMarkers = selectTradeMarkers.projector(candles, positions, history);
+    return this.lastRawMarkers;
+  }
+
+  /**
+   * Same discipline as {@link resolveMarkers}, for `selectTradeBoxes` — no candle snapping
+   * needed (raw open/close times), but routed through the identical per-panel pattern
+   * (plain `.projector` call + local cache) so markers and boxes share one provenance
+   * (RFC-018 F3 direction #4), and so a marker-only recompute (this panel's candles
+   * changed) does not also reallocate boxes, which don't depend on candles at all.
+   */
+  private lastBoxInputs: {
+    positions: StatePosition[];
+    orders: StatePendingOrder[];
+    history: ClosedTrade[];
+  } | null = null;
+  private lastRawBoxes: StateTradeBoxItem[] = [];
+
+  private resolveBoxes(
+    positions: StatePosition[],
+    orders: StatePendingOrder[],
+    history: ClosedTrade[],
+  ): StateTradeBoxItem[] {
+    const last = this.lastBoxInputs;
+    if (last && last.positions === positions && last.orders === orders && last.history === history) {
+      return this.lastRawBoxes;
+    }
+    this.lastBoxInputs = { positions, orders, history };
+    this.lastRawBoxes = selectTradeBoxes.projector(positions, orders, history);
+    return this.lastRawBoxes;
+  }
+
+  /**
+   * Trade-gate memo slot (RFC-018 D18.C, R18-13): keyed on the panel's OWN resolved
+   * candles (RFC-018 F3 — `resolvePanelCandles`, NOT the global active series), the three
+   * raw trading slices, `boxesVisible`, plus the descriptor and `currentAsset` the gate
+   * needs. Deliberately excludes `groups` (RFC-018 §4.3), for the identical reason
+   * `panelDrawings$`'s own memo slot does: pulling the whole groups record in would
+   * invalidate every panel's trade layer whenever any group's colour changes elsewhere in
+   * the workspace. One slot per mapper instance — the same discipline as
+   * `lastDrawingsInputs`.
    */
   private lastTradeInputs: {
     descriptor: PanelDescriptor | null;
-    data: {
-      positions: StatePosition[];
-      orders: StatePendingOrder[];
-      markers: StateTradeMarker[];
-      boxes: StateTradeBoxItem[];
-    };
+    candles: Candle[];
+    positions: StatePosition[];
+    orders: StatePendingOrder[];
+    history: ClosedTrade[];
+    boxesVisible: boolean;
     currentAsset: string | null;
   } | null = null;
   private lastTradeChartView: TradeChartView | null = null;
 
   /**
    * Trade overlay: open positions, pending orders, markers, boxes — gated per panel by
-   * `panelRendersTrades` (RFC-018 T-1 symbol invariant ∧ T-2 `hideTrades` preference). Until
-   * this RFC the stream had no panel awareness at all: every panel painted the book's
-   * trades, including one showing a different instrument.
+   * `panelRendersTrades` (RFC-018 T-1 symbol invariant ∧ T-2 `hideTrades` preference) AND,
+   * as of RFC-018 F3, geometrically correct per panel: markers snap against THIS panel's
+   * own candles (`resolvePanelCandles`, shared with `panelChartView$` — never a second
+   * `generateCustomSeries` derivation), not the global active timeframe's series. Before F3
+   * a panel on H4 with the global TF on M1 received markers snapped to M1's grid — a
+   * pre-existing production defect, independent of gating, fixed here.
    *
    * R18-1: `panelDescriptor$` is a `ReplaySubject(1)` that emits only after `configurePanel`.
    * `startWith(null)` makes an unconfigured mapper gate CLOSED rather than stay silent — a
@@ -430,35 +549,59 @@ export class ChartModelMapper {
    * This deliberately differs from `panelDrawings$`, which simply does not emit until
    * configured — a drawing layer with no data yet is not a false statement.
    *
-   * Gate open: the existing four `memoizeMap` calls run exactly as before this RFC, so every
-   * pre-existing reference-stability guarantee on the four arrays survives verbatim. Gate
-   * closed: emits the single shared `EMPTY_TRADE_CHART_VIEW` (R18-3), never a fresh literal.
+   * Gate open: `resolveMarkers`/`resolveBoxes` (fine-grained per-field memos) feed the
+   * existing four `memoizeMap` calls exactly as before this RFC, so every pre-existing
+   * reference-stability guarantee on the four arrays survives verbatim. `boxesVisible` is
+   * applied HERE (the mapper no longer consumes `selectTradeChartView`, which used to apply
+   * it) — the global eye-off behavior is preserved verbatim, just relocated. Gate closed:
+   * emits the single shared `EMPTY_TRADE_CHART_VIEW` (R18-3), never a fresh literal.
    */
   readonly tradeChartView$: Observable<TradeChartView> = combineLatest([
     this.panelDescriptor$.pipe(startWith(null)),
-    this.store.select(selectTradeChartView),
+    this.store.select(selectSeries),
+    this.store.select(tradingFeature.selectPositions),
+    this.store.select(tradingFeature.selectOrders),
+    this.store.select(tradingFeature.selectHistory),
+    this.store.select(selectTradeBoxesVisible),
     this.store.select(selectCurrentAsset),
   ]).pipe(
-    map(([descriptor, data, currentAsset]) => {
+    map(([descriptor, series, positions, orders, history, boxesVisible, currentAsset]) => {
+      const candles = descriptor
+        ? this.resolvePanelCandles(series, descriptor.timeframe)
+        : EMPTY_CANDLES;
+      const gateOpen = descriptor != null && panelRendersTrades(descriptor, currentAsset);
       const last = this.lastTradeInputs;
       if (
         last &&
         last.descriptor === descriptor &&
-        last.data === data &&
+        last.candles === candles &&
+        last.positions === positions &&
+        last.orders === orders &&
+        last.history === history &&
+        last.boxesVisible === boxesVisible &&
         last.currentAsset === currentAsset
       ) {
         return this.lastTradeChartView!;
       }
-      this.lastTradeInputs = { descriptor, data, currentAsset };
-      this.lastTradeChartView =
-        descriptor != null && panelRendersTrades(descriptor, currentAsset)
-          ? {
-              positions: this.mapPositions(data.positions) as Position[],
-              orders: this.mapOrders(data.orders) as PendingOrder[],
-              markers: this.mapMarkers(data.markers) as TradeMarker[],
-              boxes: this.mapBoxes(data.boxes) as TradeBoxItem[],
-            }
-          : EMPTY_TRADE_CHART_VIEW;
+      this.lastTradeInputs = {
+        descriptor,
+        candles,
+        positions,
+        orders,
+        history,
+        boxesVisible,
+        currentAsset,
+      };
+      this.lastTradeChartView = gateOpen
+        ? {
+            positions: this.mapPositions(positions) as Position[],
+            orders: this.mapOrders(orders) as PendingOrder[],
+            markers: this.mapMarkers(this.resolveMarkers(candles, positions, history)) as TradeMarker[],
+            boxes: boxesVisible
+              ? (this.mapBoxes(this.resolveBoxes(positions, orders, history)) as TradeBoxItem[])
+              : frozenEmptyArray<TradeBoxItem>(),
+          }
+        : EMPTY_TRADE_CHART_VIEW;
       return this.lastTradeChartView;
     }),
     this.gated(),
@@ -532,7 +675,7 @@ export class ChartModelMapper {
   /** One memo slot per mapper instance — N panels ⇒ N independent memoizers. */
   private lastPanelInputs: {
     descriptor: PanelDescriptor;
-    candles: Candle[] | undefined;
+    candles: Candle[];
     currentTime: number;
     utcOffset: number;
   } | null = null;
@@ -571,6 +714,13 @@ export class ChartModelMapper {
    * panelIds would invalidate on every tick (0% hit rate) — the P1 defect this
    * RFC forbids re-introducing. Emissions are reference-stable when this
    * panel's own inputs did not change.
+   *
+   * RFC-018 F3: candle resolution itself is delegated to `resolvePanelCandles`, the SAME
+   * per-instance memoized helper `tradeChartView$` uses — one shared cache instead of two
+   * independent `generateCustomSeries` call sites, so the two streams' candle arrays are
+   * reference-identical whenever both resolve in the same tick, and the M* synthetic path
+   * still runs at most once per genuine `(series, timeframe)` change regardless of which
+   * stream asks first.
    */
   readonly panelChartView$: Observable<PanelChartView> = combineLatest([
     this.panelDescriptor$,
@@ -579,14 +729,7 @@ export class ChartModelMapper {
     this.store.select(selectUtcOffset),
   ]).pipe(
     map(([descriptor, series, currentTime, utcOffset]) => {
-      const tf = descriptor.timeframe;
-      let candles = series[tf];
-      if ((!candles || candles.length === 0) && tf.startsWith('M')) {
-        const minutes = parseInt(tf.substring(1), 10);
-        if (!isNaN(minutes)) {
-          candles = generateCustomSeries(series, minutes);
-        }
-      }
+      const candles = this.resolvePanelCandles(series, descriptor.timeframe);
       const last = this.lastPanelInputs;
       if (
         last &&
@@ -598,7 +741,7 @@ export class ChartModelMapper {
         return this.lastPanelView!;
       }
       this.lastPanelInputs = { descriptor, candles, currentTime, utcOffset };
-      this.lastPanelView = this.computePanelView(descriptor, candles ?? [], currentTime, utcOffset);
+      this.lastPanelView = this.computePanelView(descriptor, candles, currentTime, utcOffset);
       return this.lastPanelView;
     }),
     distinctUntilChanged(),

@@ -287,8 +287,14 @@ export interface TradeMarker {
   text: string;
 }
 
-/** Time of the last candle whose open is <= t (markers must sit on a bar). */
-function snapToCandle(candles: Candle[], t: number): number {
+/**
+ * Time of the last candle whose open is <= t (markers must sit on a bar). Exported
+ * (RFC-018 F3): the per-panel trade-marker derivation in `chart-model-mapper.service.ts`
+ * reuses this exact snapping logic against a PANEL's own candles instead of the global
+ * active series — the pre-existing defect this fixes (a panel on H4 was snapped to the
+ * global TF's grid, typically M1). Pure — no store awareness, stays that way.
+ */
+export function snapToCandle(candles: Candle[], t: number): number {
   let lo = 0,
     hi = candles.length - 1,
     ans = candles[0]?.time ?? t;
@@ -302,7 +308,14 @@ function snapToCandle(candles: Candle[], t: number): number {
   return ans;
 }
 
-const selectTradeMarkers = createSelector(
+/**
+ * Exported (RFC-018 F3): `chart-model-mapper.service.ts` calls `.projector` directly with
+ * THIS panel's own candles (never the global `selectActiveCandles` below) so markers snap
+ * to the panel's own grid. Kept alive with its store wiring below per R18-14 — no
+ * production consumer feeds the pane render from it anymore (see `selectTradeChartView`'s
+ * doc comment), but `selectTradeChartView` and its `selectors.spec.ts` coverage still do.
+ */
+export const selectTradeMarkers = createSelector(
   selectActiveCandles,
   tradingFeature.selectPositions,
   tradingFeature.selectHistory,
@@ -353,6 +366,11 @@ export interface TradeBoxItem {
   hidden: boolean;
 }
 
+/**
+ * No candle snapping needed (raw open/close times). RFC-018 F3: `chart-model-mapper.service.ts`
+ * calls `.projector` directly with the panel's raw trading slices so boxes and markers
+ * share one provenance in the per-panel path.
+ */
 export const selectTradeBoxes = createSelector(
   tradingFeature.selectPositions,
   tradingFeature.selectOrders,
@@ -402,7 +420,14 @@ export const selectTradeBoxes = createSelector(
   ],
 );
 
-/** Single consistent view for the chart's trade overlay (lines + markers). */
+/**
+ * Single consistent view for the chart's trade overlay (lines + markers), keyed off the
+ * GLOBAL active timeframe. RFC-018 F3 moved the pane render off this path (a panel on a
+ * different timeframe must snap against its OWN candles, not this selector's global one —
+ * see `chart-model-mapper.service.ts`'s `tradeChartView$`). Kept alive per R18-14: it may
+ * have no production consumer left after F3, but dismantling it is TEDS Phase 4 Task 6's
+ * declared job, not this task's.
+ */
 export const selectTradeChartView = createSelector(
   tradingFeature.selectPositions,
   tradingFeature.selectOrders,

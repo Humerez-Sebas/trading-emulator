@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper } from './chart-model-mapper.service';
-import { selectTradeChartView, selectCurrentAsset } from '../../state/selectors';
+import {
+  selectSeries,
+  selectTradeMarkers,
+  selectTradeBoxes,
+  selectTradeBoxesVisible,
+  selectCurrentAsset,
+} from '../../state/selectors';
+import { tradingFeature } from '../../state/trading/trading.reducer';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 
 /**
@@ -14,9 +21,25 @@ import { PanelDescriptor } from '../../state/layout/layout.models';
  * market. T-2 (`hideTrades`) is a panel-local preference layered on top. This spec is
  * the render-side proof that the mapper actually consults both — until now
  * `tradeChartView$` had no panel awareness at all.
+ *
+ * RFC-018 Task 5 (F3, R18-13b — declared spec touch): `tradeChartView$` no longer
+ * consumes `selectTradeChartView` (which snapped markers against the GLOBAL active
+ * candles). It now derives markers/boxes from THIS panel's own candles
+ * (`selectSeries` + the panel's timeframe) plus the raw trading slices
+ * (`tradingFeature.selectPositions/selectOrders/selectHistory`) and
+ * `selectTradeBoxesVisible`. Every override below was rewired to match; no assertion
+ * was weakened, deleted, or skipped — all seven of Task 3's gating guarantees (T-1,
+ * T-2, the flip, the shared frozen empty-view reference, gate-open reference
+ * stability, the unconfigured-mapper contract) are still asserted, byte-for-byte
+ * equivalent in rigor to before.
  */
 describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', () => {
   let store: MockStore;
+
+  // A single M1 candle at t=0 — every position/order below opens at t=0, so it snaps
+  // exactly onto this candle regardless of the snapping arithmetic under test elsewhere
+  // (chart-model-mapper.trade-geometry.spec.ts owns the snapping-precision cases).
+  const candles = [{ time: 0, open: 100, high: 105, low: 95, close: 102 }];
 
   const positions = [
     {
@@ -46,33 +69,18 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
       createdAt: 0,
     },
   ];
-  const markers = [
-    {
-      time: 1,
-      position: 'aboveBar' as const,
-      shape: 'arrowUp' as const,
-      color: 'up' as const,
-      text: 't',
-    },
-  ];
-  const boxes = [
-    {
-      id: 'b1',
-      status: 'open' as const,
-      side: 'buy' as const,
-      entry: 100,
-      sl: 95,
-      tp: 110,
-      from: 0,
-      to: null,
-      hidden: false,
-    },
-  ];
+  const history: never[] = [];
+
+  // The gate-open expectation for markers/boxes is computed via the SAME kept-alive
+  // (R18-14) selectors' `.projector` the mapper itself now calls — this spec's job is
+  // proving the GATE (which data flows, and when), not re-proving the snapping
+  // arithmetic (owned by selectors.spec.ts and the new geometry spec).
+  const expectedMarkers = selectTradeMarkers.projector(candles, positions, history);
+  const expectedBoxes = selectTradeBoxes.projector(positions, orders, history);
 
   beforeEach(() => {
     TestBed.configureTestingModule({ providers: [provideMockStore()] });
     store = TestBed.inject(MockStore);
-    store.overrideSelector(selectTradeChartView, { positions, orders, markers, boxes });
   });
 
   afterEach(() => store.resetSelectors());
@@ -81,9 +89,15 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
     return { id: 'p1', symbol: '', timeframe: 'M1', linkGroupId: null, ...overrides };
   }
 
-  /** Seeds `selectCurrentAsset`, refreshes, builds a fresh mapper instance, and — unless
-   *  `desc` is omitted — configures it (the R18-1 "never configured" case omits it). */
+  /** Seeds every raw slice the rewired `tradeChartView$` reads, refreshes, builds a
+   *  fresh mapper instance, and — unless `desc` is omitted — configures it (the R18-1
+   *  "never configured" case omits it). */
   function seed(asset: string | null, desc?: PanelDescriptor): ChartModelMapper {
+    store.overrideSelector(selectSeries, { M1: candles });
+    store.overrideSelector(tradingFeature.selectPositions, positions);
+    store.overrideSelector(tradingFeature.selectOrders, orders);
+    store.overrideSelector(tradingFeature.selectHistory, history);
+    store.overrideSelector(selectTradeBoxesVisible, true);
     store.overrideSelector(selectCurrentAsset, asset);
     store.refreshState();
     const mapper = TestBed.runInInjectionContext(() => new ChartModelMapper());
@@ -102,7 +116,7 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
     return view!;
   }
 
-  it('symbol sentinel (\'\') + asset US30 — full trade view emitted (the live production path: every panel is born with symbol \'\')', () => {
+  it("symbol sentinel ('') + asset US30 — full trade view emitted (the live production path: every panel is born with symbol '')", () => {
     const view = latest(seed('US30', descriptor()));
     // `mapPositions`/`mapOrders` drop trading-domain-only fields (riskPct, riskUsd) that
     // the raw fixtures carry, so spot-check identity + length rather than a full `toEqual`
@@ -112,8 +126,8 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
     expect((view.positions[0] as { id: string }).id).toBe('p1');
     expect(view.orders).toHaveLength(1);
     expect((view.orders[0] as { id: string }).id).toBe('o1');
-    expect(view.markers).toEqual(markers);
-    expect(view.boxes).toEqual(boxes);
+    expect(view.markers).toEqual(expectedMarkers);
+    expect(view.boxes).toEqual(expectedBoxes);
   });
 
   it('T-1: panel symbol NAS100 vs asset US30 — empty view, not overridable', () => {
@@ -149,13 +163,13 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
     // Spot-check identity/length for positions/orders (mapPositions/mapOrders drop
     // trading-domain-only fields like riskPct/riskUsd, so a full toEqual against the raw
     // state-shape fixture would fail on shape, not content); markers/boxes carry the same
-    // field set end to end, so a full toEqual is exact.
+    // field set end to end, so a full toEqual against the computed expectation is exact.
     expect(opened.positions).toHaveLength(1);
     expect((opened.positions[0] as { id: string }).id).toBe('p1');
     expect(opened.orders).toHaveLength(1);
     expect((opened.orders[0] as { id: string }).id).toBe('o1');
-    expect(opened.markers).toEqual(markers);
-    expect(opened.boxes).toEqual(boxes);
+    expect(opened.markers).toEqual(expectedMarkers);
+    expect(opened.boxes).toEqual(expectedBoxes);
   });
 
   it('R18-3: two consecutive gate-closed reads return the SAME empty-view reference', () => {
@@ -167,11 +181,13 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
     // subscription, so its internal `distinctUntilChanged` starts empty and delivers
     // whatever the gate computes right now — proving the closed branch resolves to the
     // exact same object across two genuinely separate computations, one of which follows a
-    // real memo miss (a brand-new `selectTradeChartView` object reference in between).
+    // real memo miss (a brand-new `history` array reference in between — RFC-018 F3
+    // rewiring: the original trigger re-overrode `selectTradeChartView`'s wrapper; this is
+    // the equivalent "an unrelated-to-the-gate slice changed" trigger for the new inputs).
     const mapper = seed('US30', descriptor({ symbol: 'NAS100' })); // T-1 mismatch => closed
     const first = latest(mapper);
 
-    store.overrideSelector(selectTradeChartView, { positions, orders, markers, boxes });
+    store.overrideSelector(tradingFeature.selectHistory, []);
     store.refreshState();
     const second = latest(mapper);
 
@@ -189,12 +205,19 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
     mapper.tradeChartView$.subscribe((v) => emissions.push(v));
     const r1 = emissions[emissions.length - 1];
 
-    // Re-emit with a NEW wrapper object but the SAME inner array references (mirrors an
-    // unrelated state slice changing elsewhere).
-    store.overrideSelector(selectTradeChartView, { positions, orders, markers, boxes });
-    store.refreshState();
+    // RFC-018 F3 rewiring (R18-13b): the ORIGINAL trigger re-overrode `selectTradeChartView`
+    // with a NEW wrapper but the SAME inner array references — no longer constructible,
+    // because markers/boxes are now genuinely DERIVED from positions/orders/history/candles
+    // rather than independently injectable mock fields. The faithful analog: reconfigure
+    // with a descriptor that is a NEW object reference but identical in every field the
+    // gate/geometry read (a panel rename or unrelated layout field rebuilding the
+    // descriptor elsewhere — exactly the scenario `resolveMarkers`/`resolveBoxes` exist to
+    // guard against). The outer wrapper IS rebuilt (a real memo miss on `descriptor`), but
+    // all four arrays must still come out reference-IDENTICAL to r1.
+    mapper.configurePanel(descriptor({ symbol: 'US30' })); // fresh object, identical fields
     const r2 = emissions[emissions.length - 1];
 
+    expect(r2).not.toBe(r1); // the wrapper itself WAS rebuilt — this is a real recompute, not a no-op
     expect(r2.positions).toBe(r1.positions);
     expect(r2.orders).toBe(r1.orders);
     expect(r2.markers).toBe(r1.markers);
