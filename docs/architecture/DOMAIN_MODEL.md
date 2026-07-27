@@ -441,6 +441,23 @@ The Lesson and Journal systems (`state/lessons/` and pages `/journal`, `/reflect
 | J-5 | Session-scope: ningún read-model del Journal o lección consume más de una sesión | Revisión de selectores + test de aislamiento (`lessons-invariants.spec.ts`) |
 | J-6 | El Journal/Cabina es read-side puro sobre facts: cero dispatches a trading/replay/telemetry | Grep de dispatches en `journal/**` y `reflection/**` (solo acciones de lessons/navegación/playbook.amendRule) |
 
+### I-18 Invariantes de Propiedad de Dibujos (RFC-017)
+
+El contexto Workspace/Presentation introduce siete invariantes de propiedad para
+la capa de dibujos composicional (`state/drawings/`, `state/link-groups/`,
+`components/chart/chart-model-mapper.service.ts`), que reemplaza el slice plano
+por símbolo de RFC-010/013 por un store de entidades con un índice de propietario:
+
+| Id | Invariant | Detector |
+| :--- | :--- | :--- |
+| W-1 | La propiedad (`owner: DrawingOwner`) es inmutable tras la creación: ninguna acción la reasigna | Grep de invariante (en `drawings.reducer.ts`, todo hit de `owner` es `ownerIndex`, un import, o una lectura vía `ownerKeyOf(...)`/chequeo directo de presencia) + `drawings.reducer.entity.spec.ts` (`describe('drawings reducer: ownership immutability')`) |
+| W-2 | Cada dibujo tiene EXACTAMENTE un propietario (`panel` o `group`, nunca ambos ni ninguno) | `owner: DrawingOwner` es un campo único no-opcional (no array) en `Drawing` (`drawings.models.ts`); `drawing-ownership.spec.ts` (`describe('resolveDrawingTarget')`) prueba que la resolución de destino siempre produce un único owner; `drawings.reducer.entity.spec.ts` (`describe('drawings reducer: index maintenance')`) prueba que cada id vive bajo una sola clave del `ownerIndex` |
+| W-3 | Los LinkGroups resuelven un espacio de nombres; JAMÁS almacenan ni reenvían datos de dibujo | `LinkGroup` (`link-groups.models.ts`) no declara ningún campo de dibujos; `drawing-ownership.spec.ts`'s `resolveDrawingTarget` prueba que un grupo solo contribuye una clave (`group:<id>`), nunca datos |
+| W-4 | Composición, no copia: cada transición (cambio de símbolo, cambio de grupo/link, toggle de capa) re-resuelve por referencia contra el store; cero duplicación de datos | `chart-model-mapper.composition.spec.ts` (`describe('ChartModelMapper.panelDrawings$ composition (RFC-017 pipeline)')`) — casos local-only, compartido-vía-grupo, flag-off, grupo colgante, y estabilidad de referencia entre emisiones no relacionadas |
+| W-5 | Cascadas de borrado: eliminar un grupo o cerrar un panel borra en cascada SOLO los dibujos de esa propiedad (nunca la del otro tipo); reasignación automática prohibida | `drawings.reducer.entity.spec.ts` (`describe('drawings reducer: group-deletion cascade')`, `describe('drawings reducer: panel-close cascade (removePanel / purgePanelDrawings)')`) |
+| W-6 | Selección por panel: un dibujo está seleccionado como máximo en un panel a la vez; seleccionarlo en otro panel se lo roba al anterior | `drawings.reducer.entity.spec.ts` (`describe('drawings reducer: selectDrawing steals selection')`) |
+| W-7 | Undo/redo determinista por guardia de revisión: un comando obsoleto (otra edición posterior sobre el mismo dibujo) se descarta sin aplicarse; uno bloqueado por `locked` se retiene; nunca depende del timing | `drawings.history.spec.ts` (`describe('drawings history: edge-rulings table')`, filas 1–8 de la tabla de la spec técnica §5) |
+
 ---
 
 ## 6. Domain Services (pure function inventory)

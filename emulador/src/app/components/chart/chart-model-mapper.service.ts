@@ -1,10 +1,12 @@
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 import { BehaviorSubject, combineLatest, Observable, ReplaySubject } from 'rxjs';
 import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
 import {
   selectChartStyle,
   selectChartView,
+  selectCurrentAsset,
   selectCurrentTime,
   selectSeries,
   selectSessionEnd,
@@ -21,6 +23,10 @@ import {
   Position as StatePosition,
 } from '../../state/trading/trading.models';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
+import { Drawing as StateDrawing } from '../../state/drawings/drawings.models';
+import { ownerKeyOf } from '../../state/drawings/drawing-ownership';
+import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
+import { LinkGroup } from '../../state/link-groups/link-groups.models';
 import {
   CountdownModel,
   DrawingsModel,
@@ -36,7 +42,7 @@ import {
   TradeBoxOpacity,
 } from '../../domain/chart/render-model';
 import { lastIndexAtOrBefore, firstIndexAtOrAfter } from '../../state/trading/fill-engine';
-import { PanelDescriptor } from '../../state/layout/layout.models';
+import { effectivePanelSymbol, PanelDescriptor } from '../../state/layout/layout.models';
 import { Candle, Timeframe, TIMEFRAME_SECONDS } from '../../models';
 import { generateCustomSeries } from '../../state/market/custom-timeframe';
 
@@ -83,6 +89,49 @@ export interface PanelChartView {
   candles: Candle[];
   idx: number;
   utcOffset: number;
+}
+
+/** A panel's composed drawing layer: its own set plus its group's shared one, already resolved and ordered. */
+export interface PanelDrawingsView {
+  items: readonly StateDrawing[];
+  selectedId: string | null;
+}
+
+/**
+ * Composes one panel's rendered drawing layer: local drawings union the
+ * shared group layer (when linked AND that group has drawing sync on),
+ * narrowed to this panel's symbol and visible flag, ordered by flat zIndex
+ * with the id as a total-order tiebreak. A dangling link group resolves to
+ * an empty shared layer rather than throwing. The panel's own selection is
+ * re-resolved against the composed set: pointing at a drawing that fell out
+ * of composition (deleted, hidden, wrong symbol, unlinked) renders as
+ * unselected. `descriptor.hideSharedDrawings` drops the shared union for
+ * THIS panel only — the entities and every other member panel's own
+ * composition are untouched.
+ */
+export function composePanelDrawings(
+  entities: Record<string, StateDrawing>,
+  ownerIndex: Record<string, readonly string[]>,
+  selection: Record<string, string | null>,
+  groups: Record<string, LinkGroup>,
+  descriptor: PanelDescriptor,
+  currentAsset: string | null,
+): PanelDrawingsView {
+  const localIds = ownerIndex[ownerKeyOf({ type: 'panel', id: descriptor.id })] ?? [];
+  const group = descriptor.linkGroupId != null ? groups[descriptor.linkGroupId] : undefined;
+  const sharedIds =
+    !descriptor.hideSharedDrawings && group?.syncDrawings && descriptor.linkGroupId != null
+      ? (ownerIndex[ownerKeyOf({ type: 'group', id: descriptor.linkGroupId })] ?? [])
+      : [];
+  const ids = sharedIds.length ? [...localIds, ...sharedIds] : localIds;
+  const symbol = effectivePanelSymbol(descriptor, currentAsset);
+  const items = ids
+    .map((id) => entities[id])
+    .filter((d): d is StateDrawing => d != null && d.symbol === symbol && d.visible)
+    .sort((a, b) => a.zIndex - b.zIndex || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const selected = selection[descriptor.id] ?? null;
+  const selectedId = selected != null && items.some((d) => d.id === selected) ? selected : null;
+  return { items, selectedId };
 }
 
 /**
@@ -323,10 +372,60 @@ export class ChartModelMapper {
     .select(selectSessionEnd)
     .pipe(this.gated());
 
-  /** Drawings state changes (triggers full drawings repaint). */
-  readonly drawingsState$: Observable<unknown> = this.store
-    .select(drawingsFeature.selectDrawingsState)
-    .pipe(this.gated());
+  /** Composition memo slot: keyed on the six input references, one per mapper instance. */
+  private lastDrawingsInputs: {
+    descriptor: PanelDescriptor;
+    entities: Record<string, StateDrawing>;
+    ownerIndex: Record<string, readonly string[]>;
+    selection: Record<string, string | null>;
+    groups: Record<string, LinkGroup>;
+    currentAsset: string | null;
+  } | null = null;
+  private lastDrawingsView: PanelDrawingsView | null = null;
+
+  /**
+   * This panel's composed drawing layer, recomputed only when one of the six
+   * upstream references actually changes (never per frame, never per replay
+   * tick) — the same reference-keyed memo discipline as `panelChartView$`,
+   * applied to `composePanelDrawings` instead of candle geometry. The active
+   * asset resolves the panel's `''` sentinel symbol (`effectivePanelSymbol`)
+   * so a hot-added or freshly opened panel composes drawings from the first
+   * emission, not only once its own symbol is explicitly set.
+   */
+  readonly panelDrawings$: Observable<PanelDrawingsView> = combineLatest([
+    this.panelDescriptor$,
+    this.store.select(drawingsFeature.selectEntities),
+    this.store.select(drawingsFeature.selectOwnerIndex),
+    this.store.select(drawingsFeature.selectSelection),
+    this.store.select(linkGroupsFeature.selectGroups),
+    this.store.select(selectCurrentAsset),
+  ]).pipe(
+    map(([descriptor, entities, ownerIndex, selection, groups, currentAsset]) => {
+      const last = this.lastDrawingsInputs;
+      if (
+        last &&
+        last.descriptor === descriptor &&
+        last.entities === entities &&
+        last.ownerIndex === ownerIndex &&
+        last.selection === selection &&
+        last.groups === groups &&
+        last.currentAsset === currentAsset
+      ) {
+        return this.lastDrawingsView!;
+      }
+      this.lastDrawingsInputs = { descriptor, entities, ownerIndex, selection, groups, currentAsset };
+      this.lastDrawingsView = composePanelDrawings(
+        entities,
+        ownerIndex,
+        selection,
+        groups,
+        descriptor,
+        currentAsset,
+      );
+      return this.lastDrawingsView;
+    }),
+    this.gated(),
+  );
 
   // ───────── RFC-008: per-panel parametrized derivation (D8) ─────────
 
@@ -343,6 +442,11 @@ export class ChartModelMapper {
   configurePanel(descriptor: PanelDescriptor): void {
     this.panelDescriptor$.next(descriptor);
   }
+
+  /** This panel's identity as a signal; null until `configurePanel` has run. */
+  readonly descriptor: Signal<PanelDescriptor | null> = toSignal(this.panelDescriptor$, {
+    initialValue: null,
+  });
 
   /** Pure recompute — spied on by the RFC-008 isolation test; called on memo miss only. */
   private computePanelView(

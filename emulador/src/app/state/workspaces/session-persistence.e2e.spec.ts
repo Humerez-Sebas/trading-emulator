@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toPayload } from '../../services/session-sync.mapping';
 import { parseSessionPayload } from '../../services/session-migration';
 import { fromPayload } from '../../services/session-sync.mapping';
-import type { PayloadInput, DrawingCollection } from '../../services/session-sync.models';
+import type { PayloadInput } from '../../services/session-sync.models';
 import { assertLayoutConsistent } from '../layout/layout-invariants.spec-util';
 import { layoutFeature } from '../layout/layout.reducer';
 import { LayoutActions } from '../layout/layout.actions';
@@ -44,24 +44,38 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       p2: { id: 'p2', symbol: 'GBPUSD', timeframe: 'H1', linkGroupId: 'g1' },
     };
     const linkGroups: LinkGroup[] = [
-      { id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: true },
+      {
+        id: 'g1',
+        color: '#f00',
+        syncCrosshair: true,
+        syncTimeRange: true,
+        syncDrawings: true,
+        syncTrades: true,
+      },
     ];
     const eurusdDrawing: Drawing = {
       id: 'd1',
+      symbol: 'EURUSD',
+      owner: { type: 'panel', id: 'p1' },
       kind: 'line',
       p1: { time: 0, price: 1.1 },
       p2: { time: 3600, price: 1.2 },
+      zIndex: 0,
+      locked: false,
+      visible: true,
     };
     const gbpusdDrawing: Drawing = {
       id: 'd2',
+      symbol: 'GBPUSD',
+      owner: { type: 'panel', id: 'p2' },
       kind: 'line',
       p1: { time: 0, price: 1.3 },
       p2: { time: 3600, price: 1.4 },
+      zIndex: 0,
+      locked: false,
+      visible: true,
     };
-    const drawings: Record<string, DrawingCollection> = {
-      EURUSD: { version: 1, items: [eurusdDrawing] },
-      GBPUSD: { version: 1, items: [gbpusdDrawing] },
-    };
+    const drawings = { version: 2 as const, items: [eurusdDrawing, gbpusdDrawing] };
 
     const input: PayloadInput = {
       trading: defaultTradingData(10000),
@@ -95,7 +109,11 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
 
     // wire: feed the restored values through the actual restore actions
     // against FRESH feature reducers (mirrors what workspaceRestored/
-    // thenRestore dispatch in production).
+    // thenRestore dispatch in production). The drawings store holds the
+    // WHOLE session (every symbol) in one entity map, hydrated in a single
+    // `restoreDrawings` call from the already-flat V3 set — per-symbol
+    // scoping becomes a filter over the composed entities, not a separate
+    // action.
     const layoutState = layoutFeature.reducer(
       undefined,
       LayoutActions.restoreLayout({ layout: restored.layout, panels: restored.panels }),
@@ -104,14 +122,12 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       undefined,
       LinkGroupsActions.restoreGroups({ groups: restored.linkGroups }),
     );
-    const eurusdDrawingsState = drawingsFeature.reducer(
+    const drawingsState = drawingsFeature.reducer(
       undefined,
-      DrawingsActions.restoreDrawingsForSymbol({ drawings: restored.drawings, symbol: 'EURUSD' }),
+      DrawingsActions.restoreDrawings({ drawings: restored.drawings.items }),
     );
-    const gbpusdDrawingsState = drawingsFeature.reducer(
-      undefined,
-      DrawingsActions.restoreDrawingsForSymbol({ drawings: restored.drawings, symbol: 'GBPUSD' }),
-    );
+    const bySymbol = (symbol: string) =>
+      Object.values(drawingsState.entities).filter((d) => d.symbol === symbol);
 
     // assert: the invariant the live reducer relies on holds on the restored
     // state, and nothing was lost or reshaped along the way.
@@ -119,8 +135,8 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
     expect(layoutState.workspace).toEqual(layout);
     expect(layoutState.panels).toEqual(panels);
     expect(linkGroupsState.groups).toEqual({ g1: linkGroups[0] });
-    expect(eurusdDrawingsState.items).toEqual([eurusdDrawing]);
-    expect(gbpusdDrawingsState.items).toEqual([gbpusdDrawing]);
+    expect(bySymbol('EURUSD')).toEqual([eurusdDrawing]);
+    expect(bySymbol('GBPUSD')).toEqual([gbpusdDrawing]);
   });
 
   /**
@@ -174,6 +190,8 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       color: '#2962FF',
       syncCrosshair: true,
       syncTimeRange: true,
+      syncDrawings: true,
+      syncTrades: true,
     };
     linkGroupsState = linkGroupsFeature.reducer(
       linkGroupsState,
@@ -197,7 +215,7 @@ describe('session persistence full-cycle (RFC-011 Task 5 Step 7)', () => {
       activeTf: 'M1',
       customTfMinutes: null,
       playbackSpeed: 1,
-      drawings: {},
+      drawings: { version: 2, items: [] },
       notes: [],
       selectedTfs: ['M1', 'M15'],
       startRange: 1699000000,

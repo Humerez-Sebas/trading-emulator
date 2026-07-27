@@ -5,10 +5,28 @@
 > Steps use checkbox (`- [ ]`) syntax for tracking. Repo protocol:
 > `docs/engineering/sdd-orchestration.md`.
 
+> **STATUS & SCOPE (updated 2026-07-24).**
+> - **Task 1 — COMPLETADA** (`syncDrawings`/`syncTrades` composition channels):
+>   implemented in the prior run, preserved by cherry-pick onto `develop` `af3d8ca`,
+>   re-verified green (tsc app+spec clean, lint 0, `ng test` 1798/1798). **This run
+>   RESUMES at Task 2.**
+> - **Tasks 7 & 8 — OUT OF SCOPE (superseded by TEDS).** The trade-visualization layer
+>   (Ghost Rails geometry, corner Position HUD) was absorbed by the TEDS grammar
+>   (`TEDS_GRAMMAR.md` §10; normative render in `docs/architecture/TEDS_INTERACTION.md`
+>   / `TEDS_MOTION.md`) and re-planned into
+>   `docs/superpowers/specs/2026-07-TEDS-implementation-plan.md`. Only the RFC §5.1
+>   *gating predicate* (where trades render) survives — implemented with the TEDS trade
+>   layer, not here.
+> - **This run's scope = Tasks 2, 3, 4, 5, 6, 9.**
+> - **Secondary observation panels:** a secondary panel may show any downloaded asset
+>   (e.g. NASDAQ) for observation + drawing; trades render only where
+>   `panel.symbol === primarySymbol`. Multi-symbol = observation, not tradeable (D1).
+
 **Goal:** Owner-tagged compositional drawings (local + shared layers resolved per
 panel through LinkGroups), two new composition-sync channels (`syncDrawings`,
-`syncTrades`), panel-scoped undo/redo and clipboard, `SessionPayloadV3`, and the
-Ghost Rails trade-visualization layer.
+`syncTrades`), panel-scoped undo/redo and clipboard, and `SessionPayloadV3`. *(The Ghost Rails
+trade-visualization layer originally scoped here — Tasks 7–8 — is superseded by
+TEDS and out of scope; see the STATUS & SCOPE banner above.)*
 
 **Architecture:** `Drawing` gains `{symbol, owner, zIndex, locked, visible}`; the
 drawings slice becomes an entity map + incremental owner index holding the WHOLE
@@ -31,8 +49,9 @@ it). Visual authority: `DESIGN_SYSTEM.md` +
 
 ## Global Constraints
 
-- **Branch:** `feature/rfc-017-compositional-panel-sync` (exists, based on
-  `origin/develop` @ 64f19b3); PR to `develop` only.
+- **Branch:** `feature/rfc-017-compositional-panel-sync` (re-cut 2026-07-24 from
+  `origin/develop` @ `af3d8ca`, post TEDS-consolidation PR #43; Task 1 carried over);
+  PR to `develop` only.
 - **Gates per task**, from `emulador/` (all four, fresh output only):
   `npx tsc -p tsconfig.app.json --noEmit` · `npx tsc -p tsconfig.spec.json --noEmit` ·
   `npx ng test --watch=false` (NEVER bare `npx vitest run`) · `npm run lint` (0
@@ -353,7 +372,7 @@ spec §4 diagram.
 
 ---
 
-### Task 7: Trade layer gating + Ghost Rails primitives
+### ~~Task 7: Trade layer gating + Ghost Rails primitives~~ — SUPERSEDED BY TEDS · OUT OF SCOPE
 
 Pipeline contract: technical spec §4 (V3 gate node). Visual contract: visual
 spec §5–6 (Ghost Rails + adopted HUD chip and MAE/MFE ticks).
@@ -421,7 +440,7 @@ spec §5–6 (Ghost Rails + adopted HUD chip and MAE/MFE ticks).
 
 ---
 
-### Task 8: Position HUD chip + Design System token registration
+### ~~Task 8: Position HUD chip + Design System token registration~~ — SUPERSEDED BY TEDS · OUT OF SCOPE
 
 **Files:**
 - Create: `components/workspace/position-hud-chip.component.ts` — standalone,

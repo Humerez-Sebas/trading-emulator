@@ -25,6 +25,16 @@ export interface PanelDescriptor {
   timeframe: Timeframe;
   /** null = not linked; the layout reducer only transports it (sync = RFC-010). */
   linkGroupId: string | null;
+  /** Per-panel local toggle: drops the shared group layer from THIS panel's composition only. Absent = false; never persisted as an explicit `false`. */
+  hideSharedDrawings?: boolean;
+}
+
+/** '' on a descriptor means "whatever asset is active"; resolve it before use. */
+export function effectivePanelSymbol(
+  descriptor: PanelDescriptor,
+  activeSymbol: string | null,
+): string {
+  return descriptor.symbol || activeSymbol || '';
 }
 
 /** A tab-group inside one grid cell: stacked panels, one visible at a time. */

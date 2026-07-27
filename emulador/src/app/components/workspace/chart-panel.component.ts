@@ -82,6 +82,34 @@ import { Timeframe } from '../../models';
           </div>
         }
       </div>
+      @if (descriptor().linkGroupId !== null) {
+        <button
+          type="button"
+          class="panel-hide-shared"
+          [class.active]="hideSharedDrawings()"
+          [attr.aria-label]="hideSharedLabel()"
+          [attr.title]="hideSharedLabel()"
+          (click)="toggleHideSharedDrawings($event)"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="12"
+            height="12"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+            <circle cx="12" cy="12" r="3" />
+            @if (hideSharedDrawings()) {
+              <path d="M2 2l20 20" />
+            }
+          </svg>
+        </button>
+      }
       @if (lastClose() !== null) {
         <span class="panel-price">{{ lastClose() }}</span>
       }
@@ -179,6 +207,25 @@ import { Timeframe } from '../../models';
         border-radius: 50%;
         flex-shrink: 0;
       }
+      .panel-hide-shared {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        background: none;
+        border: none;
+        border-radius: var(--radius);
+        color: var(--text-muted);
+        cursor: pointer;
+      }
+      .panel-hide-shared:hover {
+        background: var(--surface-2);
+      }
+      .panel-hide-shared.active {
+        color: var(--accent);
+      }
       .panel-chart {
         flex: 1;
         min-height: 0;
@@ -254,6 +301,14 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
     return view.candles[view.idx]?.close ?? null;
   });
 
+  /** This panel's local shared-layer visibility toggle; absent means false. */
+  readonly hideSharedDrawings = computed(() => this.descriptor().hideSharedDrawings ?? false);
+
+  /** Spanish label reflecting the CURRENT state as the action that flips it, for both aria-label and title. */
+  readonly hideSharedLabel = computed(() =>
+    this.hideSharedDrawings() ? 'Mostrar capa compartida' : 'Ocultar capa compartida',
+  );
+
   /**
    * RFC-012 (pt 3): sticky "has this panel ever been visible" latch. Once true, never flips
    * back — preserving RFC-009 keep-alive (hiding after first show must NOT destroy the engine).
@@ -294,6 +349,17 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
 
   onPanelClick(): void {
     this.store.dispatch(LayoutActions.setFocusedPanel({ panelId: this.descriptor().id }));
+  }
+
+  /** Flips this panel's local shared-layer visibility toggle. */
+  toggleHideSharedDrawings(event: Event): void {
+    event.stopPropagation();
+    this.store.dispatch(
+      LayoutActions.setPanelHideSharedDrawings({
+        panelId: this.descriptor().id,
+        hidden: !this.hideSharedDrawings(),
+      }),
+    );
   }
 
   /** RFC-013 (Task 4): plain-DOM outside-click-to-close (no CDK) — ignores clicks inside this component's own host. */

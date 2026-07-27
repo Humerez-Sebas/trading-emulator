@@ -19,6 +19,7 @@ import { fromPayload } from '../../services/session-sync.mapping';
 import {
   SessionPayloadV1,
   SessionPayloadV2,
+  SessionPayloadV3,
   SessionSummary,
 } from '../../services/session-sync.models';
 import { authFeature } from '../../state/auth/auth.reducer';
@@ -37,6 +38,7 @@ import { ManifestService } from '../../services/market-data/manifest.service';
 import { ClosedTrade, defaultTradingData, PendingOrder } from '../../state/trading/trading.models';
 import { Drawing } from '../../state/drawings/drawings.models';
 import {
+  selectAllDrawings,
   selectCurrentAsset,
   selectCurrentTime,
   selectDataRange,
@@ -47,7 +49,6 @@ import {
   selectTradingData,
 } from '../../state/selectors';
 import { marketFeature } from '../../state/market/market.reducer';
-import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { SavedSession, SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { emptyWorkspace, WorkspaceMeta } from '../../state/workspaces/workspaces.models';
@@ -73,7 +74,11 @@ type Density = 'card' | 'row';
  */
 type PendingDownload =
   | { kind: 'jsonImport'; session: SessionFileV1 }
-  | { kind: 'cloudOpen'; card: SessionCard; payload: SessionPayloadV1 | SessionPayloadV2 };
+  | {
+      kind: 'cloudOpen';
+      card: SessionCard;
+      payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3;
+    };
 
 /** One row in the folder navigator sidebar. */
 interface SidebarItem {
@@ -266,7 +271,7 @@ export class SesionesPageComponent {
   private liveCustomTf = this.store.selectSignal(marketFeature.selectCustomTf);
   private livePlaybackSpeed = this.store.selectSignal(selectMsPerCandle);
   private liveReplayResolution = this.store.selectSignal(selectResolutionMinutes);
-  private liveDrawings = this.store.selectSignal(drawingsFeature.selectItems);
+  private liveDrawings = this.store.selectSignal(selectAllDrawings);
   private liveLoadedTfs = this.store.selectSignal(selectLoadedTfs);
 
   /** Flat list of every session as a card (live state wins for the open asset). */
@@ -828,7 +833,7 @@ export class SesionesPageComponent {
    */
   private async materializeAndOpen(
     card: SessionCard,
-    payload: SessionPayloadV1 | SessionPayloadV2,
+    payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3,
   ): Promise<void> {
     if (!card.id) return;
     const restored = fromPayload(payload, card.symbol);
@@ -856,7 +861,10 @@ export class SesionesPageComponent {
     meta.layout = restored.layout;
     meta.panels = restored.panels;
     meta.linkGroups = restored.linkGroups;
-    meta.drawings = restored.drawings[card.symbol]?.items ?? meta.drawings ?? [];
+    // V3's drawing set is already flat and owner-tagged (every panel's
+    // drawings included, not just card.symbol's), so it threads straight
+    // through with no per-symbol flattening.
+    meta.drawings = restored.drawings.items;
     await this.db.putMeta(meta);
     await this.reload();
     await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });

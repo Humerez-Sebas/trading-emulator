@@ -26,12 +26,14 @@ import {
 import { Candle, derivePointSize } from '../../models';
 import {
   selectActiveTfShortfall,
+  selectCurrentAsset,
   selectDataRange,
   selectPlacementTime,
   selectTradePanelView,
 } from '../../state/selectors';
+import { effectivePanelSymbol } from '../../state/layout/layout.models';
 import { selectRuleSlotMap } from '../../state/playbook/playbook.selectors';
-import { ChartModelMapper } from './chart-model-mapper.service';
+import { ChartModelMapper, PanelDrawingsView } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import {
   ChartColors,
@@ -43,7 +45,10 @@ import {
 import { DialogService } from '../ui/dialog.service';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
-import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
+import { ClipboardEntry, Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
+import { resolveDrawingTarget } from '../../state/drawings/drawing-ownership';
+import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
+import { layoutFeature } from '../../state/layout/layout.reducer';
 import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
 import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
 import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
@@ -54,6 +59,7 @@ import { ChartEngine } from '../../domain/chart/chart-engine';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import {
   ChartConfig,
+  Drawing as DomainDrawing,
   TradeBoxItem as DomainTradeBoxItem,
   TradeMarker as DomainTradeMarker,
   Position as DomainPosition,
@@ -454,8 +460,16 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // --- drawing state ---
   private activeTool = this.store.selectSignal(drawingsFeature.selectActiveTool);
-  private drawings = this.store.selectSignal(drawingsFeature.selectItems);
-  private selectedId = this.store.selectSignal(drawingsFeature.selectSelectedId);
+  /** This panel's composed drawing layer: local ∪ shared group, symbol-filtered, z-ordered. */
+  private panelDrawings: PanelDrawingsView = { items: [], selectedId: null };
+  private linkGroups = this.store.selectSignal(linkGroupsFeature.selectGroups);
+  /** Gates window-level keyboard shortcuts (Delete, undo/redo) to the ONE focused panel — every
+   * chart instance shares the same window keydown listener, so N panels would otherwise all react. */
+  private focusedPanelId = this.store.selectSignal(layoutFeature.selectFocusedPanelId);
+  /** Resolves a panel's `''` sentinel symbol to the active asset before a new drawing is stamped. */
+  private currentAsset = this.store.selectSignal(selectCurrentAsset);
+  /** The one-slot session clipboard: geometry and kind only, runtime-only, never persisted. */
+  private clipboard = this.store.selectSignal(drawingsFeature.selectClipboard);
   private shiftSecs = 0; // time zone offset applied to the chart
   private accent = CHART_ACCENT;
   private up = DARK_CHART_COLORS.upColor;
@@ -465,7 +479,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private boxFillAlpha = DARK_TRADE_BOX_OPACITY.fill;
   private boxBorderAlpha = DARK_TRADE_BOX_OPACITY.border;
   private draftP1: DrawingPoint | null = null;
-  private draft: Drawing | null = null;
+  /** Render-only preview (quick ruler / in-progress draft): never a store entity. */
+  private draft: DomainDrawing | null = null;
   /** Anchor of the ephemeral middle-click measurement (not persisted). */
   private quickRuler: DrawingPoint | null = null;
   private shiftKey = false;
@@ -481,13 +496,48 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     y2: number;
   } | null = null;
 
+  /** True while the user is typing into a field; the browser's own text-undo must win there. */
+  private isTypingTarget(e: KeyboardEvent): boolean {
+    const el = e.target as HTMLElement | null;
+    return !!el && (el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName));
+  }
+
   // DOM listeners kept by reference so they can be removed
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.destroyed) return;
     if (e.key === 'Shift') this.shiftKey = true;
-    if (e.key === 'Delete' && this.selectedId()) {
-      this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected()));
+
+    // Delete/undo/redo are window-level (one listener per panel instance), so they must be
+    // gated to the ONE focused panel — otherwise a keypress fires in every panel at once.
+    const panelId = this.mapper.descriptor()?.id;
+    if (panelId && panelId === this.focusedPanelId() && !this.isTypingTarget(e)) {
+      if (e.key === 'Delete' && this.panelDrawings.selectedId) {
+        this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected({ panelId })));
+      }
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          this.zone.run(() => this.store.dispatch(DrawingsActions.undo({ panelId })));
+        } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+          e.preventDefault();
+          this.zone.run(() => this.store.dispatch(DrawingsActions.redo({ panelId })));
+        } else if (key === 'c' && this.panelDrawings.selectedId) {
+          // a live text selection means the user is copying text, not a drawing —
+          // the browser's native copy must win (the isTypingTarget guard above only
+          // covers focused form fields, not a text selection elsewhere in the DOM).
+          const selection = window.getSelection();
+          if (!selection || selection.isCollapsed) {
+            e.preventDefault();
+            this.zone.run(() => this.store.dispatch(DrawingsActions.copySelected({ panelId })));
+          }
+        } else if (key === 'v' && this.clipboard()) {
+          e.preventDefault();
+          this.zone.run(() => this.pasteClipboardAt(panelId));
+        }
+      }
     }
+
     if (e.key === 'Escape') {
       if (this.placing()) this.zone.run(() => this.cancelPlacing());
       if (this.menu()) this.zone.run(() => this.menu.set(null));
@@ -568,10 +618,13 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         this.coverageBanner.set(last === null ? null : this.formatShortfall(last)),
       );
 
-    // drawings: repaint when they change
-    this.mapper.drawingsState$
+    // drawings: this panel's composed layer, repainted whenever it changes
+    this.mapper.panelDrawings$
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.pushDrawings());
+      .subscribe((view) => {
+        this.panelDrawings = view;
+        this.pushDrawings();
+      });
 
     // trade overlay: entry/SL/TP price lines + entry/exit markers
     this.mapper.tradeChartView$
@@ -1165,8 +1218,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (tool === 'none') {
       // selection by click
       if (!param.point) return;
+      const panelId = this.mapper.descriptor()?.id;
+      if (!panelId) return;
       const hit = this.drawingsCap.hitTestDrawing(param.point.x, param.point.y);
-      this.store.dispatch(DrawingsActions.selectDrawing({ id: hit }));
+      this.store.dispatch(DrawingsActions.selectDrawing({ panelId, id: hit }));
       return;
     }
 
@@ -1179,16 +1234,56 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // second click: complete the drawing (ignore the exact same point,
     // e.g. the click+dblclick pair of an accidental double click)
     if (pt.time === this.draftP1.time && pt.price === this.draftP1.price) return;
-    const p2 = this.applySnap(this.draftP1, pt, tool as DrawingType);
-    const drawing: Drawing = {
-      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-      kind: tool as DrawingType,
-      p1: this.draftP1,
-      p2,
-    };
+    const p1 = this.draftP1;
+    const p2 = this.applySnap(p1, pt, tool as DrawingType);
     this.draftP1 = null;
     this.draft = null;
-    this.store.dispatch(DrawingsActions.addDrawing({ drawing }));
+    const descriptor = this.mapper.descriptor();
+    // defensive: no panel configured yet means nothing can own the drawing
+    if (!descriptor) return;
+    const symbol = effectivePanelSymbol(descriptor, this.currentAsset());
+    // defensive: no descriptor symbol AND no active asset means nothing to stamp
+    if (!symbol) return;
+    const drawing: Drawing = {
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      symbol,
+      owner: resolveDrawingTarget(descriptor, this.linkGroups()),
+      kind: tool as DrawingType,
+      p1,
+      p2,
+      zIndex: 0, // placeholder — the reducer owns real z-order assignment
+      locked: false,
+      visible: true,
+    };
+    this.store.dispatch(DrawingsActions.addDrawing({ panelId: descriptor.id, drawing }));
+  }
+
+  /**
+   * Builds the new `Drawing` from the clipboard's captured geometry and
+   * dispatches the paste — component-side, so ids are minted here and never
+   * in the reducer (purity). Owner resolution reuses `resolveDrawingTarget`,
+   * the exact same rule hand-drawn creation uses, so a paste always lands
+   * where this panel would draw by hand. A clipboard entry is required to
+   * build a drawing at all; an empty clipboard is simply nothing to paste.
+   */
+  private pasteClipboardAt(panelId: string): void {
+    const clip: ClipboardEntry | null = this.clipboard();
+    const descriptor = this.mapper.descriptor();
+    if (!clip || !descriptor) return;
+    const symbol = effectivePanelSymbol(descriptor, this.currentAsset());
+    if (!symbol) return;
+    const drawing: Drawing = {
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      symbol,
+      owner: resolveDrawingTarget(descriptor, this.linkGroups()),
+      kind: clip.kind,
+      p1: clip.p1,
+      p2: clip.p2,
+      zIndex: 0, // placeholder — the reducer owns real z-order assignment
+      locked: false,
+      visible: true,
+    };
+    this.store.dispatch(DrawingsActions.pasteClipboard({ panelId, drawing }));
   }
 
   private handleCrosshair(param: MouseEventParams<Time>): void {
@@ -1293,7 +1388,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
     // resize handle of the selected drawing takes priority over moving
     const handle = this.drawingsCap.hitTestHandle(x, y);
-    let id: string | null = handle ? this.selectedId() : null;
+    let id: string | null = handle ? this.panelDrawings.selectedId : null;
     let mode: 'move' | 'p1' | 'p2' = handle ?? 'move';
     if (!id) {
       // trade lines (SL/TP/pending entry) go before drawing bodies: they are
@@ -1323,7 +1418,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       mode = 'move';
     }
     if (!id) return;
-    const d = this.drawings().find((it) => it.id === id);
+    const d = this.panelDrawings.items.find((it) => it.id === id);
     if (!d) return;
 
     const x1 = this.drawingsCap.xForTime(d.p1.time);
@@ -1332,7 +1427,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const y2 = this.series.priceToCoordinate(d.p2.price);
     if (x1 === null || x2 === null || y1 === null || y2 === null) return;
 
-    this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ id })));
+    const panelId = this.mapper.descriptor()?.id;
+    if (panelId) {
+      this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ panelId, id })));
+    }
+    // a locked drawing may still be selected, but never dragged/resized — cursor stays default
+    if (d.locked) return;
     this.drag = { id, mode, startX: x, startY: y, x1, y1, x2, y2 };
     // Capture mousemove globally so drags work even outside the chart area
     window.addEventListener('mousemove', this.onMouseMoveDom);
@@ -1382,7 +1482,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       return time !== null && price !== null ? { time, price } : null;
     };
 
-    const d = this.drawings().find((it) => it.id === this.drag!.id);
+    const d = this.panelDrawings.items.find((it) => it.id === this.drag!.id);
     if (!d) return;
     let p1 = d.p1;
     let p2 = d.p2;
@@ -1402,7 +1502,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       p2 = n;
     }
     const id = this.drag.id;
-    this.zone.run(() => this.store.dispatch(DrawingsActions.moveDrawing({ id, p1, p2 })));
+    const panelId = this.mapper.descriptor()?.id;
+    if (!panelId) return;
+    this.zone.run(() => this.store.dispatch(DrawingsActions.moveDrawing({ panelId, id, p1, p2 })));
   }
 
   private endDrag(): void {
@@ -1425,11 +1527,17 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** Syncs the current state to the primitive and forces a repaint. */
   private pushDrawings(): void {
+    const items = this.panelDrawings.items.map((d) => ({
+      id: d.id,
+      kind: d.kind,
+      p1: d.p1,
+      p2: d.p2,
+    }));
     this.engine!.render({
       drawings: this.mapper.buildDrawingsModel(
-        this.drawings(),
+        items,
         this.activeTool(),
-        this.selectedId(),
+        this.panelDrawings.selectedId,
         this.draft,
         this.shiftSecs,
         this.renderedTimes,

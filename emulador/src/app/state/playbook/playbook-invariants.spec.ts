@@ -30,7 +30,7 @@ function payloadInputWithHistory(history: ClosedTrade[]): PayloadInput {
     activeTf: 'H1',
     customTfMinutes: null,
     playbackSpeed: 1,
-    drawings: {},
+    drawings: { version: 2, items: [] },
     notes: [],
     selectedTfs: ['H1'],
     startRange: 1699000000,

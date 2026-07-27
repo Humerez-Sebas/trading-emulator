@@ -41,7 +41,14 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
   it('putMeta/getMeta round-trip layout/panels/linkGroups when present (RFC-011 Task 4)', async () => {
     const { layout, panels } = singlePanelLayoutFor('EURUSD', 'H1');
     const linkGroups: LinkGroup[] = [
-      { id: 'g1', color: '#f00', syncCrosshair: true, syncTimeRange: true },
+      {
+        id: 'g1',
+        color: '#f00',
+        syncCrosshair: true,
+        syncTimeRange: true,
+        syncDrawings: true,
+        syncTrades: true,
+      },
     ];
     const meta: WorkspaceMeta = {
       ...workspaceMeta({ symbol: 'EURUSD' }),

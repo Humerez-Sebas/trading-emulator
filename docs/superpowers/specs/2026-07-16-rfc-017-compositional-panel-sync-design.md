@@ -16,6 +16,16 @@ invariants (zero implicit copying, compositional rendering, LinkGroups as
 resolvers, explicit ownership) are preserved, as are all repo invariants
 (kernel §Invariants) and the 008-012 frozen non-goals.
 
+> **Aclaración de alcance (2026-07-24).** (a) *Paneles secundarios de observación:*
+> un panel secundario puede mostrar **cualquier activo descargado** (p. ej. NASDAQ)
+> para observación de la acción del precio y trazado de dibujos — §1 ya lo describe
+> como "a view-only panel on another symbol". La capa de trades se apaga donde
+> `panel.symbol ≠ primarySymbol` (RFC §5.1); esos paneles son referencia read-only
+> respecto a trades. El multi-símbolo es de **observación**, no operable (D1; no-goal
+> 008-012). (b) *Estado de tasks:* Task 1 **completada** (preservada e integrada);
+> Tasks 7–8 **superseded por TEDS** (fuera de alcance); este run ejecuta
+> **Tasks 2–6 + 9**.
+
 ---
 
 ## 1. Current state (evidence, not assumption)

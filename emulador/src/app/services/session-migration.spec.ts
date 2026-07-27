@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   migrateV1ToV2,
+  migrateV2ToV3,
   parseSessionPayload,
   singlePanelLayoutFor,
   isSessionPayloadV2,
@@ -8,6 +9,7 @@ import {
 import {
   SESSION_PAYLOAD_VERSION,
   SESSION_PAYLOAD_VERSION_2,
+  SESSION_PAYLOAD_VERSION_3,
   type SessionPayloadV1,
 } from './session-sync.models';
 import { defaultTradingData } from '../state/trading/trading.models';
@@ -15,9 +17,14 @@ import type { Drawing } from '../state/drawings/drawings.models';
 
 const drawing = (id: string): Drawing => ({
   id,
+  symbol: 'EURUSD',
+  owner: { type: 'panel', id: 'panel-1' },
   kind: 'line',
   p1: { time: 100, price: 1.1 },
   p2: { time: 200, price: 1.2 },
+  zIndex: 0,
+  locked: false,
+  visible: true,
 });
 
 function sampleV1(): SessionPayloadV1 {
@@ -110,11 +117,14 @@ describe('migrateV1ToV2', () => {
     expect(reparsed).toEqual(migrated);
   });
 
-  it('is idempotent: migrating an already-V2 payload via parseSessionPayload is a no-op passthrough', () => {
+  it('parseSessionPayload takes an already-V2 payload straight to V3 in one step (no double migration)', () => {
+    // V3 is now the terminal wire version (D17.J), so a V2 input is no longer
+    // a no-op passthrough through parseSessionPayload — it's migrated exactly
+    // once, landing on the same result as calling migrateV2ToV3 directly.
     const v1 = sampleV1();
     const v2 = migrateV1ToV2(v1, 'EURUSD');
-    const again = parseSessionPayload(v2, 'EURUSD');
-    expect(again).toEqual(v2);
+    const parsed = parseSessionPayload(v2, 'EURUSD');
+    expect(parsed).toEqual(migrateV2ToV3(v2));
   });
 });
 
@@ -133,16 +143,16 @@ describe('isSessionPayloadV2', () => {
 });
 
 describe('parseSessionPayload defensive fallback', () => {
-  it('migrates a V1 payload', () => {
+  it('migrates a V1 payload all the way to V3', () => {
     const v1 = sampleV1();
     const parsed = parseSessionPayload(v1, 'EURUSD');
-    expect(parsed.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
-    expect(parsed.drawings).toEqual({ EURUSD: { version: 1, items: v1.drawings } });
+    expect(parsed.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_3);
+    expect(parsed.drawings).toEqual(migrateV2ToV3(migrateV1ToV2(v1, 'EURUSD')).drawings);
   });
 
-  it('passes through a well-formed V2 payload unchanged', () => {
+  it('migrates a well-formed V2 payload to V3 (same result as calling migrateV2ToV3 directly)', () => {
     const v2 = migrateV1ToV2(sampleV1(), 'EURUSD');
-    expect(parseSessionPayload(v2, 'EURUSD')).toEqual(v2);
+    expect(parseSessionPayload(v2, 'EURUSD')).toEqual(migrateV2ToV3(v2));
   });
 
   it('falls back to the single-panel default when layout/panels are inconsistent (orphan panelId)', () => {

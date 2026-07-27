@@ -1,10 +1,10 @@
 import type { TradingData, ClosedTrade, SavedSession } from '../state/trading/trading.models';
 import { buildRequiredDatasets, yearsInRange, type AnchorTf } from './session.service';
 import {
-  SESSION_PAYLOAD_VERSION_2,
+  SESSION_PAYLOAD_VERSION_3,
   type PayloadInput,
-  type SessionPayloadV1,
-  type SessionPayloadV2,
+  type StoredSessionPayload,
+  type SessionPayloadV3,
   type FlattenInput,
   type FlattenSession,
   type FlattenResult,
@@ -16,9 +16,9 @@ import {
 } from './session-sync.models';
 import { parseSessionPayload, singlePanelLayoutFor } from './session-migration';
 
-export function toPayload(i: PayloadInput): SessionPayloadV2 {
+export function toPayload(i: PayloadInput): SessionPayloadV3 {
   return {
-    schemaVersion: SESSION_PAYLOAD_VERSION_2,
+    schemaVersion: SESSION_PAYLOAD_VERSION_3,
     trading: i.trading,
     currentTime: i.currentTime,
     activeTf: i.activeTf,
@@ -41,28 +41,28 @@ export function toPayload(i: PayloadInput): SessionPayloadV2 {
  * `primarySymbol` is required (no default) so every call site must supply the
  * symbol this row/session belongs to explicitly, rather than guessing it from
  * the payload itself (V1 payloads carry no symbol field of their own — see
- * session-migration.ts). Delegates to Task 1's `parseSessionPayload`, so a
- * V1 input is migrated AND a structurally corrupt V2 input gets the same
- * defensive single-panel fallback, in one call.
+ * session-migration.ts). Delegates to `parseSessionPayload`, so a V1 or V2
+ * input is migrated all the way to V3, and a structurally corrupt input gets
+ * the same defensive single-panel fallback, in one call.
  */
-export function fromPayload(p: SessionPayloadV1 | SessionPayloadV2, primarySymbol: string) {
-  const v2 = parseSessionPayload(p, primarySymbol);
+export function fromPayload(p: StoredSessionPayload, primarySymbol: string) {
+  const v3 = parseSessionPayload(p, primarySymbol);
   return {
-    trading: v2.trading,
-    cursor: v2.currentTime,
-    activeTf: v2.activeTf,
-    customTfMinutes: v2.customTfMinutes,
-    playbackSpeed: v2.playbackSpeed,
-    replayResolution: v2.replayResolution ?? null,
-    drawings: v2.drawings,
-    notes: v2.notes,
-    selectedTfs: v2.selectedTfs,
-    startRange: v2.startRange,
-    endRange: v2.endRange,
-    requiredDatasets: v2.requiredDatasets,
-    layout: v2.layout,
-    panels: v2.panels,
-    linkGroups: v2.linkGroups,
+    trading: v3.trading,
+    cursor: v3.currentTime,
+    activeTf: v3.activeTf,
+    customTfMinutes: v3.customTfMinutes,
+    playbackSpeed: v3.playbackSpeed,
+    replayResolution: v3.replayResolution ?? null,
+    drawings: v3.drawings,
+    notes: v3.notes,
+    selectedTfs: v3.selectedTfs,
+    startRange: v3.startRange,
+    endRange: v3.endRange,
+    requiredDatasets: v3.requiredDatasets,
+    layout: v3.layout,
+    panels: v3.panels,
+    linkGroups: v3.linkGroups,
   };
 }
 
@@ -154,7 +154,7 @@ function defaultView(symbol: string, cursor: number): SessionView {
     customTfMinutes: null,
     playbackSpeed: 1,
     replayResolution: null,
-    drawings: {},
+    drawings: { version: 2, items: [] },
     notes: [],
     selectedTfs: [],
     startRange: 0,
@@ -204,12 +204,11 @@ function buildRow(
     symbol,
     name: session.name ?? autoName(symbol, session.createdAt),
     folderId: session.trading.folderId,
-    // RFC-011 Task 4 (folded audit fix): stamp the row with the EMBEDDED
-    // payload's own version rather than the hardcoded V1 constant — toPayload
-    // always emits SessionPayloadV2 now (D9), so the `schema_version` column
-    // must track that reality. Nothing branches on this column (mergeByLww
-    // ignores it; it's a display-only reader), so this is metadata honesty,
-    // not a behavior change.
+    // Stamp the row with the EMBEDDED payload's own version rather than a
+    // hardcoded constant — toPayload's return version can change (D9), so the
+    // `schema_version` column must track that reality. Nothing branches on
+    // this column (mergeByLww ignores it; it's a display-only reader), so
+    // this is metadata honesty, not a behavior change.
     schemaVersion: payload.schemaVersion,
     createdAt: session.createdAt,
     clientUpdatedAt: session.clientUpdatedAt,

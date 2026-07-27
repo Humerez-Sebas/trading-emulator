@@ -7,12 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryEffects } from './telemetry.effects';
 import { ReplayActions } from '../replay/replay.actions';
 import {
+  selectCurrentAsset,
   selectCurrentTime,
   selectExecutionSeries,
   selectPlaying,
   selectReplayIndex,
   selectReplayTfSeconds,
 } from '../selectors';
+import { drawingsFeature } from '../drawings/drawings.reducer';
 import { tradingFeature } from '../trading/trading.reducer';
 import {
   defaultTradingData,
@@ -20,7 +22,6 @@ import {
   Position,
   PendingOrder,
 } from '../trading/trading.models';
-import { drawingsFeature } from '../drawings/drawings.reducer';
 import type { Drawing } from '../drawings/drawings.models';
 import { TelemetryDbService } from '../../services/telemetry-db.service';
 import type { Candle } from '../../models';
@@ -143,10 +144,16 @@ describe('TelemetryEffects — V-8 frame-budget evidence (RFC-014 T5b-ii, jump-5
 
   const drawings: Drawing[] = Array.from({ length: 8 }, (_, i) => ({
     id: `d${i}`,
+    symbol: 'EURUSD',
+    owner: { type: 'panel' as const, id: 'panel-1' },
     kind: (['rect', 'line', 'fib', 'ruler'] as const)[i % 4],
     p1: { time: i * 10, price: i },
     p2: { time: i * 10 + 5, price: i + 1 },
+    zIndex: 0,
+    locked: false,
+    visible: true,
   }));
+  const drawingsById: Record<string, Drawing> = Object.fromEntries(drawings.map((d) => [d.id, d]));
 
   function arm(state: TradingState, replayIndex: number, currentTime: number, playing = false) {
     store.overrideSelector(tradingFeature.selectTradingState, state);
@@ -156,7 +163,9 @@ describe('TelemetryEffects — V-8 frame-budget evidence (RFC-014 T5b-ii, jump-5
     store.overrideSelector(selectCurrentTime, currentTime);
     store.overrideSelector(selectReplayTfSeconds, 60);
     store.overrideSelector(selectPlaying, playing);
-    store.overrideSelector(drawingsFeature.selectItems, drawings);
+    // feeds the real (unmocked) selectActiveAssetVisibleDrawings — see telemetry.trading.spec.ts's arm()
+    store.overrideSelector(drawingsFeature.selectEntities, drawingsById);
+    store.overrideSelector(selectCurrentAsset, 'EURUSD');
     store.refreshState();
   }
 

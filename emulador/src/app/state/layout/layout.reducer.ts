@@ -222,6 +222,19 @@ export const layoutFeature = createFeature({
       if (!panel || panel.timeframe === timeframe) return state;
       return { ...state, panels: { ...state.panels, [panelId]: { ...panel, timeframe } } };
     }),
+    on(LayoutActions.setPanelHideSharedDrawings, (state, { panelId, hidden }): LayoutState => {
+      const panel = state.panels[panelId];
+      if (!panel || (panel.hideSharedDrawings ?? false) === hidden) return state;
+      // absent means false: toggling off CLEARS the field rather than writing
+      // `false` explicitly, so descriptors that never toggled stay untouched by shape.
+      const next = { ...panel };
+      if (hidden) {
+        next.hideSharedDrawings = true;
+      } else {
+        delete next.hideSharedDrawings;
+      }
+      return { ...state, panels: { ...state.panels, [panelId]: next } };
+    }),
     on(LayoutActions.setFocusedPanel, (state, { panelId }): LayoutState => {
       if (!state.panels[panelId] || state.focusedPanelId === panelId) return state;
       return { ...state, focusedPanelId: panelId };

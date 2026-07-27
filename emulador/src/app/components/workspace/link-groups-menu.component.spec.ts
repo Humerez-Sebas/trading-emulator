@@ -42,8 +42,22 @@ describe('LinkGroupsMenuComponent', () => {
   it('renders one row per existing group with a color swatch', () => {
     const fixture = create({
       groups: {
-        g1: { id: 'g1', color: '#2962FF', syncCrosshair: true, syncTimeRange: true },
-        g2: { id: 'g2', color: '#F23645', syncCrosshair: false, syncTimeRange: true },
+        g1: {
+          id: 'g1',
+          color: '#2962FF',
+          syncCrosshair: true,
+          syncTimeRange: true,
+          syncDrawings: true,
+          syncTrades: true,
+        },
+        g2: {
+          id: 'g2',
+          color: '#F23645',
+          syncCrosshair: false,
+          syncTimeRange: true,
+          syncDrawings: true,
+          syncTrades: true,
+        },
       },
     });
     const rows = fixture.nativeElement.querySelectorAll('.group-row');
@@ -55,7 +69,14 @@ describe('LinkGroupsMenuComponent', () => {
   it('"Nuevo grupo" dispatches createGroup with the first UNUSED palette color and both sync flags true', () => {
     const fixture = create({
       groups: {
-        g1: { id: 'g1', color: LINK_GROUP_PALETTE[0], syncCrosshair: true, syncTimeRange: true },
+        g1: {
+          id: 'g1',
+          color: LINK_GROUP_PALETTE[0],
+          syncCrosshair: true,
+          syncTimeRange: true,
+          syncDrawings: true,
+          syncTrades: true,
+        },
       },
     });
     const dispatch = vi.spyOn(store, 'dispatch');
@@ -76,7 +97,14 @@ describe('LinkGroupsMenuComponent', () => {
     const groups = Object.fromEntries(
       LINK_GROUP_PALETTE.map((color, i) => [
         `g${i}`,
-        { id: `g${i}`, color, syncCrosshair: true, syncTimeRange: true },
+        {
+          id: `g${i}`,
+          color,
+          syncCrosshair: true,
+          syncTimeRange: true,
+          syncDrawings: true,
+          syncTrades: true,
+        },
       ]),
     );
     const fixture = create({ groups });
@@ -91,7 +119,16 @@ describe('LinkGroupsMenuComponent', () => {
 
   it('the Crosshair checkbox dispatches setSyncCrosshair with the row groupId and the new enabled value', () => {
     const fixture = create({
-      groups: { g1: { id: 'g1', color: '#2962FF', syncCrosshair: false, syncTimeRange: true } },
+      groups: {
+        g1: {
+          id: 'g1',
+          color: '#2962FF',
+          syncCrosshair: false,
+          syncTimeRange: true,
+          syncDrawings: true,
+          syncTrades: true,
+        },
+      },
     });
     const dispatch = vi.spyOn(store, 'dispatch');
     const checkbox: HTMLInputElement = fixture.nativeElement.querySelector(
@@ -105,7 +142,16 @@ describe('LinkGroupsMenuComponent', () => {
 
   it('the Rango checkbox dispatches setSyncTimeRange with the row groupId and the new enabled value', () => {
     const fixture = create({
-      groups: { g1: { id: 'g1', color: '#2962FF', syncCrosshair: true, syncTimeRange: true } },
+      groups: {
+        g1: {
+          id: 'g1',
+          color: '#2962FF',
+          syncCrosshair: true,
+          syncTimeRange: true,
+          syncDrawings: true,
+          syncTrades: true,
+        },
+      },
     });
     const dispatch = vi.spyOn(store, 'dispatch');
     const checkbox: HTMLInputElement = fixture.nativeElement.querySelector(
@@ -130,8 +176,22 @@ describe('LinkGroupsMenuComponent', () => {
     const fixture = create(
       {
         groups: {
-          g1: { id: 'g1', color: '#2962FF', syncCrosshair: true, syncTimeRange: true },
-          g2: { id: 'g2', color: '#F23645', syncCrosshair: true, syncTimeRange: true },
+          g1: {
+            id: 'g1',
+            color: '#2962FF',
+            syncCrosshair: true,
+            syncTimeRange: true,
+            syncDrawings: true,
+            syncTrades: true,
+          },
+          g2: {
+            id: 'g2',
+            color: '#F23645',
+            syncCrosshair: true,
+            syncTimeRange: true,
+            syncDrawings: true,
+            syncTrades: true,
+          },
         },
       },
       layoutWithMembers,
@@ -154,7 +214,16 @@ describe('LinkGroupsMenuComponent', () => {
 
   it('delete with no member panels dispatches only removeGroup', () => {
     const fixture = create({
-      groups: { g1: { id: 'g1', color: '#2962FF', syncCrosshair: true, syncTimeRange: true } },
+      groups: {
+        g1: {
+          id: 'g1',
+          color: '#2962FF',
+          syncCrosshair: true,
+          syncTimeRange: true,
+          syncDrawings: true,
+          syncTrades: true,
+        },
+      },
     });
     const dispatch = vi.spyOn(store, 'dispatch');
     const deleteBtn: HTMLButtonElement = fixture.nativeElement.querySelector(

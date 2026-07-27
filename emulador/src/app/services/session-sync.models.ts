@@ -82,8 +82,36 @@ export interface SessionPayloadV2 {
   linkGroups: LinkGroup[];
 }
 
-/** Anything read from storage/Supabase that might be V1, V2, or malformed. */
-export type StoredSessionPayload = SessionPayloadV1 | SessionPayloadV2 | Record<string, unknown>;
+export const SESSION_PAYLOAD_VERSION_3 = 3;
+
+/**
+ * V3's flat, owner-tagged drawing set on the wire — the per-symbol record
+ * dissolves into `Drawing.symbol`. `version` scopes the `Drawing[]` item
+ * format (independent of `schemaVersion`), same convention as
+ * `DrawingCollection`; shared by `SessionPayloadV3` and every other view that
+ * carries the same shape so it can't drift between them.
+ */
+export interface DrawingsV3 {
+  version: 2;
+  items: Drawing[];
+}
+
+/**
+ * V3 extends V2 in place (D9), same as V2 extended V1: every V2 field except
+ * `drawings` is preserved verbatim; `drawings` sheds the per-symbol record
+ * for a flat, owner-tagged set (owner now lives on `Drawing` itself).
+ */
+export interface SessionPayloadV3 extends Omit<SessionPayloadV2, 'schemaVersion' | 'drawings'> {
+  schemaVersion: 3;
+  drawings: DrawingsV3;
+}
+
+/** Anything read from storage/Supabase that might be V1, V2, V3, or malformed. */
+export type StoredSessionPayload =
+  | SessionPayloadV1
+  | SessionPayloadV2
+  | SessionPayloadV3
+  | Record<string, unknown>;
 
 /** What `toPayload` reads from a workspace/session (unix seconds throughout). */
 export interface PayloadInput {
@@ -93,7 +121,7 @@ export interface PayloadInput {
   customTfMinutes: number | null;
   playbackSpeed: number;
   replayResolution?: number | null;
-  drawings: Record<string, DrawingCollection>;
+  drawings: DrawingsV3;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;
@@ -111,7 +139,7 @@ export interface SessionView {
   customTfMinutes: number | null;
   playbackSpeed: number;
   replayResolution?: number | null;
-  drawings: Record<string, DrawingCollection>;
+  drawings: DrawingsV3;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;
@@ -156,7 +184,7 @@ export interface CloudSessionRow {
   requiredDatasets: DatasetRef[];
   winRate?: number;
   sparkline?: number[];
-  payload: SessionPayloadV1 | SessionPayloadV2;
+  payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3;
 }
 
 export interface FlattenResult {
@@ -171,7 +199,7 @@ export interface RestoredView {
   activeTf: Timeframe | null;
   customTfMinutes: number | null;
   playbackSpeed: number;
-  drawings: Record<string, DrawingCollection>;
+  drawings: DrawingsV3;
   notes: unknown[];
   selectedTfs: Timeframe[];
   startRange: number;

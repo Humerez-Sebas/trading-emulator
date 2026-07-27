@@ -25,6 +25,8 @@ export const LayoutActions = createActionGroup({
     'Set Panel Link Group': props<{ panelId: string; linkGroupId: string | null }>(),
     /** Updates one panel's timeframe (descriptor-only; the mapper re-derives the view). No-op if panelId is unknown. */
     'Set Panel Timeframe': props<{ panelId: string; timeframe: Timeframe }>(),
+    /** Toggles the panel-local shared-layer visibility filter. No-op if panelId is unknown or the value is unchanged. */
+    'Set Panel Hide Shared Drawings': props<{ panelId: string; hidden: boolean }>(),
     /** Focuses a specific panel to sync timeframe modifications and keyboard shortcuts. */
     'Set Focused Panel': props<{ panelId: string }>(),
     /** Wholesale-replaces workspace + panels from a restored session (RFC-011). */

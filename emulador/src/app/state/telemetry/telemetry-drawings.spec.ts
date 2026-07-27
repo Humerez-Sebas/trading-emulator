@@ -4,9 +4,14 @@ import type { Drawing } from '../drawings/drawings.models';
 
 const rect = (): Drawing => ({
   id: 'd1',
+  symbol: 'EURUSD',
+  owner: { type: 'panel', id: 'panel-1' },
   kind: 'rect',
   p1: { time: 100, price: 1.1 },
   p2: { time: 200, price: 1.2 },
+  zIndex: 0,
+  locked: false,
+  visible: true,
 });
 
 describe('telemetry-drawings (RFC-014 T5b-ii) — G3 frozen snapshot mapping', () => {
@@ -26,9 +31,14 @@ describe('telemetry-drawings (RFC-014 T5b-ii) — G3 frozen snapshot mapping', (
     it('styleToken currently mirrors kind (no separate style field on Drawing)', () => {
       const line: Drawing = {
         id: 'd2',
+        symbol: 'EURUSD',
+        owner: { type: 'panel', id: 'panel-1' },
         kind: 'line',
         p1: { time: 0, price: 0 },
         p2: { time: 1, price: 1 },
+        zIndex: 0,
+        locked: false,
+        visible: true,
       };
       expect(toDrawingSnapshotEntry(line).styleToken).toBe('line');
     });
@@ -51,7 +61,17 @@ describe('telemetry-drawings (RFC-014 T5b-ii) — G3 frozen snapshot mapping', (
     it('maps every item in the array', () => {
       const items: Drawing[] = [
         rect(),
-        { id: 'd2', kind: 'fib', p1: { time: 10, price: 1 }, p2: { time: 20, price: 2 } },
+        {
+          id: 'd2',
+          symbol: 'EURUSD',
+          owner: { type: 'panel', id: 'panel-1' },
+          kind: 'fib',
+          p1: { time: 10, price: 1 },
+          p2: { time: 20, price: 2 },
+          zIndex: 0,
+          locked: false,
+          visible: true,
+        },
       ];
       const snapshot = snapshotDrawings(items);
       expect(snapshot).toHaveLength(2);

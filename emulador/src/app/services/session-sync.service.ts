@@ -16,6 +16,7 @@ import type {
   FlattenSession,
   SessionPayloadV1,
   SessionPayloadV2,
+  SessionPayloadV3,
   SessionSummary,
 } from './session-sync.models';
 import { WorkspaceDbService } from './workspace-db.service';
@@ -85,20 +86,20 @@ export class SessionSyncService {
 
   /**
    * Fetches the full lossless payload for one session (the column
-   * `listSummaries` deliberately omits). Widened to `SessionPayloadV1 |
-   * SessionPayloadV2` (RFC-011 Task 4 audit fix, type-only): the cloud column
-   * legitimately holds either version — a row written before this RFC is
-   * still V1 — and callers already route the result through
-   * `parseSessionPayload`/`fromPayload`, which accept both.
+   * `listSummaries` deliberately omits). Typed as `SessionPayloadV1 |
+   * SessionPayloadV2 | SessionPayloadV3`: the cloud column legitimately holds
+   * any version — a row written before this RFC is still V1 or V2 — and
+   * callers already route the result through `parseSessionPayload`/
+   * `fromPayload`, which accept all three.
    */
-  async fetchPayload(id: string): Promise<SessionPayloadV1 | SessionPayloadV2> {
+  async fetchPayload(id: string): Promise<SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3> {
     const { data, error } = await this.client
       .from('sessions')
       .select('payload')
       .eq('id', id)
       .single();
     if (error) throw new Error(error.message);
-    return (data as { payload: SessionPayloadV1 | SessionPayloadV2 }).payload;
+    return (data as { payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3 }).payload;
   }
 
   /**
@@ -887,7 +888,7 @@ function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
       activeTf: meta.activeTf,
       customTfMinutes: null,
       playbackSpeed: 1,
-      drawings: { [meta.symbol]: { version: 1, items: meta.drawings ?? [] } },
+      drawings: { version: 2, items: meta.drawings ?? [] },
       notes: [],
       selectedTfs: meta.selectedTfs ?? [],
       startRange,

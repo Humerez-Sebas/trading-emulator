@@ -71,6 +71,28 @@ export const selectTradingData = createSelector(tradingFeature.selectTradingStat
 
 export const selectSavedSessions = tradingFeature.selectSavedSessions;
 
+/** Flat view of every drawing in the session, every symbol and owner — memoized on the `entities` reference. */
+export const selectAllDrawings = createSelector(drawingsFeature.selectEntities, (entities) =>
+  Object.values(entities),
+);
+
+/**
+ * The active asset's visible drawings — the fact content a telemetry
+ * `DrawingSnapshot` captures. A panel showing a DIFFERENT symbol (a
+ * secondary observation panel) is excluded, as is any drawing toggled
+ * invisible. NOT literally "what was painted on screen" for a composed
+ * panel, though — a drawing in an inactive tab, behind a grid-cell sibling,
+ * or in a group with `syncDrawings` off still counts here without having
+ * been rendered. Exact composed-panel fidelity is an open design question,
+ * not an implementation gap.
+ */
+export const selectActiveAssetVisibleDrawings = createSelector(
+  drawingsFeature.selectEntities,
+  selectCurrentAsset,
+  (entities, activeAsset) =>
+    Object.values(entities).filter((d) => d.visible && d.symbol === activeAsset),
+);
+
 export interface WorkspaceSnapshot {
   series: Partial<Record<Timeframe, Candle[]>>;
   files: Partial<Record<Timeframe, string>>;
@@ -87,7 +109,7 @@ export const selectWorkspaceSnapshot = createSelector(
   marketFeature.selectFiles,
   marketFeature.selectActiveTf,
   replayFeature.selectCurrentTime,
-  drawingsFeature.selectItems,
+  selectAllDrawings,
   selectTradingData,
   selectSavedSessions,
   (series, files, activeTf, currentTime, drawings, trading, sessions): WorkspaceSnapshot => ({
@@ -110,7 +132,7 @@ export const selectWorkspaceMetaSnapshot = createSelector(
   marketFeature.selectActiveTf,
   marketFeature.selectSelectedTfs,
   replayFeature.selectCurrentTime,
-  drawingsFeature.selectItems,
+  selectAllDrawings,
   selectTradingData,
   selectSavedSessions,
   tradingFeature.selectActiveSessionId,
