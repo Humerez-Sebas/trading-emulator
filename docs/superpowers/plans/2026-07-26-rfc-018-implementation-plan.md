@@ -876,11 +876,18 @@ lockfile.
 
 ## 5. Definition of Done
 
-- [ ] D18.A — zero LIVE `syncTrades` channel (no action, reducer case, UI control, or
-      production read site — the `LinkGroupWire` legacy-tolerance optional is exempt by
-      design, R18-12); legacy payloads read clean and do not re-emit the key
+- [ ] D18.A — `syncTrades` has zero live channel presence: no action, no reducer case, no UI
+      control, no production read. The `LinkGroupWire` legacy declaration (read-tolerance) and
+      anti-leak test assertions are exempt and must remain. Verify with:
+      `grep -rn "syncTrades" emulador/src/` returns only the wire type + test assertions; no
+      action/reducer/UI/production hits. *(Owner-accepted wording, R18-12.)* Legacy payloads
+      must also read clean and not re-emit the key.
 - [ ] D18.B — `hideTrades` + both predicates exist; reducer follows the D17.H idiom exactly
-- [ ] D18.C — `tradeChartView$` gated inside the mapper instance; 3 memo inputs; no store/engine gating; no factory selector
+- [ ] D18.C — `tradeChartView$` gated inside the mapper instance; no store/engine gating; no
+      factory selector. Memo inputs: **3 as Task 3 shipped it**, grown to **7 by Task 5/F3**
+      (`descriptor`, `candles`, `positions`, `orders`, `history`, `boxesVisible`,
+      `currentAsset`) under R18-13. The constraint that survives verbatim is that **`groups`
+      never enters the trade memo key** (RFC-018 §4.3).
 - [ ] D18.D — all four trading-verb entry points guarded; menu **and** dispatch
 - [ ] §8 UI rule (binding) — `hideTrades: true` retires the order verbs at all four points via `tradeVerbsEnabled()`; `panelMayExecute` remains symbol-only
 - [ ] F3 — per-panel marker/box geometry derived from the panel's own candles

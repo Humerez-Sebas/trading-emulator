@@ -361,6 +361,15 @@ JSDoc, or a test asserting the key's **absence**. That is the RFC's design, not 
 **Owner-facing:** plan §3 and DoD §5 should be corrected to the live-channel grep. Filed for
 the documentation pass; the code is correct as it stands.
 
+> **R18-12 — ACCEPTED BY OWNER, 2026-07-27.** Ruling confirmed verbatim: *"El invariante
+> vinculante es «zero live channel»: cero acciones, cero reducer cases, cero UI controls, cero
+> production reads de `syncTrades`. El `LinkGroupWire.syncTrades?: boolean` de read-tolerance y
+> los assertions de los anti-leak tests son correctos y deben quedarse."*
+>
+> The DoD bullet in plan §5 now carries the owner's exact replacement wording. The stale
+> "3 memo inputs" clause in the D18.C bullet was corrected in the same edit — Task 5/F3 grew the
+> key to 7 under R18-13, and the surviving constraint is that `groups` never enters it.
+
 #### Task 2 — `hideTrades` model + predicates (D18.B) — **COMPLETE**
 
 | Field | Value |
