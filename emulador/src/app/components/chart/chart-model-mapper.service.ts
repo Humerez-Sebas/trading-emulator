@@ -14,8 +14,8 @@ import {
   selectTradeBoxes,
   selectTradeBoxesVisible,
   selectUtcOffset,
-  selectResolutionMinutes,
-  selectResolutionSeries,
+  selectReplayTfSeconds,
+  selectReplaySeries,
   formatCountdown,
   TradeBoxItem as StateTradeBoxItem,
   TradeMarker as StateTradeMarker,
@@ -50,22 +50,11 @@ import { aggregateFormingCandle } from '../../state/market/forming-candle';
 import {
   effectivePanelSymbol,
   panelRendersTrades,
+  panelTracksPrimarySeries,
   PanelDescriptor,
 } from '../../state/layout/layout.models';
 import { Candle, Timeframe, TIMEFRAME_SECONDS } from '../../models';
 import { generateCustomSeries } from '../../state/market/custom-timeframe';
-
-function computeFormingCandle(
-  resSeries: Candle[] | null,
-  activeSeconds: number,
-  cursor: number,
-  minutes: number | null,
-): Candle | null {
-  if (minutes == null || !resSeries || activeSeconds <= 0 || cursor <= 0) return null;
-  if (minutes * 60 >= activeSeconds) return null;
-  const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
-  return aggregateFormingCandle(resSeries, bucketStart, cursor);
-}
 
 function computeCountdown(activeSeconds: number, currentTime: number): string | null {
   if (activeSeconds <= 0 || currentTime <= 0) return null;
@@ -302,7 +291,49 @@ export class ChartModelMapper {
     this.gated(),
   );
 
-  /** Consistent chart view: TF label, candles, visible index, UTC offset, forming candle, countdown. */
+  /**
+   * RFC-019 (D19.H) — per-instance memo for the forming-candle aggregation, same
+   * discipline as `lastCandlesInputs`/`lastCandlesOutput` below: `chartView$` recomputes
+   * on ANY of its `combineLatest` inputs, not just the cursor, so an unrelated emission
+   * (e.g. a style change) must not re-walk the bucket. Keyed on `cursor`, NOT
+   * incrementally updated — a rewind is a cache miss by construction (R7), which is the
+   * only correct behavior under jumps/rewind; an O(1) incremental form would silently
+   * assume monotonic advance and is explicitly rejected (plan Step 4 / brief §7).
+   */
+  private lastFormingInputs: {
+    series: Candle[] | null;
+    bucketStart: number;
+    cursor: number;
+  } | null = null;
+  private lastFormingOutput: Candle | null = null;
+
+  private resolveForming(series: Candle[] | null, bucketStart: number, cursor: number): Candle | null {
+    const last = this.lastFormingInputs;
+    if (last && last.series === series && last.bucketStart === bucketStart && last.cursor === cursor) {
+      return this.lastFormingOutput;
+    }
+    this.lastFormingInputs = { series, bucketStart, cursor };
+    this.lastFormingOutput = aggregateFormingCandle(series, bucketStart, cursor);
+    return this.lastFormingOutput;
+  }
+
+  /**
+   * Consistent chart view: TF label, candles, visible index, UTC offset, forming candle,
+   * countdown.
+   *
+   * RFC-019 (D19.C/D/E/G/H, N19-2/N19-3) — closes the cross-TF lookahead defect: a panel
+   * whose own timeframe is COARSER than the replay's advance grain used to paint its
+   * containing candle whole (the candle whose close lies in the trader's future). The fix
+   * reads the REPLAY grain (`selectReplayTfSeconds`/`selectReplaySeries` — never-null,
+   * global, D8-safe zero-arg selectors the fill engine already uses) instead of the
+   * user's sub-TF opt-in (`selectResolutionMinutes`), which conflated "how fast does the
+   * clock advance" with "did the user turn on Replay Resolution" (RFC-019 §1). The symbol
+   * gate is the isolated T-1 clause, `panelTracksPrimarySeries` — deliberately NOT the
+   * sibling trade-ink predicate one block below, whose `hideTrades` opt-out is a
+   * visibility preference that must never govern candle fidelity (plan §0 C1; gating this
+   * stream on that predicate would silently reintroduce the exact lookahead this RFC
+   * closes whenever a panel hides its trade layer).
+   */
   readonly chartView$: Observable<{
     tf: string | null;
     candles: import('../../models').Candle[];
@@ -315,8 +346,9 @@ export class ChartModelMapper {
     this.store.select(selectSeries),
     this.store.select(selectCurrentTime),
     this.store.select(selectUtcOffset),
-    this.store.select(selectResolutionMinutes),
-    this.store.select(selectResolutionSeries),
+    this.store.select(selectReplayTfSeconds),
+    this.store.select(selectReplaySeries),
+    this.store.select(selectCurrentAsset),
     this.store.select(selectChartView),
   ]).pipe(
     map(
@@ -325,35 +357,40 @@ export class ChartModelMapper {
         series,
         currentTime,
         utcOffset,
-        resolutionMinutes,
-        resolutionSeries,
+        replayTfSeconds,
+        replaySeries,
+        currentAsset,
         globalChartView,
       ]) => {
         if (!descriptor) {
           return globalChartView;
         }
         const tf = descriptor.timeframe;
-        let candles = series[tf] ?? [];
-        let activeSeconds = TIMEFRAME_SECONDS[tf] ?? 0;
-        if (candles.length === 0 && tf.startsWith('M')) {
-          const minutes = parseInt(tf.substring(1), 10);
-          if (!isNaN(minutes)) {
-            candles = generateCustomSeries(series, minutes);
-            activeSeconds = minutes * 60;
-          }
-        }
+        const candles = this.resolvePanelCandles(series, tf); // D19.G — F3's shared memo
+        const activeSeconds = TIMEFRAME_SECONDS[tf]; // C6 — no `?? 0`, no recompute; every Timeframe member is covered
         const idx = lastIndexAtOrBefore(candles, currentTime);
-        const forming = computeFormingCandle(
-          resolutionSeries,
-          activeSeconds,
-          currentTime,
-          resolutionMinutes,
-        );
         const countdown = computeCountdown(activeSeconds, currentTime);
-        if (resolutionMinutes != null && forming != null && idx >= 0) {
-          return { tf, candles, idx: idx - 1, utcOffset, forming, countdown };
+
+        // D19.D/D19.E (N19-2, N19-3) — the isolated T-1 clause only; see the doc comment
+        // above for why the trade-ink predicate must not be used here (plan §0 C1).
+        const subGrain =
+          activeSeconds > replayTfSeconds &&
+          currentTime > 0 &&
+          panelTracksPrimarySeries(descriptor, currentAsset);
+
+        if (!subGrain) {
+          return { tf, candles, idx, utcOffset, forming: null, countdown };
         }
-        return { tf, candles, idx, utcOffset, forming: null, countdown };
+
+        const bucketStart = Math.floor(currentTime / activeSeconds) * activeSeconds;
+        const forming = this.resolveForming(replaySeries, bucketStart, currentTime); // D19.H
+        // D-B1: idx-1 is conditioned on `subGrain` alone, NEVER on `forming != null`. When
+        // the honest partial bar can't be computed (a gap in the replay series, `hi < lo`),
+        // the degraded path must show the last CLOSED candle, never the containing one —
+        // falling through to `idx` inclusive here would repaint the future candle.
+        return idx >= 0
+          ? { tf, candles, idx: idx - 1, utcOffset, forming, countdown }
+          : { tf, candles, idx, utcOffset, forming, countdown };
       },
     ),
     this.gated(),

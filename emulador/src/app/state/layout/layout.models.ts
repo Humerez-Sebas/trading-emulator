@@ -40,6 +40,21 @@ export function effectivePanelSymbol(
 }
 
 /**
+ * RFC-019 (D19.E, N19-3) — the T-1 clause on its own: does this panel display the
+ * PRIMARY symbol's series? Extracted from `panelRendersTrades`/`panelMayExecute` so
+ * candle fidelity can gate on the symbol invariant WITHOUT inheriting `hideTrades`,
+ * which is a trade-ink preference and must never govern which candles are honest.
+ */
+export function panelTracksPrimarySeries(
+  descriptor: PanelDescriptor,
+  primarySymbol: string | null,
+): boolean {
+  return (
+    primarySymbol != null && effectivePanelSymbol(descriptor, primarySymbol) === primarySymbol
+  );
+}
+
+/**
  * RFC-018 (T-1 ∧ T-2): where the Trade domain may speak. T-1 (the symbol clause) is a
  * correctness invariant and is NOT user-togglable — painting one instrument's levels on
  * another's price axis is a false statement about the market. T-2 (`hideTrades`) is a
@@ -49,9 +64,7 @@ export function panelRendersTrades(
   descriptor: PanelDescriptor,
   primarySymbol: string | null,
 ): boolean {
-  if (primarySymbol == null) return false;
-  if (effectivePanelSymbol(descriptor, primarySymbol) !== primarySymbol) return false;
-  return !descriptor.hideTrades;
+  return panelTracksPrimarySeries(descriptor, primarySymbol) && !descriptor.hideTrades;
 }
 
 /**
@@ -64,10 +77,7 @@ export function panelMayExecute(
   descriptor: PanelDescriptor,
   primarySymbol: string | null,
 ): boolean {
-  return (
-    primarySymbol != null &&
-    effectivePanelSymbol(descriptor, primarySymbol) === primarySymbol
-  );
+  return panelTracksPrimarySeries(descriptor, primarySymbol);
 }
 
 /** A tab-group inside one grid cell: stacked panels, one visible at a time. */
