@@ -185,6 +185,8 @@ record. Progression origin: **161 files / 1989 tests**.
 | :--- | :--- | :--- |
 | **O1** | RFC-019's run ledger lives in **§8 of this dev log**, not `.superpowers/sdd/progress.md`. §7's note above is superseded. | RFC-018 established this layout one run earlier (`.superpowers/rfc-018/dev-log.md` §8) and `progress.md` still carries the RFC-017 ledger; appending a second RFC's run mechanics there would bury both. Design rationale and run mechanics for one RFC belong in one tracked file. |
 | **O2** | Wave-1 worktrees get their **own `npm ci`**, not a junction/symlink to the primary `node_modules`. | Three concurrent `ng test` runs sharing one `node_modules/.vite` is exactly the optimizeDeps race `docs/engineering/testing.md` documents as the source of order/cache-dependent flakes. A false red would send an implementer debugging a phantom. Disk cost is affordable (122 GB free). `npm ci` never rewrites `package-lock.json`, so the npm 11.x prune hazard does not apply — no `npm install` is run in any worktree. |
+| **O3** (owner, 2026-07-28) | **ROADMAP registration shape decided by the owner.** Instead of extending the "Mastery Block" table (which stops at Phase 3 / RFC-016 and skips RFC-017 and RFC-018), add a **new bridge section** between the "Fases de Evolución" table and the "Mastery Block" table, registering **RFC-017 / RFC-018 / RFC-019** together as *Post-Infrastructure Refinements*. | The resume prompt flagged the gap and asked for a deliberate choice rather than improvisation; the owner made it. Registering RFC-019 alone into a table that skips two predecessors would read as an error, and the three RFCs are the same *kind* of work (bug fixes and UX refinement after the multi-panel infrastructure block) — a different kind from the Mastery Block's knowledge-conservation sequence, so they earn their own section rather than a fourth Mastery phase. Prompt §4 step 3 updated to carry the decision. |
+| **O4** (owner, 2026-07-28) | **`CLAUDE.md`'s bundle figure is updated from "~609 kB" to "648 kB (known-accepted, Arrow/parquet-dominated)"** as part of this branch's docs pass. | Carried item C-1: the Wave 1 auditor measured `npm run build` initial total at **648.42 kB** while `CLAUDE.md` and the plan DoD both cite "~609 kB", a stale figure already tracked as an open owner item from the RFC-017 run. `CLAUDE.md` is a **protected path** — this edit is permitted only because the owner explicitly authorized it for this session, and it is recorded here so the authorization is auditable rather than assumed. |
 
 ### 8.3 Task log
 
@@ -419,3 +421,122 @@ individual `branch-auditor` audit of Task 2 requiring zero Critical/High/Medium.
 must not be written until that PASSes** — Task 5's entire purpose is to check Task 2
 independently, and it is worthless if authored against behavior that has not been verified.
 Resume instructions: `docs/superpowers/plans/2026-07-27-rfc-019-resume-prompt.md`.
+
+---
+
+#### Checkpoint 2 — post-Wave-2 gates (orchestrator, fresh raw output, @ `6fe0d8b`)
+
+Session resumed 2026-07-28 after the usage-limit pause. Clean tree, each gate raw and
+unpiped, exit status read directly.
+
+| Gate | Result |
+| :--- | :--- |
+| `npx tsc -p tsconfig.app.json --noEmit` | **EXIT 0**, no output |
+| `npx tsc -p tsconfig.spec.json --noEmit` | **EXIT 0**, no output |
+| `npm run lint` | **EXIT 0** — "All files pass linting." |
+| `npx ng test --watch=false` | **EXIT 0** — `Test Files 165 passed (165)`, `Tests 2043 passed (2043)` |
+
+**The implementer's 2043 claim is confirmed by measurement.** No discrepancy to record.
+Progression: 1989 (baseline) → 2028 (Wave 1) → **2043** (Task 2, +15).
+
+---
+
+#### Batch B audit — Task 2 (individual) · **PASS ("Ship it")**
+
+`branch-auditor` (Opus), diff `20f830a..7e4ab2a`, all gates re-run personally at `6fe0d8b`.
+
+| Result | Value |
+| :--- | :--- |
+| Verdict | **PASS** |
+| Critical / High / Medium | **0 / 0 / 0** |
+| Low | 4 (L1 fix-now doc-only; L2–L4 ruled no-fix with written reasons) |
+| Auditor's own gates | tsc app 0, tsc spec 0, lint 0, `ng test` **165 files / 2043 tests**, exit 0 |
+
+**Arithmetic independently re-derived:** `git ls-tree` spec-file count at `7e4ab2a` = 165
+(+0); `it(` additions across `20f830a..7e4ab2a` = **+15, zero removed**; all four files `M`,
+none `A`; zero `.skip`/`.only` introduced. Scope is exactly the four claimed files —
+`panelChartView$`, `tradeChartView$`, `selectChartView` and `chart.component.ts` confirmed
+untouched by `git diff --name-status`.
+
+**Invariant greps re-run by the auditor:** `selectFormingCandle(` with an argument → zero
+(D8); `panelRendersTrades` in the mapper → lines 52/563/598 only, `chartView$` spans 337–395,
+**zero occurrences inside it** (C1); `spec-util` imports from non-spec app code → zero;
+`package.json`/`package-lock.json` diff vs `0e66392` → empty (kernel inv. 8); `@angular`/
+`@ngrx` under `domain/chart/` → zero (kernel inv. 1). One pre-existing vitest import exists at
+`src/app/testing/workspace-db.stub.ts:1` — **not in this diff**, and imported by zero non-spec
+files, so kernel inv. 7 holds.
+
+**Attention-flag rulings:**
+
+| Flag | Ruling |
+| :--- | :--- |
+| **B1** — the C1 override | **PASS.** `chartView$:378` gates on `panelTracksPrimarySeries`. Scenario 6 really constructs `{ symbol: 'US30', timeframe: 'H1', hideTrades: true }` on the *same* fixture as scenario 2 and asserts `forming` non-null, `forming.time === 3600`, `idx === 0`. `hideTrades` is a real field (`layout.models.ts:31`), so the override is exercised, not merely read — had the gate used `panelRendersTrades`, this spec fails. |
+| **B2** — D-B1 (N19-2) | **PASS, non-vacuous.** The auditor traced scenario 3's fixture by hand: `m5 = [{time:0}]`, `bucketStart = 3600`, `cursor = 4200` → `firstIndexAtOrAfter` returns `length` on overflow ⇒ `lo = 1`, `lastIndexAtOrBefore` ⇒ `hi = 0`, so **`hi < lo` is genuinely taken**; `idx` 1 → asserted 0. Forming null *and* idx decremented. |
+| **B3** — single-panel byte-identity | **PASS.** Pre-RFC emission re-derived from the deleted code for the same fixture and matched field by field; the spec even asserts `toBe(m1)` (reference identity), which `resolvePanelCandles` preserves. Field-coverage nit → L3. |
+| **B4** — Step 1 refactor | **PASS.** The only removed line in `layout.trade-predicates.spec.ts` is the `import`. **Zero pre-existing assertions removed or altered**; all six pre-existing predicate specs pass untouched. The substitution proof holds. |
+| **B5** — deviation D2 (`vi.spyOn` → reference identity) | **No finding.** The auditor **independently reproduced** the failure with a throwaway probe spec: `AUDIT_PROBE_RESULT >>> THREW TypeError: Cannot redefine property: aggregateFormingCandle` (probe deleted, tree restored). Ruling: reference identity is **logically equivalent here, not weaker** — `aggregateFormingCandle` allocates a fresh object literal on every non-null return, and `resolveForming` has exactly two paths, so `r2.forming === r1.forming` is reachable *only* via the cache hit. The one gap (a `null` return compares `=== null` on both paths) does not apply: scenario 8 asserts `forming` non-null throughout. **Ruled acceptable — do not re-litigate.** |
+| **B6** — memo staleness (R7) | **PASS.** The spec advances (cursor 4200, `forming.high === 15`), **rewinds** (3600, asserts `high === 12` — no carryover), then **re-advances** (4200, `high === 15` again, `not.toBe(rewound.forming)`). Asserts content, not just reference — exactly the proof an O(1) incremental form would have failed. |
+| **B7** — `idx = -1` boundary (R4) | **PASS — now verified by execution and source, not reasoning.** `renderWindow` (`chart.component.ts:838`) is explicitly `idx >= 0 ? … : []`; the incremental `while (this.renderedIdx < idx)` at `:786` is a no-op at `-1/-1`; a drop from 5 to −1 takes the setData path; `updateCountdown` yields `price = null` and `buildCountdownModel` accepts null. **`idx === -1` was already reachable pre-RFC** — `chart.component.ts:751` carries a comment acknowledging it. Task 2 widens reachability; it does not create the state. |
+| **B8** — dead-code deletion (D19.G/C6) | **PASS, all four.** Inline `generateCustomSeries` block, `activeSeconds = minutes * 60` recompute, `?? 0` fallback and the `computeFormingCandle` wrapper are all gone; the `generateCustomSeries` **import stays** (line 57), correctly. C6's premise re-verified member by member: `TIMEFRAME_SECONDS[tf] === minutes * 60` for M1..M30, so `countdown` is byte-identical on the custom-series path too. |
+| **B9** — comment rewording (D1) | **PASS.** The reworded doc comment still carries the C1 *why* in full ("…`hideTrades` … is a visibility preference that must never govern candle fidelity … would silently reintroduce the exact lookahead this RFC closes…"). Referent nit → L4. |
+
+**Cleared in passing, recorded so it is not re-opened:** the auditor chased whether
+`bucketStart = floor(cursor / activeSeconds) * activeSeconds` misaligns for D1/W1/MN1 panels
+(epoch buckets vs. broker session boundaries), since Task 2 widens when that formula fires.
+**Cleared** — `pipeline/parquet_builder.py:90` resamples D1 from M1 on a **UTC** index, so
+shipped D1 candles are UTC-midnight-aligned; W1/MN1 are not produced by the pipeline at all
+and `generateCustomSeries` only synthesizes `M*`, so those panels resolve to `EMPTY_CANDLES`.
+The formula is also identical to the pre-existing `computeCountdown` / `selectFormingCandle`.
+
+##### Lows and their dispositions
+
+**L1 — foreign-symbol / null-descriptor panels are outside N19-4, and that must be written
+down BEFORE Task 5 is dispatched.** *(Fix-now, doc-only — no code change.)*
+
+A foreign-symbol observation panel (`timeframe: 'H1'`, active TF H1, Replay Resolution on at
+M5) fails `panelTracksPrimarySeries`, so `subGrain` is false and it emits **`idx`** — the
+containing candle — where pre-RFC it emitted `idx - 1`. **This is not a plan deviation:**
+plan §3 Task 2 scenario 5 prescribes exactly `forming === null, idx untouched`, RFC §9.2's
+diagram shows the same, and D19.E/N19-3 mandate the gate. The implementer had zero latitude.
+
+The gap is documentary, and it has a concrete downstream consequence: plan §3 **Task 5
+scenarios 5 and 6** ("foreign-symbol panel → `assertNoLookahead` passes"; "unconfigured
+mapper → `globalChartView`, passes") would **fail** on a faithful fixture, and Task 5's own
+brief tells the implementer that a failing scenario is *a Task 2 defect to report, not an
+assertion to patch*. Without this entry that instruction misdirects a whole cycle.
+
+**Ruling (orchestrator, on the auditor's disposition):** both paths are **F19-2 territory,
+explicitly deferred by RFC §10** — a foreign-symbol panel already renders the *primary*
+symbol's candles under a foreign label (`market.reducer.ts:8`, mono-symbol D1), so its
+lookahead is a strict subset of a larger pre-existing lie that N19-3 stops RFC-019 from
+worsening and does not claim to fix. The null-descriptor branch is the legacy
+`globalChartView` one-frame fallback, which has no lookahead guard at all and is untouched by
+this RFC. Task 5 therefore **asserts the documented behavior explicitly on those two paths
+(with F19-2 named in the spec) rather than running `assertNoLookahead` on them** — the
+invariant is carved out in the open, never weakened. A **V9 row** goes into RFC §7 at branch
+finalization, and the carve-out is surfaced in the PR body as an owner-visible item.
+
+**L2 — `replayTfSeconds === 0` degenerate frame** (`chart-model-mapper.service.ts:379`).
+`selectActiveTfSeconds` returns 0 when `activeTf == null && customTf == null`, so `subGrain`
+could be true for a symbol-matching panel in that window. **Ruled NO-FIX:** the auditor could
+not demonstrate the window is reachable (a configured panel requires a mounted workspace ⇒ a
+session ⇒ `activeTf`); in that state the whole app is degenerate (every countdown and
+`selectAvailableResolutions` are zeroed by the same 0); and the divergence direction is **one
+fewer candle, never more** — it fails toward D-B1 and cannot produce lookahead. Single frame,
+self-correcting.
+
+**L3 — scenario 1 asserts three of six emission fields** (`forming`, `idx`, `candles`; not
+`tf`, `utcOffset`, `countdown`). **Ruled NO-FIX** (test pragmatism ≠ production risk,
+PHILOSOPHY §3.5): all six were re-derived against the deleted pre-RFC code and are identical;
+`countdown` is provably unchanged because `computeCountdown` is untouched and its only input
+went from `TIMEFRAME_SECONDS[tf] ?? 0` / `minutes * 60` to `TIMEFRAME_SECONDS[tf]`, equal in
+every reachable case.
+
+**L4 — ambiguous referent in the C1 doc comment** (`chart-model-mapper.service.ts:326-329`):
+"the sibling trade-ink predicate **one block below**" is one block below in
+`layout.models.ts`, not in this file. **Ruled NO-FIX for Task 2**; folded into the
+branch-finalization docs pass. The load-bearing C1 rationale is fully present; rewording now
+would re-touch the file the C1 grep is anchored on for no correctness gain. Suggested wording
+for the docs pass: name the file, not the symbol, so the grep stays clean.
+
+**Checkpoint 2 is PASSED. Wave 3 (Task 5) is unblocked.**

@@ -156,12 +156,13 @@ a `branch-auditor` on Task 5.
    thing to fear). The bundle-budget warning is known-accepted, Arrow/parquet-dominated.
 2. Invariant greps (§2 above).
 3. **Docs pass:**
-   - Register RFC-019 in `docs/architecture/ROADMAP.md`. **Note before you start:** the
-     ROADMAP's "Mastery Block" table currently stops at Phase 3 / RFC-016 — **RFC-017 and
-     RFC-018 are not registered either.** RFC-019 declares itself "Bloque Mastery — Fase 4".
-     Registering RFC-019 alone into a table that skips two predecessors will read as an
-     error. Decide deliberately: either add Phase 4 and note the gap, or register all three.
-     Whichever you choose, record it as a ledger decision — do not improvise silently.
+   - Register RFC-019 in `docs/architecture/ROADMAP.md`. The owner has decided:
+     add a **new bridge section** between the "Fases de Evolución" table and the "Mastery
+     Block" table, titled:
+
+     | **Post-Infrastructure Refinements** | RFC-017 / RFC-018 / RFC-019 | Panel sync, trade visibility, pane-guard + cross-TF forming — bug fixes and UX refinement after the multi-panel infrastructure block. |
+
+     Use the same table format as the two existing tables. Record the decision in the ledger.
    - Update `.superpowers/rfc-019/dev-log.md` with the final gate evidence.
 4. **Whole-branch Opus audit.** PASS = "Ship it", zero Critical/High/Medium. Lows may be
    ruled no-fix **with written reasons** so they are not re-litigated (PHILOSOPHY §3.5).
@@ -175,7 +176,7 @@ a `branch-auditor` on Task 5.
 
 | # | Item | Disposition |
 | :--- | :--- | :--- |
-| **C-1** | **Bundle figure.** The Wave 1 auditor measured `npm run build` initial total at **648.42 kB**; `CLAUDE.md` and the plan DoD both cite "~609 kB" as known-accepted. Attribution is reasoning, not measurement — Wave 1 adds ~60 net lines and cannot explain a 39 kB delta. Already a tracked open owner item from the RFC-017 run. | `CLAUDE.md` is a **protected path** — do not edit without explicit owner approval. Raise in the PR as an owner decision. |
+| **C-1** | **Bundle figure.** The Wave 1 auditor measured `npm run build` initial total at **648.42 kB**; `CLAUDE.md` and the plan DoD both cite "~609 kB" as known-accepted. Attribution is reasoning, not measurement — Wave 1 adds ~60 net lines and cannot explain a 39 kB delta. Already a tracked open owner item from the RFC-017 run. | `CLAUDE.md` is a **protected path** — do not edit without explicit owner approval. Raise in the PR as an owner decision. **Owner decision (2026-07-27):** update CLAUDE.md's budget figure from "~609 kB" to "**648 kB** (known-accepted, Arrow/parquet-dominated)". This is an owner-approved edit to the protected path — permitted in this session. |
 | **C-2** | **L1 — the unreachable fail-open branch** in `inPane()` (`chart.component.ts:1415-1416`) is a future refactor trap: if engine construction is ever deferred, N19-1 stops being enforced with no test failing. | **Ruled no-fix for this PR** by the Wave 1 audit. The suggested fix (add `paneRect` to the two engine stubs and scaffold `engine` in four `handleContextMenu` tests in `chart.component.trade-guard.spec.ts`, then tighten `inPane` to fail closed) is **harness scaffolding for a LATER run**, explicitly not this one. |
 | **C-3** | **F19-2 — foreign-symbol candle sourcing.** A view-only panel on a different symbol renders the **primary** symbol's candles under a foreign label (`market.reducer.ts:8`, mono-symbol D1). Pre-existing defect found in passing. N19-3 stops RFC-019 from *worsening* it; it does not fix it. | Open as its own issue (plan §5 follow-up). Not in scope. |
 | **C-4** | Lows **L2–L5** from the Wave 1 audit are ruled no-fix with written reasons in ledger §8.3. | Do not re-litigate. Carry the rulings into the whole-branch audit so it does not re-raise them. |
