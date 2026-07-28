@@ -45,7 +45,8 @@ import {
   ChartColors,
   TradeBoxOpacity,
 } from '../../domain/chart/render-model';
-import { lastIndexAtOrBefore, firstIndexAtOrAfter } from '../../state/trading/fill-engine';
+import { lastIndexAtOrBefore } from '../../state/trading/fill-engine';
+import { aggregateFormingCandle } from '../../state/market/forming-candle';
 import {
   effectivePanelSymbol,
   panelRendersTrades,
@@ -63,22 +64,7 @@ function computeFormingCandle(
   if (minutes == null || !resSeries || activeSeconds <= 0 || cursor <= 0) return null;
   if (minutes * 60 >= activeSeconds) return null;
   const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
-  const lo = firstIndexAtOrAfter(resSeries, bucketStart);
-  const hi = lastIndexAtOrBefore(resSeries, cursor);
-  if (hi < lo) return null;
-  let high = resSeries[lo].high;
-  let low = resSeries[lo].low;
-  for (let i = lo + 1; i <= hi; i++) {
-    if (resSeries[i].high > high) high = resSeries[i].high;
-    if (resSeries[i].low < low) low = resSeries[i].low;
-  }
-  return {
-    time: bucketStart,
-    open: resSeries[lo].open,
-    high,
-    low,
-    close: resSeries[hi].close,
-  };
+  return aggregateFormingCandle(resSeries, bucketStart, cursor);
 }
 
 function computeCountdown(activeSeconds: number, currentTime: number): string | null {
