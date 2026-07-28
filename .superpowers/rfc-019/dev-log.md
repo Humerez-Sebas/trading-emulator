@@ -722,9 +722,121 @@ candle loop is a structural no-op and the forming clause is isolated cleanly.
 
 The stale "~609 kB" also appears in this run's plan (§5 DoD) and the two orchestration prompts.
 **Left as-is deliberately:** those are frozen run artifacts and rewriting them mid-run would
-muddy the audit trail. Only the kernel doc, which future sessions actually read as authority,
-was corrected.
+muddy the audit trail.
+
+> **Corrected after the whole-branch audit (finding L-A).** The first version of this entry said
+> "only the kernel doc, which future sessions actually read as authority, was corrected" —
+> **that reason was wrong**, and the auditor falsified it. Three *permanent* authority documents
+> also carried `~609 kB` and none of them is a frozen run artifact:
+> `docs/engineering/performance.md:23` (the doc `CLAUDE.md`'s own context-loading table names as
+> the authority for performance questions), `docs/engineering/sdd-orchestration.md:62`, and the
+> tracked `.claude/commands/verify-gates.md:17`. Leaving them would have recreated exactly the
+> misreading O4 exists to prevent: a future session measures 648 kB, reads `~609 kB` in
+> `performance.md` or in `/verify-gates`, and concludes it is looking at a regression. All three
+> are now `648 kB`. Note `.claude/commands/verify-gates.md` is inside `.claude/` — it is **not**
+> one of the three protected items (hooks, `settings.json`, `steering.md`), it changes no harness
+> behavior, and it is called out explicitly in the PR body so the owner can revert it in one line
+> if they read the boundary differently.
 
 | # | Decision | Rationale |
 | :--- | :--- | :--- |
 | **O6** | **The Task 5 re-audit is folded into the whole-branch Opus audit** rather than dispatched as a separate targeted re-audit, with M1 carried as that audit's **lead attention item**. | `sdd-orchestration.md` requires a re-audit after a failed audit; it does not require a *separate dispatch*. The whole-branch auditor re-runs every gate personally and reads attention-flagged diffs line by line, so it is a **strictly stronger** check than a targeted re-audit of the same three files, and it is the PR gate regardless. Recorded here because a review-shape change is a decision, never an improvisation (PHILOSOPHY §5.2). If the whole-branch audit re-raises M1, the run fixes and re-audits exactly as it did the first time. |
+
+---
+
+#### Final gates (orchestrator, fresh raw output, @ `f225bf8`)
+
+| Gate | Result |
+| :--- | :--- |
+| `npx tsc -p tsconfig.app.json --noEmit` | **EXIT 0**, no output |
+| `npx tsc -p tsconfig.spec.json --noEmit` | **EXIT 0**, no output |
+| `npm run lint` | **EXIT 0** — "All files pass linting." |
+| `npx ng test --watch=false` | **EXIT 0** — `Test Files 165 passed (165)`, `Tests 2053 passed (2053)` |
+| `npm run build` | **EXIT 0** — initial total **648.44 kB**, sole warning is the known-accepted budget overrun, **no new chunk type** |
+
+Prod-bundle contamination probe: `dist/` contains **zero** `vitest`, **zero**
+`lookaheadViolation`, **zero** spec chunks. Kernel inv. 7 proven by build, not grep alone.
+
+---
+
+#### WHOLE-BRANCH audit — `0e66392..f225bf8` · **PASS ("Ship it")**
+
+`branch-auditor` (Opus), every gate re-run personally, M1 carried as the lead attention item
+per decision O6.
+
+| Result | Value |
+| :--- | :--- |
+| Verdict | **PASS — "Ship it"** |
+| Critical / High / Medium | **0 / 0 / 0** |
+| Low | 1 (**L-A**, fixed — see the docs-pass correction above) |
+| Auditor's own gates | tsc app 0, tsc spec 0, lint 0, `ng test` 165 / **2053**, `npm run build` 0 @ 648.44 kB, no new chunk type |
+
+**Arithmetic independently re-derived at every waypoint**, not accepted. The auditor's raw
+`it(`/`test(` count runs a constant **+1** above the runner at every commit, traced to a *comment*
+at `state/drawings/drawings.history.spec.ts:31` present in the base — so the deltas are exact:
+1989 → +8 (T1) → +18 (T4) → 2028 (T3) → 2043 (T2) → 2051 (T5) → **2053** (M1 fix) → 2053 (docs).
+Zero `.skip`/`.only`/`xit`/`fit`/`todo` anywhere; zero file deletions; **across the entire branch
+diff the only removed spec lines are two `import` statements**, both replaced by supersets —
+**zero pre-existing assertions removed or altered.** All 18 ledger hashes resolve; HEAD is a
+clean fast-forwardable descendant of `origin/develop` @ `0e66392`; no leftover `rfc019/task-*`
+branches or worktrees.
+
+**LEAD flag — the M1 fix, audited as a fresh task. All 8 sub-questions PASS**, verified with a
+throwaway probe spec that was run against the real suite and then deleted (clean tree confirmed):
+
+- **Reformulation correct and total** — re-derived against `lastIndexAtOrBefore`'s real contract
+  (`fill-engine.ts:459-471`), then confirmed by execution on all three §4.3 rows.
+- **Still catches the pre-RFC defect, and the bound is calibrated rather than slack** — the
+  auditor's sharpest check: every cursor at which the corrected helper *passes* is one where the
+  H1 bar is genuinely fully revealed (`R` lands exactly on the bar's own close). **The detection
+  window is exactly `[bucketStart, bucketEnd − grain)`** — precisely the set of instants where
+  the containing candle is not yet fully revealed. The fix did not blunt the invariant.
+- **The pre-fix formulation reproduced its own falsification** under probe: native TF
+  `candles[2] close=900 > cursor=600`, finer-than-grain `candles[3] close=240 > cursor=200` —
+  the two rows that were broken, now green.
+- Scenario 2's cursor is production-faithful (`600`, an open); the misleading comment is gone and
+  its replacement cites `replay.effects.ts:49` and states that 900 is a value production never
+  produces. Forming clause still keyed on the **raw** cursor (proven: it fires at
+  `forming@4500, cursor=4200, grain=3600`, i.e. `R = 7800`). L1 and L2 closed. The RFC amendment
+  is honest and complete — every surviving `cierre <= cursor` occurrence sits inside the
+  paragraph explaining why that formulation was wrong.
+
+**F1 docs pass** — `CLAUDE.md`'s whole-branch diff is **exactly one line** (`~609 kB` → `648 kB`),
+matching the auditor's own measured build; ROADMAP links all resolve, table format matches its
+neighbours. **F2 ledger integrity** — all hashes resolve, arithmetic reconciles, every commit
+matches its plan-declared file set, **no unrecorded deviation**. (One imprecision the auditor
+declined to raise as a finding: the Batch B entry says the mapper spec had "zero removed lines";
+it had one — the `Candle` import. The substantive claim, zero assertions touched, is correct.)
+**F3 DoD** — RFC §11 points 1–7 and plan §5 all met. **F4 cross-task interaction** — the guard
+composes correctly with Task 4's geometry (`distToSegment` clamps `t∈[0,1]`, so a
+forward-extended rect stays grabbable); `handleContextMenu`'s guard cannot leak the native menu
+(`onContextMenu` calls `preventDefault()` unconditionally first); `handleHoverFeedback`'s
+`cursor = ''` cannot stomp the drawing-tool crosshair (the `activeTool()` return precedes it);
+`bucketStart` alignment holds because every reachable panel TF is epoch-aligned.
+
+**Ruled not findings** (recorded so they are not rediscovered): D19.I omitting the spec-util's
+"deliberate exclusion" paragraph is consistent, not contradictory; a panel whose TF has no series
+can emit a lone forming bar with `candles: []`/`idx: -1`, which is unreachable through the UI,
+was already reachable pre-RFC with Replay Resolution on, and is **honest** (aggregates revealed
+data only) so it cannot produce lookahead.
+
+**Task 2's L4** (the ambiguous "one block below" referent) was slated for this docs pass and is
+now **ruled no-fix, final**: the load-bearing C1 rationale is fully present, the ambiguity costs
+nothing, and re-touching the file the C1 grep is anchored on for a wording nit is the worse trade.
+
+**Carried unchanged, not re-raised:** Wave 1 L1–L6, Task 2 L1–L4, Task 5 L3.
+
+---
+
+## 9. Run outcome
+
+**COMPLETE.** Five tasks, four audits (Batch A pt 1 PASS, Batch B PASS, Batch A pt 2 NOT PASS →
+fixed → folded into the whole-branch audit, whole-branch PASS). 161 files / 1989 tests →
+**165 files / 2053 tests** (+64). Zero Critical/High/Medium outstanding. PR to **`develop`**.
+
+The one thing worth carrying forward: **the audit that failed is the one that paid for itself.**
+Task 5's invariant — the artifact the RFC calls its only durable output — was wrong in a way all
+four gates reported as green, and it was caught only because the implementer volunteered a
+deviation it would have been easier to stay quiet about, and because the auditor re-derived the
+claim by execution instead of reading the code. Evidence over assertion, and deviation honesty,
+are not ceremony here; they were the mechanism.
