@@ -188,4 +188,129 @@ record. Progression origin: **161 files / 1989 tests**.
 
 ### 8.3 Task log
 
-_(entries appended per task)_
+#### Wave 1 — Tasks 1, 3, 4 (parallel, separate worktrees)
+
+Dispatched simultaneously to three `sdd-implementer` subagents in worktrees
+`../rfc019-t1`, `../rfc019-t3`, `../rfc019-t4` (branches `rfc019/task-{1,3,4}`), each with
+its own `npm ci` per decision O2. Disjoint file sets per plan §1. **All three merged with
+zero conflicts**, confirming the overlap analysis — no task exceeded its declared scope.
+
+Merge order T1 → T4 → T3 (T1 first: it is Task 2's dependency).
+
+---
+
+**Task 1 — collapse forming-candle aggregation (D19.F)** — ✅ DONE
+
+| Field | Value |
+| :--- | :--- |
+| Impl commit | `69b90bd` · merge `8ea8143` |
+| Tests | 161/1989 → **162 files / 1997 tests** (+1 file, +8) |
+| Gates | tsc app ✓, tsc spec ✓, `ng test` ✓, lint 0 problems — raw, in-worktree |
+| Scope touched | `state/market/forming-candle.ts` (new), `…/forming-candle.spec.ts` (new), `state/selectors.ts`, `components/chart/chart-model-mapper.service.ts` — **exactly the 4 declared files** |
+
+**Guard-reachability finding (the brief required deriving this, not copying it).** Given
+`firstIndexAtOrAfter` → `candles.length` on overflow (never negative) and
+`lastIndexAtOrBefore` → `-1` or at most `length-1`, both `lo < 0` and
+`hi >= resSeries.length` from the plan's draft are **unreachable** and were correctly
+omitted; `hi < lo` alone covers the empty-series case. One new guard `if (!resSeries)`
+exists solely to make the exported function total against its `Candle[] | null` signature —
+unreachable from either production caller, and spec'd. *Orchestrator note: this matches the
+derivation I performed independently from `fill-engine.ts:458-483` before writing the brief.*
+
+**Deviations**
+- *Inert* — `git commit <paths>` rejected the two brand-new untracked files (pathspec error,
+  git 2.47.0.windows.1); resolved with an explicit `git add` of **only** those two files,
+  then the identical pathspec commit. Result is the exact 4-file commit specified. No
+  `git add -A`.
+- *Inert* — the brief's `spec-util` grep is not literally zero: it matches two **doc-comment**
+  lines in `state/layout/layout-invariants.ts` (pre-existing, out of scope). Orchestrator
+  re-verified with `grep -rn "from '.*spec-util'"` → **zero real imports**. Kernel inv. 7 holds.
+
+---
+
+**Task 4 — paint-geometry hit-test (D19.B)** — ✅ DONE
+
+| Field | Value |
+| :--- | :--- |
+| Impl commit | `815dfb0` · merge `005a417` |
+| Tests | 161/1989 → **162 files / 2007 tests** (+1 file, +18) |
+| Gates | tsc app ✓, tsc spec ✓, `ng test` ✓, lint 0 problems — raw, in-worktree |
+| Scope touched | `domain/chart/capabilities/drawings-primitive.ts` + new `drawings-primitive.spec.ts` — **2 files, nothing else** |
+
+`distToSegment` extracted to module level (mechanical — no `this`); new exported
+`fibLevelY` called by **both** `drawFib` and `hitTestDrawing`, which is the N19-5 invariant
+itself. `hitTestHandle`, the 6 px tolerance and `drawFib`'s painted pixels unchanged.
+**The pre-declared `drawings-capability.spec.ts:64-65` exception was NOT needed** — those
+assertions test `DrawingsCapability`'s own post-destroy guard, which short-circuits before
+reaching `DrawingsPrimitive`, so they are orthogonal to the geometry change.
+
+**Deviations**
+- *Inert* — the implementer's own first verification attempt piped `ng test` through
+  `tee | tail -n 0`, which would have masked the exit code. It **caught this itself**,
+  discarded the run, and re-ran raw. No reported gate evidence came from the piped run.
+  Self-reported unprompted — exactly the deviation honesty PHILOSOPHY §5.6 asks for.
+- *Inert* — new spec file rather than extending `drawings-capability.spec.ts` (the brief
+  explicitly left this to the implementer's judgement; different unit under test).
+
+---
+
+**Task 3 — pane-space guard + `hitTestTradeLine(x, y)` (D19.A, D19.J)** — ✅ DONE
+
+| Field | Value |
+| :--- | :--- |
+| Impl commit | `a10d089` · merge `75e747e` |
+| Tests | 161/1989 → **163 files / 2002 tests** (+2 files, +13) |
+| Gates | tsc app ✓, tsc spec ✓, `ng test` ✓, lint 0 problems — raw, in-worktree |
+| Scope touched | `domain/chart/chart-engine.ts`, `components/chart/chart.component.ts`, `domain/chart/capabilities/trading-capability.ts`, + new `chart-engine.pane-rect.spec.ts`, `chart.component.pane-guard.spec.ts`, additive tests in `trading-capability.spec.ts` |
+
+**Real class members found (the brief forbade inventing them).** `ChartEngine` had only
+`chart`, `mainSeries`, `bus`, `capabilities` — **no `container` field and no `destroyed`
+flag**. The implementer added `private destroyed = false` (set in `destroy()`) but did
+**not** add a container field: `paneRect()` takes width from `chart.timeScale().width()`
+(the established pattern at `trade-boxes-primitive.ts:193` / `trade-buttons-primitive.ts:145`)
+and height from `chart.paneSize().height`. `TradingCapability` **does** hold a chart handle,
+so `hitTestTradeLine` got a **real** `x` check, not an accepted-but-unused parameter.
+
+**Deviations**
+- **REQUIRES-ATTENTION — `inPane()` fails OPEN when the geometry API is absent.** The brief
+  specified `return r != null && …` (fail closed). Implemented as a tri-state
+  (`chart.component.ts:1414-1419`): `undefined` → `true` (allow), `null` (destroyed) →
+  `false` (block), otherwise bounds-check. Reason: the literal spec would have broken
+  **pre-existing** `chart.component.trade-guard.spec.ts` — 4 `handleContextMenu` tests run
+  with `engine === undefined`, and 2 `handleMouseDown` tests use a stub with no `paneRect`
+  method. Task 3 had **no** pre-declared STOP exception, so the implementer changed the
+  production semantics to satisfy the specs rather than edit them (PHILOSOPHY §5.7).
+  Claimed unreachable in production because listeners attach only after engine
+  construction. **That reachability claim is a claim, not evidence — flagged to the auditor
+  as attention item A1 for independent verification.**
+- *Recorded for the auditor (A2):* `private destroyed` is **new state on the engine core**,
+  which kernel inv. 2 closes to modification. D19.A argues `paneRect()` is exempt as
+  geometry reporting; whether a lifecycle flag falls inside that exemption is an explicit
+  audit question, not an orchestrator ruling.
+
+---
+
+#### Checkpoint 1 — post-Wave-1 gates (orchestrator, fresh raw output, merged branch @ `75e747e`)
+
+| Gate | Result |
+| :--- | :--- |
+| `npx tsc -p tsconfig.app.json --noEmit` | **EXIT 0** |
+| `npx tsc -p tsconfig.spec.json --noEmit` | **EXIT 0** |
+| `npm run lint` | **EXIT 0** — "All files pass linting." |
+| `npx ng test --watch=false` | **EXIT 0** — `Test Files 165 passed (165)`, `Tests 2028 passed (2028)` |
+
+**Arithmetic verified:** 161 + 1 + 2 + 1 = **165 files**; 1989 + 8 + 13 + 18 = **2028
+tests**. The merged total matches the sum of independently-measured per-task deltas exactly
+— no specs silently skipped or deleted.
+
+*(Output was redirected with `> file 2>&1`, which preserves `$?`; the prohibition is on
+pipes such as `| tail` that replace the exit status with the pipe's own.)*
+
+**Batch A audit part 1** dispatched over Tasks 1/3/4 together, with attention flags A1
+(`inPane` fail-open reachability), A2 (`destroyed` flag vs. kernel inv. 2), A3 (mixed
+width/height geometry sources vs. plan risk R5), A4 (`drawFib` pixel identity + N19-5),
+A5 (Task 1 policy byte-identity + `chartView$` untouched), A6 (D19.B framing).
+
+**Wave 2 held until the audit returns** — Task 2 edits `chart-model-mapper.service.ts`,
+which the auditor is reading as part of Task 1's diff, and Task 2 builds directly on
+`aggregateFormingCandle`. Running them concurrently would give the auditor a moving target.
