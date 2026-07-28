@@ -373,3 +373,49 @@ build the baseline in a tree a parallel actor might touch), but Wave 1 adds ~60 
 app code and cannot plausibly account for a 39 kB delta. This is **already a tracked open
 owner item from the RFC-017 run**. `CLAUDE.md` is a protected path — not edited here; raised
 in the PR as an owner decision.
+
+---
+
+#### Wave 2 — Task 2: `chartView$` swap, D-B1, T-1 gate, memo, `resolvePanelCandles`
+
+**Status: IMPLEMENTED, NOT YET AUDITED.** ⚠️ Checkpoint 2 (individual Batch B audit) has
+**not** run — the session paused here for a usage-limit reset. Everything below is the
+implementer's **claim** plus the orchestrator's mechanical diff-scan. It is **not** audited
+evidence.
+
+| Field | Value |
+| :--- | :--- |
+| Impl commit | `7e4ab2a` (direct on the branch — no worktree; sole actor in the tree) |
+| Decisions | D19.C, D19.D, D19.E (as amended by plan §0 C1), D19.G, D19.H |
+| Invariants | N19-2 (D-B1), N19-3 (T-1 gate) |
+| Tests (claimed) | 2028 → **2043** (+15: 10 in the `chartView$` matrix incl. the R7 rewind spec, 5 additive `panelTracksPrimarySeries` unit tests). **165 spec files, unchanged** |
+| Gates (claimed) | tsc app ✓, tsc spec ✓, `ng test` 165 files / 2043 tests ✓, lint 0 problems |
+| Scope touched | `state/layout/layout.models.ts`, `components/chart/chart-model-mapper.service.ts`, `…/chart-model-mapper.service.spec.ts`, `state/layout/layout.trade-predicates.spec.ts` — all four inside the brief's scope table |
+
+**Orchestrator mechanical diff-scan (not an audit — that is Checkpoint 2's job):**
+
+| Check | Result |
+| :--- | :--- |
+| Spec-file count claim ("165 throughout") | ✅ **Verified.** `layout.trade-predicates.spec.ts` is `M`, not `A` — it pre-existed at `20f830a`. `git ls-tree` count at `7e4ab2a` = **165**. The claim initially looked inconsistent with a new file being listed; it is not. |
+| **STOP rule** — Task 2 had no pre-declared exception, yet it modified a **pre-existing** spec | ✅ **Purely additive.** The only removed line in `layout.trade-predicates.spec.ts` is the `import` statement, replaced by one that also imports `panelTracksPrimarySeries`. **Zero assertions removed or altered.** `chart-model-mapper.service.spec.ts` has **zero** removed lines. Appending new `it`s to an existing spec file is what plan §1 authorizes ("spec files are additive per task"); it is not a STOP-rule breach. |
+| **C1 override** (the highest-probability failure mode) | ✅ `chartView$` gates on `panelTracksPrimarySeries(descriptor, currentAsset)`. `panelRendersTrades` appears in the file only at the import and inside `tradeChartView$` (legitimate, out of scope) — **zero occurrences inside `chartView$`**. |
+| **D-B1 shape** | ✅ `if (!subGrain) return { … forming: null … }` precedes the forming branch, so `idx - 1` is structurally reachable **only** under `subGrain` and can never be conditioned on `forming != null`. |
+| D19.G / C6 | ✅ `this.resolvePanelCandles(series, tf)`; `TIMEFRAME_SECONDS[tf]` with no `?? 0` and no `minutes * 60` recompute. |
+| Input swap (D19.C) | ✅ `selectResolutionMinutes`/`selectResolutionSeries` gone; `selectReplayTfSeconds`, `selectReplaySeries`, `selectCurrentAsset` present. All zero-argument globals — D8-safe. |
+
+**Deviations — all classified inert by the implementer, all forwarded to Checkpoint 2:**
+
+| # | Deviation | Class | Note for the auditor |
+| :--- | :--- | :--- | :--- |
+| **D1** | Reworded two in-`chartView$` **comments** that name-dropped `panelRendersTrades` in prose, so the C1 invariant grep cannot be tripped by a comment. | Inert | Confirms the grep is now unambiguous; verify the reworded prose still states *why* the predicate is excluded. |
+| **D2** | Scenarios 8/9 (memo proofs) use **reference-identity assertions instead of `vi.spyOn`**, which the brief's matrix specified. Empirically `vi.spyOn` on this module throws `TypeError: Cannot redefine property` (strict-mode ESM bindings); no codebase precedent exists for spying app-source modules. | Inert, with evidence | **Attention item.** The brief asked for a call-count proof; a reference-identity proof is a different claim. The auditor should judge whether it establishes memoization as strongly — the implementer argues it is the codebase's established idiom for this class of claim. |
+| **D3** | Added direct unit coverage for `panelTracksPrimarySeries` beyond the brief's literal ask. | Inert | Purely additive. |
+
+Scenario **1** (single-panel byte-identity) and scenario **6** (the C1 `hideTrades`
+regression guard) are both reported passing — the two that would let this RFC silently fail.
+
+**⚠️ NEXT ACTION IS CHECKPOINT 2, AND IT IS A HARD GATE.** Four gates raw, then an
+individual `branch-auditor` audit of Task 2 requiring zero Critical/High/Medium. **Task 5
+must not be written until that PASSes** — Task 5's entire purpose is to check Task 2
+independently, and it is worthless if authored against behavior that has not been verified.
+Resume instructions: `docs/superpowers/plans/2026-07-27-rfc-019-resume-prompt.md`.
