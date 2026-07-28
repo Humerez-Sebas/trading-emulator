@@ -314,3 +314,62 @@ A5 (Task 1 policy byte-identity + `chartView$` untouched), A6 (D19.B framing).
 **Wave 2 held until the audit returns** — Task 2 edits `chart-model-mapper.service.ts`,
 which the auditor is reading as part of Task 1's diff, and Task 2 builds directly on
 `aggregateFormingCandle`. Running them concurrently would give the auditor a moving target.
+
+**Ledger completeness fix (auditor finding L6).** Plan §3 Task 3 Step 3 asked the
+implementer to "compute `x`/`y` once at the top and reuse them". The implementation instead
+introduced a separate `guardRect` at `chart.component.ts:1430` and left the two later
+`getBoundingClientRect()` calls (`:1436`, `:1447`) in place — three layout reads per
+mousedown rather than two. **Classification: inert.** The deviation is strictly *safer* than
+what the plan asked for: it avoids the exact hazard the plan warned about (perturbing the
+`placing()` / `quickRuler` / `activeTool()` short-circuits) at zero behavioral cost, and
+`mousedown` is not a hot path. The hover handler — which *is* hot (`mousemove`) — reuses its
+existing `x`/`y` and gained no extra layout read. Recorded here because a deviation must
+never be silent, not because it needs action.
+
+---
+
+#### Batch A audit part 1 — Tasks 1, 3, 4 · **PASS ("Ship it")**
+
+`branch-auditor` (Opus), all gates re-run personally at code-HEAD `75e747e`.
+
+| Result | Value |
+| :--- | :--- |
+| Verdict | **PASS** — Task 1 PASS, Task 3 PASS, Task 4 PASS |
+| Critical / High / Medium | **0 / 0 / 0** |
+| Low | 6, **all ruled no-fix with written reasons** (PHILOSOPHY §3.5) |
+| Auditor's own gates | tsc app 0, tsc spec 0, lint 0, `ng test` **165 files / 2028 tests**, `npm run build` 0 — **no vitest sentinel, no new chunk type** |
+
+**Arithmetic independently re-derived**, not accepted: baseline spec-file count recounted
+from `git ls-tree` at `f00a478` (161), `it(` occurrences counted per new file
+(T1 = 8, T3 = 13, T4 = 18), `git diff --name-status` showing 4 additions and **0 deletions**,
+and a grep proving **zero** `.skip` / `.only` introduced.
+
+**Attention-flag rulings:**
+
+| Flag | Ruling |
+| :--- | :--- |
+| **A1** — `inPane()` fails open | **Not a finding.** Auditor traced it independently rather than accepting the claim: `engine` is assigned at exactly one site (`chart.component.ts:613`, first statement of `ngAfterViewInit`), the three DOM listeners attach at `:696-698` (last statements of the same straight-line method, no early return or `await`), the handlers have no other production caller, and `paneRect` is a prototype method so a real engine cannot lack it. `ngOnDestroy` removes all listeners *before* `engine.destroy()`, so the `null` branch is unreachable too. **`rect === undefined` is dead code in production; N19-1 is enforced on every path a gesture can take.** Accommodating the pre-existing specs (rather than STOPping) was ruled correct, on the RFC-013 `headerLabel()` precedent. Residual refactor risk recorded as L1. |
+| **A2** — `private destroyed` on the core | **Does not violate kernel inv. 2.** The invariant closes the core on the axis of *behavior*; the flag is private, adds no `RenderModel` field, no bus event and no `Capability` surface, and its only reader is `paneRect()`'s null guard. `ChartEngine` already carries two RFC-010 lifecycle flags of the same species (`applyingSync`, `suppressNextRangeEvent`). It is derivative of an exemption RFC-019 §8 already grants — exempting the accessor while excluding the line that makes it safe would be incoherent. |
+| **A3** — mixed width/height sources (plan risk **R5**) | **Closed.** Verified against the installed library, not the stub: `timeScale().width()` and `paneSize().width` are both set from the same local in the layout pass, so the two calls describe **one** rect whenever the time axis is visible — which it always is here. Single-pane confirmed (zero `addPane`/`paneIndex` hits), so `paneSize(0)` is the whole plot surface and shares the space `priceToCoordinate` maps into. In-pane counter-guard specs confirmed passing. |
+| **A4** — `drawFib` pixel identity + N19-5 | **Verified.** The sole renderer change is the expression → `fibLevelY(...)` call, character-identical. Non-obvious extra check the auditor performed: the renderer passes **bitmap-space** coords and the hit-test **media-space** coords; `fibLevelY` is linear and homogeneous, so sharing it across the two spaces is sound rather than a latent scaling bug. Both call sites confirmed; no second copy of the formula exists, so drift is structurally impossible. |
+| **A5** — Task 1 policy byte-identity | **Verified.** Both selector and mapper guards unchanged verbatim (including the mapper-only `minutes * 60 >= activeSeconds`); only the aggregation moved; **`chartView$` is not in the diff**. Guard simplification independently re-derived from the `fill-engine` contracts. |
+| **A6** — D19.B framing | **Correct everywhere** — commit body, report, ledger and code comments all present it as an independent UX change, not the Bug-A fix. `trading-capability.ts:220-224` correctly subordinates D19.J to D19.A as the enforcing guard. |
+
+**Lows ruled no-fix** (so they are not re-litigated): **L1** unreachable fail-open branch is a
+future refactor trap (with a suggested harness-scaffolding fix for a *later* run, explicitly
+not this PR); **L2** `paneRect()` width couples to time-axis visibility — hypothetical, and
+the same coupling already exists at the two established call sites, so any fix should be one
+sweep across all three; **L3** the pane-rect spec's stub cannot detect a width/height source
+mismatch — test pragmatism, and jsdom performs no layout, so R5 was closed against library
+source instead; **L4** `destroy()` sets the flag after `chart.remove()` — unreachable given
+listener-removal ordering; **L5** middle-click on the axis no longer calls `preventDefault()`
+— **mandated by D19.A's explicit guard placement**, cosmetic, recorded so it is not
+rediscovered as a regression; **L6** the ledger omission, closed above.
+
+**Informational, carried to branch finalization:** the auditor measured `npm run build`
+initial total at **648.42 kB**, while `CLAUDE.md` and the plan DoD both cite "~609 kB" as the
+known-accepted figure. Attribution is reasoning, not measurement (the auditor declined to
+build the baseline in a tree a parallel actor might touch), but Wave 1 adds ~60 net lines of
+app code and cannot plausibly account for a 39 kB delta. This is **already a tracked open
+owner item from the RFC-017 run**. `CLAUDE.md` is a protected path — not edited here; raised
+in the PR as an owner decision.
