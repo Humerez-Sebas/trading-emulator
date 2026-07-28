@@ -540,3 +540,124 @@ would re-touch the file the C1 grep is anchored on for no correctness gain. Sugg
 for the docs pass: name the file, not the symbol, so the grep stays clean.
 
 **Checkpoint 2 is PASSED. Wave 3 (Task 5) is unblocked.**
+
+---
+
+#### Wave 3 — Task 5: `assertNoLookahead` + boundary specs (D19.I, N19-4)
+
+| Field | Value |
+| :--- | :--- |
+| Impl commit | `19602cc` (direct on the branch — sole actor in the tree) |
+| Tests | 2043 → **2051** (+8); **165 spec files, unchanged** (the new file is `.spec-util.ts`) |
+| Gates (orchestrator-verified, Checkpoint 3, raw) | tsc app **EXIT 0**, tsc spec **EXIT 0**, lint **EXIT 0**, `ng test` **EXIT 0** — `Test Files 165 passed (165)`, `Tests 2051 passed (2051)` |
+| Scope touched | new `components/chart/lookahead-invariants.spec-util.ts`; `…/chart-model-mapper.service.spec.ts` (appended) — **zero production files** |
+
+**Orchestrator mechanical diff-scan (`b4018ee..19602cc`):** 2 files (`M` spec, `A` spec-util),
+zero production files, the only removed line is an `import`, `+8 it(`, zero `.skip`/`.only`,
+165 `.spec.ts`. STOP rule intact.
+
+**Implementer deviations:** two inert (import-line edit; the new `describe` nested *inside* the
+existing `chartView$` block to reuse its `candle`/`descriptor`/`emit`/`dummyGlobalView`
+helpers) and **one requires-attention, self-reported unprompted** — deviation #3, the scenario-2
+cursor choice, escalated to the auditor as attention flag A1. That self-report is what surfaced
+the finding below; it is exactly the deviation honesty PHILOSOPHY §5.6 asks for.
+
+---
+
+#### Batch A audit part 2 — Task 5 · **NOT PASS** (1 Medium, 3 Low)
+
+`branch-auditor` (Opus), diff `b4018ee..19602cc`, all gates re-run personally at `19602cc`
+(tsc app 0, tsc spec 0, lint 0, `ng test` 165/2051 exit 0). Arithmetic independently
+re-derived: `+8 it(`, zero removed, exactly one removed line in the whole diff, all 13
+ledger-cited commit hashes resolve. The auditor additionally ran `npm run build` (not required
+at this checkpoint) precisely because Task 5 adds a **new vitest-importing file under
+`src/app`**: **EXIT 0, 648.44 kB, no new chunk type, and zero `vitest` / zero
+`lookaheadViolation` occurrences anywhere in `emulador/dist/`** — kernel inv. 7 proven by
+build, not by grep alone.
+
+##### M1 (Medium) — the invariant is off by one replay grain and is falsified by production
+
+**Proven by execution, not reasoning.** The auditor wrote throwaway probe specs, ran the real
+suite, read the values, deleted them and confirmed a clean tree.
+
+The helper tests `candles[i].time + activeSeconds <= cursor`. But the replay cursor **names the
+OPEN of the last revealed candle on the replay grain** — confirmed at `replay.effects.ts:49`
+(`advance$` → `goToTime({ time: candles[next].time })`), and likewise `jumpBack$:147`,
+`jumpForward$:131`, `stepBack$:73`, `foldForwardFills:193`; `ReplayState.currentTime`'s own doc
+(`replay.reducer.ts:9`) says *"Timestamp of the last visible candle"*, and `renderWindow`
+(`chart.component.ts:838`) slices inclusive of `idx`. The candle opening at `cursor` is
+therefore fully revealed and fully painted.
+
+Consequence, measured:
+
+| Probe | Configuration | Result |
+| :--- | :--- | :--- |
+| **1** | Native-TF M5 panel, cursor `600` (what `advanceCandle` actually sets) | **THROWS** — `candles[2] opens at 600 and closes at 900, which is AFTER the replay cursor (600)` |
+| **2** | M1 panel finer than an H1 grain (RFC §4.3 row 3, *"ya correcto"*) | **THROWS** — `candles[2] opens at 3600 and closes at 3660 … cursor (3600)` |
+| **3** | Pre-RFC defect (H1, `idx` un-decremented, cursor 4200) | flagged under **both** the strict and the relaxed form ✅ |
+| **4** | Sub-TF H1/M5 emission | passes under both ✅ |
+
+So the checker is satisfiable on **1 of the 3** rows of RFC §4.3, while N19-4's own text claims
+*"en ningún panel, en ninguna temporalidad"*. The implementer's scenario 2 masked this by
+choosing `cursor = 900` — the *close* of the last painted M5 candle — a value no production
+path produces (the next `advanceCandle` on that fixture yields `endOfData`), and wrote the
+masking arithmetic into the spec as if it were principled.
+
+**Severity Medium, not Low:** `decision-frameworks.md` §6's "risk confined to test code"
+carve-out is about incidental scaffolding. Here **the test artifact *is* the deliverable**,
+registered as repo invariant N19-4, and the RFC states it is the RFC's only durable output. The
+concrete failure mechanism: the next engineer to call `assertNoLookahead` on a native-TF or
+finer-than-grain path gets a false positive, and both rational responses — fudge the cursor as
+scenario 2 did, or delete the invariant as junk — destroy the artifact. Not High/Critical: zero
+production code is affected, nothing ships broken, and the checker does catch the defect it was
+written for (probe 3).
+
+**The reformulation, verified by the auditor rather than assumed.** Compare against the
+*revealed instant* `R = cursor + replayGrainSeconds`. Total by algebra, given
+`lastIndexAtOrBefore` guarantees `candles[idx].time <= cursor`:
+
+- native TF (`activeSeconds === replaySeconds`): `close <= cursor + activeSeconds = R` — equality at worst;
+- finer than grain (`activeSeconds < replaySeconds`): `close < R` strictly;
+- sub-TF with the `idx-1` decrement: `candles[idx-1].time + activeSeconds <= candles[idx].time <= cursor <= R`.
+
+`R` is not a fudge — it is exactly "the instant through which price action has been revealed",
+which is the honesty condition the RFC is actually asserting. The same off-by-one exists inside
+the forming candle itself (it aggregates the grain candle at `cursor`, whose own close is
+`cursor + grain`); that is **pre-existing replay semantics and explicitly not RFC-019's
+business**.
+
+##### Lows
+
+- **L1 — the forming-clause violation branch is never exercised.** A repo-wide grep finds its
+  message string only at the definition site. Task 5's own standard was applied to the candle
+  clause and not to the forming clause. *Fix in the same pass — the file is being reopened.*
+- **L2 — scenario 6 compares the emission to itself** (`toEqual(dummyGlobalView)` where the
+  `!descriptor` branch returns the very object the `beforeEach` injected). Not fully vacuous,
+  but `toBe` is strictly stronger and cheaper. *Fold into the same pass.*
+- **L3 — scenario numbering collides within one file** (the nested block restarts at
+  "scenario 1"). **Ruled no-fix** — the block header disambiguates, both numberings track their
+  own plan sections, and renumbering would re-touch a file two audits are anchored on for zero
+  correctness gain.
+
+##### Rulings on the other attention flags — all PASS
+
+**A2** Step-2 sensitivity is real, not staged (message reproduced by execution). **A3** kernel
+inv. 7 holds, proven by build output; recorded as *not a finding*: `tsconfig.app.json` includes
+`src/**/*.ts` and excludes only `*.spec.ts`, so this file **is** inside the app typecheck
+program and passes because vitest ships its own module types — precisely the "tsc and tests stay
+green" trap the invariant warns about. The precedent `layout-invariants.spec-util.ts` has the
+identical property, so the single-file layout adds no new class of hazard; reachability is the
+real protection and the build proves it. **A4** STOP rule intact; the nesting is sound (outer
+`beforeEach` rebuilds TestBed per test; the fixture helpers are pure factories; no bleed).
+**A5** carve-out documented, helper not weakened, foreign-symbol gate genuinely exercised.
+**A6** scenario 4 is strongly non-vacuous — `chartView$`'s descriptor input is
+`panelDescriptor$.pipe(startWith(null))`, so the stream emits unconditionally once selectors
+have values and **only** the gate suppresses it. **A7** `idx === -1` genuinely exercised on both
+the integration and unit paths. **A8** `store.resetSelectors()` sits at the top-level `describe`
+and vitest cascades parent hooks into nested describes, so the new block is covered.
+
+##### Orchestrator decision on the fix
+
+| # | Decision | Rationale |
+| :--- | :--- | :--- |
+| **O5** | **Fix the Medium in place and re-audit, rather than shipping Task 5 as-is or dropping it.** The helper compares against the revealed instant `cursor + replayGrainSeconds`; scenario 2 reverts to a production-faithful cursor; the matrix gains the finer-than-grain row; L1 and L2 fold into the same pass; and **RFC-019's D19.I / N19-4 prose is amended in the same commit** so the written invariant matches the code. | PHILOSOPHY §3.6: "parece terminado" is not a state. Shipping a false invariant is worse than shipping none — it teaches the next engineer the wrong rule and will be deleted the first time it fires a false positive. Amending the RFC text is a **correction of a defect in the spec's formalization discovered during implementation**, not a scope change: the RFC's *intent* (no lookahead reaches the render model) is untouched; only its arithmetic is corrected. Leaving §5/§6 asserting *"ninguna vela cuyo cierre exceda el cursor"* while the helper checks something else would recreate the very divergence one layer up. Surfaced to the owner in the PR as a spec amendment, not buried. |
