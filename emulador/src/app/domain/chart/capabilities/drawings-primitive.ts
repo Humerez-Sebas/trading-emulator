@@ -13,6 +13,34 @@ export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 import { timeForX, xForTime } from '../time-coordinates';
 import { hexToRgba } from '../color-utils';
 
+/**
+ * Y of a fib level between the two anchors. Shared by `drawFib` and
+ * `hitTestDrawing` so painted geometry and hit geometry cannot drift
+ * (RFC-019 D19.B, N19-5).
+ */
+export function fibLevelY(y1: number, y2: number, level: number): number {
+  return y1 + (y2 - y1) * level;
+}
+
+/** Shortest distance from point (px, py) to the segment (x1,y1)-(x2,y2). */
+export function distToSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx;
+  const cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
 /** On-screen drawing (media/CSS px coordinates already resolved). */
 interface ScreenShape {
   id: string;
@@ -120,7 +148,7 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
     ctx.textBaseline = 'bottom';
 
     for (const level of FIB_LEVELS) {
-      const y = y1 + (y2 - y1) * level;
+      const y = fibLevelY(y1, y2, level);
       const price = s.priceA + (s.priceB - s.priceA) * level;
       ctx.strokeStyle = level === 0.5 ? this.colors.down : this.colors.accent;
       ctx.beginPath();
@@ -296,6 +324,8 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
     const { chart, series, source } = this;
     if (!chart || !series || !source) return null;
     const tol = 6;
+    const near = (ax: number, ay: number, bx: number, by: number) =>
+      distToSegment(x, y, ax, ay, bx, by) <= tol;
     // walk from the top (last drawn) downwards
     for (let i = source.items.length - 1; i >= 0; i--) {
       const d = source.items[i];
@@ -305,12 +335,23 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
       const y2 = series.priceToCoordinate(d.p2.price);
       if (x1 === null || x2 === null || y1 === null || y2 === null) continue;
 
-      if (d.kind === 'rect' || d.kind === 'fib') {
-        const inX = x >= Math.min(x1, x2) - tol && x <= Math.max(x1, x2) + tol;
-        const inY = y >= Math.min(y1, y2) - tol && y <= Math.max(y1, y2) + tol;
-        if (inX && inY) return d.id;
+      if (d.kind === 'rect') {
+        const l = Math.min(x1, x2),
+          r = Math.max(x1, x2);
+        const t = Math.min(y1, y2),
+          b = Math.max(y1, y2);
+        if (near(l, t, r, t) || near(l, b, r, b) || near(l, t, l, b) || near(r, t, r, b)) {
+          return d.id;
+        }
+      } else if (d.kind === 'fib') {
+        const l = Math.min(x1, x2),
+          r = Math.max(x1, x2);
+        for (const level of FIB_LEVELS) {
+          const ly = fibLevelY(y1, y2, level);
+          if (near(l, ly, r, ly)) return d.id;
+        }
       } else {
-        if (this.distToSegment(x, y, x1, y1, x2, y2) <= tol) return d.id;
+        if (distToSegment(x, y, x1, y1, x2, y2) <= tol) return d.id;
       }
     }
     return null;
@@ -333,23 +374,5 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
     if (x1 !== null && y1 !== null && Math.hypot(x - x1, y - y1) <= tol) return 'p1';
     if (x2 !== null && y2 !== null && Math.hypot(x - x2, y - y2) <= tol) return 'p2';
     return null;
-  }
-
-  private distToSegment(
-    px: number,
-    py: number,
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-  ): number {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len2 = dx * dx + dy * dy;
-    let t = len2 === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / len2;
-    t = Math.max(0, Math.min(1, t));
-    const cx = x1 + t * dx;
-    const cy = y1 + t * dy;
-    return Math.hypot(px - cx, py - cy);
   }
 }
