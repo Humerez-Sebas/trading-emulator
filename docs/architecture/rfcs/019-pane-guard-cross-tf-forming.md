@@ -356,12 +356,41 @@ bajo avance monótono y se rompe con saltos y rebobinado.
 
 **Decisión.** Añadir un helper de test —espejo de `assertNoCandles`— que codifique:
 
-> **Ninguna vela cuyo cierre exceda el cursor de replay puede llegar al render model, en
-> ningún panel, en ninguna temporalidad.**
+> **Ninguna vela cuyo cierre exceda el instante revelado (`cursor de replay + grano de
+> replay`) puede llegar al render model, en ningún panel, en ninguna temporalidad.**
 
 **Justificación.** Hoy **nada** en la suite lo afirma, y por eso un emulador
 multi-timeframe lleva mostrando el futuro toda la vida de la funcionalidad multi-panel.
 El artefacto duradero de este RFC es el invariante, no el parche.
+
+**Por qué el cursor crudo no es la cota correcta** (corrección post-implementación
+descubierta en la Tarea 5, `.superpowers/rfc-019/dev-log.md` §8.3, hallazgo M1 — la
+formulación original de esta sección decía `cierre <= cursor`, sin el grano). El cursor de
+replay nombra la **apertura** de la última vela revelada en el grano de replay, nunca un
+cierre: `advanceCandle` hace `goToTime({ time: candles[next].time })`
+(`replay.effects.ts:49`, y de igual forma `jumpBack$`/`jumpForward$`/`stepBack$`), y
+`renderWindow` (`chart.component.ts:838`) corta `[winStart, idx]` **inclusive** en `idx`.
+La vela que abre en el cursor queda, por tanto, íntegramente revelada y pintada completa
+en el instante en que el cursor alcanza su apertura — exigir `cierre <= cursor` es
+falsificable **por construcción**, no una salvaguarda extra, en dos de las tres filas de
+§4.3: en la fila 1 (TF nativa), `cierre = cursor + activeSeconds` es siempre `> cursor`
+para `activeSeconds > 0`; en la fila 3 (panel más fino que el grano) ocurre lo mismo por
+la misma razón. Solo la fila 2 (sub-TF con el decremento `idx - 1`, D-B1) satisface la
+forma ingenua, y únicamente porque el decremento la relaja de más.
+
+La cota honesta es el **instante revelado** `R = cursor + grano de replay` — "el instante
+hasta el cual la acción de precio ya se vivió". Es total sobre las tres filas de §4.3
+(dado que `lastIndexAtOrBefore` garantiza `candles[idx].time <= cursor`):
+
+- **TF nativa** (`activeSeconds === grano de replay`, fila 1): `cierre <= cursor +
+  activeSeconds = R` — igualdad en el peor caso;
+- **panel más fino que el grano** (fila 3, "ya correcto"): `cierre < R` estrictamente;
+- **sub-TF con el decremento `idx - 1`** (fila 2, D-B1): `candles[idx-1].time +
+  activeSeconds <= candles[idx].time <= cursor <= R`.
+
+La cláusula de la vela en formación **no cambia**: sigue comparando contra el cursor
+crudo (`forming.time > cursor`), nunca contra `R` — una barra parcial que abre después del
+cursor es un sinsentido con independencia del grano de replay.
 
 **Ubicación obligatoria.** `*.spec-util.ts` o `*.spec.ts` — **nunca** importado desde
 código de app (invariante de núcleo 7: un import de spec-util embarca vitest en el bundle
@@ -385,7 +414,7 @@ reabrir el defecto.
 | **N19-1** | Solo el pane de trazado recibe gestos del pane. Ningún hit-test se ejecuta sobre coordenadas fuera de `paneRect()`. | `chart.component.ts` — guarda en los 3 handlers DOM (D19.A) |
 | **N19-2** | **D-B1.** Cuando la barra parcial honesta no se puede calcular, se muestra la última vela **cerrada**, nunca la contenedora. | `chartView$` — `idx-1` sobre `subGrain` (D19.D) |
 | **N19-3** | La vela en formación de un panel solo se agrega desde la serie de replay del símbolo **primario**, y solo si el panel muestra ese símbolo (cláusula T-1 aislada). | `panelTracksPrimarySeries` (D19.E) |
-| **N19-4** | **`assertNoLookahead`.** Ninguna vela cuyo cierre exceda el cursor llega al render model. | Capa de test (D19.I) |
+| **N19-4** | **`assertNoLookahead`.** Ninguna vela cuyo cierre exceda el instante revelado (`cursor + grano de replay`) llega al render model. | Capa de test (D19.I) |
 | **N19-5** | El hit-test de un dibujo coincide exactamente con su geometría pintada. Renderer y hit-test comparten la fórmula de nivel. | `drawings-primitive.ts` (D19.B) |
 
 ---
@@ -402,6 +431,7 @@ reabrir el defecto.
 | V6 | Dos implementaciones casi idénticas de la vela en formación, con guardas distintas | Una función pura compartida | **Consolidación** |
 | V7 | `hitTestTradeLine(y)` sin `x` | `hitTestTradeLine(x, y)` | **Endurecimiento de firma (D19.J, opcional)** |
 | V8 | La cláusula T-1 vive duplicada dentro de `panelRendersTrades` y `panelMayExecute` | `panelTracksPrimarySeries` — definición única | **Refactor puro (D19.E)** |
+| V9 | Panel de símbolo foráneo con Replay Resolution activo → `idx - 1` (agregaba `forming` del símbolo **primario** bajo la etiqueta foránea, sin distinguir símbolo) | `idx` sin decrementar — el gate T-1 aislado (`panelTracksPrimarySeries`, N19-3) excluye a los paneles foráneos de `subGrain`, así que caen en la rama sin agregación | **Cambio de comportamiento declarado, territorio F19-2 preexistente (ledger `.superpowers/rfc-019/dev-log.md` §8.3, hallazgo L1) — no es un defecto introducido por este RFC** |
 
 **Comportamiento de panel único: idéntico byte a byte.** Con un solo panel, TF del panel
 == TF activa == grano de replay, luego `activeSeconds > replaySeconds` es falso, `subGrain`

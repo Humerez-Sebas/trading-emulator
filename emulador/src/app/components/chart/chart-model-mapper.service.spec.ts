@@ -887,18 +887,34 @@ describe('ChartModelMapper', () => {
         const cursor = 4200; // 10 minutes into the [3600, 7200) H1 bucket
         const preRfcIdx = 1; // pre-RFC: NOT decremented — candles[1] is still painted whole
         const activeSeconds = TIMEFRAME_SECONDS['H1']; // 3600
+        const replayGrainSeconds = 300; // M5 replay grain — revealed instant = 4500
 
-        const message = lookaheadViolation(h1, preRfcIdx, null, cursor, activeSeconds);
+        const message = lookaheadViolation(h1, preRfcIdx, null, cursor, activeSeconds, replayGrainSeconds);
 
+        // Proof this still catches the defect it exists for, EVEN under the corrected
+        // (looser) revealed-instant bound: candles[1] closes at 7200, the revealed instant
+        // is only 4500 (cursor 4200 + grain 300) — 7200 is 2700 seconds past it, nowhere
+        // near the boundary. Fixing the M1 off-by-one does not blunt this check.
         expect(message).not.toBeNull();
         expect(message).toContain('candles[1]'); // names the offending index
         expect(message).toContain('7200'); // names the actual close time
-        expect(message).toContain('4200'); // names the cursor it exceeds
+        expect(message).toContain('4200'); // names the raw cursor
+        expect(message).toContain('4500'); // names the revealed instant it exceeds
       });
 
       it('idx === -1 is a clean no-op pass (empty range), not a throw', () => {
-        expect(lookaheadViolation([], -1, null, 1000, 3600)).toBeNull();
-        expect(() => assertNoLookahead([], -1, null, 1000, 3600)).not.toThrow();
+        expect(lookaheadViolation([], -1, null, 1000, 3600, 300)).toBeNull();
+        expect(() => assertNoLookahead([], -1, null, 1000, 3600, 300)).not.toThrow();
+      });
+
+      it('flags the forming clause: a forming candle opening after the cursor (the clause the candle-close fix must not touch)', () => {
+        const forming = candle(4500);
+        const message = lookaheadViolation([], -1, forming, 4200, 3600, 300);
+
+        expect(message).not.toBeNull();
+        expect(message).toContain('forming'); // names which clause fired
+        expect(message).toContain('4500'); // the forming candle's open
+        expect(message).toContain('4200'); // the cursor it exceeds — RAW cursor, not R
       });
 
       it('scenario 1 — H1 panel + M5 replay grain, mid-bucket: assertNoLookahead passes on the real chartView$ emission', () => {
@@ -914,18 +930,20 @@ describe('ChartModelMapper', () => {
         const view = emit(descriptor({ symbol: 'US30', timeframe: 'H1' }));
 
         expect(() =>
-          assertNoLookahead(view.candles, view.idx, view.forming, 4200, TIMEFRAME_SECONDS['H1']),
+          assertNoLookahead(view.candles, view.idx, view.forming, 4200, TIMEFRAME_SECONDS['H1'], 300),
         ).not.toThrow();
       });
 
-      it('scenario 2 — single M5 panel, no resolution (replay grain == panel TF): passes, and the emission still matches the pre-RFC shape (forming null, idx not decremented)', () => {
+      it('scenario 2 — single M5 panel, no resolution (replay grain == panel TF): passes on the cursor `advanceCandle` actually produces (forming null, idx not decremented)', () => {
         const m5 = [candle(0), candle(300), candle(600)];
-        // Cursor set exactly at the close of the last painted candle (600 + 300). That is
-        // the honest boundary for a native-TF (subGrain-false) panel: the currently-active
-        // replay-grain candle IS the panel's own atomic unit — no finer data exists to
-        // build a genuine partial bar from — so N19-4 only calls it closed once the cursor
-        // reaches ITS OWN close, not merely its open.
-        const cursor = 900;
+        // The cursor `advanceCandle` sets for this fixture: the OPEN of the last candle
+        // (`replay.effects.ts:49` — `goToTime({ time: candles[next].time })`), never its
+        // close. For a native-TF (subGrain-false) panel the invariant's revealed instant is
+        // `cursor + replayGrainSeconds`, which lands exactly on the last painted candle's
+        // own close (600 + 300 = 900) — equality at worst, per D19.I's algebra. A cursor of
+        // 900 here would be a value production never produces (the next `advanceCandle` on
+        // this fixture yields `endOfData`), which is exactly what audit finding M1 flagged.
+        const cursor = 600;
         store.overrideSelector(selectSeries, { M5: m5 });
         store.overrideSelector(selectCurrentTime, cursor);
         store.overrideSelector(selectUtcOffset, 0);
@@ -936,8 +954,30 @@ describe('ChartModelMapper', () => {
         const view = emit(descriptor({ symbol: 'US30', timeframe: 'M5' }));
 
         expect(view.forming).toBeNull();
-        expect(view.idx).toBe(2); // lastIndexAtOrBefore(m5, 900) — un-decremented, the pre-RFC shape
-        assertNoLookahead(view.candles, view.idx, view.forming, cursor, TIMEFRAME_SECONDS['M5']);
+        expect(view.idx).toBe(2); // lastIndexAtOrBefore(m5, 600) — un-decremented, the pre-RFC shape
+        assertNoLookahead(view.candles, view.idx, view.forming, cursor, TIMEFRAME_SECONDS['M5'], 300);
+      });
+
+      it('scenario 2b (RFC §4.3 row 3 — panel FINER than the replay grain) — M1 panel, H1 replay grain: passes, and is falsified by the pre-fix raw-cursor comparison', () => {
+        // Task 2 scenario 4's fixture: subGrain false (panel TF finer than the grain), so
+        // idx is untouched. The pre-fix helper (comparing `close <= cursor`) throws here —
+        // candles[3] opens at 180 and closes at 240, which is already past the raw cursor
+        // (200) even though nothing about this panel is dishonest: an M1 panel finer than
+        // an H1 grain is RFC §4.3's "ya correcto" row. This is the exact falsification audit
+        // finding M1 identified as going unexercised by the pre-fix matrix.
+        const m1 = [candle(0), candle(60), candle(120), candle(180)];
+        store.overrideSelector(selectSeries, { M1: m1 });
+        store.overrideSelector(selectCurrentTime, 200);
+        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectReplayTfSeconds, 3600); // H1 grain, coarser than the M1 panel
+        store.overrideSelector(selectReplaySeries, []); // irrelevant: subGrain must be false before this is read
+        store.overrideSelector(selectCurrentAsset, 'US30');
+
+        const view = emit(descriptor({ symbol: 'US30', timeframe: 'M1' }));
+
+        expect(view.forming).toBeNull();
+        expect(view.idx).toBe(3); // lastIndexAtOrBefore(m1, 200) — untouched, no decrement
+        assertNoLookahead(view.candles, view.idx, view.forming, 200, TIMEFRAME_SECONDS['M1'], 3600);
       });
 
       it('scenario 3 — idx === 0 boundary (emits idx === -1): passes, no throw', () => {
@@ -954,7 +994,7 @@ describe('ChartModelMapper', () => {
 
         expect(view.idx).toBe(-1);
         expect(() =>
-          assertNoLookahead(view.candles, view.idx, view.forming, 4200, TIMEFRAME_SECONDS['H1']),
+          assertNoLookahead(view.candles, view.idx, view.forming, 4200, TIMEFRAME_SECONDS['H1'], 300),
         ).not.toThrow();
       });
 
@@ -1007,7 +1047,10 @@ describe('ChartModelMapper', () => {
         let view: unknown;
         mapper.chartView$.subscribe((v) => (view = v));
 
-        expect(view).toEqual(dummyGlobalView);
+        // toBe, not toEqual: the `!descriptor` branch returns the exact object the
+        // `beforeEach` injected via `overrideSelector(selectChartView, dummyGlobalView)`,
+        // so reference identity is the honest (and strictly stronger) passthrough proof.
+        expect(view).toBe(dummyGlobalView);
       });
     });
   });
