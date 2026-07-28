@@ -256,4 +256,46 @@ describe('TradingCapability', () => {
       expect(setMarkers).not.toHaveBeenCalled();
     });
   });
+
+  // RFC-019 Task 3 (D19.J): `hitTestTradeLine` gained a leading `x` parameter as
+  // belt-and-suspenders behind the DOM-level pane guard (D19.A,
+  // `ChartComponent.inPane`). `TradingCapability` HAS a chart handle
+  // (`this.chart`, set in `init()`), so the check below is real, not the brief's
+  // "accepted-but-unused" fallback for capabilities without one.
+  describe('hitTestTradeLine (D19.J)', () => {
+    function chartWithPaneWidth(width: number): IChartApi {
+      return { timeScale: () => ({ width: () => width }) } as unknown as IChartApi;
+    }
+
+    it('rejects x at/beyond the pane width, even when y lines up with a draggable line', () => {
+      cap.init(chartWithPaneWidth(700), bus);
+      cap.render(tradingModel());
+      // Blanket mock: every price maps to y=250, so any draggable line matches on y.
+      (series.priceToCoordinate as ReturnType<typeof vi.fn>).mockReturnValue(250);
+
+      expect(cap.hitTestTradeLine(700, 250)).toBeNull(); // AT the pane width: rejected
+      expect(cap.hitTestTradeLine(50_000, 250)).toBeNull(); // well beyond: rejected
+    });
+
+    it('still finds the line when x is within the pane (no regression)', () => {
+      cap.init(chartWithPaneWidth(700), bus);
+      cap.render(tradingModel());
+      (series.priceToCoordinate as ReturnType<typeof vi.fn>).mockReturnValue(250);
+
+      const hit = cap.hitTestTradeLine(300, 250);
+
+      expect(hit).not.toBeNull();
+      expect(hit!.field).toBe('sl'); // position's entry line is non-draggable and skipped first
+    });
+
+    it('skips the x-check before init() — no chart handle yet, so the DOM-level guard (D19.A) is the enforcing one, not a throw', () => {
+      // this.chart is null until init() runs; render() itself does not depend on
+      // it, so lines can exist with no chart handle set at all.
+      cap.render(tradingModel());
+      (series.priceToCoordinate as ReturnType<typeof vi.fn>).mockReturnValue(250);
+
+      expect(() => cap.hitTestTradeLine(50_000, 250)).not.toThrow();
+      expect(cap.hitTestTradeLine(50_000, 250)).not.toBeNull(); // x-check skipped: no chart handle
+    });
+  });
 });

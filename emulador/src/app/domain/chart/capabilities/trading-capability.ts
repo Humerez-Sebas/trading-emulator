@@ -217,7 +217,14 @@ export class TradingCapability implements Capability {
     return this.tradeButtonsPrimitive.hitTestDelete(x, y);
   }
 
-  public hitTestTradeLine(y: number): TradeLine | null {
+  public hitTestTradeLine(x: number, y: number): TradeLine | null {
+    // D19.J: reject clicks beyond the pane's right edge — belt-and-suspenders
+    // behind the DOM-level guard (D19.A, `ChartComponent.inPane`), which is the
+    // enforcing guard for the general axis-chrome case. This capability HAS a
+    // chart handle (`this.chart`, set in `init()`), so the check is real, not
+    // accepted-but-unused: same width source as the DOM guard and the existing
+    // trade-boxes/trade-buttons primitives (`chart.timeScale().width()`).
+    if (this.chart && x >= this.chart.timeScale().width()) return null;
     const grabPx = 4;
     let best: TradeLine | null = null;
     let bestDist = grabPx + 1;

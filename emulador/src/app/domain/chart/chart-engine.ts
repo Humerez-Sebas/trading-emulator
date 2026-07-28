@@ -38,6 +38,11 @@ export class ChartEngine implements ChartApplyHandle {
     return this.bus;
   }
 
+  /** D19.A: set by `destroy()`; makes `paneRect()` return `null` post-teardown instead of
+   * touching a disposed `IChartApi`. No other member observed this before Task 3 — verified
+   * against the real class (chart-engine.ts), not the plan's draft. */
+  private destroyed = false;
+
   /**
    * RFC-010: true only for the synchronous duration of an applyCrosshair/applyVisibleRange call —
    * suppresses re-emission if the underlying library fires its own subscribeX callback
@@ -220,10 +225,37 @@ export class ChartEngine implements ChartApplyHandle {
     this.mainSeries.priceScale().applyOptions({ autoScale: true });
   }
 
+  /**
+   * D19.A: read-only geometry accessor for the plot pane, in container CSS px —
+   * EXCLUDES the right price scale and the bottom time axis. `null` once destroyed.
+   *
+   * Does NOT violate kernel invariant 2 ("core closed; new behavior = new
+   * Capability"): this adds no engine BEHAVIOR, it answers a question about
+   * geometry the engine already owns via `chart`. `ChartComponent`'s DOM
+   * handlers need it to stop interpreting axis-chrome clicks as pane clicks
+   * (the coordinate-space bug D19.A fixes) — that consuming logic lives on
+   * the Angular side, not here.
+   *
+   * Width source matches the established repo pattern (`trade-boxes-primitive.ts`,
+   * `trade-buttons-primitive.ts`): `chart.timeScale().width()`. Height comes from
+   * `chart.paneSize().height`, which lightweight-charts documents as "the chart
+   * pane (the plot surface which excludes time and price scales)" — its `.width`
+   * is the same pane-widget size `timeScale().width()` reports, so the two calls
+   * describe one consistent rect, not two different ones.
+   */
+  public paneRect(): { width: number; height: number } | null {
+    if (this.destroyed) return null;
+    return {
+      width: this.chart.timeScale().width(),
+      height: this.chart.paneSize().height,
+    };
+  }
+
   public destroy(): void {
     this.capabilities.forEach((cap) => cap.destroy());
     this.capabilities.clear();
     this.bus.destroy();
     this.chart.remove();
+    this.destroyed = true;
   }
 }

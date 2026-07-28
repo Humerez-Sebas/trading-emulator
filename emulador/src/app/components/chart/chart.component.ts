@@ -907,6 +907,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const rect = this.container.nativeElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    // D19.A: right-click on the price-scale / time-axis chrome opens no menu —
+    // it is not a chart gesture (placement verbs, the only other right-click
+    // meaning, are already handled above).
+    if (!this.inPane(x, y)) return;
     const raw = this.series.coordinateToPrice(y);
     const current = this.tradeCtx().price;
 
@@ -1386,10 +1390,45 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   // disabled for the duration of the drag so the chart does not pan under
   // the object being dragged.
 
+  /**
+   * D19.A: true when (x, y) — container-relative DOM coordinates, exactly what
+   * every handler below computes via `getBoundingClientRect()` — falls inside
+   * the plot pane. `container.nativeElement` wraps the pane PLUS the right
+   * price scale PLUS the bottom time axis, but every hit-test downstream
+   * (drawings, trade lines/edges/delete buttons) interprets its `x`/`y` as PANE
+   * space. Without this, every pixel of the axis chrome is silently accepted as
+   * valid pane space.
+   *
+   * `this.engine?.paneRect?.()` deliberately distinguishes "no engine / no
+   * geometry API available" (`undefined` — fails OPEN, i.e. does not guard) from
+   * "engine says destroyed" (`null` — fails CLOSED). The open case is
+   * unreachable in production (the three DOM listeners below are only ever
+   * attached in `ngAfterViewInit`, AFTER `this.engine` is constructed), but
+   * `chart.component.trade-guard.spec.ts` is a pre-existing spec (STOP rule)
+   * that calls these handlers directly against a component whose
+   * `ngAfterViewInit` is stubbed out — `this.engine` is `undefined` there, and
+   * some of its `handleMouseDown` stubs set `engine` to a plain object without a
+   * `paneRect` method. Failing open in that unreachable-in-prod case keeps this
+   * guard from changing that spec's pre-existing behavior.
+   */
+  private inPane(x: number, y: number): boolean {
+    const rect = this.engine?.paneRect?.();
+    if (rect === undefined) return true;
+    if (rect === null) return false;
+    return x >= 0 && x < rect.width && y >= 0 && y < rect.height;
+  }
+
   private handleMouseDown(e: MouseEvent): void {
     this.chartFocused.emit();
     // any interaction with the chart dismisses the context menu
     if (this.menu()) this.zone.run(() => this.menu.set(null));
+    // D19.A: reject the gesture before any hit-test runs when it lands on the
+    // price-scale / time-axis chrome — every hit-test below interprets x/y as
+    // PANE space, but `container` wraps the pane plus both scale strips. Must
+    // NOT claim the event here (no preventDefault, no setInteractivity(false)),
+    // so dragging the price scale itself keeps working.
+    const guardRect = this.container.nativeElement.getBoundingClientRect();
+    if (!this.inPane(e.clientX - guardRect.left, e.clientY - guardRect.top)) return;
     // middle button: start the ephemeral quick-ruler measurement
     if (e.button === 1) {
       e.preventDefault(); // blocks the browser's middle-click autoscroll
@@ -1447,7 +1486,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (!id) {
       // trade lines (SL/TP/pending entry) go before drawing bodies: they are
       // thin and would be unreachable under a large rect/fib otherwise
-      const tradeLine = tradingCap?.hitTestTradeLine(y);
+      const tradeLine = tradingCap?.hitTestTradeLine(x, y);
       if (tradeLine) {
         this.lineDrag = { id: tradeLine.id, target: tradeLine.target, field: tradeLine.field };
         window.addEventListener('mousemove', this.onMouseMoveDom);
@@ -1506,11 +1545,17 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const rect = this.container.nativeElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    // D19.A: the axis must not show a chart cursor (e.g. ns-resize on a trade
+    // line whose y happens to line up with a price on the axis strip).
+    if (!this.inPane(x, y)) {
+      this.container.nativeElement.style.cursor = '';
+      return;
+    }
     const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
     if (tradingCap?.hitTestDelete(x, y)) {
       this.container.nativeElement.style.cursor = 'pointer';
     } else {
-      const over = tradingCap?.hitTestTradeLine(y) ?? tradingCap?.hitTestEdge(x, y);
+      const over = tradingCap?.hitTestTradeLine(x, y) ?? tradingCap?.hitTestEdge(x, y);
       this.container.nativeElement.style.cursor = over ? 'ns-resize' : '';
     }
   }
