@@ -661,3 +661,70 @@ and vitest cascades parent hooks into nested describes, so the new block is cove
 | # | Decision | Rationale |
 | :--- | :--- | :--- |
 | **O5** | **Fix the Medium in place and re-audit, rather than shipping Task 5 as-is or dropping it.** The helper compares against the revealed instant `cursor + replayGrainSeconds`; scenario 2 reverts to a production-faithful cursor; the matrix gains the finer-than-grain row; L1 and L2 fold into the same pass; and **RFC-019's D19.I / N19-4 prose is amended in the same commit** so the written invariant matches the code. | PHILOSOPHY §3.6: "parece terminado" is not a state. Shipping a false invariant is worse than shipping none — it teaches the next engineer the wrong rule and will be deleted the first time it fires a false positive. Amending the RFC text is a **correction of a defect in the spec's formalization discovered during implementation**, not a scope change: the RFC's *intent* (no lookahead reaches the render model) is untouched; only its arithmetic is corrected. Leaving §5/§6 asserting *"ninguna vela cuyo cierre exceda el cursor"* while the helper checks something else would recreate the very divergence one layer up. Surfaced to the owner in the PR as a spec amendment, not buried. |
+
+---
+
+#### Task 5 fix — M1 closed (commit `cebd6bc`)
+
+Dispatched to an `sdd-implementer` with the audit's own probes as the brief. **Zero production
+files touched.**
+
+| Field | Value |
+| :--- | :--- |
+| Commit | `cebd6bc` |
+| Tests | 2051 → **2053** (+2); 165 spec files, unchanged |
+| Gates (orchestrator-verified, raw) | tsc app **EXIT 0**, tsc spec **EXIT 0**, lint **EXIT 0**, `ng test` **EXIT 0** — `Test Files 165 passed (165)`, `Tests 2053 passed (2053)` |
+| Scope touched | `components/chart/lookahead-invariants.spec-util.ts`, `…/chart-model-mapper.service.spec.ts`, `docs/architecture/rfcs/019-pane-guard-cross-tf-forming.md` — 3 files, zero production |
+
+**What changed:** the helper now compares candle closes against the **revealed instant**
+`cursor + replayGrainSeconds` (new 6th parameter) instead of the raw cursor; the forming clause
+stays at `forming.time > cursor` (already correct); scenario 2 reverts to the cursor
+`advanceCandle` actually sets (`600`, an open) and the misleading comment is gone; a
+finer-than-grain scenario (RFC §4.3 row 3) was added — the row whose absence let the second
+falsification through; the forming-clause violation branch gained its unit case (audit L1); and
+scenario 6 is now `toBe(dummyGlobalView)` (audit L2). RFC D19.I, the N19-4 row in §6, and a new
+**V9** row in §7 were amended in the same commit so spec prose and code agree.
+
+**The fix does not blunt the checker.** Re-verified against the pre-RFC shape:
+
+```
+lookahead: candles[1] opens at 3600 and closes at 7200, which is AFTER the revealed
+instant (4500 = cursor 4200 + replay grain 300); activeSeconds=3600
+```
+
+**The implementer re-derived the cursor semantics independently** rather than accepting the
+brief's summary — `advance$:49`, `jumpBack$:147`, `foldForwardFills:108/193`,
+`ReplayState.currentTime`'s doc, `lastIndexAtOrBefore`'s contract and `renderWindow`'s inclusive
+slice — and reported **no disagreement**, including re-deriving the three-row algebra.
+
+**Orchestrator mechanical diff-scan (`89b4808..cebd6bc`):** 3 files, zero production; `+3 it(`
+/ `-1 it(` = net +2, matching 2051 → 2053 exactly; the single removed `it(` is the scenario-2
+title being reworded **inside Task 5's own block** (authorized — it is this task's code under an
+audit finding); every hunk sits at line 887+, i.e. **entirely below Task 2's specs**, so Task 2's
+scenarios 1–9 and its R7 rewind spec are untouched (STOP rule intact); kernel inv. 7 grep zero;
+`package.json`/`package-lock.json` diff vs `0e66392` empty.
+
+**Deviations (all inert):** the new finer-than-grain scenario is numbered "2b" rather than
+renumbering the block — following the audit's own L3 ruling that this block's local numbering
+may have gaps rather than re-touch untouched scenarios; the signature gained a 6th positional
+parameter exactly as briefed; the forming-clause test uses `candles: []` / `idx: -1` so the
+candle loop is a structural no-op and the forming clause is isolated cleanly.
+
+---
+
+#### Docs pass (branch finalization)
+
+| Change | File |
+| :--- | :--- |
+| New **"Post-Infrastructure Refinements"** bridge section registering RFC-017/018/019 together, between the "Fases de Evolución" and "Mastery Block" tables (owner decision **O3**) | `docs/architecture/ROADMAP.md` |
+| Bundle figure `~609 kB` → **`648 kB`** (owner decision **O4**; protected path, explicitly authorized) | `CLAUDE.md` |
+| D19.I / N19-4 amended, **V9** row added (part of the M1 fix commit) | `docs/architecture/rfcs/019-pane-guard-cross-tf-forming.md` |
+
+The stale "~609 kB" also appears in this run's plan (§5 DoD) and the two orchestration prompts.
+**Left as-is deliberately:** those are frozen run artifacts and rewriting them mid-run would
+muddy the audit trail. Only the kernel doc, which future sessions actually read as authority,
+was corrected.
+
+| # | Decision | Rationale |
+| :--- | :--- | :--- |
+| **O6** | **The Task 5 re-audit is folded into the whole-branch Opus audit** rather than dispatched as a separate targeted re-audit, with M1 carried as that audit's **lead attention item**. | `sdd-orchestration.md` requires a re-audit after a failed audit; it does not require a *separate dispatch*. The whole-branch auditor re-runs every gate personally and reads attention-flagged diffs line by line, so it is a **strictly stronger** check than a targeted re-audit of the same three files, and it is the PR gate regardless. Recorded here because a review-shape change is a decision, never an improvisation (PHILOSOPHY §5.2). If the whole-branch audit re-raises M1, the run fixes and re-audits exactly as it did the first time. |
