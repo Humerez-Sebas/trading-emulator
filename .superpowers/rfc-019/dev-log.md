@@ -139,3 +139,53 @@ trusted), and runs Wave 1.
 **Ledger note:** the run ledger proper is `.superpowers/sdd/progress.md` (git-tracked) per
 `sdd-orchestration.md`. This file holds RFC-019's design rationale and deviation record;
 the orchestrator writes run mechanics there.
+
+> **Superseded at run start (2026-07-27) — see §8.2 decision O1.** The run ledger for
+> RFC-019 lives in **§8 of this file**, not in `.superpowers/sdd/progress.md`, following
+> the RFC-018 precedent (`.superpowers/rfc-018/dev-log.md` §8). `progress.md` still holds
+> the RFC-017 ledger and is not clobbered.
+
+---
+
+## 8. Implementation run — ledger
+
+### 8.0 Run header
+
+| Field | Value |
+| :--- | :--- |
+| **RFC** | `docs/architecture/rfcs/019-pane-guard-cross-tf-forming.md` (D19.A–J, N19-1..5) |
+| **Plan** | `docs/superpowers/plans/2026-07-27-rfc-019-implementation-plan.md` (5 tasks; §0 corrections C1–C6 are binding over the RFC's prose) |
+| **Orchestration prompt** | `docs/superpowers/plans/2026-07-27-rfc-019-sdd-prompt.md` |
+| **Branch** | `feature/rfc-019-pane-guard-cross-tf-forming` @ design commit `fbf02a9` |
+| **Base** | `develop` @ `0e66392` (RFC-018 merge, PR #46) |
+| **PR target** | **`develop`** — architectural/RFC track. Never an individual RFC to `main` (`CLAUDE.md` §Git). |
+| **Run mode** (`decision-frameworks.md` §8) | **TIERED with batched review.** Tasks 1/3/4 → **Batch A** (one `branch-auditor` dispatch post-Wave 1, a second post-Wave 3 for Task 5). Task 2 → **Batch B**, individual audit, **PASS gates Wave 3**. ONE whole-branch Opus audit gates the PR. |
+| **Implementer** | `sdd-implementer` subagent, one brief each, TDD, pathspec commits |
+| **Auditor** | `branch-auditor` subagent (Opus) — re-runs all gates personally |
+| **Wave structure** | W1 = T1‖T3‖T4 (parallel, separate worktrees, disjoint file sets) → W2 = T2 (sequential) → W3 = T5 (sequential) |
+
+### 8.1 Baseline — orchestrator-run, fresh raw output, 2026-07-27
+
+Run from `emulador/` on a **clean tree** at HEAD `fbf02a9`, each gate raw and unpiped, exit
+status read directly. This is the arithmetic origin for every task's test-count progression.
+
+| Gate | Command | Result |
+| :--- | :--- | :--- |
+| tsc app | `npx tsc -p tsconfig.app.json --noEmit` | **EXIT 0**, no output |
+| tsc spec | `npx tsc -p tsconfig.spec.json --noEmit` | **EXIT 0**, no output |
+| lint | `npm run lint` | **EXIT 0** — "All files pass linting." |
+| tests | `npx ng test --watch=false` | **EXIT 0** — `Test Files 161 passed (161)`, `Tests 1989 passed (1989)` |
+
+**The expected-baseline claim (1989) is confirmed by measurement.** No discrepancy to
+record. Progression origin: **161 files / 1989 tests**.
+
+### 8.2 Run decisions (orchestrator)
+
+| # | Decision | Rationale |
+| :--- | :--- | :--- |
+| **O1** | RFC-019's run ledger lives in **§8 of this dev log**, not `.superpowers/sdd/progress.md`. §7's note above is superseded. | RFC-018 established this layout one run earlier (`.superpowers/rfc-018/dev-log.md` §8) and `progress.md` still carries the RFC-017 ledger; appending a second RFC's run mechanics there would bury both. Design rationale and run mechanics for one RFC belong in one tracked file. |
+| **O2** | Wave-1 worktrees get their **own `npm ci`**, not a junction/symlink to the primary `node_modules`. | Three concurrent `ng test` runs sharing one `node_modules/.vite` is exactly the optimizeDeps race `docs/engineering/testing.md` documents as the source of order/cache-dependent flakes. A false red would send an implementer debugging a phantom. Disk cost is affordable (122 GB free). `npm ci` never rewrites `package-lock.json`, so the npm 11.x prune hazard does not apply — no `npm install` is run in any worktree. |
+
+### 8.3 Task log
+
+_(entries appended per task)_
