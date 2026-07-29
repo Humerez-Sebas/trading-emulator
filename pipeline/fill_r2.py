@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Pipeline completo MT5 -> Parquet -> Cloudflare R2 para una lista de simbolos.
 
@@ -25,14 +24,14 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # pipeline/ en el path para importar los modulos hermanos.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import mt5_common  # noqa: E402
-import parquet_builder  # noqa: E402
-import r2_uploader  # noqa: E402
+import mt5_common
+import parquet_builder
+import r2_uploader
 
 
 def load_dotenv(path: str) -> None:
@@ -85,11 +84,11 @@ def main() -> None:
     if not symbols:
         raise SystemExit("Indica al menos un simbolo en --symbols")
 
-    desde = datetime.fromisoformat(args.desde).replace(tzinfo=timezone.utc)
+    desde = datetime.fromisoformat(args.desde).replace(tzinfo=UTC)
     hasta = mt5_common.aplicar_margen_servidor(
-        datetime.fromisoformat(args.hasta).replace(tzinfo=timezone.utc)
+        datetime.fromisoformat(args.hasta).replace(tzinfo=UTC)
         if args.hasta
-        else datetime.now(tz=timezone.utc),
+        else datetime.now(tz=UTC),
         args.margen_horas,
     )
     print(

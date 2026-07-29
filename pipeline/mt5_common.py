@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Logica MT5 compartida usada por el pipeline (`pipeline/parquet_builder.py` y
 `pipeline/update_r2.py`). Solo funciona en Windows con la terminal MetaTrader 5
@@ -13,7 +12,7 @@ convencion con la que ya esta escrito todo lo que hay en R2.
 
 import logging
 import time as _time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import MetaTrader5 as mt5
 import numpy as np
@@ -225,8 +224,8 @@ def iter_rango_troceado(
         limite = min(ultima_terminal, int(hasta.timestamp()))
         faltan = limite - ultimo_emitido
         if faltan > tolerancia_horas * 3600:
-            fin = datetime.fromtimestamp(ultimo_emitido, timezone.utc)
-            tope = datetime.fromtimestamp(limite, timezone.utc)
+            fin = datetime.fromtimestamp(ultimo_emitido, UTC)
+            tope = datetime.fromtimestamp(limite, UTC)
             raise HistorialTruncado(
                 f"{symbol}: la cosecha termina en {fin:%Y-%m-%d %H:%M} pero la terminal "
                 f"ya tiene velas hasta {tope:%Y-%m-%d %H:%M} (hora del servidor). "
@@ -242,8 +241,8 @@ def iter_rango_troceado(
                 "Probablemente la terminal aun estaba sincronizando; el proximo pase lo completa.",
                 symbol,
                 faltan // 60,
-                datetime.fromtimestamp(ultimo_emitido, timezone.utc).strftime("%Y-%m-%d %H:%M"),
-                datetime.fromtimestamp(limite, timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                datetime.fromtimestamp(ultimo_emitido, UTC).strftime("%Y-%m-%d %H:%M"),
+                datetime.fromtimestamp(limite, UTC).strftime("%Y-%m-%d %H:%M"),
             )
 
 

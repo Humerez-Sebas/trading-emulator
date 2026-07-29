@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests de logica pura para manifest.py.
 
 No requieren boto3 ni red; trabajan solo con registros sinteticos.
@@ -6,13 +5,12 @@ No requieren boto3 ni red; trabajan solo con registros sinteticos.
 
 import os
 import sys
-from datetime import timezone
+from datetime import UTC
 
 # manifest.py vive como modulo plano en pipeline/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import manifest  # noqa: E402
-
+import manifest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -31,7 +29,7 @@ def _make_record(
         "partition": partition,
         "size": size,
         "etag": etag,
-        "updated_at": datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 6, 18, 12, 0, 0, tzinfo=UTC),
     }
 
 
@@ -96,7 +94,8 @@ class TestBuildManifest:
         # Debe ser parseable como ISO-8601
         from datetime import datetime
 
-        dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        # fromisoformat entiende el sufijo Z directamente desde Python 3.11.
+        dt = datetime.fromisoformat(updated_at)
         assert dt.tzinfo is not None
 
     def test_multiples_simbolos_y_tfs(self):
@@ -132,7 +131,7 @@ class TestBuildManifest:
         """updatedAt debe reflejar el valor del campo updated_at del registro."""
         from datetime import datetime
 
-        dt_especifico = datetime(2025, 3, 15, 8, 30, 45, tzinfo=timezone.utc)
+        dt_especifico = datetime(2025, 3, 15, 8, 30, 45, tzinfo=UTC)
         records = [
             {
                 "symbol": "XAUUSD",

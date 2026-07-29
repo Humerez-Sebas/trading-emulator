@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests de mt5_common.py contra la terminal simulada de conftest.py.
 
 Cubren el defecto de TRUNCADO SILENCIOSO: para un simbolo que no esta visible en
@@ -10,22 +9,23 @@ actual, y `fill_r2.py` habria subido ese historial truncado a R2.
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import mt5_common  # noqa: E402
-from conftest import minutos  # noqa: E402
+from conftest import minutos
+
+import mt5_common
 
 
 def _epoch(dt_str: str) -> int:
-    return int(datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc).timestamp())
+    return int(datetime.fromisoformat(dt_str).replace(tzinfo=UTC).timestamp())
 
 
 def _dt(dt_str: str) -> datetime:
-    return datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(dt_str).replace(tzinfo=UTC)
 
 
 UN_DIA = 1440  # velas M1 en 24 h

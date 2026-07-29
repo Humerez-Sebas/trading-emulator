@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Doble de prueba de la libreria MetaTrader5.
 
 `mt5_common` importa MetaTrader5 en el nivel de modulo, asi que sin este doble
@@ -104,7 +103,7 @@ class FakeMT5(types.ModuleType):
         return self.cache.get(symbol, barras([]))
 
     # -- API que consume mt5_common ----------------------------------------
-    def initialize(self, *a, **k) -> bool:  # noqa: ARG002
+    def initialize(self, *a, **k) -> bool:
         self.llamadas.append(("initialize",))
         return True
 
@@ -127,7 +126,7 @@ class FakeMT5(types.ModuleType):
         self.visible[symbol] = enable
         return True
 
-    def copy_rates_from_pos(self, symbol: str, tf, start: int, count: int):  # noqa: ARG002
+    def copy_rates_from_pos(self, symbol: str, tf, start: int, count: int):
         self.llamadas.append(("copy_rates_from_pos", symbol))
         if self.from_pos_vacios > 0:
             self.from_pos_vacios -= 1
@@ -139,7 +138,7 @@ class FakeMT5(types.ModuleType):
             return barras([])
         return disponibles[-count:]
 
-    def copy_rates_range(self, symbol: str, tf, desde, hasta):  # noqa: ARG002
+    def copy_rates_range(self, symbol: str, tf, desde, hasta):
         self.llamadas.append(("copy_rates_range", symbol, desde, hasta))
         if self.rango_devuelve_none:
             return None

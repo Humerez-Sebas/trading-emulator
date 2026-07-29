@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Uploader de Parquet a Cloudflare R2 y generador de manifest.json.
 
@@ -19,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -201,7 +200,7 @@ def upload_parquet_tree(
             response = client.put_object(Bucket=bucket, Key=key, Body=fh)
 
         etag: str = response.get("ETag", "").strip('"')
-        uploaded_at = datetime.now(tz=timezone.utc)
+        uploaded_at = datetime.now(tz=UTC)
 
         records.append(
             {
@@ -313,7 +312,7 @@ def _dry_run(out_dir: str) -> None:
                 "size": entrada["size"],
                 # Placeholder: no hay subida real, el ETag no esta disponible.
                 "etag": "dry-run-etag",
-                "updated_at": datetime.now(tz=timezone.utc),
+                "updated_at": datetime.now(tz=UTC),
             }
         )
 

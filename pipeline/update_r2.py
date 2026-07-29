@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Actualizacion INCREMENTAL de las velas en R2 (MT5 -> Parquet -> R2).
 
@@ -34,7 +33,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -44,10 +43,10 @@ import pyarrow.parquet as pq
 # pipeline/ en el path para importar los modulos hermanos.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import fill_r2  # noqa: E402
-import manifest as manifest_mod  # noqa: E402
-import parquet_builder  # noqa: E402
-import r2_uploader  # noqa: E402
+import fill_r2
+import manifest as manifest_mod
+import parquet_builder
+import r2_uploader
 
 logger = logging.getLogger("update_r2")
 
@@ -84,7 +83,7 @@ def inicio_de_dia_utc(epoch_s: int) -> datetime:
     es el inicio del dia del servidor: exactamente donde empiezan los buckets D1
     que ya estan guardados, que es lo que hace seguro cortar aqui.
     """
-    dt = datetime.fromtimestamp(epoch_s, tz=timezone.utc)
+    dt = datetime.fromtimestamp(epoch_s, tz=UTC)
     return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
@@ -99,7 +98,7 @@ def leer_parquet_r2(client: Any, bucket: str, key: str) -> pd.DataFrame | None:
         cuerpo = client.get_object(Bucket=bucket, Key=key)["Body"].read()
     except client.exceptions.NoSuchKey:
         return None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if "NoSuchKey" in type(exc).__name__ or "404" in str(exc):
             return None
         raise
@@ -126,9 +125,9 @@ def cosechar_m1(symbol: str, desde: datetime, hasta: datetime) -> pd.DataFrame:
     Observador de Mercado) y la verificacion de cobertura los hace
     `mt5_common.copiar_rango_troceado`.
     """
-    import MetaTrader5 as mt5  # noqa: PLC0415
+    import MetaTrader5 as mt5
 
-    from mt5_common import (  # noqa: PLC0415
+    from mt5_common import (
         TIMEFRAMES,
         conectar,
         copiar_rango_troceado,
@@ -192,8 +191,8 @@ def actualizar_simbolo(
 
     ultima_m1 = max(int(df["time"].max()) for df in m1_por_anio.values())
     corte = int(inicio_de_dia_utc(ultima_m1).timestamp())
-    resumen["ultima_previa"] = datetime.fromtimestamp(ultima_m1, timezone.utc)
-    resumen["desde"] = datetime.fromtimestamp(corte, timezone.utc)
+    resumen["ultima_previa"] = datetime.fromtimestamp(ultima_m1, UTC)
+    resumen["desde"] = datetime.fromtimestamp(corte, UTC)
 
     if ultima_m1 >= int(hasta.timestamp()):
         resumen["sin_cambios"] = True
@@ -203,7 +202,7 @@ def actualizar_simbolo(
     nuevas = cosechar_m1(symbol, resumen["desde"], hasta)
     nuevas = nuevas[nuevas["time"] >= corte]
     resumen["nuevas_m1"] = int((nuevas["time"] > ultima_m1).sum())
-    resumen["ultima_nueva"] = datetime.fromtimestamp(int(nuevas["time"].max()), timezone.utc)
+    resumen["ultima_nueva"] = datetime.fromtimestamp(int(nuevas["time"].max()), UTC)
 
     # -- 3) M1: fusion por particion de anio ---------------------------------
     anios_nuevos = sorted(pd.to_datetime(nuevas["time"], unit="s", utc=True).dt.year.unique())
@@ -295,7 +294,7 @@ def parchear_manifest(
 
 
 def main() -> None:
-    import mt5_common  # noqa: PLC0415
+    import mt5_common
 
     parser = argparse.ArgumentParser(description="Actualizacion incremental de velas en R2")
     parser.add_argument(
@@ -331,9 +330,9 @@ def main() -> None:
     client = r2_uploader.build_r2_client(config)
 
     hasta = mt5_common.aplicar_margen_servidor(
-        datetime.fromisoformat(args.hasta).replace(tzinfo=timezone.utc)
+        datetime.fromisoformat(args.hasta).replace(tzinfo=UTC)
         if args.hasta
-        else datetime.now(tz=timezone.utc),
+        else datetime.now(tz=UTC),
         args.margen_horas,
     )
     symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
