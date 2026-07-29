@@ -91,6 +91,29 @@ def resample_anchors(df_m1: pd.DataFrame) -> dict[str, pd.DataFrame]:
     }
 
 
+def descartar_vela_en_formacion(
+    df_m1: pd.DataFrame,
+    inicio_en_formacion: int | None,
+) -> pd.DataFrame:
+    """Quita del M1 la vela del minuto en curso (y cualquiera posterior).
+
+    Parametros
+    ----------
+    df_m1:
+        DataFrame M1 con columna ``time`` (epoch segundos, hora del servidor).
+    inicio_en_formacion:
+        Epoch del minuto que todavia se esta formando, tal y como lo devuelve
+        ``mt5_common.ultimo_minuto_cerrado``. Si es None (sin tick disponible)
+        el frame se devuelve intacto.
+
+    Una vela a medio formar no solo se guarda incompleta: al remuestrear
+    contamina tambien la H1 y la D1 que la contienen.
+    """
+    if inicio_en_formacion is None or df_m1.empty:
+        return df_m1.reset_index(drop=True)
+    return df_m1[df_m1["time"] < inicio_en_formacion].reset_index(drop=True)
+
+
 def write_anchors(
     anchors: dict[str, pd.DataFrame],
     symbol: str,
@@ -168,7 +191,12 @@ def harvest_to_parquet(
     if _dir not in _sys.path:
         _sys.path.insert(0, _dir)
 
-    from mt5_common import TIMEFRAMES, conectar, copiar_rango_troceado  # noqa: PLC0415
+    from mt5_common import (  # noqa: PLC0415
+        TIMEFRAMES,
+        conectar,
+        copiar_rango_troceado,
+        ultimo_minuto_cerrado,
+    )
 
     if not conectar():
         import MetaTrader5 as mt5  # noqa: PLC0415
@@ -188,6 +216,9 @@ def harvest_to_parquet(
             "close": rates["close"].astype("float64"),
         }
     )
+    df_m1 = descartar_vela_en_formacion(df_m1, ultimo_minuto_cerrado(symbol))
+    if df_m1.empty:
+        raise RuntimeError(f"Sin velas M1 cerradas para {symbol}")
 
     anchors = resample_anchors(df_m1)
     return write_anchors(anchors, symbol, out_dir)
