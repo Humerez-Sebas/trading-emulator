@@ -133,7 +133,11 @@ export class DataOnboardingService {
     worker: IngestWorker,
   ): Promise<void> {
     if (payload.existing) {
-      await this.db.clearDatasetCandles(payload.record.symbol, payload.timeframe);
+      await this.db.clearDatasetCandles(
+        payload.record.symbol,
+        payload.timeframe,
+        payload.record.year,
+      );
     }
     await this.ingestOn(worker, payload.buffer, payload.record.symbol, payload.timeframe);
     await this.db.putDataset(payload.record);

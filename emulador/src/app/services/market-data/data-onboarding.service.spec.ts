@@ -174,11 +174,32 @@ describe('DataOnboardingService.runJob', () => {
     const result = await svc.runJob(MANIFEST, M1_JOB, worker as never);
 
     expect(result).toBe('ingested');
-    // candles cleared before re-ingest to avoid duplicate rows
-    expect(db.clearDatasetCandles).toHaveBeenCalledWith('XAUUSD', 'M1');
+    // Candles cleared before re-ingest to avoid duplicate rows — but ONLY the
+    // partition being re-ingested: an unscoped clear wiped the sibling years,
+    // which kept a current etag and were therefore never re-downloaded.
+    expect(db.clearDatasetCandles).toHaveBeenCalledWith('XAUUSD', 'M1', '2024');
     expect(download).toHaveBeenCalledOnce();
     expect(worker.posted).toHaveLength(1);
     expect(db._store.get('XAUUSD|M1|2024')!.etag).toBe('e2024');
+  });
+
+  it('scopes the pre-ingest clear with the "all" sentinel for h1/d1', async () => {
+    const db = dbStub([
+      {
+        id: 'XAUUSD|H1|all',
+        symbol: 'XAUUSD',
+        timeframe: 'H1',
+        year: 'all',
+        size: 10,
+        etag: 'OLD-etag',
+        updatedAt: '2025-01-01T00:00:00Z',
+      },
+    ]);
+    const { svc, worker } = makeService({ db });
+
+    await svc.runJob(MANIFEST, { symbol: 'XAUUSD', tf: 'h1', year: 'all' }, worker as never);
+
+    expect(db.clearDatasetCandles).toHaveBeenCalledWith('XAUUSD', 'H1', 'all');
   });
 
   it('does NOT clear candles on a first-time ingest (no prior dataset)', async () => {

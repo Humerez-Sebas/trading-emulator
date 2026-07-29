@@ -556,3 +556,66 @@ describe('WorkspaceDbService — clearDatasetCandles (re-ingestion dedup)', () =
     expect(await countCandlesFor('XAUUSD', 'M15')).toBe(1);
   });
 });
+
+describe('WorkspaceDbService — clearDatasetCandles (partition scope)', () => {
+  const at = (iso: string): number => Math.floor(Date.parse(iso) / 1000);
+
+  const bar = (symbol: string, timeframe: string, iso: string): Omit<CandleRecord, 'id'> => ({
+    symbol,
+    timeframe,
+    time: at(iso),
+    open: 1,
+    high: 1,
+    low: 1,
+    close: 1,
+  });
+
+  async function timesFor(symbol: string, timeframe: string): Promise<number[]> {
+    return (await svc.listCandles(symbol, timeframe)).map((c) => c.time);
+  }
+
+  it('clears ONLY the requested year, leaving the sibling m1 years intact', async () => {
+    // Regression: updating one m1 partition wiped every year of that symbol+tf.
+    // The sibling years kept a matching etag in `datasets`, so they were never
+    // re-ingested and their candles were silently lost.
+    await seedCandles([
+      bar('US30', 'M1', '2024-06-01T00:00:00Z'),
+      bar('US30', 'M1', '2025-06-01T00:00:00Z'),
+      bar('US30', 'M1', '2026-06-01T00:00:00Z'),
+    ]);
+
+    await svc.clearDatasetCandles('US30', 'M1', '2026');
+
+    expect(await timesFor('US30', 'M1')).toEqual([
+      at('2024-06-01T00:00:00Z'),
+      at('2025-06-01T00:00:00Z'),
+    ]);
+  });
+
+  it('treats the year bounds as inclusive without touching the neighbours', async () => {
+    await seedCandles([
+      bar('US30', 'M1', '2025-12-31T23:59:00Z'),
+      bar('US30', 'M1', '2026-01-01T00:00:00Z'),
+      bar('US30', 'M1', '2026-12-31T23:59:00Z'),
+      bar('US30', 'M1', '2027-01-01T00:00:00Z'),
+    ]);
+
+    await svc.clearDatasetCandles('US30', 'M1', '2026');
+
+    expect(await timesFor('US30', 'M1')).toEqual([
+      at('2025-12-31T23:59:00Z'),
+      at('2027-01-01T00:00:00Z'),
+    ]);
+  });
+
+  it('clears the whole series for an "all" partition (h1/d1 are not year-split)', async () => {
+    await seedCandles([
+      bar('US30', 'H1', '2024-06-01T00:00:00Z'),
+      bar('US30', 'H1', '2026-06-01T00:00:00Z'),
+    ]);
+
+    await svc.clearDatasetCandles('US30', 'H1', 'all');
+
+    expect(await countCandlesFor('US30', 'H1')).toBe(0);
+  });
+});

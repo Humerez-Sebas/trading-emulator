@@ -42,11 +42,13 @@ export class StorageManagerService {
   }
 
   /**
-   * Removes a dataset entirely: its `datasets` row AND every candle of that
-   * (symbol, timeframe) in the `candles` store, reclaiming the space.
+   * Removes a dataset entirely: its `datasets` row AND the candles of THAT
+   * partition in the `candles` store, reclaiming the space. Scoped by year so
+   * deleting one M1 year leaves the symbol's other years usable — they share
+   * the store and stay listed as downloaded.
    */
   async deleteDataset(dataset: DatasetRecord): Promise<void> {
     await this.db.deleteDataset(dataset.id);
-    await this.db.clearDatasetCandles(dataset.symbol, dataset.timeframe);
+    await this.db.clearDatasetCandles(dataset.symbol, dataset.timeframe, dataset.year);
   }
 }
