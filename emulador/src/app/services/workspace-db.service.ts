@@ -3,6 +3,7 @@ import { Candle, Timeframe } from '../models';
 import { SessionFolder } from '../state/trading/trading.models';
 import { AssetMeta, Workspace, WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import {
+  ALL_PARTITION,
   CANDLES_BY_SYMBOL_TF_TIME,
   CANDLES_STORE,
   type CandleRecord,
@@ -16,6 +17,7 @@ import {
   META_STORE,
   SERIES_STORE,
   SYNC_STORE,
+  partitionTimeBounds,
 } from './market-data-db';
 
 // Schema constants and the CandleRecord/DatasetRecord row types are shared,
@@ -359,18 +361,29 @@ export class WorkspaceDbService {
   }
 
   /**
-   * Deletes every candle row for one (symbol, timeframe). The `candles` store
-   * has an auto-increment primary key and a NON-unique index, so re-ingesting a
-   * Parquet would otherwise DUPLICATE rows; the wizard clears the existing rows
-   * before a re-ingestion. Walks the compound index with a cursor and deletes
-   * each match by primary key (the bound exactly brackets this symbol+tf, so
-   * `'M1'` never matches `'M15'`).
+   * Deletes the candle rows of ONE partition of a (symbol, timeframe). The
+   * `candles` store has an auto-increment primary key and a NON-unique index,
+   * so re-ingesting a Parquet would otherwise DUPLICATE rows; the wizard clears
+   * the existing rows before a re-ingestion. Walks the compound index with a
+   * cursor and deletes each match by primary key (the bound exactly brackets
+   * this symbol+tf, so `'M1'` never matches `'M15'`).
+   *
+   * `year` narrows the deletion to that partition's UTC calendar year — M1 is
+   * split by year in R2, and the sibling years live in this same store. Without
+   * the narrowing, refreshing one year wiped the others, which then kept a
+   * current etag in `datasets` and were never re-ingested. Defaults to
+   * {@link ALL_PARTITION} (the whole series), which is what H1/D1 need.
    */
-  async clearDatasetCandles(symbol: string, timeframe: string): Promise<void> {
+  async clearDatasetCandles(
+    symbol: string,
+    timeframe: string,
+    year: string = ALL_PARTITION,
+  ): Promise<void> {
+    const { from, to } = partitionTimeBounds(year);
     const db = await this.open();
     const tx = db.transaction(CANDLES_STORE, 'readwrite');
     const index = tx.objectStore(CANDLES_STORE).index(CANDLES_BY_SYMBOL_TF_TIME);
-    const range = IDBKeyRange.bound([symbol, timeframe, -Infinity], [symbol, timeframe, +Infinity]);
+    const range = IDBKeyRange.bound([symbol, timeframe, from], [symbol, timeframe, to]);
     const cursorReq = index.openCursor(range);
     cursorReq.onsuccess = () => {
       const cursor = cursorReq.result;
