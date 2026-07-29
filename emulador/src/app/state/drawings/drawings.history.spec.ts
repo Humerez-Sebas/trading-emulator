@@ -33,7 +33,13 @@ function drawing(overrides: Partial<Drawing> = {}): Drawing {
 describe('drawings history: edge-rulings table', () => {
   it('row 1: undo add is dropped as stale after another panel moved the drawing; the drawing survives', () => {
     const d1 = drawing({ id: 'd1' });
-    const addCmd: DrawingCommand = { kind: 'add', drawingId: 'd1', before: null, after: d1, resultRev: 1 };
+    const addCmd: DrawingCommand = {
+      kind: 'add',
+      drawingId: 'd1',
+      before: null,
+      after: d1,
+      resultRev: 1,
+    };
     const s: DrawingsState = {
       ...initial(),
       entities: { d1 },
@@ -69,7 +75,13 @@ describe('drawings history: edge-rulings table', () => {
 
   it('row 3: undo delete applies when the id no longer exists, restoring `before` verbatim; revision continues', () => {
     const before = drawing({ id: 'd1', owner: { type: 'panel', id: 'panel-1' } });
-    const deleteCmd: DrawingCommand = { kind: 'delete', drawingId: 'd1', before, after: null, resultRev: 2 };
+    const deleteCmd: DrawingCommand = {
+      kind: 'delete',
+      drawingId: 'd1',
+      before,
+      after: null,
+      resultRev: 2,
+    };
     const s: DrawingsState = {
       ...initial(),
       entities: {},
@@ -131,9 +143,12 @@ describe('drawings history: edge-rulings table', () => {
     expect(next.entities['d1']).toEqual(before); // applies regardless of current composition
   });
 
-  it('row 6: a fresh command from the panel clears that panel\'s redo stack', () => {
+  it("row 6: a fresh command from the panel clears that panel's redo stack", () => {
     let state = initial();
-    state = reducer(state, DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }));
+    state = reducer(
+      state,
+      DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }),
+    );
     state = reducer(state, DrawingsActions.undo({ panelId: 'panel-1' })); // populates redo
     expect(state.history['panel-1'].redo).toHaveLength(1);
 
@@ -179,7 +194,8 @@ describe('drawings history: edge-rulings table', () => {
       DrawingsActions.undo({ panelId: 'panel-2' }),
     ];
 
-    const replay = () => sequence.reduce((s: DrawingsState, action) => reducer(s, action), initial());
+    const replay = () =>
+      sequence.reduce((s: DrawingsState, action) => reducer(s, action), initial());
 
     expect(replay()).toEqual(replay());
   });
@@ -217,7 +233,10 @@ describe('drawings history: panel scoping', () => {
 describe('drawings history: index and selection integrity', () => {
   it('an undo that recreates a deleted drawing restores it into entities and re-appends its id to ownerIndex', () => {
     let state = initial();
-    state = reducer(state, DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }));
+    state = reducer(
+      state,
+      DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }),
+    );
     state = reducer(state, DrawingsActions.deleteSelected({ panelId: 'panel-1' }));
     expect(state.entities['d1']).toBeUndefined();
     expect(state.ownerIndex['panel:panel-1']).toEqual([]);
@@ -230,7 +249,10 @@ describe('drawings history: index and selection integrity', () => {
 
   it('an undo that deletes (undoing an add) splices the index and clears selections pointing at it', () => {
     let state = initial();
-    state = reducer(state, DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }));
+    state = reducer(
+      state,
+      DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }),
+    );
     expect(state.selection['panel-1']).toBe('d1');
 
     const next = reducer(state, DrawingsActions.undo({ panelId: 'panel-1' }));
@@ -275,7 +297,10 @@ describe('drawings history: rejected mutations push nothing and bump nothing', (
 describe('drawings history: hydration resets', () => {
   it('restoreDrawings resets history and revisions to {}', () => {
     let state = initial();
-    state = reducer(state, DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }));
+    state = reducer(
+      state,
+      DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }),
+    );
     expect(Object.keys(state.history)).not.toHaveLength(0);
     expect(Object.keys(state.revisions)).not.toHaveLength(0);
 
@@ -287,7 +312,10 @@ describe('drawings history: hydration resets', () => {
 
   it('workspaceRestored resets history and revisions to {}', () => {
     let state = initial();
-    state = reducer(state, DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }));
+    state = reducer(
+      state,
+      DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }),
+    );
 
     const next = reducer(
       state,
@@ -302,7 +330,10 @@ describe('drawings history: hydration resets', () => {
 describe('drawings history: panel-close cascade drops history', () => {
   it("purgePanelIds (via removePanel) drops the closed panel's history entry, leaving other panels' untouched", () => {
     let state = initial();
-    state = reducer(state, DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }));
+    state = reducer(
+      state,
+      DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }),
+    );
     state = reducer(
       state,
       DrawingsActions.addDrawing({
@@ -321,7 +352,10 @@ describe('drawings history: panel-close cascade drops history', () => {
 
   it('purgePanelDrawings drops history for every purged panel', () => {
     let state = initial();
-    state = reducer(state, DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }));
+    state = reducer(
+      state,
+      DrawingsActions.addDrawing({ panelId: 'panel-1', drawing: drawing({ id: 'd1' }) }),
+    );
     state = reducer(
       state,
       DrawingsActions.addDrawing({
@@ -330,7 +364,10 @@ describe('drawings history: panel-close cascade drops history', () => {
       }),
     );
 
-    const next = reducer(state, DrawingsActions.purgePanelDrawings({ panelIds: ['panel-1', 'panel-2'] }));
+    const next = reducer(
+      state,
+      DrawingsActions.purgePanelDrawings({ panelIds: ['panel-1', 'panel-2'] }),
+    );
 
     expect('panel-1' in next.history).toBe(false);
     expect('panel-2' in next.history).toBe(false);

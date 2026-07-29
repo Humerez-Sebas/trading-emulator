@@ -105,7 +105,11 @@ function setup() {
 
 /** A stub `engine` whose `paneRect()` reports a pane narrower/shorter than the
  * container — the axis strip is [paneWidth, Infinity) x, [paneHeight, Infinity) y. */
-function stubEngine(paneWidth: number, paneHeight: number, overrides: Record<string, unknown> = {}) {
+function stubEngine(
+  paneWidth: number,
+  paneHeight: number,
+  overrides: Record<string, unknown> = {},
+) {
   return {
     paneRect: () => ({ width: paneWidth, height: paneHeight }),
     setInteractivity: vi.fn(),
@@ -157,7 +161,14 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
       component.chart = {};
       component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
       component.panelDrawings = {
-        items: [{ id: 'drawing-1', p1: { time: 0, price: 100 }, p2: { time: 10, price: 110 }, locked: false }],
+        items: [
+          {
+            id: 'drawing-1',
+            p1: { time: 0, price: 100 },
+            p2: { time: 10, price: 110 },
+            locked: false,
+          },
+        ],
         selectedId: null,
       };
 
@@ -186,7 +197,12 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
                 hitTestEdge: () => null,
               }
             : id === 'drawings'
-              ? { hitTestHandle: () => null, hitTestDrawing: () => null, timeForX: () => null, xForTime: () => 100 }
+              ? {
+                  hitTestHandle: () => null,
+                  hitTestDrawing: () => null,
+                  timeForX: () => null,
+                  xForTime: () => 100,
+                }
               : undefined,
       });
       component.engine = engine;
@@ -226,7 +242,14 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
     component.chart = {};
     component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
     component.panelDrawings = {
-      items: [{ id: 'drawing-1', p1: { time: 0, price: 100 }, p2: { time: 10, price: 110 }, locked: false }],
+      items: [
+        {
+          id: 'drawing-1',
+          p1: { time: 0, price: 100 },
+          p2: { time: 10, price: 110 },
+          locked: false,
+        },
+      ],
       selectedId: null,
     };
 

@@ -49,9 +49,7 @@ export function panelTracksPrimarySeries(
   descriptor: PanelDescriptor,
   primarySymbol: string | null,
 ): boolean {
-  return (
-    primarySymbol != null && effectivePanelSymbol(descriptor, primarySymbol) === primarySymbol
-  );
+  return primarySymbol != null && effectivePanelSymbol(descriptor, primarySymbol) === primarySymbol;
 }
 
 /**

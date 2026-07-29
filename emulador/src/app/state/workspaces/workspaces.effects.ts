@@ -108,7 +108,12 @@ function liftLegacyDrawings(
     if (owner == null) {
       changed = true;
       legacyOwnerPanelId ??= ownerPanelFor(symbol, layout, panels);
-      return liftLegacyDrawing(item as unknown as LegacyDrawingItem, symbol, legacyOwnerPanelId, index);
+      return liftLegacyDrawing(
+        item as unknown as LegacyDrawingItem,
+        symbol,
+        legacyOwnerPanelId,
+        index,
+      );
     }
     if (resolvableGroupIds && !isOwnerResolvable(owner, panels, resolvableGroupIds)) {
       changed = true;
@@ -257,7 +262,8 @@ export class WorkspacesEffects {
       const actions: Action[] = [WorkspacesActions.assetsLoaded({ assets, current })];
       if (current) {
         const ws = await this.db.getWorkspace(current);
-        if (ws) actions.push(WorkspacesActions.workspaceRestored({ workspace: withLiftedDrawings(ws) }));
+        if (ws)
+          actions.push(WorkspacesActions.workspaceRestored({ workspace: withLiftedDrawings(ws) }));
       }
       return actions;
     } catch {

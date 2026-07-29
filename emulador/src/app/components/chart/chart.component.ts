@@ -46,7 +46,12 @@ import {
 import { DialogService } from '../ui/dialog.service';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
-import { ClipboardEntry, Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
+import {
+  ClipboardEntry,
+  Drawing,
+  DrawingPoint,
+  DrawingType,
+} from '../../state/drawings/drawings.models';
 import { resolveDrawingTarget } from '../../state/drawings/drawing-ownership';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import { layoutFeature } from '../../state/layout/layout.reducer';
@@ -655,12 +660,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       );
 
     // drawings: this panel's composed layer, repainted whenever it changes
-    this.mapper.panelDrawings$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((view) => {
-        this.panelDrawings = view;
-        this.pushDrawings();
-      });
+    this.mapper.panelDrawings$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((view) => {
+      this.panelDrawings = view;
+      this.pushDrawings();
+    });
 
     // trade overlay: entry/SL/TP price lines + entry/exit markers
     this.mapper.tradeChartView$

@@ -137,7 +137,7 @@ describe('drawings reducer: selectDrawing steals selection', () => {
     expect(next.selection['panel-c']).toBe('y'); // untouched: a different drawing
   });
 
-  it('selecting null only clears that panel\'s own slot', () => {
+  it("selecting null only clears that panel's own slot", () => {
     const s = { ...initial(), selection: { 'panel-a': 'x', 'panel-b': 'y' } };
 
     const next = reducer(s, DrawingsActions.selectDrawing({ panelId: 'panel-a', id: null }));
@@ -226,7 +226,7 @@ describe('drawings reducer: setDrawingLocked / setDrawingVisible', () => {
 });
 
 describe('drawings reducer: group-deletion cascade', () => {
-  it('removeGroup deletes exactly that group\'s entities, drops the index key, leaves panel-owned entities and other groups untouched, and clears selections pointing at deleted ids', () => {
+  it("removeGroup deletes exactly that group's entities, drops the index key, leaves panel-owned entities and other groups untouched, and clears selections pointing at deleted ids", () => {
     const groupDrawing1 = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
     const groupDrawing2 = drawing({ id: 'g-d2', owner: { type: 'group', id: 'g1' } });
     const otherGroupDrawing = drawing({ id: 'g2-d1', owner: { type: 'group', id: 'g2' } });
@@ -307,7 +307,10 @@ describe('drawings reducer: hydration rebuild (restoreDrawings / workspaceRestor
 
   it('skips a record with no usable owner instead of throwing (last-line-of-defence guard on malformed input)', () => {
     const good = drawing({ id: 'd1', zIndex: 1, owner: { type: 'panel', id: 'panel-1' } });
-    const ownerless = { ...drawing({ id: 'd2', zIndex: 5 }), owner: undefined } as unknown as Drawing;
+    const ownerless = {
+      ...drawing({ id: 'd2', zIndex: 5 }),
+      owner: undefined,
+    } as unknown as Drawing;
 
     let next!: DrawingsState;
     expect(() => {
@@ -321,7 +324,7 @@ describe('drawings reducer: hydration rebuild (restoreDrawings / workspaceRestor
 });
 
 describe('drawings reducer: stale-selection invalidation on sync/link changes', () => {
-  it('turning syncDrawings off nulls every selection slot pointing at that group\'s drawings, leaving panel-owned selections untouched', () => {
+  it("turning syncDrawings off nulls every selection slot pointing at that group's drawings, leaving panel-owned selections untouched", () => {
     const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
     const panelDrawing = drawing({ id: 'p-d1', owner: { type: 'panel', id: 'panel-1' } });
     const s: DrawingsState = {
@@ -358,7 +361,7 @@ describe('drawings reducer: stale-selection invalidation on sync/link changes', 
     expect(next).toBe(s);
   });
 
-  it('unlinking a panel clears only that panel\'s group-owned selection', () => {
+  it("unlinking a panel clears only that panel's group-owned selection", () => {
     const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
     const panelDrawing = drawing({ id: 'p-d1', owner: { type: 'panel', id: 'panel-2' } });
     const s: DrawingsState = {
@@ -401,7 +404,7 @@ describe('drawings reducer: stale-selection invalidation on sync/link changes', 
     expect(next).toBe(s);
   });
 
-  it('turning hideSharedDrawings ON nulls the panel\'s selection when it points at a group-owned drawing', () => {
+  it("turning hideSharedDrawings ON nulls the panel's selection when it points at a group-owned drawing", () => {
     const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
     const s: DrawingsState = {
       ...initial(),
@@ -456,7 +459,7 @@ describe('drawings reducer: stale-selection invalidation on sync/link changes', 
 });
 
 describe('drawings reducer: panel-close cascade (removePanel / purgePanelDrawings)', () => {
-  it('removePanel deletes exactly that panel\'s owned entities, drops its index key and selection slot, leaves group-owned entities and other panels untouched', () => {
+  it("removePanel deletes exactly that panel's owned entities, drops its index key and selection slot, leaves group-owned entities and other panels untouched", () => {
     const ownDrawing = drawing({ id: 'p1-d1', owner: { type: 'panel', id: 'panel-1' } });
     const otherPanelDrawing = drawing({ id: 'p2-d1', owner: { type: 'panel', id: 'panel-2' } });
     const groupDrawing = drawing({ id: 'g-d1', owner: { type: 'group', id: 'g1' } });
@@ -523,7 +526,10 @@ describe('drawings reducer: panel-close cascade (removePanel / purgePanelDrawing
 
   it('purgePanelDrawings with ids that own nothing is a no-op returning state by identity', () => {
     const s = initial();
-    const next = reducer(s, DrawingsActions.purgePanelDrawings({ panelIds: ['ghost-1', 'ghost-2'] }));
+    const next = reducer(
+      s,
+      DrawingsActions.purgePanelDrawings({ panelIds: ['ghost-1', 'ghost-2'] }),
+    );
     expect(next).toBe(s);
   });
 });

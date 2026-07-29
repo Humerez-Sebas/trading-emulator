@@ -33,9 +33,9 @@ export const DrawingsActions = createActionGroup({
      */
     'Purge Panel Drawings': props<{ panelIds: string[] }>(),
     /** Pops that panel's undo stack; stale/locked guard decides whether it applies (see reducer). */
-    'Undo': props<{ panelId: string }>(),
+    Undo: props<{ panelId: string }>(),
     /** Pops that panel's redo stack; symmetric with `undo`. */
-    'Redo': props<{ panelId: string }>(),
+    Redo: props<{ panelId: string }>(),
     /** Captures {kind, p1, p2} from the panel's own selection. No-op when nothing (valid) is selected. */
     'Copy Selected': props<{ panelId: string }>(),
     /**

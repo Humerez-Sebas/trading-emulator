@@ -1,6 +1,12 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { DrawingsActions } from './drawings.actions';
-import { Drawing, DrawingCommand, DrawingsState, HISTORY_LIMIT, PanelHistory } from './drawings.models';
+import {
+  Drawing,
+  DrawingCommand,
+  DrawingsState,
+  HISTORY_LIMIT,
+  PanelHistory,
+} from './drawings.models';
 import { ownerKeyOf } from './drawing-ownership';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
 import { LinkGroupsActions } from '../link-groups/link-groups.actions';
@@ -265,10 +271,7 @@ function popAndApply(
  * reads what the recorded commands themselves still point at, in either
  * direction (`before` for a delete/move, `after` for an add/move).
  */
-function idsReferencingOwner(
-  history: Record<string, PanelHistory>,
-  ownerKey: string,
-): Set<string> {
+function idsReferencingOwner(history: Record<string, PanelHistory>, ownerKey: string): Set<string> {
   const ids = new Set<string>();
   for (const hist of Object.values(history)) {
     for (const command of [...hist.undo, ...hist.redo]) {
@@ -329,12 +332,18 @@ export const drawingsFeature = createFeature({
   name: 'drawings',
   reducer: createReducer(
     initialState,
-    on(DrawingsActions.pickTool, (state, { tool }): DrawingsState => ({ ...state, activeTool: tool })),
+    on(
+      DrawingsActions.pickTool,
+      (state, { tool }): DrawingsState => ({ ...state, activeTool: tool }),
+    ),
 
-    on(DrawingsActions.addDrawing, (state, { panelId, drawing }): DrawingsState => ({
-      ...applyNewDrawing(state, panelId, drawing),
-      activeTool: 'none', // hand-drawn creation returns to selection mode; paste does not
-    })),
+    on(
+      DrawingsActions.addDrawing,
+      (state, { panelId, drawing }): DrawingsState => ({
+        ...applyNewDrawing(state, panelId, drawing),
+        activeTool: 'none', // hand-drawn creation returns to selection mode; paste does not
+      }),
+    ),
 
     on(DrawingsActions.moveDrawing, (state, { panelId, id, p1, p2 }): DrawingsState => {
       const existing = state.entities[id];
@@ -496,18 +505,22 @@ export const drawingsFeature = createFeature({
     }),
 
     // closing a panel cascade-deletes its own drawings (group-owned ones survive); see purgePanelIds
-    on(LayoutActions.removePanel, (state, { panelId }): DrawingsState =>
-      purgePanelIds(state, [panelId]),
+    on(
+      LayoutActions.removePanel,
+      (state, { panelId }): DrawingsState => purgePanelIds(state, [panelId]),
     ),
-    on(DrawingsActions.purgePanelDrawings, (state, { panelIds }): DrawingsState =>
-      purgePanelIds(state, panelIds),
+    on(
+      DrawingsActions.purgePanelDrawings,
+      (state, { panelIds }): DrawingsState => purgePanelIds(state, panelIds),
     ),
 
-    on(DrawingsActions.undo, (state, { panelId }): DrawingsState =>
-      popAndApply(state, panelId, 'undo'),
+    on(
+      DrawingsActions.undo,
+      (state, { panelId }): DrawingsState => popAndApply(state, panelId, 'undo'),
     ),
-    on(DrawingsActions.redo, (state, { panelId }): DrawingsState =>
-      popAndApply(state, panelId, 'redo'),
+    on(
+      DrawingsActions.redo,
+      (state, { panelId }): DrawingsState => popAndApply(state, panelId, 'redo'),
     ),
 
     // copy is geometry+kind only: no id/owner/locked/visible ever leaves via the clipboard

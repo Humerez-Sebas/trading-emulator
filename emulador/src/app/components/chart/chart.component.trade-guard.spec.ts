@@ -170,7 +170,16 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
       component.lineDrag = { id: 'p1', target: 'position', field: 'sl' };
       component.lastTradeView = {
         positions: [
-          { id: 'p1', side: 'buy', entryPrice: 100, sl: 90, tp: 110, lots: 1, openTime: 0, origin: 'market' },
+          {
+            id: 'p1',
+            side: 'buy',
+            entryPrice: 100,
+            sl: 90,
+            tp: 110,
+            lots: 1,
+            openTime: 0,
+            origin: 'market',
+          },
         ],
         orders: [],
       };
@@ -265,7 +274,16 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
       component.lineDrag = { id: 'p1', target: 'position', field: 'sl' };
       component.lastTradeView = {
         positions: [
-          { id: 'p1', side: 'buy', entryPrice: 100, sl: 90, tp: 110, lots: 1, openTime: 0, origin: 'market' },
+          {
+            id: 'p1',
+            side: 'buy',
+            entryPrice: 100,
+            sl: 90,
+            tp: 110,
+            lots: 1,
+            openTime: 0,
+            origin: 'market',
+          },
         ],
         orders: [],
       };

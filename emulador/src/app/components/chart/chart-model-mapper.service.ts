@@ -307,9 +307,18 @@ export class ChartModelMapper {
   } | null = null;
   private lastFormingOutput: Candle | null = null;
 
-  private resolveForming(series: Candle[] | null, bucketStart: number, cursor: number): Candle | null {
+  private resolveForming(
+    series: Candle[] | null,
+    bucketStart: number,
+    cursor: number,
+  ): Candle | null {
     const last = this.lastFormingInputs;
-    if (last && last.series === series && last.bucketStart === bucketStart && last.cursor === cursor) {
+    if (
+      last &&
+      last.series === series &&
+      last.bucketStart === bucketStart &&
+      last.cursor === cursor
+    ) {
       return this.lastFormingOutput;
     }
     this.lastFormingInputs = { series, bucketStart, cursor };
@@ -501,7 +510,12 @@ export class ChartModelMapper {
     history: ClosedTrade[],
   ): StateTradeMarker[] {
     const last = this.lastMarkerInputs;
-    if (last && last.candles === candles && last.positions === positions && last.history === history) {
+    if (
+      last &&
+      last.candles === candles &&
+      last.positions === positions &&
+      last.history === history
+    ) {
       return this.lastRawMarkers;
     }
     this.lastMarkerInputs = { candles, positions, history };
@@ -529,7 +543,12 @@ export class ChartModelMapper {
     history: ClosedTrade[],
   ): StateTradeBoxItem[] {
     const last = this.lastBoxInputs;
-    if (last && last.positions === positions && last.orders === orders && last.history === history) {
+    if (
+      last &&
+      last.positions === positions &&
+      last.orders === orders &&
+      last.history === history
+    ) {
       return this.lastRawBoxes;
     }
     this.lastBoxInputs = { positions, orders, history };
@@ -622,7 +641,9 @@ export class ChartModelMapper {
         ? {
             positions: this.mapPositions(positions) as Position[],
             orders: this.mapOrders(orders) as PendingOrder[],
-            markers: this.mapMarkers(this.resolveMarkers(candles, positions, history)) as TradeMarker[],
+            markers: this.mapMarkers(
+              this.resolveMarkers(candles, positions, history),
+            ) as TradeMarker[],
             boxes: boxesVisible
               ? (this.mapBoxes(this.resolveBoxes(positions, orders, history)) as TradeBoxItem[])
               : frozenEmptyArray<TradeBoxItem>(),
@@ -682,7 +703,14 @@ export class ChartModelMapper {
       ) {
         return this.lastDrawingsView!;
       }
-      this.lastDrawingsInputs = { descriptor, entities, ownerIndex, selection, groups, currentAsset };
+      this.lastDrawingsInputs = {
+        descriptor,
+        entities,
+        ownerIndex,
+        selection,
+        groups,
+        currentAsset,
+      };
       this.lastDrawingsView = composePanelDrawings(
         entities,
         ownerIndex,
