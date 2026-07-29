@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Pipeline completo MT5 -> Parquet -> Cloudflare R2 para una lista de simbolos.
 
@@ -25,13 +24,14 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # pipeline/ en el path para importar los modulos hermanos.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import parquet_builder  # noqa: E402
-import r2_uploader  # noqa: E402
+import mt5_common
+import parquet_builder
+import r2_uploader
 
 
 def load_dotenv(path: str) -> None:
@@ -59,6 +59,16 @@ def main() -> None:
     parser.add_argument("--out-dir", default="parquet_out", help="Directorio de Parquets locales")
     parser.add_argument("--env", default=None, help="Ruta a un .env con credenciales R2 (opcional)")
     parser.add_argument(
+        "--margen-horas",
+        type=float,
+        default=mt5_common.MARGEN_SERVIDOR_HORAS,
+        help=(
+            "Horas que se suman a --hasta. Las velas de MT5 llevan hora del "
+            "SERVIDOR del broker (+2 h en invierno, +3 h en verano); sin margen "
+            "cada corrida se corta ~3 h antes de la ultima vela disponible"
+        ),
+    )
+    parser.add_argument(
         "--skip-upload",
         action="store_true",
         help="Genera los Parquet pero NO sube a R2 (util para validar primero)",
@@ -74,11 +84,17 @@ def main() -> None:
     if not symbols:
         raise SystemExit("Indica al menos un simbolo en --symbols")
 
-    desde = datetime.fromisoformat(args.desde).replace(tzinfo=timezone.utc)
-    hasta = (
-        datetime.fromisoformat(args.hasta).replace(tzinfo=timezone.utc)
+    desde = datetime.fromisoformat(args.desde).replace(tzinfo=UTC)
+    hasta = mt5_common.aplicar_margen_servidor(
+        datetime.fromisoformat(args.hasta).replace(tzinfo=UTC)
         if args.hasta
-        else datetime.now(tz=timezone.utc)
+        else datetime.now(tz=UTC),
+        args.margen_horas,
+    )
+    print(
+        f"Rango pedido hasta {hasta:%Y-%m-%d %H:%M} "
+        f"(margen de {args.margen_horas:g} h por la hora del servidor)",
+        flush=True,
     )
 
     # 1) cosecha + parquet por simbolo

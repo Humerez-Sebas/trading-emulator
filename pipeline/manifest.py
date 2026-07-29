@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Generador de manifest.json para el bucket R2 (logica pura, sin red).
 
@@ -23,7 +22,7 @@ Esquema del manifest (version 1):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -33,7 +32,7 @@ def _format_updated_at(dt: datetime) -> str:
     Ejemplo: 2026-06-18T12:00:00Z
     """
     # Aseguramos que sea UTC y eliminamos microsegundos antes de formatear.
-    dt_utc = dt.astimezone(timezone.utc).replace(microsecond=0)
+    dt_utc = dt.astimezone(UTC).replace(microsecond=0)
     return dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

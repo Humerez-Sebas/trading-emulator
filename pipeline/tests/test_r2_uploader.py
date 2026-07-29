@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests de r2_uploader.py con cliente boto3 simulado (sin red real).
 
 El cliente boto3 es inyectable; aqui se usa un stub ligero que registra
@@ -8,7 +7,7 @@ las llamadas a put_object y devuelve ETags falsos.
 import json
 import os
 import sys
-from datetime import timezone
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,8 +17,7 @@ boto3 = pytest.importorskip("boto3")
 # r2_uploader y manifest viven como modulos planos en pipeline/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import r2_uploader  # noqa: E402
-
+import r2_uploader
 
 # ---------------------------------------------------------------------------
 # Stub de cliente S3/R2
@@ -173,7 +171,7 @@ class TestUploadParquetTree:
         records = r2_uploader.upload_parquet_tree(str(parquet_tree), "mi-bucket", fake_client)
         for rec in records:
             assert isinstance(rec["updated_at"], datetime)
-            assert rec["updated_at"].tzinfo == timezone.utc
+            assert rec["updated_at"].tzinfo == UTC
 
     def test_lanza_error_si_out_dir_no_existe(self, tmp_path, fake_client):
         """Debe lanzar FileNotFoundError si out_dir no existe."""
