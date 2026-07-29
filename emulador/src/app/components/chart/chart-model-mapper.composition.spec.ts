@@ -77,13 +77,7 @@ describe('ChartModelMapper.panelDrawings$ composition (RFC-017 pipeline)', () =>
 
   it('local-only: a panel composes its own drawings', () => {
     const own = drawing({ id: 'd1', owner: { type: 'panel', id: 'p1' } });
-    const mapper = mapperFor(
-      descriptor({ id: 'p1' }),
-      { d1: own },
-      { 'panel:p1': ['d1'] },
-      {},
-      {},
-    );
+    const mapper = mapperFor(descriptor({ id: 'p1' }), { d1: own }, { 'panel:p1': ['d1'] }, {}, {});
     expect(latest(mapper).items).toEqual([own]);
   });
 
@@ -127,7 +121,7 @@ describe('ChartModelMapper.panelDrawings$ composition (RFC-017 pipeline)', () =>
     expect(latest(mapper).items).toEqual([local]);
   });
 
-  it('sentinel symbol: a panel with symbol \'\' composes the active asset\'s drawings', () => {
+  it("sentinel symbol: a panel with symbol '' composes the active asset's drawings", () => {
     const eurusd = drawing({ id: 'd1', symbol: 'EURUSD', owner: { type: 'panel', id: 'p1' } });
     const mapper = mapperFor(
       descriptor({ id: 'p1', symbol: '' }),

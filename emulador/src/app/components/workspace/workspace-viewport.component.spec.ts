@@ -315,7 +315,7 @@ describe('WorkspaceViewportComponent', () => {
     expect(dispatch).toHaveBeenCalledWith(LayoutActions.closeTab({ tabId: 'tab-b' }));
   });
 
-  it('closing a tab that HAS panels also purges those panels\' drawings, dispatched before closeTab itself', () => {
+  it("closing a tab that HAS panels also purges those panels' drawings, dispatched before closeTab itself", () => {
     const fixture = create();
     const dispatch = vi.spyOn(store, 'dispatch');
     const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
@@ -339,7 +339,7 @@ describe('WorkspaceViewportComponent', () => {
     );
   });
 
-  it('the tab close affordance discloses that its panels\' own drawings close with it', () => {
+  it("the tab close affordance discloses that its panels' own drawings close with it", () => {
     const fixture = create();
     const closeButtons = fixture.nativeElement.querySelectorAll('.tab-bar .tab-close');
     expect((closeButtons[0] as HTMLElement).getAttribute('aria-label')).toContain(

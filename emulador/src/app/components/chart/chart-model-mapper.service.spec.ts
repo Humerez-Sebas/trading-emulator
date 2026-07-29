@@ -664,7 +664,11 @@ describe('ChartModelMapper', () => {
 
     it('scenario 2 — H1 panel, M5 replay grain: forming aggregated, idx decremented, forming.time === bucketStart', () => {
       const h1 = [candle(0), candle(3600), candle(7200)];
-      const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+      const m5 = [
+        candle(3600, 10, 12, 9, 11),
+        candle(3900, 11, 15, 10, 13),
+        candle(4200, 13, 14, 12, 13.5),
+      ];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
       store.overrideSelector(selectUtcOffset, 0);
@@ -733,7 +737,11 @@ describe('ChartModelMapper', () => {
 
     it('scenario 6 (C1 regression guard) — hideTrades:true panel, H1, M5 grain: forming STILL aggregated, idx STILL decremented (hideTrades must NOT suppress candle fidelity)', () => {
       const h1 = [candle(0), candle(3600), candle(7200)];
-      const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+      const m5 = [
+        candle(3600, 10, 12, 9, 11),
+        candle(3900, 11, 15, 10, 13),
+        candle(4200, 13, 14, 12, 13.5),
+      ];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
       store.overrideSelector(selectUtcOffset, 0);
@@ -774,7 +782,11 @@ describe('ChartModelMapper', () => {
 
     it('scenario 8 (D19.H memo) — an unrelated input change (utcOffset) leaves `forming` reference-IDENTICAL; a real cursor change gives a NEW reference (aggregateFormingCandle not re-run on the miss-free tick)', () => {
       const h1 = [candle(0), candle(3600), candle(7200)];
-      const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+      const m5 = [
+        candle(3600, 10, 12, 9, 11),
+        candle(3900, 11, 15, 10, 13),
+        candle(4200, 13, 14, 12, 13.5),
+      ];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
       store.overrideSelector(selectUtcOffset, 0);
@@ -842,7 +854,11 @@ describe('ChartModelMapper', () => {
       // recomputation from `bucketStart` every time — this spec proves that recomputation
       // actually happens and is content-correct, not just reference-different.
       const h1 = [candle(0), candle(3600), candle(7200)];
-      const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+      const m5 = [
+        candle(3600, 10, 12, 9, 11),
+        candle(3900, 11, 15, 10, 13),
+        candle(4200, 13, 14, 12, 13.5),
+      ];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectUtcOffset, 0);
       store.overrideSelector(selectReplayTfSeconds, 300);
@@ -889,7 +905,14 @@ describe('ChartModelMapper', () => {
         const activeSeconds = TIMEFRAME_SECONDS['H1']; // 3600
         const replayGrainSeconds = 300; // M5 replay grain — revealed instant = 4500
 
-        const message = lookaheadViolation(h1, preRfcIdx, null, cursor, activeSeconds, replayGrainSeconds);
+        const message = lookaheadViolation(
+          h1,
+          preRfcIdx,
+          null,
+          cursor,
+          activeSeconds,
+          replayGrainSeconds,
+        );
 
         // Proof this still catches the defect it exists for, EVEN under the corrected
         // (looser) revealed-instant bound: candles[1] closes at 7200, the revealed instant
@@ -919,7 +942,11 @@ describe('ChartModelMapper', () => {
 
       it('scenario 1 — H1 panel + M5 replay grain, mid-bucket: assertNoLookahead passes on the real chartView$ emission', () => {
         const h1 = [candle(0), candle(3600), candle(7200)];
-        const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+        const m5 = [
+          candle(3600, 10, 12, 9, 11),
+          candle(3900, 11, 15, 10, 13),
+          candle(4200, 13, 14, 12, 13.5),
+        ];
         store.overrideSelector(selectSeries, { H1: h1 });
         store.overrideSelector(selectCurrentTime, 4200);
         store.overrideSelector(selectUtcOffset, 0);
@@ -930,7 +957,14 @@ describe('ChartModelMapper', () => {
         const view = emit(descriptor({ symbol: 'US30', timeframe: 'H1' }));
 
         expect(() =>
-          assertNoLookahead(view.candles, view.idx, view.forming, 4200, TIMEFRAME_SECONDS['H1'], 300),
+          assertNoLookahead(
+            view.candles,
+            view.idx,
+            view.forming,
+            4200,
+            TIMEFRAME_SECONDS['H1'],
+            300,
+          ),
         ).not.toThrow();
       });
 
@@ -955,7 +989,14 @@ describe('ChartModelMapper', () => {
 
         expect(view.forming).toBeNull();
         expect(view.idx).toBe(2); // lastIndexAtOrBefore(m5, 600) — un-decremented, the pre-RFC shape
-        assertNoLookahead(view.candles, view.idx, view.forming, cursor, TIMEFRAME_SECONDS['M5'], 300);
+        assertNoLookahead(
+          view.candles,
+          view.idx,
+          view.forming,
+          cursor,
+          TIMEFRAME_SECONDS['M5'],
+          300,
+        );
       });
 
       it('scenario 2b (RFC §4.3 row 3 — panel FINER than the replay grain) — M1 panel, H1 replay grain: passes, and is falsified by the pre-fix raw-cursor comparison', () => {
@@ -994,7 +1035,14 @@ describe('ChartModelMapper', () => {
 
         expect(view.idx).toBe(-1);
         expect(() =>
-          assertNoLookahead(view.candles, view.idx, view.forming, 4200, TIMEFRAME_SECONDS['H1'], 300),
+          assertNoLookahead(
+            view.candles,
+            view.idx,
+            view.forming,
+            4200,
+            TIMEFRAME_SECONDS['H1'],
+            300,
+          ),
         ).not.toThrow();
       });
 

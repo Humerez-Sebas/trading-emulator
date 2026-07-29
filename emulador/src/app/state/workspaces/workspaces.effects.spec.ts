@@ -550,7 +550,10 @@ describe('WorkspacesEffects', () => {
         tabs: [
           {
             ...ownLayout.tabs[0],
-            cells: [...ownLayout.tabs[0].cells, { panelIds: ['panel-b'], activePanelId: 'panel-b' }],
+            cells: [
+              ...ownLayout.tabs[0].cells,
+              { panelIds: ['panel-b'], activePanelId: 'panel-b' },
+            ],
           },
         ],
       };
@@ -698,7 +701,7 @@ describe('WorkspacesEffects', () => {
       );
     });
 
-    it('2r7b. cross-workspace import: the CURRENT store holds a different (outgoing) workspace\'s groups, but the workspace being restored has the group in its OWN persisted linkGroups — the group-owned drawing must still arrive untouched', async () => {
+    it("2r7b. cross-workspace import: the CURRENT store holds a different (outgoing) workspace's groups, but the workspace being restored has the group in its OWN persisted linkGroups — the group-owned drawing must still arrive untouched", async () => {
       setupTestBed();
       // The user is currently on a different, unrelated workspace (OTHER) and
       // imports a `.session.json` for SYMBOL. Nothing has been dispatched yet
@@ -748,7 +751,7 @@ describe('WorkspacesEffects', () => {
       );
     });
 
-    it('2r7c. genuinely dead group: neither thenRestore.linkGroups nor the target workspace\'s own persisted linkGroups contain the id (even though the current store holds an unrelated group) — the drawing is re-homed to a panel that exists', async () => {
+    it("2r7c. genuinely dead group: neither thenRestore.linkGroups nor the target workspace's own persisted linkGroups contain the id (even though the current store holds an unrelated group) — the drawing is re-homed to a panel that exists", async () => {
       setupTestBed();
       store.overrideSelector(selectCurrentAsset, OTHER);
       store.overrideSelector(linkGroupsFeature.selectGroups, { g2: createLinkGroup('g2', '#0f0') });

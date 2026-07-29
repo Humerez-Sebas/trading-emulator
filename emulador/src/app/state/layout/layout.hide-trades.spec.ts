@@ -9,7 +9,10 @@ describe('layout reducer: setPanelHideTrades', () => {
   it('toggling sets the flag to true', () => {
     const state = createInitialLayoutState();
 
-    const next = reducer(state, LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }));
+    const next = reducer(
+      state,
+      LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }),
+    );
 
     expect(next.panels['panel-1'].hideTrades).toBe(true);
   });
@@ -19,7 +22,10 @@ describe('layout reducer: setPanelHideTrades', () => {
     state = reducer(state, LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }));
     expect(state.panels['panel-1'].hideTrades).toBe(true);
 
-    const next = reducer(state, LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: false }));
+    const next = reducer(
+      state,
+      LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: false }),
+    );
 
     expect('hideTrades' in next.panels['panel-1']).toBe(false);
   });
@@ -27,7 +33,10 @@ describe('layout reducer: setPanelHideTrades', () => {
   it('is a no-op (identity return) for an unknown panelId', () => {
     const state = createInitialLayoutState();
 
-    const next = reducer(state, LayoutActions.setPanelHideTrades({ panelId: 'nope', hidden: true }));
+    const next = reducer(
+      state,
+      LayoutActions.setPanelHideTrades({ panelId: 'nope', hidden: true }),
+    );
 
     expect(next).toBe(state);
   });
@@ -36,7 +45,10 @@ describe('layout reducer: setPanelHideTrades', () => {
     let state = createInitialLayoutState();
     state = reducer(state, LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }));
 
-    const next = reducer(state, LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }));
+    const next = reducer(
+      state,
+      LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }),
+    );
 
     expect(next).toBe(state);
   });
@@ -44,7 +56,10 @@ describe('layout reducer: setPanelHideTrades', () => {
   it('setting hidden:false on a panel that never toggled (field already absent) is also a no-op', () => {
     const state = createInitialLayoutState();
 
-    const next = reducer(state, LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: false }));
+    const next = reducer(
+      state,
+      LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: false }),
+    );
 
     expect(next).toBe(state);
   });
@@ -58,7 +73,10 @@ describe('layout reducer: setPanelHideTrades', () => {
     const state = createInitialLayoutState();
     const before = state.panels['panel-1'];
 
-    const next = reducer(state, LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }));
+    const next = reducer(
+      state,
+      LayoutActions.setPanelHideTrades({ panelId: 'panel-1', hidden: true }),
+    );
 
     expect(next.panels['panel-1']).toEqual({ ...before, hideTrades: true });
   });

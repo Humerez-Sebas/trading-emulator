@@ -552,7 +552,7 @@ describe('TelemetryEffects — trading observer (RFC-014 T5b-ii)', () => {
       sub.unsubscribe();
     });
 
-    it('a drawing of another symbol, and a hidden drawing, are excluded — only the active asset\'s VISIBLE drawings are captured (RFC-014 G3)', async () => {
+    it("a drawing of another symbol, and a hidden drawing, are excluded — only the active asset's VISIBLE drawings are captured (RFC-014 G3)", async () => {
       vi.spyOn(Date, 'now').mockReturnValue(1000);
       const shown: Drawing = {
         id: 'd1',

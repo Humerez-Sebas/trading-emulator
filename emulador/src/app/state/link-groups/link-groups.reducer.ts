@@ -1,6 +1,10 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { LinkGroupsActions } from './link-groups.actions';
-import { createInitialLinkGroupsState, LinkGroupsState, normalizeLinkGroup } from './link-groups.models';
+import {
+  createInitialLinkGroupsState,
+  LinkGroupsState,
+  normalizeLinkGroup,
+} from './link-groups.models';
 import { WorkspacesActions } from '../workspaces/workspaces.actions';
 
 export const linkGroupsFeature = createFeature({

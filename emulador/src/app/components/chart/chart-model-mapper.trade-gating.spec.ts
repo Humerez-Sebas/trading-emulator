@@ -106,12 +106,14 @@ describe('ChartModelMapper.tradeChartView$ gating (RFC-018 T-1 / T-2, D18.C)', (
   }
 
   function latest(mapper: ChartModelMapper) {
-    let view: {
-      positions: unknown[];
-      orders: unknown[];
-      markers: unknown[];
-      boxes: unknown[];
-    } | undefined;
+    let view:
+      | {
+          positions: unknown[];
+          orders: unknown[];
+          markers: unknown[];
+          boxes: unknown[];
+        }
+      | undefined;
     mapper.tradeChartView$.subscribe((v) => (view = v));
     return view!;
   }

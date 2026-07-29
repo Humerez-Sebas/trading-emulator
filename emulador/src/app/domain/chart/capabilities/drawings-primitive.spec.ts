@@ -138,7 +138,7 @@ describe('DrawingsPrimitive.hitTestDrawing — painted-geometry hit-test (RFC-01
     expect(primitive.hitTestDrawing(50, 80)).toBeNull();
   });
 
-  it('8. overlapping rects, click the lower one\'s exposed edge -> the lower one\'s id', () => {
+  it("8. overlapping rects, click the lower one's exposed edge -> the lower one's id", () => {
     // rectA (bottom, drawn first): x 0..200, y 0..100.
     // rectB (top, drawn last): x 150..250, y 10..90 — its bounding box
     // covers a point on rectA's right edge, but none of rectB's own strokes
