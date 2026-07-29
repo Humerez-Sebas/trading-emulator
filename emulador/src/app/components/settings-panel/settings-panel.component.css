@@ -272,6 +272,12 @@
   border-color: var(--accent, #2962ff);
   box-shadow: 0 2px 8px rgba(41, 98, 255, 0.25);
 }
+/* Marks a preset whose constant shift cannot track its zone all year. */
+.tz-approx {
+  margin-left: 1px;
+  opacity: 0.55;
+  font-weight: 400;
+}
 .tz-select-wrapper {
   position: relative;
   display: flex;

@@ -62,7 +62,11 @@ Two consequences the pipeline handles explicitly:
   corrupts the H1/D1 bucket containing it. `ultimo_minuto_cerrado` reads it from
   `symbol_info_tick`, which is on the same server clock as the bars.
 
-The display side compensates for this in the app; see `SettingsState.utcOffset`.
+The display side compensates for this in the app: `SettingsState.utcOffset` is a **shift
+applied to the server clock**, not a UTC offset (the historical field name predates the
+measurement). It defaults to `-7` — New York, exact all year, because the server changes
+DST on the same day New York does. `DISPLAY_SHIFTS` in `state/settings/settings.models.ts`
+carries the per-zone table and marks the zones a constant integer cannot track.
 
 ## Cold symbols truncate silently — always warm up first
 

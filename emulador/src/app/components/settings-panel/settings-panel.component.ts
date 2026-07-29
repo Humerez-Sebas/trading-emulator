@@ -6,8 +6,9 @@ import {
   CHART_PRESETS,
   ChartColors,
   ChartPreset,
+  DISPLAY_SHIFT_PRESETS,
+  DISPLAY_SHIFTS,
   Theme,
-  UTC_OFFSETS,
 } from '../../state/settings/settings.models';
 import {
   selectChartColors,
@@ -54,8 +55,8 @@ export class SettingsPanelComponent {
   } | null>(null);
 
   readonly presets = CHART_PRESETS;
-  readonly utcOffsets = UTC_OFFSETS;
-  readonly utcOptions: DropdownOption[] = UTC_OFFSETS.map((o) => ({
+  readonly shiftPresets = DISPLAY_SHIFT_PRESETS;
+  readonly shiftOptions: DropdownOption[] = DISPLAY_SHIFTS.map((o) => ({
     value: String(o.value),
     label: o.label,
   }));

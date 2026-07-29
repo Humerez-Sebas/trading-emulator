@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DARK_CHART_COLORS,
   DARK_TRADE_BOX_OPACITY,
+  DEFAULT_DISPLAY_SHIFT_HOURS,
   LIGHT_CHART_COLORS,
   LIGHT_TRADE_BOX_OPACITY,
   TRADE_BOX_BORDER_RANGE,
@@ -86,8 +87,23 @@ describe('settings reducer: loadInitialState rehydration', () => {
     expect(s.gridOpacity).toBe(1);
   });
 
-  it('defaults non-number utcOffset to -4', async () => {
+  it('defaults non-number utcOffset to the New York shift (−7)', async () => {
     const reducer = await freshReducer({ utcOffset: 'bad' });
+    const s = reducer(undefined, { type: '@@init' } as any);
+    expect(s.utcOffset).toBe(DEFAULT_DISPLAY_SHIFT_HOURS);
+    expect(s.utcOffset).toBe(-7);
+  });
+
+  it('defaults a fresh install to the New York shift, NOT the old −4', async () => {
+    // −4 dated from reading the stored clock as UTC: it drew the 09:30 ET open at
+    // 12:30. The stored clock is New York + 7, so the display shift is −7.
+    const reducer = await freshReducer();
+    const s = reducer(undefined, { type: '@@init' } as any);
+    expect(s.utcOffset).toBe(-7);
+  });
+
+  it('keeps a saved offset untouched — no migration, the user re-picks', async () => {
+    const reducer = await freshReducer({ utcOffset: -4 });
     const s = reducer(undefined, { type: '@@init' } as any);
     expect(s.utcOffset).toBe(-4);
   });

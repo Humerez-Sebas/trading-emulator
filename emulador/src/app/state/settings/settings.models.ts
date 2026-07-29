@@ -48,7 +48,12 @@ export interface SidePanelState {
 export interface SettingsState {
   theme: Theme;
   chartColors: ChartColors;
-  /** DISPLAY-only time offset. The data always lives in UTC. */
+  /**
+   * DISPLAY-only shift, in hours, added to the stored candle clock before
+   * rendering. Despite the historical field name it is **not** a UTC offset:
+   * candles are stored in broker server time, so what the user sees is
+   * `servidor + utcOffset`. See DISPLAY_SHIFTS below for the full reasoning.
+   */
   utcOffset: number;
   /** Chart grid visibility and opacity (0..1). */
   gridVisible: boolean;
@@ -169,33 +174,110 @@ export const CHART_PRESETS: ChartPreset[] = [
   },
 ];
 
-/** Time zone options for the selector (labels are user-facing, in Spanish). */
-export const UTC_OFFSETS: { value: number; label: string }[] = [
-  { value: -12, label: 'UTC−12' },
-  { value: -11, label: 'UTC−11' },
-  { value: -10, label: 'UTC−10 Honolulu' },
-  { value: -9, label: 'UTC−9 Anchorage' },
-  { value: -8, label: 'UTC−8 Los Ángeles' },
-  { value: -7, label: 'UTC−7 Denver' },
-  { value: -6, label: 'UTC−6 Ciudad de México' },
-  { value: -5, label: 'UTC−5 Nueva York / Lima' },
-  { value: -4, label: 'UTC−4 La Paz / Santiago' },
-  { value: -3, label: 'UTC−3 Buenos Aires' },
-  { value: -2, label: 'UTC−2' },
-  { value: -1, label: 'UTC−1' },
-  { value: 0, label: 'UTC+0 Londres' },
-  { value: 1, label: 'UTC+1 Madrid / París' },
-  { value: 2, label: 'UTC+2 Atenas' },
-  { value: 3, label: 'UTC+3 Moscú / hora servidor MT5' },
-  { value: 4, label: 'UTC+4 Dubái' },
-  { value: 5, label: 'UTC+5' },
-  { value: 6, label: 'UTC+6' },
-  { value: 7, label: 'UTC+7 Bangkok' },
-  { value: 8, label: 'UTC+8 Singapur / Hong Kong' },
-  { value: 9, label: 'UTC+9 Tokio' },
-  { value: 10, label: 'UTC+10 Sídney' },
-  { value: 11, label: 'UTC+11' },
-  { value: 12, label: 'UTC+12 Auckland' },
-  { value: 13, label: 'UTC+13' },
-  { value: 14, label: 'UTC+14' },
+/**
+ * ---- Display time: shifts over the broker's server clock ----
+ *
+ * Candle timestamps are stored in the server clock of FivePercentOnline-Real,
+ * which runs at **New York + 7 h all year** (UTC+2 while New York is on EST,
+ * UTC+3 while it is on EDT — it follows US DST, not the EU's). They are stored
+ * that way on purpose: the pipeline resamples D1 buckets on the server clock, so
+ * a daily candle runs 17:00 → 17:00 New York — the FX/CFD trading day MT5 and
+ * TradingView show. Converting to true UTC would cut every daily at 20:00 ET and
+ * break the R2 parquet contract (docs/engineering/domain/data-pipeline.md).
+ *
+ * The number the user picks is therefore a SHIFT applied to server time, not a
+ * UTC offset. Only a zone that changes DST on the same day as New York can be
+ * exact with a constant integer:
+ *
+ * | Zone            | shift | exactness                                    |
+ * |-----------------|-------|----------------------------------------------|
+ * | Nueva York      |    −7 | exact all year                               |
+ * | Servidor MT5    |     0 | exact by definition (the data is already so)  |
+ * | Londres         |    −2 | off by 1 h ~3 weeks/yr (mar 8–29, oct 25–nov 1)|
+ * | Madrid          |    −1 | same windows                                 |
+ * | Tokio           | +6/+7 | never constant (+6 verano NY, +7 invierno NY) |
+ *
+ * Full multi-zone correctness needs the true instant (subtract +2/+3 by the US
+ * DST rule) plus `Intl` with IANA zones — deliberately out of scope here.
+ */
+
+/** New York, exact all year: the server clock is New York + 7 h. */
+export const NEW_YORK_SHIFT_HOURS = -7;
+
+/** No shift at all: the stored candles are already in MT5 server time. */
+export const SERVER_SHIFT_HOURS = 0;
+
+/** New York is the default: the only zone a constant integer tracks all year. */
+export const DEFAULT_DISPLAY_SHIFT_HOURS = NEW_YORK_SHIFT_HOURS;
+
+export interface DisplayShiftPreset {
+  /** Hours added to the stored server clock. */
+  value: number;
+  /** Short code on the dock button. */
+  code: string;
+  /** Tooltip: the zone and how far the model can be trusted. */
+  title: string;
+  /** False when a constant integer cannot track the zone all year. */
+  exact: boolean;
+}
+
+/** The dock's quick-pick buttons — exact zones first. */
+export const DISPLAY_SHIFT_PRESETS: DisplayShiftPreset[] = [
+  {
+    value: NEW_YORK_SHIFT_HOURS,
+    code: 'NY',
+    title: 'Nueva York — exacta todo el año (el servidor sigue el horario de EE. UU.)',
+    exact: true,
+  },
+  {
+    value: SERVER_SHIFT_HOURS,
+    code: 'MT5',
+    title: 'Hora del servidor MT5 — sin desplazamiento: las velas ya vienen en esta hora',
+    exact: true,
+  },
+  {
+    value: -2,
+    code: 'LDN',
+    title:
+      'Londres — aproximada: se desvía 1 h las ~3 semanas al año en que el cambio de horario europeo no coincide con el de EE. UU.',
+    exact: false,
+  },
+  {
+    value: -1,
+    code: 'MAD',
+    title: 'Madrid / París — aproximada: se desvía 1 h en las mismas ~3 semanas que Londres',
+    exact: false,
+  },
+  {
+    value: 6,
+    code: 'TYO',
+    title:
+      'Tokio — aproximada: Japón no cambia de horario, así que el desplazamiento real alterna entre +6 h (verano en Nueva York) y +7 h (invierno)',
+    exact: false,
+  },
 ];
+
+/** Zones worth naming in the dropdown; everything else stays a bare shift. */
+const SHIFT_ZONE_NAMES: Record<number, string> = {
+  [-7]: 'Nueva York',
+  [-2]: 'Londres (aprox.)',
+  [-1]: 'Madrid / París (aprox.)',
+  0: 'Servidor MT5',
+  6: 'Tokio (aprox.)',
+};
+
+/**
+ * Every whole-hour shift from −12 to +14 (labels user-facing, in Spanish). The
+ * range is wider than any zone needs so that no previously saved value becomes
+ * unselectable; a zone name is attached only where the table above backs it.
+ */
+export const DISPLAY_SHIFTS: { value: number; label: string }[] = Array.from(
+  { length: 27 },
+  (_, i) => {
+    const value = i - 12;
+    const sign = value < 0 ? '−' : value > 0 ? '+' : '';
+    const hours = `${sign}${Math.abs(value)} h`;
+    const zone = SHIFT_ZONE_NAMES[value];
+    return { value, label: zone ? `${hours} · ${zone}` : hours };
+  },
+);

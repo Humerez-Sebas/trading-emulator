@@ -107,9 +107,13 @@ export class ToolbarToolsComponent {
     return this.closedTrades().slice().reverse();
   }
 
-  /** dd/MM HH:mm in the user's display time zone (data stays UTC). */
-  formatTime(utcSeconds: number): string {
-    const d = new Date((utcSeconds + this.utcOffset() * 3600) * 1000);
+  /**
+   * dd/MM HH:mm in the user's display time zone. The stored clock is broker
+   * SERVER time (New York + 7 h), not UTC, so `utcOffset` shifts server time —
+   * see DISPLAY_SHIFTS in settings.models.ts.
+   */
+  formatTime(serverSeconds: number): string {
+    const d = new Date((serverSeconds + this.utcOffset() * 3600) * 1000);
     const p = (n: number) => String(n).padStart(2, '0');
     return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
   }

@@ -3,6 +3,7 @@ import { SettingsActions } from './settings.actions';
 import {
   DARK_CHART_COLORS,
   DARK_TRADE_BOX_OPACITY,
+  DEFAULT_DISPLAY_SHIFT_HOURS,
   LIGHT_CHART_COLORS,
   LIGHT_TRADE_BOX_OPACITY,
   SettingsState,
@@ -18,7 +19,8 @@ const STORAGE_KEY = 'emulador.settings';
 const defaultState: SettingsState = {
   theme: 'dark',
   chartColors: DARK_CHART_COLORS,
-  utcOffset: -4, // La Paz by default
+  // Display shift over the broker server clock — New York, exact all year.
+  utcOffset: DEFAULT_DISPLAY_SHIFT_HOURS,
   gridVisible: false,
   gridOpacity: 1,
   floatingToolbar: true,

@@ -69,7 +69,11 @@ export class ControlsComponent {
     return last !== undefined && t > 0 && last < t;
   }
 
-  /** Tooltip for a short-coverage TF: the last date it has data for. */
+  /**
+   * Tooltip for a short-coverage TF: the last date it has data for, in the
+   * display time zone. `last` is on the stored broker SERVER clock (New York
+   * + 7 h), not UTC — see DISPLAY_SHIFTS in settings.models.ts.
+   */
   shortTfTip(tf: Timeframe): string {
     const last = this.tfLastTimes()[tf];
     if (last === undefined) return '';

@@ -511,7 +511,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private currentAsset = this.store.selectSignal(selectCurrentAsset);
   /** The one-slot session clipboard: geometry and kind only, runtime-only, never persisted. */
   private clipboard = this.store.selectSignal(drawingsFeature.selectClipboard);
-  private shiftSecs = 0; // time zone offset applied to the chart
+  // Display shift applied to the chart, in seconds. Added to the stored candle
+  // clock (broker SERVER time, not UTC) — see DISPLAY_SHIFTS in settings.models.ts.
+  private shiftSecs = 0;
   private accent = CHART_ACCENT;
   private up = DARK_CHART_COLORS.upColor;
   private down = DARK_CHART_COLORS.downColor;
@@ -965,12 +967,15 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // ---- "Ir a fecha…" / "Programar fin…" ----
 
-  /** Epoch UTC seconds -> "yyyy-MM-ddTHH:mm" in the display time zone. */
+  /**
+   * Stored epoch (broker SERVER clock, not UTC) -> "yyyy-MM-ddTHH:mm" in the
+   * display time zone. See DISPLAY_SHIFTS in settings.models.ts.
+   */
   private toInputValue(epoch: number): string {
     return new Date((epoch + this.shiftSecs) * 1000).toISOString().slice(0, 16);
   }
 
-  /** "yyyy-MM-ddTHH:mm" in the display time zone -> epoch UTC seconds. */
+  /** "yyyy-MM-ddTHH:mm" in the display time zone -> stored epoch (server clock). */
   private fromInputValue(value: string): number | null {
     const ms = Date.parse(`${value}:00Z`);
     if (Number.isNaN(ms)) return null;
