@@ -56,6 +56,32 @@ export interface DatasetRecord {
   updatedAt: string;
 }
 
+/** Partition key for timeframes that ship as a single file (H1/D1). */
+export const ALL_PARTITION = 'all';
+
+/**
+ * Inclusive epoch-second bounds of ONE dataset partition, mirroring how
+ * `pipeline/parquet_builder.py` splits M1: by the UTC calendar year of the
+ * candle timestamp. {@link ALL_PARTITION} spans the whole series.
+ *
+ * Scoping matters because the `candles` store is shared per (symbol,
+ * timeframe): clearing a partition without these bounds also deletes the
+ * sibling years, and those keep a current etag in `datasets`, so nothing ever
+ * re-ingests them — the candles are just gone.
+ *
+ * An unrecognised key falls back to the full range on purpose: over-deleting
+ * still guarantees no duplicate rows after a re-ingest, whereas a too-narrow
+ * range would leave duplicates behind.
+ */
+export function partitionTimeBounds(year: string): { from: number; to: number } {
+  if (!/^\d{4}$/.test(year)) return { from: -Infinity, to: Infinity };
+  const parsed = Number(year);
+  return {
+    from: Date.UTC(parsed, 0, 1) / 1000,
+    to: Date.UTC(parsed + 1, 0, 1) / 1000 - 1,
+  };
+}
+
 /**
  * Individual candle row from a R2/Parquet file.
  * `id` is the auto-increment primary key — omit it on insert.

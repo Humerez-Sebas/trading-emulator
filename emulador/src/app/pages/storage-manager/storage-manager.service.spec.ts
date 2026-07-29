@@ -41,21 +41,29 @@ describe('StorageManagerService.deleteDataset', () => {
     db = await freshDb();
   });
 
-  it('removes the dataset row AND every candle of that (symbol, timeframe), leaving others intact', async () => {
-    // db.putDataset initialises the v5 schema; then seed candles for two tfs.
+  it('removes the dataset row AND its partition candles, leaving other years and tfs intact', async () => {
+    const at = (iso: string): number => Math.floor(Date.parse(iso) / 1000);
+
+    // db.putDataset initialises the v5 schema; then seed candles for two years
+    // and a second tf.
     await db.putDataset(dataset({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024' }));
+    await db.putDataset(dataset({ id: 'XAUUSD|M1|2025', timeframe: 'M1', year: '2025' }));
     await db.putDataset(dataset({ id: 'XAUUSD|H1|all', timeframe: 'H1', year: 'all' }));
     await bulkInsertCandles([
-      candle(1, 'XAUUSD', 'M1'),
-      candle(2, 'XAUUSD', 'M1'),
-      candle(3, 'XAUUSD', 'H1'),
+      candle(at('2024-03-01T00:00:00Z'), 'XAUUSD', 'M1'),
+      candle(at('2024-09-01T00:00:00Z'), 'XAUUSD', 'M1'),
+      candle(at('2025-03-01T00:00:00Z'), 'XAUUSD', 'M1'),
+      candle(at('2024-03-01T00:00:00Z'), 'XAUUSD', 'H1'),
     ]);
 
     const svc = new StorageManagerService(db, {} as ManifestService);
     await svc.deleteDataset(dataset({ id: 'XAUUSD|M1|2024', timeframe: 'M1', year: '2024' }));
 
-    expect((await db.listDatasets()).map((d) => d.id)).toEqual(['XAUUSD|H1|all']);
-    expect(await db.listCandles('XAUUSD', 'M1')).toEqual([]); // cleared
+    expect((await db.listDatasets()).map((d) => d.id)).toEqual(['XAUUSD|H1|all', 'XAUUSD|M1|2025']);
+    // only 2024 cleared — deleting one year must not strand the others
+    expect((await db.listCandles('XAUUSD', 'M1')).map((c) => c.time)).toEqual([
+      at('2025-03-01T00:00:00Z'),
+    ]);
     expect((await db.listCandles('XAUUSD', 'H1')).length).toBe(1); // untouched
   });
 
