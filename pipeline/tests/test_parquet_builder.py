@@ -147,6 +147,105 @@ class TestResampleAnchors:
 # ---------------------------------------------------------------------------
 
 
+class TestDescartarVelaEnFormacion:
+    """La vela M1 del minuto en curso no debe llegar a los Parquet.
+
+    Ademas de guardar una vela incompleta, contamina la H1 y la D1 que la
+    contienen, que se recalculan a partir del M1.
+    """
+
+    def _tres_minutos(self):
+        return _make_m1_rates(
+            [
+                _epoch("2026-07-29 19:19"),
+                _epoch("2026-07-29 19:20"),
+                _epoch("2026-07-29 19:21"),  # en formacion
+            ]
+        )
+
+    def test_descarta_la_vela_del_minuto_en_curso(self):
+        df = parquet_builder.descartar_vela_en_formacion(
+            self._tres_minutos(), _epoch("2026-07-29 19:21")
+        )
+        assert list(df["time"]) == [_epoch("2026-07-29 19:19"), _epoch("2026-07-29 19:20")]
+
+    def test_conserva_las_velas_ya_cerradas(self):
+        df = parquet_builder.descartar_vela_en_formacion(
+            self._tres_minutos(), _epoch("2026-07-29 19:21")
+        )
+        assert len(df) == 2
+
+    def test_sin_tick_devuelve_el_frame_intacto(self):
+        original = self._tres_minutos()
+        df = parquet_builder.descartar_vela_en_formacion(original, None)
+        assert list(df["time"]) == list(original["time"])
+
+    def test_no_falla_con_frame_vacio(self):
+        vacio = _make_m1_rates([])
+        df = parquet_builder.descartar_vela_en_formacion(vacio, _epoch("2026-07-29 19:21"))
+        assert len(df) == 0
+
+    def test_reindexa_desde_cero(self):
+        df = parquet_builder.descartar_vela_en_formacion(
+            self._tres_minutos(), _epoch("2026-07-29 19:20")
+        )
+        assert list(df.index) == list(range(len(df)))
+
+
+class TestHarvestToParquet:
+    """Orquestador completo contra la terminal simulada (conftest.py)."""
+
+    def _preparar(self, mt5_falso, ultima="2026-07-29 19:21", tick_seg=30):
+        from conftest import minutos
+
+        inicio = _epoch("2026-07-29 19:00")
+        cuantos = (_epoch(ultima) - inicio) // 60 + 1
+        mt5_falso.cargar("US30", servidor=minutos(inicio, cuantos))
+        mt5_falso.ticks["US30"] = _epoch(ultima) + tick_seg
+
+    def test_no_escribe_la_vela_en_formacion(self, mt5_falso, tmp_path):
+        self._preparar(mt5_falso)
+
+        parquet_builder.harvest_to_parquet(
+            "US30",
+            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=timezone.utc),
+            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=timezone.utc),
+            str(tmp_path),
+        )
+
+        df = pq.read_table(os.path.join(str(tmp_path), "US30", "m1", "2026.parquet")).to_pandas()
+        assert int(df["time"].max()) == _epoch("2026-07-29 19:20")
+
+    def test_la_h1_no_se_calcula_con_la_vela_parcial(self, mt5_falso, tmp_path):
+        self._preparar(mt5_falso)
+
+        parquet_builder.harvest_to_parquet(
+            "US30",
+            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=timezone.utc),
+            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=timezone.utc),
+            str(tmp_path),
+        )
+
+        h1 = pq.read_table(os.path.join(str(tmp_path), "US30", "h1", "all.parquet")).to_pandas()
+        # La H1 debe cerrar en la ultima vela CERRADA (la penultima del servidor),
+        # no en la que todavia se esta formando.
+        ultima_cerrada = float(mt5_falso.barras["US30"]["close"][-2])
+        assert float(h1.iloc[-1]["close"]) == pytest.approx(ultima_cerrada)
+
+    def test_calienta_el_simbolo_antes_de_cosechar(self, mt5_falso, tmp_path):
+        self._preparar(mt5_falso)
+
+        parquet_builder.harvest_to_parquet(
+            "US30",
+            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=timezone.utc),
+            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=timezone.utc),
+            str(tmp_path),
+        )
+
+        nombres = [c[0] for c in mt5_falso.llamadas]
+        assert nombres.index("copy_rates_from_pos") < nombres.index("copy_rates_range")
+
+
 class TestWriteAnchors:
     """write_anchors(anchors, symbol, out_dir) -> lista de rutas escritas."""
 
