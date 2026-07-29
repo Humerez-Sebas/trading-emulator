@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Pipeline M1 -> Parquet (componente de la arquitectura offline v2).
 
@@ -20,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 import pyarrow as pa
@@ -191,7 +190,7 @@ def harvest_to_parquet(
     if _dir not in _sys.path:
         _sys.path.insert(0, _dir)
 
-    from mt5_common import (  # noqa: PLC0415
+    from mt5_common import (
         TIMEFRAMES,
         conectar,
         copiar_rango_troceado,
@@ -199,7 +198,7 @@ def harvest_to_parquet(
     )
 
     if not conectar():
-        import MetaTrader5 as mt5  # noqa: PLC0415
+        import MetaTrader5 as mt5
 
         raise RuntimeError(f"MT5 no disponible: {mt5.last_error()}")
 
@@ -241,11 +240,11 @@ def _main() -> None:
     parser.add_argument("--out-dir", default="parquet_out", help="Directorio de salida")
     args = parser.parse_args()
 
-    desde = datetime.fromisoformat(args.desde).replace(tzinfo=timezone.utc)
+    desde = datetime.fromisoformat(args.desde).replace(tzinfo=UTC)
     hasta = (
-        datetime.fromisoformat(args.hasta).replace(tzinfo=timezone.utc)
+        datetime.fromisoformat(args.hasta).replace(tzinfo=UTC)
         if args.hasta
-        else datetime.now(tz=timezone.utc)
+        else datetime.now(tz=UTC)
     )
 
     rutas = harvest_to_parquet(args.symbol, desde, hasta, args.out_dir)

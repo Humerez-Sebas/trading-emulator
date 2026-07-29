@@ -1,4 +1,8 @@
 -r requirements.txt
 pytest
-ruff
+# PINNED on purpose: left floating, CI installed each new release and a version
+# bump started flagging pre-existing code (81 findings), turning the pipeline job
+# red without a single code change. Bump deliberately, with the fixes in the same
+# commit. Same risk applies to pytest/pip-audit if they ever start failing runs.
+ruff==0.16.0
 pip-audit

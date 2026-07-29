@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests de logica pura para parquet_builder.py.
 
 Solo cubren las funciones puras (remuestreo y escritura/lectura en disco);
@@ -8,7 +7,7 @@ desde el orquestador; las funciones puras no tienen esa dependencia.
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -19,8 +18,7 @@ pq = pytest.importorskip("pyarrow.parquet")
 # parquet_builder vive como modulo plano en pipeline/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import parquet_builder  # noqa: E402
-
+import parquet_builder
 
 # ---------------------------------------------------------------------------
 # Helpers de construccion de datos sinteticos
@@ -42,7 +40,7 @@ def _make_m1_rates(times_utc: list[int]) -> "pd.DataFrame":
 
 def _epoch(dt_str: str) -> int:
     """Convierte 'YYYY-MM-DD HH:MM' UTC a epoch segundos."""
-    return int(datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc).timestamp())
+    return int(datetime.fromisoformat(dt_str).replace(tzinfo=UTC).timestamp())
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +206,8 @@ class TestHarvestToParquet:
 
         parquet_builder.harvest_to_parquet(
             "US30",
-            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=timezone.utc),
-            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=timezone.utc),
+            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=UTC),
+            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=UTC),
             str(tmp_path),
         )
 
@@ -221,8 +219,8 @@ class TestHarvestToParquet:
 
         parquet_builder.harvest_to_parquet(
             "US30",
-            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=timezone.utc),
-            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=timezone.utc),
+            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=UTC),
+            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=UTC),
             str(tmp_path),
         )
 
@@ -237,8 +235,8 @@ class TestHarvestToParquet:
 
         parquet_builder.harvest_to_parquet(
             "US30",
-            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=timezone.utc),
-            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=timezone.utc),
+            datetime.fromisoformat("2026-07-29 19:00").replace(tzinfo=UTC),
+            datetime.fromisoformat("2026-07-29 23:00").replace(tzinfo=UTC),
             str(tmp_path),
         )
 

@@ -1,4 +1,13 @@
 # Lint + format config used locally and by CI (`ruff check` / `ruff format`).
 # line-length 100 matches the existing code style (keeps formatting churn small).
+# Keep the ruff version in requirements-dev.txt PINNED: it was left floating and a
+# new release started flagging pre-existing code, turning CI red with no code change.
 line-length = 100
 target-version = "py312"
+
+[lint.per-file-ignores]
+# SIM118 fires on `key in fake_client.keys()`, but FakeS3Client is a plain stub
+# whose keys() returns the R2 object keys it recorded — it is not a mapping and
+# implements neither __contains__ nor __iter__, so `key in fake_client` would
+# raise TypeError. The rule is a false positive here.
+"tests/test_r2_uploader.py" = ["SIM118"]

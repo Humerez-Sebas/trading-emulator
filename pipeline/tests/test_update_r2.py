@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests de logica pura para update_r2.py (actualizacion incremental de R2).
 
 Solo cubren las funciones puras de fusion y empalme; no tocan R2 ni MT5.
@@ -6,7 +5,7 @@ Solo cubren las funciones puras de fusion y empalme; no tocan R2 ni MT5.
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -14,13 +13,13 @@ pd = pytest.importorskip("pandas")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import update_r2  # noqa: E402
+import update_r2
 
 COLUMNAS = ["time", "open", "high", "low", "close"]
 
 
 def _epoch(dt_str: str) -> int:
-    return int(datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc).timestamp())
+    return int(datetime.fromisoformat(dt_str).replace(tzinfo=UTC).timestamp())
 
 
 def _frame(filas: list[tuple[int, float]]) -> "pd.DataFrame":
@@ -175,17 +174,17 @@ class TestInicioDeDiaUtc:
     def test_devuelve_la_medianoche_del_mismo_dia(self):
         out = update_r2.inicio_de_dia_utc(_epoch("2026-07-29 19:09"))
 
-        assert out == datetime(2026, 7, 29, tzinfo=timezone.utc)
+        assert out == datetime(2026, 7, 29, tzinfo=UTC)
 
     def test_una_medianoche_se_devuelve_igual(self):
         out = update_r2.inicio_de_dia_utc(_epoch("2026-07-29 00:00"))
 
-        assert out == datetime(2026, 7, 29, tzinfo=timezone.utc)
+        assert out == datetime(2026, 7, 29, tzinfo=UTC)
 
     def test_el_ultimo_minuto_del_dia_no_pasa_al_siguiente(self):
         out = update_r2.inicio_de_dia_utc(_epoch("2026-07-29 23:59"))
 
-        assert out == datetime(2026, 7, 29, tzinfo=timezone.utc)
+        assert out == datetime(2026, 7, 29, tzinfo=UTC)
 
     def test_devuelve_datetime_con_zona(self):
         out = update_r2.inicio_de_dia_utc(_epoch("2026-07-29 19:09"))
