@@ -63,7 +63,7 @@ npm run lint                      # must be 0 problems (develop is lint-clean)
 failure then reads as a pass. Run gates raw and read their exit status.
 
 `npm run build` additionally required at branch finalization (watch for NEW chunk types,
-e.g. vitest sentinels; the ~609 kB vs 500 kB budget warning is known-accepted,
+e.g. vitest sentinels; the 648 kB vs 500 kB budget warning is known-accepted,
 Arrow/parquet-dominated). Pipeline changes: `cd pipeline && python -m pytest -q && ruff
 check . && ruff format --check .`
 

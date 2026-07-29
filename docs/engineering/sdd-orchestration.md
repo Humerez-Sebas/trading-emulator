@@ -59,7 +59,7 @@ STOP rule (pre-existing specs are authority — deviations get documented, not "
 
 Per task: `tsc` app+spec clean, `npx ng test --watch=false` green (record the count),
 `npm run lint` 0. At final audit additionally: `npm run build` (watch for NEW chunk
-types — vitest sentinel — not the known ~609 kB budget warning) and the invariant greps:
+types — vitest sentinel — not the known 648 kB budget warning) and the invariant greps:
 forbidden files zero-diff, no factory selectors, no new dependencies, reserved fields
 (e.g. `syncPriceScale`) still have zero read sites.
 

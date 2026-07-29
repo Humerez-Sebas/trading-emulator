@@ -52,6 +52,21 @@ Cualquier agente inteligente puede (y debe) ejecutar cada plan de manera secuenc
 
 ---
 
+## Post-Infrastructure Refinements (RFC-017..019)
+
+Between the infrastructure block above and the Mastery Block below sits a short sequence of
+corrective work: defects and rough edges that only became visible once the multi-chart platform
+was actually used for backtesting. They are grouped here rather than as Mastery Block phases
+because they are a different *kind* of work — repairs to what RFC-001..013 delivered, not steps
+in the knowledge-conservation sequence.
+(Section in English per the architecture-corpus language directive of 2026-07.)
+
+| Block | RFCs | Purpose |
+|---|---|---|
+| **Post-Infrastructure Refinements** | [RFC-017](./rfcs/017-compositional-panel-sync.md) / [RFC-018](./rfcs/018-trade-visibility-refinement.md) / [RFC-019](./rfcs/019-pane-guard-cross-tf-forming.md) | Panel sync, trade visibility, pane-guard + cross-TF forming — bug fixes and UX refinement after the multi-panel infrastructure block. |
+
+---
+
 ## Mastery Block: Phases 0-3 (the next development sequence)
 
 The completed block above delivered the multi-chart replay platform. This block

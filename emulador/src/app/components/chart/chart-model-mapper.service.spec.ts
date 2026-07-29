@@ -9,10 +9,14 @@ import {
   selectCurrentTime,
   selectSeries,
   selectUtcOffset,
+  selectReplayTfSeconds,
+  selectReplaySeries,
+  selectChartView,
 } from '../../state/selectors';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { PanelDescriptor } from '../../state/layout/layout.models';
-import { Candle } from '../../models';
+import { Candle, TIMEFRAME_SECONDS } from '../../models';
+import { assertNoLookahead, lookaheadViolation } from './lookahead-invariants.spec-util';
 
 describe('ChartModelMapper', () => {
   let mapper: ChartModelMapper;
@@ -580,6 +584,474 @@ describe('ChartModelMapper', () => {
       mapper.panelChartView$.subscribe((v) => (view = v));
       expect(view).toBeDefined();
       expect(view!.symbol).toBe('SP500');
+    });
+  });
+
+  /**
+   * RFC-019 (D19.C/D/E/G/H, N19-2/N19-3) — the lookahead fix this RFC exists for.
+   * `chartView$` used to read `selectResolutionMinutes`/`selectResolutionSeries` (the
+   * user's sub-TF OPT-IN, nullable) instead of the replay's actual advance grain
+   * (`selectReplayTfSeconds`/`selectReplaySeries`, never null). For a panel whose OWN
+   * timeframe is coarser than the grain the cursor actually advances by, that conflation
+   * painted the candle CONTAINING the cursor whole — including price action between the
+   * cursor and that candle's close the trader has not lived yet.
+   *
+   * Every emission here goes through a freshly-configured mapper reading the described
+   * fixtures directly (no `refreshState()` before the first read) — the exact pattern the
+   * pre-existing `panelChartView$` block above already relies on: `configurePanel` is
+   * called BEFORE `subscribe`, so the `combineLatest` synchronously settles on the real
+   * descriptor (the `startWith(null)` frame collapses into it in the same microtask).
+   */
+  describe('chartView$ (RFC-019 D19.C/D/E/G/H — cross-TF forming candle, D-B1)', () => {
+    const candle = (time: number, o = 1, h = 1, l = 1, c = 1): Candle => ({
+      time,
+      open: o,
+      high: h,
+      low: l,
+      close: c,
+    });
+
+    function descriptor(overrides: Partial<PanelDescriptor> = {}): PanelDescriptor {
+      return { id: 'p1', symbol: 'US30', timeframe: 'H1', linkGroupId: null, ...overrides };
+    }
+
+    const dummyGlobalView = {
+      tf: null as string | null,
+      candles: [] as Candle[],
+      idx: -1,
+      utcOffset: 0,
+      forming: null as Candle | null,
+      countdown: null as string | null,
+    };
+
+    beforeEach(() => {
+      // Never actually read once a descriptor is configured (every scenario below
+      // configures one) — set for combineLatest completeness only, matching the
+      // established pattern in the `panelChartView$`/`eight-panel-profile` specs.
+      store.overrideSelector(selectChartView, dummyGlobalView);
+    });
+
+    /** Configures the panel, subscribes, returns the single settled emission. */
+    function emit(d: PanelDescriptor): {
+      tf: string | null;
+      candles: Candle[];
+      idx: number;
+      utcOffset: number;
+      forming: Candle | null;
+      countdown: string | null;
+    } {
+      mapper.configurePanel(d);
+      let view: ReturnType<typeof emit> | undefined;
+      mapper.chartView$.subscribe((v) => (view = v));
+      return view!;
+    }
+
+    it('scenario 1 — single panel, TF == replay grain (resolution off): forming null, idx NOT decremented (byte-identity guard, the most common configuration)', () => {
+      const m1 = [candle(0), candle(60), candle(120)];
+      store.overrideSelector(selectSeries, { M1: m1 });
+      store.overrideSelector(selectCurrentTime, 130);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 60); // == TIMEFRAME_SECONDS['M1']
+      store.overrideSelector(selectReplaySeries, m1);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+
+      const view = emit(descriptor({ symbol: 'US30', timeframe: 'M1' }));
+
+      expect(view.forming).toBeNull();
+      expect(view.idx).toBe(2); // lastIndexAtOrBefore([0,60,120], 130) — un-decremented
+      expect(view.candles).toBe(m1); // resolvePanelCandles passthrough, same reference as today
+    });
+
+    it('scenario 2 — H1 panel, M5 replay grain: forming aggregated, idx decremented, forming.time === bucketStart', () => {
+      const h1 = [candle(0), candle(3600), candle(7200)];
+      const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+      store.overrideSelector(selectSeries, { H1: h1 });
+      store.overrideSelector(selectCurrentTime, 4200);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 300);
+      store.overrideSelector(selectReplaySeries, m5);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+
+      const view = emit(descriptor({ symbol: 'US30', timeframe: 'H1' }));
+
+      expect(view.forming).not.toBeNull();
+      expect(view.forming!.time).toBe(3600); // bucketStart
+      expect(view.forming!.open).toBe(10); // first revealed candle's open
+      expect(view.forming!.high).toBe(15); // max across the revealed window
+      expect(view.forming!.low).toBe(9); // min across the revealed window
+      expect(view.forming!.close).toBe(13.5); // last revealed candle's close
+      expect(view.idx).toBe(0); // lastIndexAtOrBefore(h1, 4200) = 1, decremented to 0
+    });
+
+    it('scenario 3 (D-B1) — H1 panel, M5 grain, gap in the replay series (hi < lo): forming null AND idx STILL decremented', () => {
+      const h1 = [candle(0), candle(3600), candle(7200)];
+      const m5 = [candle(0)]; // nothing revealed inside [3600, 4200] — the uncomputable case
+      store.overrideSelector(selectSeries, { H1: h1 });
+      store.overrideSelector(selectCurrentTime, 4200);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 300);
+      store.overrideSelector(selectReplaySeries, m5);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+
+      const view = emit(descriptor({ symbol: 'US30', timeframe: 'H1' }));
+
+      expect(view.forming).toBeNull(); // aggregateFormingCandle's hi<lo guard
+      expect(view.idx).toBe(0); // STILL decremented (1 - 1) — the degraded path shows the
+      // last CLOSED candle, never the future-containing one (D-B1's whole point).
+    });
+
+    it('scenario 4 — M1 panel, H1 replay grain (panel FINER than grain): subGrain false, forming null, idx untouched', () => {
+      const m1 = [candle(0), candle(60), candle(120), candle(180)];
+      store.overrideSelector(selectSeries, { M1: m1 });
+      store.overrideSelector(selectCurrentTime, 200);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 3600); // H1 grain, coarser than the M1 panel
+      store.overrideSelector(selectReplaySeries, []); // irrelevant: subGrain must be false before this is read
+      store.overrideSelector(selectCurrentAsset, 'US30');
+
+      const view = emit(descriptor({ symbol: 'US30', timeframe: 'M1' }));
+
+      expect(view.forming).toBeNull();
+      expect(view.idx).toBe(3); // lastIndexAtOrBefore(m1, 200) — untouched, no decrement
+    });
+
+    it('scenario 5 (N19-3) — foreign-symbol panel, H1, M5 grain: forming null, idx untouched despite activeSeconds > grain', () => {
+      const h1 = [candle(0), candle(3600), candle(7200)];
+      const m5 = [candle(3600), candle(3900), candle(4200)];
+      store.overrideSelector(selectSeries, { H1: h1 });
+      store.overrideSelector(selectCurrentTime, 4200);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 300);
+      store.overrideSelector(selectReplaySeries, m5);
+      store.overrideSelector(selectCurrentAsset, 'US30'); // primary asset
+
+      const view = emit(descriptor({ symbol: 'NAS100', timeframe: 'H1' })); // foreign symbol
+
+      expect(view.forming).toBeNull();
+      expect(view.idx).toBe(1); // untouched: lastIndexAtOrBefore(h1, 4200), NOT decremented
+    });
+
+    it('scenario 6 (C1 regression guard) — hideTrades:true panel, H1, M5 grain: forming STILL aggregated, idx STILL decremented (hideTrades must NOT suppress candle fidelity)', () => {
+      const h1 = [candle(0), candle(3600), candle(7200)];
+      const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+      store.overrideSelector(selectSeries, { H1: h1 });
+      store.overrideSelector(selectCurrentTime, 4200);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 300);
+      store.overrideSelector(selectReplaySeries, m5);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+
+      // Same fixture as scenario 2, but the descriptor opts OUT of trade ink. If
+      // `chartView$` gated on `panelRendersTrades` (symbol ∧ !hideTrades) instead of the
+      // isolated `panelTracksPrimarySeries` (symbol alone), this panel would silently lose
+      // its forming candle and fall back to `idx` inclusive — repainting the future
+      // candle. That is the exact defect plan §0 C1 overrides the original brief to avoid.
+      const view = emit(descriptor({ symbol: 'US30', timeframe: 'H1', hideTrades: true }));
+
+      expect(view.forming).not.toBeNull();
+      expect(view.forming!.time).toBe(3600);
+      expect(view.idx).toBe(0); // decremented exactly as in scenario 2
+    });
+
+    it('scenario 7 — idx === 0 boundary: idx emitted as -1, forming present, no throw', () => {
+      const h1 = [candle(3600)]; // a single H1 candle, idx = 0
+      const m5 = [candle(3600), candle(3900), candle(4200)];
+      store.overrideSelector(selectSeries, { H1: h1 });
+      store.overrideSelector(selectCurrentTime, 4200);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 300);
+      store.overrideSelector(selectReplaySeries, m5);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+
+      let view: ReturnType<typeof emit> | undefined;
+      expect(() => {
+        view = emit(descriptor({ symbol: 'US30', timeframe: 'H1' }));
+      }).not.toThrow();
+
+      expect(view!.idx).toBe(-1);
+      expect(view!.forming).not.toBeNull();
+    });
+
+    it('scenario 8 (D19.H memo) — an unrelated input change (utcOffset) leaves `forming` reference-IDENTICAL; a real cursor change gives a NEW reference (aggregateFormingCandle not re-run on the miss-free tick)', () => {
+      const h1 = [candle(0), candle(3600), candle(7200)];
+      const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+      store.overrideSelector(selectSeries, { H1: h1 });
+      store.overrideSelector(selectCurrentTime, 4200);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 300);
+      store.overrideSelector(selectReplaySeries, m5);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+      mapper.configurePanel(descriptor({ symbol: 'US30', timeframe: 'H1' }));
+
+      const emissions: ReturnType<typeof emit>[] = [];
+      mapper.chartView$.subscribe((v) => emissions.push(v));
+      const r1 = emissions[emissions.length - 1];
+      expect(r1.forming).not.toBeNull();
+
+      // Unrelated input changes (utcOffset only) — the memo key (series, bucketStart,
+      // cursor) is untouched, so `aggregateFormingCandle` must NOT run again: same object.
+      store.overrideSelector(selectUtcOffset, 5);
+      store.refreshState();
+      const r2 = emissions[emissions.length - 1];
+      expect(r2.utcOffset).toBe(5); // the outer view DID recompute
+      expect(r2.forming).toBe(r1.forming); // but the forming sub-computation is a cache hit
+
+      // A REAL cursor change inside the same bucket — the memo key's `cursor` differs, so
+      // this must be a genuine miss: a fresh object, not the stale r1/r2 one (R7's proof
+      // in miniature — the memo is keyed on cursor, not incrementally updated).
+      store.overrideSelector(selectCurrentTime, 3900);
+      store.refreshState();
+      const r3 = emissions[emissions.length - 1];
+      expect(r3.forming).not.toBeNull();
+      expect(r3.forming).not.toBe(r1.forming);
+    });
+
+    it('scenario 9 (D19.G routing) — an unloaded custom M-timeframe resolves through resolvePanelCandles: candles stay reference-stable across a tick that leaves `series` untouched (generateCustomSeries not re-run)', () => {
+      // M3 has no loaded series of its own; resolvePanelCandles must route through
+      // generateCustomSeries(series, 3), aggregating the loaded M1 base — the SAME shared
+      // per-instance memo `panelChartView$`/`tradeChartView$` already use (RFC-018 F3),
+      // not a second independent derivation inline in chartView$ (the pre-RFC-019 dead
+      // code this task deletes).
+      const m1 = [candle(0), candle(60), candle(120), candle(180), candle(240), candle(300)];
+      const series = { M1: m1 };
+      store.overrideSelector(selectSeries, series);
+      store.overrideSelector(selectCurrentTime, 200);
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 180); // == TIMEFRAME_SECONDS['M3'], subGrain false
+      store.overrideSelector(selectReplaySeries, m1);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+      mapper.configurePanel(descriptor({ symbol: 'US30', timeframe: 'M3' }));
+
+      const emissions: ReturnType<typeof emit>[] = [];
+      mapper.chartView$.subscribe((v) => emissions.push(v));
+      const r1 = emissions[emissions.length - 1];
+      expect(r1.candles.length).toBeGreaterThan(0); // generateCustomSeries actually produced M3 bars
+
+      // Unrelated input change; `series` keeps the EXACT SAME object reference.
+      store.overrideSelector(selectUtcOffset, 7);
+      store.refreshState();
+      const r2 = emissions[emissions.length - 1];
+
+      expect(r2.candles).toBe(r1.candles); // resolvePanelCandles memo hit — no second generateCustomSeries call
+    });
+
+    it('R7 — advance, rewind, re-advance: the memo never serves a STALE (wrong-content) forming candle across the rewind', () => {
+      // The brief explicitly bans an incremental O(1) "running high/low" implementation
+      // for exactly this reason: it is only valid under monotonic advance. Keying on
+      // `cursor` makes a rewind a cache MISS by construction, forcing a full
+      // recomputation from `bucketStart` every time — this spec proves that recomputation
+      // actually happens and is content-correct, not just reference-different.
+      const h1 = [candle(0), candle(3600), candle(7200)];
+      const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+      store.overrideSelector(selectSeries, { H1: h1 });
+      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectReplayTfSeconds, 300);
+      store.overrideSelector(selectReplaySeries, m5);
+      store.overrideSelector(selectCurrentAsset, 'US30');
+      store.overrideSelector(selectCurrentTime, 4200); // advance to the end of the bucket
+      mapper.configurePanel(descriptor({ symbol: 'US30', timeframe: 'H1' }));
+
+      const emissions: ReturnType<typeof emit>[] = [];
+      mapper.chartView$.subscribe((v) => emissions.push(v));
+      const advanced = emissions[emissions.length - 1];
+      expect(advanced.forming!.high).toBe(15); // 3600, 3900, 4200 all revealed
+
+      store.overrideSelector(selectCurrentTime, 3600); // rewind to the bucket's first candle only
+      store.refreshState();
+      const rewound = emissions[emissions.length - 1];
+      expect(rewound.forming!.high).toBe(12); // ONLY the 3600 candle — no carryover from 15
+
+      store.overrideSelector(selectCurrentTime, 4200); // re-advance to the same cursor as before
+      store.refreshState();
+      const readvanced = emissions[emissions.length - 1];
+      expect(readvanced.forming!.high).toBe(15); // freshly recomputed, matches the original — not stuck at 12
+      expect(readvanced.forming).not.toBe(rewound.forming); // a genuinely new object, not the rewind's stale one
+    });
+
+    /**
+     * RFC-019 (D19.I, N19-4) — Task 5: an independent second check on the scenario matrix
+     * above, plus a TDD-first proof that the checker is actually sensitive to the exact
+     * pre-RFC defect this whole RFC exists to close ("an invariant that cannot fail on the
+     * bug it was written for is worthless"). Nested inside the parent `describe` so it
+     * reuses `candle`, `descriptor`, `emit`, and `dummyGlobalView` verbatim rather than
+     * re-declaring fixture helpers (plan §3 Task 5) — this block is purely additive, no
+     * existing `it`/assertion above is touched (STOP rule).
+     */
+    describe('assertNoLookahead (D19.I, N19-4) — Task 5 boundary specs', () => {
+      // Step 2 (TDD, written first): prove the helper actually catches the real defect —
+      // an H1 panel whose `idx` was NOT decremented (the pre-RFC shape) at a mid-bucket
+      // cursor paints candles[1] (opens 3600) whole, even though its true close (7200) is
+      // still 3000 seconds in the trader's future.
+      it('flags the PRE-RFC shape: idx un-decremented on an H1 panel at a mid-bucket cursor paints a candle whose close is still in the future', () => {
+        const h1 = [candle(0), candle(3600), candle(7200)];
+        const cursor = 4200; // 10 minutes into the [3600, 7200) H1 bucket
+        const preRfcIdx = 1; // pre-RFC: NOT decremented — candles[1] is still painted whole
+        const activeSeconds = TIMEFRAME_SECONDS['H1']; // 3600
+        const replayGrainSeconds = 300; // M5 replay grain — revealed instant = 4500
+
+        const message = lookaheadViolation(h1, preRfcIdx, null, cursor, activeSeconds, replayGrainSeconds);
+
+        // Proof this still catches the defect it exists for, EVEN under the corrected
+        // (looser) revealed-instant bound: candles[1] closes at 7200, the revealed instant
+        // is only 4500 (cursor 4200 + grain 300) — 7200 is 2700 seconds past it, nowhere
+        // near the boundary. Fixing the M1 off-by-one does not blunt this check.
+        expect(message).not.toBeNull();
+        expect(message).toContain('candles[1]'); // names the offending index
+        expect(message).toContain('7200'); // names the actual close time
+        expect(message).toContain('4200'); // names the raw cursor
+        expect(message).toContain('4500'); // names the revealed instant it exceeds
+      });
+
+      it('idx === -1 is a clean no-op pass (empty range), not a throw', () => {
+        expect(lookaheadViolation([], -1, null, 1000, 3600, 300)).toBeNull();
+        expect(() => assertNoLookahead([], -1, null, 1000, 3600, 300)).not.toThrow();
+      });
+
+      it('flags the forming clause: a forming candle opening after the cursor (the clause the candle-close fix must not touch)', () => {
+        const forming = candle(4500);
+        const message = lookaheadViolation([], -1, forming, 4200, 3600, 300);
+
+        expect(message).not.toBeNull();
+        expect(message).toContain('forming'); // names which clause fired
+        expect(message).toContain('4500'); // the forming candle's open
+        expect(message).toContain('4200'); // the cursor it exceeds — RAW cursor, not R
+      });
+
+      it('scenario 1 — H1 panel + M5 replay grain, mid-bucket: assertNoLookahead passes on the real chartView$ emission', () => {
+        const h1 = [candle(0), candle(3600), candle(7200)];
+        const m5 = [candle(3600, 10, 12, 9, 11), candle(3900, 11, 15, 10, 13), candle(4200, 13, 14, 12, 13.5)];
+        store.overrideSelector(selectSeries, { H1: h1 });
+        store.overrideSelector(selectCurrentTime, 4200);
+        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectReplayTfSeconds, 300);
+        store.overrideSelector(selectReplaySeries, m5);
+        store.overrideSelector(selectCurrentAsset, 'US30');
+
+        const view = emit(descriptor({ symbol: 'US30', timeframe: 'H1' }));
+
+        expect(() =>
+          assertNoLookahead(view.candles, view.idx, view.forming, 4200, TIMEFRAME_SECONDS['H1'], 300),
+        ).not.toThrow();
+      });
+
+      it('scenario 2 — single M5 panel, no resolution (replay grain == panel TF): passes on the cursor `advanceCandle` actually produces (forming null, idx not decremented)', () => {
+        const m5 = [candle(0), candle(300), candle(600)];
+        // The cursor `advanceCandle` sets for this fixture: the OPEN of the last candle
+        // (`replay.effects.ts:49` — `goToTime({ time: candles[next].time })`), never its
+        // close. For a native-TF (subGrain-false) panel the invariant's revealed instant is
+        // `cursor + replayGrainSeconds`, which lands exactly on the last painted candle's
+        // own close (600 + 300 = 900) — equality at worst, per D19.I's algebra. A cursor of
+        // 900 here would be a value production never produces (the next `advanceCandle` on
+        // this fixture yields `endOfData`), which is exactly what audit finding M1 flagged.
+        const cursor = 600;
+        store.overrideSelector(selectSeries, { M5: m5 });
+        store.overrideSelector(selectCurrentTime, cursor);
+        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectReplayTfSeconds, 300); // == TIMEFRAME_SECONDS['M5']: subGrain false
+        store.overrideSelector(selectReplaySeries, m5);
+        store.overrideSelector(selectCurrentAsset, 'US30');
+
+        const view = emit(descriptor({ symbol: 'US30', timeframe: 'M5' }));
+
+        expect(view.forming).toBeNull();
+        expect(view.idx).toBe(2); // lastIndexAtOrBefore(m5, 600) — un-decremented, the pre-RFC shape
+        assertNoLookahead(view.candles, view.idx, view.forming, cursor, TIMEFRAME_SECONDS['M5'], 300);
+      });
+
+      it('scenario 2b (RFC §4.3 row 3 — panel FINER than the replay grain) — M1 panel, H1 replay grain: passes, and is falsified by the pre-fix raw-cursor comparison', () => {
+        // Task 2 scenario 4's fixture: subGrain false (panel TF finer than the grain), so
+        // idx is untouched. The pre-fix helper (comparing `close <= cursor`) throws here —
+        // candles[3] opens at 180 and closes at 240, which is already past the raw cursor
+        // (200) even though nothing about this panel is dishonest: an M1 panel finer than
+        // an H1 grain is RFC §4.3's "ya correcto" row. This is the exact falsification audit
+        // finding M1 identified as going unexercised by the pre-fix matrix.
+        const m1 = [candle(0), candle(60), candle(120), candle(180)];
+        store.overrideSelector(selectSeries, { M1: m1 });
+        store.overrideSelector(selectCurrentTime, 200);
+        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectReplayTfSeconds, 3600); // H1 grain, coarser than the M1 panel
+        store.overrideSelector(selectReplaySeries, []); // irrelevant: subGrain must be false before this is read
+        store.overrideSelector(selectCurrentAsset, 'US30');
+
+        const view = emit(descriptor({ symbol: 'US30', timeframe: 'M1' }));
+
+        expect(view.forming).toBeNull();
+        expect(view.idx).toBe(3); // lastIndexAtOrBefore(m1, 200) — untouched, no decrement
+        assertNoLookahead(view.candles, view.idx, view.forming, 200, TIMEFRAME_SECONDS['M1'], 3600);
+      });
+
+      it('scenario 3 — idx === 0 boundary (emits idx === -1): passes, no throw', () => {
+        const h1 = [candle(3600)]; // a single H1 candle, idx = 0 pre-decrement
+        const m5 = [candle(3600), candle(3900), candle(4200)];
+        store.overrideSelector(selectSeries, { H1: h1 });
+        store.overrideSelector(selectCurrentTime, 4200);
+        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectReplayTfSeconds, 300);
+        store.overrideSelector(selectReplaySeries, m5);
+        store.overrideSelector(selectCurrentAsset, 'US30');
+
+        const view = emit(descriptor({ symbol: 'US30', timeframe: 'H1' }));
+
+        expect(view.idx).toBe(-1);
+        expect(() =>
+          assertNoLookahead(view.candles, view.idx, view.forming, 4200, TIMEFRAME_SECONDS['H1'], 300),
+        ).not.toThrow();
+      });
+
+      it('scenario 4 (C5) — hidden panel via setUpdatesEnabled(false): no emission at all, update-gating still holds after Task 2', () => {
+        const m5 = [candle(0), candle(300), candle(600)];
+        store.overrideSelector(selectSeries, { M5: m5 });
+        store.overrideSelector(selectCurrentTime, 900);
+        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectReplayTfSeconds, 300);
+        store.overrideSelector(selectReplaySeries, m5);
+        store.overrideSelector(selectCurrentAsset, 'US30');
+
+        mapper.setUpdatesEnabled(false);
+        mapper.configurePanel(descriptor({ symbol: 'US30', timeframe: 'M5' }));
+        const emissions: unknown[] = [];
+        mapper.chartView$.subscribe((v) => emissions.push(v));
+
+        expect(emissions).toHaveLength(0);
+      });
+
+      // Carve-out (plan §3 Task 5; ledger `.superpowers/rfc-019/dev-log.md` §8.3 finding
+      // L1; RFC-019 §10 F19-2): foreign-symbol panels and the unconfigured/null-descriptor
+      // fallback are DELIBERATELY outside N19-4's scope. Both are asserted below against
+      // their DOCUMENTED behavior, never against `assertNoLookahead` — running the checker
+      // on a faithful foreign-symbol fixture would trip it (plan §3 Task 2 scenario 5
+      // prescribes exactly `forming === null, idx untouched`; RFC §9.2's diagram shows the
+      // same), and that gap is F19-2 — a strict subset of the pre-existing, already-deferred
+      // defect that a foreign-symbol panel renders the PRIMARY symbol's candles under a
+      // foreign label (`market.reducer.ts:8`, mono-symbol D1) — not something Task 2
+      // introduced or a regression to fix here. The invariant stays sharp; the carve-out
+      // stays in the open, not silently patched into the assertion.
+
+      it('scenario 5 (F19-2 carve-out) — foreign-symbol panel: forming null, idx untouched (documented, NOT run through assertNoLookahead)', () => {
+        const h1 = [candle(0), candle(3600), candle(7200)];
+        const m5 = [candle(3600), candle(3900), candle(4200)];
+        store.overrideSelector(selectSeries, { H1: h1 });
+        store.overrideSelector(selectCurrentTime, 4200);
+        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectReplayTfSeconds, 300);
+        store.overrideSelector(selectReplaySeries, m5);
+        store.overrideSelector(selectCurrentAsset, 'US30'); // primary asset
+
+        const view = emit(descriptor({ symbol: 'NAS100', timeframe: 'H1' })); // foreign symbol
+
+        expect(view.forming).toBeNull();
+        expect(view.idx).toBe(1); // untouched: lastIndexAtOrBefore(h1, 4200), NOT decremented
+      });
+
+      it('scenario 6 (legacy-fallback carve-out) — unconfigured mapper (descriptor null): falls back to globalChartView, NOT run through assertNoLookahead', () => {
+        let view: unknown;
+        mapper.chartView$.subscribe((v) => (view = v));
+
+        // toBe, not toEqual: the `!descriptor` branch returns the exact object the
+        // `beforeEach` injected via `overrideSelector(selectChartView, dummyGlobalView)`,
+        // so reference identity is the honest (and strictly stronger) passthrough proof.
+        expect(view).toBe(dummyGlobalView);
+      });
     });
   });
 });

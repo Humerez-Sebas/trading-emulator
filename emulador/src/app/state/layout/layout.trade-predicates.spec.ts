@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { panelMayExecute, panelRendersTrades, PanelDescriptor } from './layout.models';
+import {
+  panelMayExecute,
+  panelRendersTrades,
+  panelTracksPrimarySeries,
+  PanelDescriptor,
+} from './layout.models';
 
 function descriptor(overrides: Partial<PanelDescriptor> = {}): PanelDescriptor {
   return {
@@ -52,5 +57,47 @@ describe('RFC-018 trade-visibility predicates (T-1 / T-2 / T-3)', () => {
 
     expect(panelRendersTrades(d, 'US30')).toBe(false);
     expect(panelMayExecute(d, 'US30')).toBe(false);
+  });
+});
+
+/**
+ * RFC-019 (D19.E, plan §0 C1) — direct coverage of the extracted T-1 clause itself,
+ * independent of `chart-model-mapper.service.spec.ts`'s indirect exercise of it through
+ * `chartView$`. This is the predicate `chartView$`'s cross-TF forming-candle gate reads
+ * INSTEAD of `panelRendersTrades` — the whole point being that it must be blind to
+ * `hideTrades`, which the two `hideTrades` cases below prove directly.
+ */
+describe('panelTracksPrimarySeries (RFC-019 D19.E, the isolated T-1 clause)', () => {
+  function descriptor(overrides: Partial<PanelDescriptor> = {}): PanelDescriptor {
+    return {
+      id: 'panel-1',
+      symbol: '',
+      timeframe: 'M1',
+      linkGroupId: null,
+      ...overrides,
+    };
+  }
+
+  it('primarySymbol === null: false', () => {
+    expect(panelTracksPrimarySeries(descriptor({ symbol: 'US30' }), null)).toBe(false);
+  });
+
+  it("symbol: '' (sentinel) resolves against the primary: true", () => {
+    expect(panelTracksPrimarySeries(descriptor({ symbol: '' }), 'US30')).toBe(true);
+  });
+
+  it('matching explicit symbol: true, REGARDLESS of hideTrades:true (the C1 guarantee)', () => {
+    const d = descriptor({ symbol: 'US30', hideTrades: true });
+    expect(panelTracksPrimarySeries(d, 'US30')).toBe(true);
+  });
+
+  it('matching explicit symbol, hideTrades:false: also true (hideTrades is simply never consulted)', () => {
+    const d = descriptor({ symbol: 'US30', hideTrades: false });
+    expect(panelTracksPrimarySeries(d, 'US30')).toBe(true);
+  });
+
+  it('mismatched symbol: false, REGARDLESS of hideTrades:false', () => {
+    const d = descriptor({ symbol: 'NAS100', hideTrades: false });
+    expect(panelTracksPrimarySeries(d, 'US30')).toBe(false);
   });
 });
