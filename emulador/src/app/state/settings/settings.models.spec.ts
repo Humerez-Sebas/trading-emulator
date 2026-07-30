@@ -1,117 +1,114 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_DISPLAY_SHIFT_HOURS,
-  DISPLAY_SHIFTS,
-  DISPLAY_SHIFT_PRESETS,
-  NEW_YORK_SHIFT_HOURS,
-  SERVER_SHIFT_HOURS,
+  DEFAULT_DISPLAY_ZONE_ID,
+  DISPLAY_ZONE_OPTIONS,
+  DISPLAY_ZONE_PRESETS,
 } from './settings.models';
+import {
+  MAX_UTC_OFFSET_HOURS,
+  MIN_UTC_OFFSET_HOURS,
+  NEW_YORK_ZONE_ID,
+  resolveDisplayZone,
+  SERVER_ZONE_ID,
+  toDisplayTime,
+  utcZoneId,
+} from '../../domain/chart/display-time';
 
 /**
- * The display-shift model, pinned against MEASURED facts about the broker clock.
- *
- * Candle timestamps are stored in the broker's server clock (FivePercentOnline-Real),
- * which runs at **New York + 7 h all year** — it follows US DST, so it is UTC+2 in
- * NY winter and UTC+3 in NY summer. They are deliberately NOT converted to true UTC
- * (D1 buckets are resampled on the server clock so a daily candle runs 17:00 → 17:00
- * ET, the FX/CFD trading day; see docs/engineering/domain/data-pipeline.md).
- *
- * So the number the dock stores is a SHIFT applied to server time, not a UTC offset,
- * and only a zone that switches DST on the same day as New York can be exact with a
- * constant integer.
+ * The picker's contract. The arithmetic itself lives in
+ * `domain/chart/display-time.spec.ts`; what is pinned here is that every option
+ * the user can click resolves to a real zone and that no label overclaims.
  */
 
 /** Epoch seconds of a server-clock wall time (stored timestamps read as if UTC). */
 const stored = (serverWallTime: string) => Date.parse(`${serverWallTime}Z`) / 1000;
+const wall = (epoch: number) => new Date(epoch * 1000).toISOString().slice(11, 16);
 
-/** What the chart paints for a stored timestamp under a given shift. */
-const displayed = (epoch: number, shiftHours: number) =>
-  new Date((epoch + shiftHours * 3600) * 1000).toISOString().slice(0, 16).replace('T', ' ');
-
-describe('display shift — the New York anchor', () => {
-  it('puts the 09:30 ET cash open at 09:30 in NY summer', () => {
-    // NY 09:30 on a July day is 16:30 on the server clock (NY + 7).
-    expect(displayed(stored('2026-07-15T16:30:00'), NEW_YORK_SHIFT_HOURS)).toBe('2026-07-15 09:30');
+describe('DEFAULT_DISPLAY_ZONE_ID', () => {
+  it('is New York with automatic DST', () => {
+    expect(DEFAULT_DISPLAY_ZONE_ID).toBe(NEW_YORK_ZONE_ID);
   });
 
-  it('puts the 09:30 ET cash open at 09:30 in NY winter too — one integer, all year', () => {
-    // The server follows US DST, so the SAME stored wall time means the same NY hour
-    // on both sides of the switch. That is what makes −7 exact rather than seasonal.
-    expect(displayed(stored('2026-01-15T16:30:00'), NEW_YORK_SHIFT_HOURS)).toBe('2026-01-15 09:30');
-  });
-
-  it('puts the stored 23:49 daily close at 16:49 ET, just before the 17:00 roll', () => {
-    expect(displayed(stored('2026-07-15T23:49:00'), NEW_YORK_SHIFT_HOURS)).toBe('2026-07-15 16:49');
-  });
-
-  it('leaves the stored clock untouched at the MT5 preset — the data is already server time', () => {
-    expect(displayed(stored('2026-07-15T23:49:00'), SERVER_SHIFT_HOURS)).toBe('2026-07-15 23:49');
+  it('paints the 09:30 ET open at 09:30 in both seasons', () => {
+    const zone = resolveDisplayZone(DEFAULT_DISPLAY_ZONE_ID);
+    expect(wall(toDisplayTime(stored('2026-07-15T16:30:00'), zone))).toBe('09:30');
+    expect(wall(toDisplayTime(stored('2026-01-15T16:30:00'), zone))).toBe('09:30');
   });
 });
 
-describe('DISPLAY_SHIFT_PRESETS', () => {
-  const byCode = (code: string) => DISPLAY_SHIFT_PRESETS.find((p) => p.code === code);
+describe('DISPLAY_ZONE_PRESETS', () => {
+  const byCode = (code: string) => DISPLAY_ZONE_PRESETS.find((p) => p.code === code);
 
-  it('shifts New York by −7, not the −5 a UTC reading would suggest', () => {
-    expect(byCode('NY')?.value).toBe(-7);
+  it('points NY and MT5 at the two automatic zones', () => {
+    expect(byCode('NY')?.id).toBe(NEW_YORK_ZONE_ID);
+    expect(byCode('MT5')?.id).toBe(SERVER_ZONE_ID);
   });
 
-  it('shifts MT5 server time by 0, not the +3 a UTC reading would suggest', () => {
-    expect(byCode('MT5')?.value).toBe(0);
+  it('points the rest at real fixed UTC offsets', () => {
+    expect(byCode('LDN')?.id).toBe(utcZoneId(0));
+    expect(byCode('MAD')?.id).toBe(utcZoneId(1));
+    expect(byCode('TYO')?.id).toBe(utcZoneId(9));
   });
 
-  it('marks New York and MT5 as the only exact presets', () => {
-    expect(DISPLAY_SHIFT_PRESETS.filter((p) => p.exact).map((p) => p.code)).toEqual(['NY', 'MT5']);
+  it('marks Tokyo exact — Japan has no DST, so a fixed offset tracks it all year', () => {
+    expect(byCode('TYO')?.exact).toBe(true);
   });
 
-  it('marks every other preset approximate — a constant integer cannot track them', () => {
-    // London/Madrid drift for the ~3 weeks the EU and US DST windows disagree;
-    // Tokyo is never constant (+6 in NY summer, +7 in NY winter).
-    for (const code of ['LDN', 'MAD', 'TYO']) {
-      expect(byCode(code)?.exact, code).toBe(false);
-    }
+  it('marks London and Madrid approximate — a fixed offset loses them in summer', () => {
+    expect(byCode('LDN')?.exact).toBe(false);
+    expect(byCode('MAD')?.exact).toBe(false);
   });
 
   it('says so in the tooltip of every approximate preset', () => {
-    for (const preset of DISPLAY_SHIFT_PRESETS.filter((p) => !p.exact)) {
-      expect(preset.title.toLowerCase(), preset.code).toContain('aproximada');
+    for (const preset of DISPLAY_ZONE_PRESETS.filter((p) => !p.exact)) {
+      expect(preset.title.toLowerCase(), preset.code).toContain('verano');
     }
   });
 
-  it('offers every preset value in the dropdown, so the active preset stays selectable', () => {
-    const values = new Set(DISPLAY_SHIFTS.map((o) => o.value));
-    for (const preset of DISPLAY_SHIFT_PRESETS) {
-      expect(values.has(preset.value), preset.code).toBe(true);
+  it('resolves every preset id to the zone it names, never to the fallback', () => {
+    for (const preset of DISPLAY_ZONE_PRESETS) {
+      expect(resolveDisplayZone(preset.id).id, preset.code).toBe(preset.id);
+    }
+  });
+
+  it('offers every preset in the dropdown, so the active preset stays selectable', () => {
+    const values = new Set(DISPLAY_ZONE_OPTIONS.map((o) => o.value));
+    for (const preset of DISPLAY_ZONE_PRESETS) {
+      expect(values.has(preset.id), preset.code).toBe(true);
     }
   });
 });
 
-describe('DISPLAY_SHIFTS (the dropdown)', () => {
-  it('never labels a shift as a UTC offset — it is not one', () => {
-    const lying = DISPLAY_SHIFTS.filter((o) => /utc/i.test(o.label));
-    expect(lying).toEqual([]);
+describe('DISPLAY_ZONE_OPTIONS', () => {
+  it('leads with the two automatic zones and says they are automatic', () => {
+    expect(DISPLAY_ZONE_OPTIONS[0].value).toBe(NEW_YORK_ZONE_ID);
+    expect(DISPLAY_ZONE_OPTIONS[0].label).toMatch(/autom/i);
+    expect(DISPLAY_ZONE_OPTIONS[1].value).toBe(SERVER_ZONE_ID);
+    expect(DISPLAY_ZONE_OPTIONS[1].label).toMatch(/autom/i);
   });
 
-  it('names a zone only where the model can back the claim', () => {
-    // A named option carries " · <zone>"; it must be exact or marked approximate.
-    const named = DISPLAY_SHIFTS.filter((o) => o.label.includes('·'));
-    expect(named.length).toBeGreaterThan(0);
-    for (const option of named) {
-      const exact = option.value === NEW_YORK_SHIFT_HOURS || option.value === SERVER_SHIFT_HOURS;
-      expect(exact || option.label.includes('aprox.'), option.label).toBe(true);
-    }
-  });
-
-  it('keeps every integer in −12..+14 selectable, so no saved value becomes orphaned', () => {
-    expect(DISPLAY_SHIFTS.map((o) => o.value)).toEqual(
-      Array.from({ length: 27 }, (_, i) => i - 12),
+  it('then offers every whole-hour UTC offset from −12 to +14', () => {
+    const fixed = DISPLAY_ZONE_OPTIONS.slice(2).map((o) => o.value);
+    const expected = Array.from(
+      { length: MAX_UTC_OFFSET_HOURS - MIN_UTC_OFFSET_HOURS + 1 },
+      (_, i) => utcZoneId(MIN_UTC_OFFSET_HOURS + i),
     );
+    expect(fixed).toEqual(expected);
   });
-});
 
-describe('DEFAULT_DISPLAY_SHIFT_HOURS', () => {
-  it('is the New York shift', () => {
-    expect(DEFAULT_DISPLAY_SHIFT_HOURS).toBe(NEW_YORK_SHIFT_HOURS);
-    expect(DEFAULT_DISPLAY_SHIFT_HOURS).toBe(-7);
+  it('labels every fixed option as the UTC offset it actually is', () => {
+    for (const option of DISPLAY_ZONE_OPTIONS.slice(2)) {
+      const zone = resolveDisplayZone(option.value);
+      expect(zone.kind, option.value).toBe('utc-fixed');
+      const signed = zone.kind === 'utc-fixed' ? zone.offsetHours : NaN;
+      const sign = signed < 0 ? '−' : '+';
+      expect(option.label.startsWith(`UTC${sign}${Math.abs(signed)}`), option.label).toBe(true);
+    }
+  });
+
+  it('every option resolves to itself — no entry silently falls back to New York', () => {
+    for (const option of DISPLAY_ZONE_OPTIONS) {
+      expect(resolveDisplayZone(option.value).id, option.value).toBe(option.value);
+    }
   });
 });

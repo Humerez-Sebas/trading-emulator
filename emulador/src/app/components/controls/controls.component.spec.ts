@@ -11,12 +11,12 @@ import {
   selectProgress,
   selectSessionTfs,
   selectTfLastTimes,
-  selectUtcOffset,
+  selectDisplayZone,
 } from '../../state/selectors';
-import { NEW_YORK_SHIFT_HOURS, SERVER_SHIFT_HOURS } from '../../state/settings/settings.models';
+import { NEW_YORK_ZONE_ID, SERVER_ZONE_ID } from '../../domain/chart/display-time';
 
 /**
- * `shortTfTip` is the second consumer of the dock's display shift (see
+ * `shortTfTip` is the second consumer of the dock's display zone (see
  * `toolbar-tools.component.spec.ts` for the third and the shared reasoning): the
  * stored epoch is broker server time — New York + 7 h, all year — so the shift is
  * applied to the SERVER clock, never to UTC.
@@ -36,10 +36,10 @@ afterEach(() => {
 
 describe('ControlsComponent.shortTfTip — display shift over broker server time', () => {
   /** Builds the component with `H1` coverage ending at `lastServerTime`. */
-  function component(shiftHours: number, lastServerTime: number): ControlsComponent {
+  function component(zoneId: string, lastServerTime: number): ControlsComponent {
     TestBed.configureTestingModule({ providers: [provideMockStore()] });
     store = TestBed.inject(MockStore);
-    store.overrideSelector(selectUtcOffset, shiftHours);
+    store.overrideSelector(selectDisplayZone, zoneId);
     store.overrideSelector(selectSessionTfs, ['H1']);
     store.overrideSelector(selectTfLastTimes, { H1: lastServerTime });
     store.overrideSelector(selectActiveTf, 'H1');
@@ -52,21 +52,21 @@ describe('ControlsComponent.shortTfTip — display shift over broker server time
     return TestBed.runInInjectionContext(() => new ControlsComponent());
   }
 
-  it('names the New York day, not the server day, at the New York shift', () => {
+  it('names the New York day, not the server day, in the New York zone', () => {
     // stored 01:05 on the 15th is still 18:05 ET on the 14th.
-    const tip = component(NEW_YORK_SHIFT_HOURS, stored('2026-07-15T01:05:00')).shortTfTip('H1');
+    const tip = component(NEW_YORK_ZONE_ID, stored('2026-07-15T01:05:00')).shortTfTip('H1');
     expect(tip).toContain('14 jul 2026');
   });
 
-  it('keeps the server day at the MT5 shift of 0', () => {
-    const tip = component(SERVER_SHIFT_HOURS, stored('2026-07-15T01:05:00')).shortTfTip('H1');
+  it('keeps the server day in the MT5 server zone', () => {
+    const tip = component(SERVER_ZONE_ID, stored('2026-07-15T01:05:00')).shortTfTip('H1');
     expect(tip).toContain('15 jul 2026');
   });
 
   it('returns an empty tip when the TF has no recorded coverage', () => {
     TestBed.configureTestingModule({ providers: [provideMockStore()] });
     store = TestBed.inject(MockStore);
-    store.overrideSelector(selectUtcOffset, NEW_YORK_SHIFT_HOURS);
+    store.overrideSelector(selectDisplayZone, NEW_YORK_ZONE_ID);
     store.overrideSelector(selectSessionTfs, ['H1']);
     store.overrideSelector(selectTfLastTimes, {});
     store.overrideSelector(selectActiveTf, 'H1');

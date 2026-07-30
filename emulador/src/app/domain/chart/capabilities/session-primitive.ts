@@ -12,7 +12,6 @@ import { xForTime } from '../time-coordinates';
 
 export interface SessionSource {
   sessionEnd: number | null;
-  shift: number;
   times: number[];
   barSpacing: number;
   color?: string;

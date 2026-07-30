@@ -1,3 +1,11 @@
+import {
+  MAX_UTC_OFFSET_HOURS,
+  MIN_UTC_OFFSET_HOURS,
+  NEW_YORK_ZONE_ID,
+  SERVER_ZONE_ID,
+  utcZoneId,
+} from '../../domain/chart/display-time';
+
 export type Theme = 'dark' | 'light';
 
 export interface ChartColors {
@@ -49,12 +57,11 @@ export interface SettingsState {
   theme: Theme;
   chartColors: ChartColors;
   /**
-   * DISPLAY-only shift, in hours, added to the stored candle clock before
-   * rendering. Despite the historical field name it is **not** a UTC offset:
-   * candles are stored in broker server time, so what the user sees is
-   * `servidor + utcOffset`. See DISPLAY_SHIFTS below for the full reasoning.
+   * DISPLAY-only clock: the id of the zone the chart is painted in
+   * (`ny`, `server`, or a fixed `utc±N`). Resolved by `resolveDisplayZone`;
+   * see DISPLAY_ZONE_OPTIONS below and `domain/chart/display-time.ts`.
    */
-  utcOffset: number;
+  displayZone: string;
   /** Chart grid visibility and opacity (0..1). */
   gridVisible: boolean;
   gridOpacity: number;
@@ -175,109 +182,99 @@ export const CHART_PRESETS: ChartPreset[] = [
 ];
 
 /**
- * ---- Display time: shifts over the broker's server clock ----
+ * ---- Display time: which clock the chart is painted in ----
  *
- * Candle timestamps are stored in the server clock of FivePercentOnline-Real,
- * which runs at **New York + 7 h all year** (UTC+2 while New York is on EST,
- * UTC+3 while it is on EDT — it follows US DST, not the EU's). They are stored
- * that way on purpose: the pipeline resamples D1 buckets on the server clock, so
- * a daily candle runs 17:00 → 17:00 New York — the FX/CFD trading day MT5 and
- * TradingView show. Converting to true UTC would cut every daily at 20:00 ET and
- * break the R2 parquet contract (docs/engineering/domain/data-pipeline.md).
+ * Candle timestamps are stored in the broker's server clock, which runs at
+ * **New York + 7 h all year**, so it is UTC+2 while New York is on EST and UTC+3
+ * while it is on EDT. The stored value is therefore not a UTC instant; the rules
+ * for recovering one, and the two families of zone, live in
+ * `domain/chart/display-time.ts`.
  *
- * The number the user picks is therefore a SHIFT applied to server time, not a
- * UTC offset. Only a zone that changes DST on the same day as New York can be
- * exact with a constant integer:
+ * What matters here is the user-facing consequence:
  *
- * | Zone            | shift | exactness                                    |
- * |-----------------|-------|----------------------------------------------|
- * | Nueva York      |    −7 | exact all year                               |
- * | Servidor MT5    |     0 | exact by definition (the data is already so)  |
- * | Londres         |    −2 | off by 1 h ~3 weeks/yr (mar 8–29, oct 25–nov 1)|
- * | Madrid          |    −1 | same windows                                 |
- * | Tokio           | +6/+7 | never constant (+6 verano NY, +7 invierno NY) |
- *
- * Full multi-zone correctness needs the true instant (subtract +2/+3 by the US
- * DST rule) plus `Intl` with IANA zones — deliberately out of scope here.
+ * | Zona            | id        | exactitud                                    |
+ * |-----------------|-----------|----------------------------------------------|
+ * | Nueva York      | `ny`      | exacta todo el año (sigue el DST de EE. UU.) |
+ * | Servidor MT5    | `server`  | exacta todo el año (la hora en que se guardan)|
+ * | Tokio, La Paz…  | `utc+9`…  | exactas: son zonas SIN cambio de horario      |
+ * | Londres, Madrid | `utc+0`…  | un offset fijo no las sigue en verano         |
  */
 
-/** New York, exact all year: the server clock is New York + 7 h. */
-export const NEW_YORK_SHIFT_HOURS = -7;
+/** New York with automatic DST — the default, and the clock the data implies. */
+export const DEFAULT_DISPLAY_ZONE_ID = NEW_YORK_ZONE_ID;
 
-/** No shift at all: the stored candles are already in MT5 server time. */
-export const SERVER_SHIFT_HOURS = 0;
-
-/** New York is the default: the only zone a constant integer tracks all year. */
-export const DEFAULT_DISPLAY_SHIFT_HOURS = NEW_YORK_SHIFT_HOURS;
-
-export interface DisplayShiftPreset {
-  /** Hours added to the stored server clock. */
-  value: number;
+export interface DisplayZonePreset {
+  /** Zone id, as persisted and as resolved by `resolveDisplayZone`. */
+  id: string;
   /** Short code on the dock button. */
   code: string;
-  /** Tooltip: the zone and how far the model can be trusted. */
+  /** Tooltip: the zone and how far it can be trusted. */
   title: string;
-  /** False when a constant integer cannot track the zone all year. */
+  /** False when a fixed UTC offset cannot track the zone all year. */
   exact: boolean;
 }
 
-/** The dock's quick-pick buttons — exact zones first. */
-export const DISPLAY_SHIFT_PRESETS: DisplayShiftPreset[] = [
+/** The dock's quick-pick buttons — the two automatic zones first. */
+export const DISPLAY_ZONE_PRESETS: DisplayZonePreset[] = [
   {
-    value: NEW_YORK_SHIFT_HOURS,
+    id: NEW_YORK_ZONE_ID,
     code: 'NY',
-    title: 'Nueva York — exacta todo el año (el servidor sigue el horario de EE. UU.)',
+    title:
+      'Nueva York con cambio de horario automático (UTC−4 en verano, UTC−5 en invierno) — exacta todo el año, y la diaria corta siempre a las 17:00 ET',
     exact: true,
   },
   {
-    value: SERVER_SHIFT_HOURS,
+    id: SERVER_ZONE_ID,
     code: 'MT5',
-    title: 'Hora del servidor MT5 — sin desplazamiento: las velas ya vienen en esta hora',
+    title:
+      'Hora del servidor MT5 (UTC+2 / +3 según el horario de EE. UU.) — es la hora en que se guardan las velas, sin conversión',
     exact: true,
   },
   {
-    value: -2,
+    id: utcZoneId(0),
     code: 'LDN',
     title:
-      'Londres — aproximada: se desvía 1 h las ~3 semanas al año en que el cambio de horario europeo no coincide con el de EE. UU.',
+      'Londres — UTC+0 fijo: exacto en invierno; con el horario de verano británico Londres es UTC+1, elígelo en la lista',
     exact: false,
   },
   {
-    value: -1,
+    id: utcZoneId(1),
     code: 'MAD',
-    title: 'Madrid / París — aproximada: se desvía 1 h en las mismas ~3 semanas que Londres',
+    title:
+      'Madrid / París — UTC+1 fijo: exacto en invierno; con el horario de verano europeo son UTC+2, elígelo en la lista',
     exact: false,
   },
   {
-    value: 6,
+    id: utcZoneId(9),
     code: 'TYO',
-    title:
-      'Tokio — aproximada: Japón no cambia de horario, así que el desplazamiento real alterna entre +6 h (verano en Nueva York) y +7 h (invierno)',
-    exact: false,
+    title: 'Tokio — UTC+9: exacto todo el año, Japón no cambia de horario',
+    exact: true,
   },
 ];
 
-/** Zones worth naming in the dropdown; everything else stays a bare shift. */
-const SHIFT_ZONE_NAMES: Record<number, string> = {
-  [-7]: 'Nueva York',
-  [-2]: 'Londres (aprox.)',
-  [-1]: 'Madrid / París (aprox.)',
-  0: 'Servidor MT5',
-  6: 'Tokio (aprox.)',
+/** Cities worth naming next to a fixed offset; every claim here is literally true. */
+const UTC_ZONE_HINTS: Record<number, string> = {
+  [-5]: 'Nueva York (invierno)',
+  [-4]: 'Nueva York (verano) · La Paz',
+  [-3]: 'Buenos Aires',
+  0: 'Londres (invierno)',
+  1: 'Madrid (invierno) · Londres (verano)',
+  2: 'Madrid (verano)',
+  8: 'Singapur · Hong Kong',
+  9: 'Tokio',
 };
 
 /**
- * Every whole-hour shift from −12 to +14 (labels user-facing, in Spanish). The
- * range is wider than any zone needs so that no previously saved value becomes
- * unselectable; a zone name is attached only where the table above backs it.
+ * The picker: the two automatic zones, then every whole-hour UTC offset. Labels
+ * are user-facing, in Spanish, and say exactly what the number is.
  */
-export const DISPLAY_SHIFTS: { value: number; label: string }[] = Array.from(
-  { length: 27 },
-  (_, i) => {
-    const value = i - 12;
-    const sign = value < 0 ? '−' : value > 0 ? '+' : '';
-    const hours = `${sign}${Math.abs(value)} h`;
-    const zone = SHIFT_ZONE_NAMES[value];
-    return { value, label: zone ? `${hours} · ${zone}` : hours };
-  },
-);
+export const DISPLAY_ZONE_OPTIONS: { value: string; label: string }[] = [
+  { value: NEW_YORK_ZONE_ID, label: 'Nueva York (UTC−4 / −5 automático)' },
+  { value: SERVER_ZONE_ID, label: 'Servidor MT5 (UTC+2 / +3 automático)' },
+  ...Array.from({ length: MAX_UTC_OFFSET_HOURS - MIN_UTC_OFFSET_HOURS + 1 }, (_, i) => {
+    const offset = MIN_UTC_OFFSET_HOURS + i;
+    const label = `UTC${offset < 0 ? '−' : '+'}${Math.abs(offset)}`;
+    const hint = UTC_ZONE_HINTS[offset];
+    return { value: utcZoneId(offset), label: hint ? `${label} · ${hint}` : label };
+  }),
+];

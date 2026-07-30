@@ -62,7 +62,6 @@ export interface DrawingsSource {
   draft: Drawing | null;
   selectedId: string | null;
   /** display offset in seconds (time zone) */
-  shift: number;
   /** UTC times of the currently rendered bars (anchor for time<->x mapping) */
   times: number[];
   barSpacing: number;

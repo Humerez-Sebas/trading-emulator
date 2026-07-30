@@ -20,6 +20,7 @@ import { TradingCapability } from '../../domain/chart/capabilities/trading-capab
 import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
 import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
 import type { Drawing, Position, RenderModel } from '../../domain/chart/render-model';
+import { resolveDisplayZone, SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { SceneSpec, SCENE_WINDOW_CANDLES } from '../../domain/reflection/scene-spec';
 import {
   CHART_ACCENT,
@@ -126,7 +127,8 @@ export function deriveFrozenRenderModel(
       pendingOrders: [],
       boxes: [],
       markers: [],
-      shift: 0,
+      // A frozen scene is painted in the raw stored clock, as it always was.
+      zone: resolveDisplayZone(SERVER_ZONE_ID),
       times,
       barSpacing,
       colors: style.colors,
@@ -137,7 +139,6 @@ export function deriveFrozenRenderModel(
       activeTool: 'none',
       selectedId: null,
       draft: null,
-      shift: 0,
       times,
       barSpacing,
       pointSize: derivePointSize(candles),
@@ -149,7 +150,6 @@ export function deriveFrozenRenderModel(
     },
     session: {
       sessionEnd: scene.cursorTime,
-      shift: 0,
       times,
       barSpacing,
       color: CHART_ACCENT,

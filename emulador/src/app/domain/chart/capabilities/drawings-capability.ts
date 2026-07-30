@@ -30,7 +30,6 @@ export class DrawingsCapability implements Capability {
         items: d.items,
         draft: d.draft,
         selectedId: d.selectedId,
-        shift: d.shift,
         times: d.times,
         barSpacing: d.barSpacing,
         pointSize: d.pointSize,

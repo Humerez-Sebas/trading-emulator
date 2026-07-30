@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { resolveDisplayZone, SERVER_ZONE_ID } from '../display-time';
 import type { TradingCapability as TradingCapabilityType } from './trading-capability';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { ChartEventBus } from '../chart-event-bus';
@@ -133,7 +134,7 @@ function tradingModel(overrides: Partial<RenderModel['trading']> = {}): Partial<
       pendingOrders: [pendingOrder()],
       boxes: [],
       markers: [marker()],
-      shift: 0,
+      zone: resolveDisplayZone(SERVER_ZONE_ID),
       times: [0, 60, 120],
       barSpacing: 60,
       colors: colors(),

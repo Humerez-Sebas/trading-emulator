@@ -17,17 +17,18 @@ import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import { layoutFeature } from '../../state/layout/layout.reducer';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
-import { NEW_YORK_SHIFT_HOURS, SERVER_SHIFT_HOURS } from '../../state/settings/settings.models';
+import { NEW_YORK_ZONE_ID, SERVER_ZONE_ID } from '../../domain/chart/display-time';
 
 /**
- * The dock's display shift as ChartComponent applies it: `render()` turns the
- * offset into `shiftSecs`, which then feeds the time axis, the crosshair, the
- * drawings, and the two datetime dialogs ("Ir a fecha", "Programar fin de sesión").
+ * The dock's display zone as ChartComponent applies it: `render()` resolves the
+ * zone id, which then feeds the time axis, the crosshair, the drawings, and the
+ * two datetime dialogs ("Ir a fecha", "Programar fin de sesión").
  *
  * Candle timestamps are stored in the broker's server clock — New York + 7 h, all
- * year — so `shiftSecs` shifts SERVER time, not UTC. The dialogs are the sharpest
- * case: they both read and WRITE through the shift, so an offset that is wrong by
- * N hours moves the instant the user schedules by N hours.
+ * year — so the transform is `toDisplayTime`, not a constant offset: a fixed UTC
+ * zone has to undo the server's own DST. The dialogs are the sharpest case, since
+ * they both read and WRITE through it: a zone that is wrong by N hours moves the
+ * instant the user actually schedules by N hours.
  *
  * Harness follows `chart.component.trade-guard.spec.ts` — see its header for why
  * `ngAfterViewInit` is stubbed. The private fields `series`/`engine` and the mapper
@@ -109,38 +110,39 @@ function setup(cursor = 0) {
   return component;
 }
 
-/** Drives one `render()` at the given offset — the only path that sets `shiftSecs`. */
-function renderAt(component: any, offsetHours: number): void {
-  component.render('M1', [], -1, offsetHours, null, null);
+/** Drives one `render()` in the given zone — the only path that sets it. */
+function renderIn(component: any, zoneId: string): void {
+  component.render('M1', [], -1, zoneId, null, null);
 }
 
-describe('ChartComponent — display shift over broker server time', () => {
-  it('derives shiftSecs from the offset in hours', () => {
+describe('ChartComponent — display zone over broker server time', () => {
+  it('resolves the zone id it is rendered with', () => {
     const component = setup();
-    renderAt(component, NEW_YORK_SHIFT_HOURS);
-    expect(component.shiftSecs).toBe(-7 * 3600);
+    renderIn(component, NEW_YORK_ZONE_ID);
+    expect(component.displayZone.id).toBe(NEW_YORK_ZONE_ID);
   });
 
-  it('leaves shiftSecs at zero for the MT5 preset — the data is already server time', () => {
+  it('switches zone when the setting changes', () => {
     const component = setup();
-    renderAt(component, SERVER_SHIFT_HOURS);
-    expect(component.shiftSecs).toBe(0);
+    renderIn(component, NEW_YORK_ZONE_ID);
+    renderIn(component, 'utc-4');
+    expect(component.displayZone.id).toBe('utc-4');
   });
 
   describe('"Ir a fecha" / "Programar fin de sesión" dialogs', () => {
     it('opens at the New York wall clock of the replay cursor', () => {
       // The cursor sits on the 09:30 ET open: 16:30 on the stored server clock.
       const component = setup(stored('2026-07-15T16:30:00'));
-      renderAt(component, NEW_YORK_SHIFT_HOURS);
+      renderIn(component, NEW_YORK_ZONE_ID);
 
       component.menuGoToDate();
 
       expect(component.dateDialog()!.value).toBe('2026-07-15T09:30');
     });
 
-    it('shows the stored server clock when the shift is 0', () => {
+    it('shows the stored server clock in the MT5 server zone', () => {
       const component = setup(stored('2026-07-15T16:30:00'));
-      renderAt(component, SERVER_SHIFT_HOURS);
+      renderIn(component, SERVER_ZONE_ID);
 
       component.menuGoToDate();
 
@@ -149,7 +151,7 @@ describe('ChartComponent — display shift over broker server time', () => {
 
     it('reads a typed New York time back to the stored server instant', () => {
       const component = setup(stored('2026-07-15T16:30:00'));
-      renderAt(component, NEW_YORK_SHIFT_HOURS);
+      renderIn(component, NEW_YORK_ZONE_ID);
       const dispatch = vi.spyOn(store, 'dispatch');
 
       component.dateDialog.set({ mode: 'goto', value: '2026-07-15T09:30' });
@@ -162,7 +164,7 @@ describe('ChartComponent — display shift over broker server time', () => {
 
     it('schedules a session end at the New York time the user typed', () => {
       const component = setup(stored('2026-07-15T16:30:00'));
-      renderAt(component, NEW_YORK_SHIFT_HOURS);
+      renderIn(component, NEW_YORK_ZONE_ID);
       const dispatch = vi.spyOn(store, 'dispatch');
 
       // 16:49 ET is the stored 23:49 daily close.
@@ -177,7 +179,7 @@ describe('ChartComponent — display shift over broker server time', () => {
     it('round-trips: what the dialog shows is what it writes back', () => {
       const cursor = stored('2026-07-15T16:30:00');
       const component = setup(cursor);
-      renderAt(component, NEW_YORK_SHIFT_HOURS);
+      renderIn(component, NEW_YORK_ZONE_ID);
       const dispatch = vi.spyOn(store, 'dispatch');
 
       component.menuGoToDate();
@@ -185,5 +187,35 @@ describe('ChartComponent — display shift over broker server time', () => {
 
       expect(dispatch).toHaveBeenCalledWith(ReplayActions.goToTime({ time: cursor }));
     });
+  });
+});
+
+describe('ChartComponent — a fixed UTC zone undoes the server DST', () => {
+  it('opens the dialog at 09:30 for UTC−4 in summer', () => {
+    // 16:30 on the stored server clock is the 09:30 ET open, in either season.
+    const component = setup(stored('2026-07-15T16:30:00'));
+    renderIn(component, 'utc-4');
+    component.menuGoToDate();
+    expect(component.dateDialog()!.value).toBe('2026-07-15T09:30');
+  });
+
+  it('opens the SAME stored instant at 10:30 in winter — the clock stayed put', () => {
+    const component = setup(stored('2026-01-15T16:30:00'));
+    renderIn(component, 'utc-4');
+    component.menuGoToDate();
+    expect(component.dateDialog()!.value).toBe('2026-01-15T10:30');
+  });
+
+  it('writes back the instant the user typed, in the same zone', () => {
+    const component = setup(stored('2026-01-15T16:30:00'));
+    renderIn(component, 'utc-4');
+    const dispatch = vi.spyOn(store, 'dispatch');
+
+    component.dateDialog.set({ mode: 'goto', value: '2026-01-15T10:30' });
+    component.confirmDateDialog();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      ReplayActions.goToTime({ time: stored('2026-01-15T16:30:00') }),
+    );
   });
 });

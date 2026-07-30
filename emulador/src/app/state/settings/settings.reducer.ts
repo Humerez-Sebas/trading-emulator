@@ -1,9 +1,10 @@
 import { createFeature, createReducer, on } from '@ngrx/store';
 import { SettingsActions } from './settings.actions';
+import { resolveDisplayZone } from '../../domain/chart/display-time';
 import {
   DARK_CHART_COLORS,
   DARK_TRADE_BOX_OPACITY,
-  DEFAULT_DISPLAY_SHIFT_HOURS,
+  DEFAULT_DISPLAY_ZONE_ID,
   LIGHT_CHART_COLORS,
   LIGHT_TRADE_BOX_OPACITY,
   SettingsState,
@@ -19,8 +20,8 @@ const STORAGE_KEY = 'emulador.settings';
 const defaultState: SettingsState = {
   theme: 'dark',
   chartColors: DARK_CHART_COLORS,
-  // Display shift over the broker server clock — New York, exact all year.
-  utcOffset: DEFAULT_DISPLAY_SHIFT_HOURS,
+  // Clock the chart is painted in — New York, with automatic DST.
+  displayZone: DEFAULT_DISPLAY_ZONE_ID,
   gridVisible: false,
   gridOpacity: 1,
   floatingToolbar: true,
@@ -62,7 +63,12 @@ function loadInitialState(): SettingsState {
     return {
       theme,
       chartColors: { ...defaultState.chartColors, ...saved.chartColors },
-      utcOffset: typeof saved.utcOffset === 'number' ? saved.utcOffset : defaultState.utcOffset,
+      // Normalised through resolveDisplayZone so an unknown id — including the
+      // numeric `utcOffset` written by the previous model, whose numbers meant a
+      // shift over server time rather than a UTC offset — lands on the default.
+      displayZone: resolveDisplayZone(
+        typeof saved.displayZone === 'string' ? saved.displayZone : '',
+      ).id,
       gridVisible: typeof saved.gridVisible === 'boolean' ? saved.gridVisible : false,
       gridOpacity:
         typeof saved.gridOpacity === 'number' ? Math.min(1, Math.max(0, saved.gridOpacity)) : 1,
@@ -129,8 +135,8 @@ export const settingsFeature = createFeature({
       }),
     ),
     on(
-      SettingsActions.changeUtcOffset,
-      (state, { utcOffset }): SettingsState => ({ ...state, utcOffset }),
+      SettingsActions.changeDisplayZone,
+      (state, { displayZone }): SettingsState => ({ ...state, displayZone }),
     ),
     on(
       SettingsActions.changeGrid,

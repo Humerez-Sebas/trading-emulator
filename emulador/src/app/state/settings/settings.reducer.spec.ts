@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DARK_CHART_COLORS,
   DARK_TRADE_BOX_OPACITY,
-  DEFAULT_DISPLAY_SHIFT_HOURS,
+  DEFAULT_DISPLAY_ZONE_ID,
   LIGHT_CHART_COLORS,
   LIGHT_TRADE_BOX_OPACITY,
   TRADE_BOX_BORDER_RANGE,
   TRADE_BOX_FILL_RANGE,
 } from './settings.models';
 import { SettingsActions } from './settings.actions';
+import { NEW_YORK_ZONE_ID } from '../../domain/chart/display-time';
 
 const STORAGE_KEY = 'emulador.settings';
 
@@ -87,25 +88,32 @@ describe('settings reducer: loadInitialState rehydration', () => {
     expect(s.gridOpacity).toBe(1);
   });
 
-  it('defaults non-number utcOffset to the New York shift (−7)', async () => {
-    const reducer = await freshReducer({ utcOffset: 'bad' });
-    const s = reducer(undefined, { type: '@@init' } as any);
-    expect(s.utcOffset).toBe(DEFAULT_DISPLAY_SHIFT_HOURS);
-    expect(s.utcOffset).toBe(-7);
-  });
-
-  it('defaults a fresh install to the New York shift, NOT the old −4', async () => {
-    // −4 dated from reading the stored clock as UTC: it drew the 09:30 ET open at
-    // 12:30. The stored clock is New York + 7, so the display shift is −7.
+  it('defaults a fresh install to New York with automatic DST', async () => {
     const reducer = await freshReducer();
     const s = reducer(undefined, { type: '@@init' } as any);
-    expect(s.utcOffset).toBe(-7);
+    expect(s.displayZone).toBe(DEFAULT_DISPLAY_ZONE_ID);
+    expect(s.displayZone).toBe(NEW_YORK_ZONE_ID);
   });
 
-  it('keeps a saved offset untouched — no migration, the user re-picks', async () => {
-    const reducer = await freshReducer({ utcOffset: -4 });
+  it('keeps a saved zone id', async () => {
+    const reducer = await freshReducer({ displayZone: 'utc-4' });
     const s = reducer(undefined, { type: '@@init' } as any);
-    expect(s.utcOffset).toBe(-4);
+    expect(s.displayZone).toBe('utc-4');
+  });
+
+  it('drops the legacy numeric utcOffset instead of reading it as a UTC offset', async () => {
+    // The previous model persisted a NUMBER meaning a shift over server time.
+    // Reinterpreting −7 as UTC−7 would silently move the chart by three hours,
+    // so an install carrying the old key lands on the default and re-picks.
+    const reducer = await freshReducer({ utcOffset: -7 });
+    const s = reducer(undefined, { type: '@@init' } as any);
+    expect(s.displayZone).toBe(NEW_YORK_ZONE_ID);
+  });
+
+  it('falls back to the default for an unknown zone id', async () => {
+    const reducer = await freshReducer({ displayZone: 'utc+99' });
+    const s = reducer(undefined, { type: '@@init' } as any);
+    expect(s.displayZone).toBe(NEW_YORK_ZONE_ID);
   });
 
   it('clamps tradeBoxOpacity.fill via validTradeBoxOpacity (too low)', async () => {
@@ -300,12 +308,12 @@ describe('settings reducer: setTradeBoxesVisible', () => {
   });
 });
 
-describe('settings reducer: changeUtcOffset', () => {
-  it('sets utcOffset', async () => {
+describe('settings reducer: changeDisplayZone', () => {
+  it('sets displayZone', async () => {
     const reducer = await freshReducer();
     const s = reducer(undefined, { type: '@@init' } as any);
-    const next = reducer(s, SettingsActions.changeUtcOffset({ utcOffset: 3 }));
-    expect(next.utcOffset).toBe(3);
+    const next = reducer(s, SettingsActions.changeDisplayZone({ displayZone: 'utc+9' }));
+    expect(next.displayZone).toBe('utc+9');
   });
 });
 

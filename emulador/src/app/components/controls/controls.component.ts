@@ -12,9 +12,10 @@ import {
   selectProgress,
   selectSessionTfs,
   selectTfLastTimes,
-  selectUtcOffset,
+  selectDisplayZone,
 } from '../../state/selectors';
 import { formatIntervalShort } from '../../state/market/custom-timeframe';
+import { resolveDisplayZone, toDisplayTime } from '../../domain/chart/display-time';
 import { TooltipDirective } from '../ui/tooltip.directive';
 import { DropdownComponent, DropdownOption } from '../ui/dropdown.component';
 
@@ -35,7 +36,7 @@ export class ControlsComponent {
   customTf = this.store.selectSignal(selectCustomTf);
   assets = this.store.selectSignal(selectAssets);
   currentAsset = this.store.selectSignal(selectCurrentAsset);
-  utcOffset = this.store.selectSignal(selectUtcOffset);
+  private displayZone = this.store.selectSignal(selectDisplayZone);
   /** Candle progress (shown / total) shown on the right of the context bar. */
   progress = this.store.selectSignal(selectProgress);
 
@@ -72,12 +73,12 @@ export class ControlsComponent {
   /**
    * Tooltip for a short-coverage TF: the last date it has data for, in the
    * display time zone. `last` is on the stored broker SERVER clock (New York
-   * + 7 h), not UTC — see DISPLAY_SHIFTS in settings.models.ts.
+   * + 7 h), not UTC — see domain/chart/display-time.ts.
    */
   shortTfTip(tf: Timeframe): string {
     const last = this.tfLastTimes()[tf];
     if (last === undefined) return '';
-    const d = new Date((last + this.utcOffset() * 3600) * 1000);
+    const d = new Date(toDisplayTime(last, resolveDisplayZone(this.displayZone())) * 1000);
     const when = d.toLocaleDateString('es', {
       day: 'numeric',
       month: 'short',

@@ -10,22 +10,17 @@ import {
   selectGridVisible,
   selectTheme,
   selectTradeBoxOpacity,
-  selectUtcOffset,
+  selectDisplayZone,
 } from '../../state/selectors';
-import {
-  DARK_CHART_COLORS,
-  DARK_TRADE_BOX_OPACITY,
-  NEW_YORK_SHIFT_HOURS,
-} from '../../state/settings/settings.models';
+import { DARK_CHART_COLORS, DARK_TRADE_BOX_OPACITY } from '../../state/settings/settings.models';
+import { NEW_YORK_ZONE_ID, SERVER_ZONE_ID } from '../../domain/chart/display-time';
 
 /**
- * The dock's time-zone control. The preset VALUES used to be hardcoded in the
- * template (`-5` for NY, `+3` for MT5) under the assumption that stored candles
- * are UTC. They are broker server time — New York + 7 h — so those literals drew
- * the 09:30 ET open at 11:30 and shifted server time by a further 3 h.
- *
- * These specs render the real template, because the template is where the wrong
- * numbers lived; asserting on the constants alone would not have caught them.
+ * The dock's time-zone control. It picks a ZONE id, not a number: `ny` and
+ * `server` follow US DST on their own, everything else is a genuine fixed UTC
+ * offset. These specs render the real template, because the template is where the
+ * hardcoded values used to live; asserting on the constants alone would not have
+ * caught them.
  */
 
 let store: MockStore;
@@ -34,12 +29,12 @@ afterEach(() => {
   store?.resetSelectors();
 });
 
-function setup(shiftHours = NEW_YORK_SHIFT_HOURS) {
+function setup(zoneId: string = NEW_YORK_ZONE_ID) {
   TestBed.configureTestingModule({ providers: [provideMockStore()] });
   store = TestBed.inject(MockStore);
   store.overrideSelector(selectTheme, 'dark');
   store.overrideSelector(selectChartColors, DARK_CHART_COLORS);
-  store.overrideSelector(selectUtcOffset, shiftHours);
+  store.overrideSelector(selectDisplayZone, zoneId);
   store.overrideSelector(selectGridVisible, false);
   store.overrideSelector(selectGridOpacity, 1);
   store.overrideSelector(selectFloatingToolbar, true);
@@ -59,47 +54,73 @@ function presetButtons(fixture: ReturnType<typeof setup>): Record<string, HTMLBu
 }
 
 describe('SettingsPanelComponent — time zone presets', () => {
-  it('dispatches −7 for New York, not the −5 the template used to hardcode', () => {
+  it('dispatches the New York zone, which carries its own DST', () => {
     const fixture = setup();
     const dispatched: unknown[] = [];
     store.scannedActions$.subscribe((a) => dispatched.push(a));
 
     presetButtons(fixture)['NY'].click();
 
-    expect(dispatched).toContainEqual(SettingsActions.changeUtcOffset({ utcOffset: -7 }));
+    expect(dispatched).toContainEqual(
+      SettingsActions.changeDisplayZone({ displayZone: NEW_YORK_ZONE_ID }),
+    );
   });
 
-  it('dispatches 0 for MT5 server time, not the +3 the template used to hardcode', () => {
+  it('dispatches the MT5 server zone, not a UTC offset', () => {
     const fixture = setup();
     const dispatched: unknown[] = [];
     store.scannedActions$.subscribe((a) => dispatched.push(a));
 
     presetButtons(fixture)['MT5'].click();
 
-    expect(dispatched).toContainEqual(SettingsActions.changeUtcOffset({ utcOffset: 0 }));
+    expect(dispatched).toContainEqual(
+      SettingsActions.changeDisplayZone({ displayZone: SERVER_ZONE_ID }),
+    );
   });
 
-  it('marks the New York preset active at the default shift', () => {
-    const buttons = presetButtons(setup(NEW_YORK_SHIFT_HOURS));
+  it('dispatches a real fixed UTC offset for Tokyo', () => {
+    const fixture = setup();
+    const dispatched: unknown[] = [];
+    store.scannedActions$.subscribe((a) => dispatched.push(a));
+
+    presetButtons(fixture)['TYO'].click();
+
+    expect(dispatched).toContainEqual(SettingsActions.changeDisplayZone({ displayZone: 'utc+9' }));
+  });
+
+  it('marks the New York preset active by default', () => {
+    const buttons = presetButtons(setup(NEW_YORK_ZONE_ID));
     expect(buttons['NY'].classList.contains('active')).toBe(true);
     expect(buttons['MT5'].classList.contains('active')).toBe(false);
   });
 
-  it('flags the approximate presets in the UI and leaves the exact ones unflagged', () => {
+  it('flags only the presets a fixed offset cannot track all year', () => {
+    // Tokyo is no longer flagged: Japan has no DST, so UTC+9 is exact.
     const fixture = setup();
     const flagged = Array.from(fixture.nativeElement.querySelectorAll('.tz-preset-btn'))
       .filter((b) => (b as HTMLElement).querySelector('.tz-approx'))
       .map((b) => (b as HTMLElement).textContent!.replace(/[~\s]/g, ''));
 
-    expect(flagged.sort()).toEqual(['LDN', 'MAD', 'TYO']);
+    expect(flagged.sort()).toEqual(['LDN', 'MAD']);
   });
 
-  it('no longer claims the data is kept in UTC', () => {
+  it('explains the clock without claiming the data is kept in UTC', () => {
     const hints = Array.from(setup().nativeElement.querySelectorAll('.hint'))
       .map((p) => (p as HTMLElement).textContent ?? '')
       .join(' ');
 
     expect(hints).not.toMatch(/se mantienen en UTC/);
     expect(hints).toMatch(/hora del servidor/i);
+  });
+
+  it('warns that a fixed UTC offset moves the New York open to 10:30 in winter', () => {
+    // The behaviour is pinned in display-time.spec.ts; this is the disclosure.
+    const hints = Array.from(setup().nativeElement.querySelectorAll('.hint'))
+      .map((p) => (p as HTMLElement).textContent ?? '')
+      .join(' ');
+
+    expect(hints).toMatch(/9:30/);
+    expect(hints).toMatch(/10:30/);
+    expect(hints).toMatch(/invierno/i);
   });
 });

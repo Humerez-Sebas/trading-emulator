@@ -10,6 +10,7 @@ import {
   createSeriesMarkers,
 } from 'lightweight-charts';
 import { ChartEventBus } from '../chart-event-bus';
+import { toDisplayTime } from '../display-time';
 import { ChartColors, PendingOrder, Position, RenderModel, TradeMarker } from '../render-model';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
 import { TradeButtonsPrimitive, TradeButton } from './trade-buttons-primitive';
@@ -70,7 +71,6 @@ export class TradingCapability implements Capability {
     // 1. Update Trade Boxes
     this.tradeBoxesPrimitive.setSource({
       items: t.boxes,
-      shift: t.shift,
       times: t.times,
       barSpacing: t.barSpacing,
       tpColor: t.colors.tpZone,
@@ -192,7 +192,7 @@ export class TradingCapability implements Capability {
       // 4. Update Markers
       this.seriesMarkers?.setMarkers(
         t.markers.map((m) => ({
-          time: (m.time + t.shift) as UTCTimestamp,
+          time: toDisplayTime(m.time, t.zone) as UTCTimestamp,
           position: m.position,
           shape: m.shape,
           color: m.color === 'up' ? t.colors.upColor : t.colors.downColor,

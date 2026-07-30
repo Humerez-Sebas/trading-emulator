@@ -143,12 +143,12 @@
     <h3>Hora en pantalla</h3>
     <div class="timezone-picker">
       <div class="tz-presets-grid">
-        @for (preset of shiftPresets; track preset.value) {
+        @for (preset of zonePresets; track preset.id) {
           <button
             class="tz-preset-btn"
-            [class.active]="utcOffset() === preset.value"
+            [class.active]="displayZone() === preset.id"
             [title]="preset.title"
-            (click)="onOffset(preset.value + '')"
+            (click)="onZone(preset.id)"
           >
             {{ preset.code }}
             @if (!preset.exact) {
@@ -173,18 +173,26 @@
         </svg>
         <ui-dropdown
           [block]="true"
-          ariaLabel="Desplazamiento sobre la hora del servidor"
-          [options]="shiftOptions"
-          [value]="utcOffset() + ''"
-          (valueChange)="onOffset($event)"
+          ariaLabel="Zona horaria de la pantalla"
+          [options]="zoneOptions"
+          [value]="displayZone()"
+          (valueChange)="onZone($event)"
         />
       </div>
     </div>
     <p class="hint">
-      Solo afecta a la visualización. Las velas se guardan en hora del servidor del bróker (Nueva
-      York + 7 h), y el número es el desplazamiento que se les aplica al pintarlas. Solo Nueva York
-      y la propia hora del servidor son exactas todo el año; las marcadas con ~ se desvían 1 h
-      cuando los cambios de horario no coinciden.
+      Solo afecta a la visualización; las velas se guardan siempre en hora del servidor del bróker
+      (Nueva York + 7 h).
+    </p>
+    <p class="hint">
+      <strong>Nueva York</strong> y <strong>Servidor MT5</strong> cambian de horario solas, así que
+      la apertura de Nueva York sale siempre a las 9:30 y la vela diaria corta siempre a las 17:00.
+    </p>
+    <p class="hint">
+      Un <strong>UTC fijo no cambia de horario</strong>: con UTC−4 la apertura de Nueva York sale a
+      las 9:30 en fechas normales, pero en los meses de invierno (de noviembre a marzo) sale a las
+      10:30, porque es Nueva York la que se mueve, no el reloj. Elige UTC−5 en invierno para volver
+      a verla a las 9:30. Las zonas sin cambio de horario (Tokio, La Paz) son exactas todo el año.
     </p>
   </section>
 

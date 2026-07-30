@@ -35,7 +35,7 @@ export const selectPlaying = replayFeature.selectPlaying;
 export const selectMsPerCandle = replayFeature.selectMsPerCandle;
 export const selectTheme = settingsFeature.selectTheme;
 export const selectChartColors = settingsFeature.selectChartColors;
-export const selectUtcOffset = settingsFeature.selectUtcOffset;
+export const selectDisplayZone = settingsFeature.selectDisplayZone;
 export const selectGridVisible = settingsFeature.selectGridVisible;
 export const selectGridOpacity = settingsFeature.selectGridOpacity;
 export const selectFloatingToolbar = settingsFeature.selectFloatingToolbar;
@@ -561,17 +561,17 @@ export const selectChartView = createSelector(
   selectActiveTfLabel,
   selectActiveCandles,
   selectVisibleIndex,
-  selectUtcOffset,
+  selectDisplayZone,
   selectResolutionMinutes,
   selectFormingCandle,
   selectCandleCountdown,
-  (tf, candles, idx, utcOffset, minutes, forming, countdown) => {
+  (tf, candles, idx, displayZone, minutes, forming, countdown) => {
     // Resolution mode: hide the (future-complete) bucket candle and paint the
     // forming bar instead; complete candles run up to bucketIdx-1.
     if (minutes != null && forming != null && idx >= 0) {
-      return { tf, candles, idx: idx - 1, utcOffset, forming, countdown };
+      return { tf, candles, idx: idx - 1, displayZone, forming, countdown };
     }
-    return { tf, candles, idx, utcOffset, forming: null, countdown };
+    return { tf, candles, idx, displayZone, forming: null, countdown };
   },
 );
 

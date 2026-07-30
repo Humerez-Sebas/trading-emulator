@@ -6,8 +6,8 @@ import {
   CHART_PRESETS,
   ChartColors,
   ChartPreset,
-  DISPLAY_SHIFT_PRESETS,
-  DISPLAY_SHIFTS,
+  DISPLAY_ZONE_OPTIONS,
+  DISPLAY_ZONE_PRESETS,
   Theme,
 } from '../../state/settings/settings.models';
 import {
@@ -17,7 +17,7 @@ import {
   selectGridVisible,
   selectTheme,
   selectTradeBoxOpacity,
-  selectUtcOffset,
+  selectDisplayZone,
 } from '../../state/selectors';
 import { CustomSwitchComponent } from '../custom-switch.component';
 import { CustomOpacitySliderComponent } from '../custom-opacity-slider.component';
@@ -42,7 +42,7 @@ export class SettingsPanelComponent {
 
   theme = this.store.selectSignal(selectTheme);
   colors = this.store.selectSignal(selectChartColors);
-  utcOffset = this.store.selectSignal(selectUtcOffset);
+  displayZone = this.store.selectSignal(selectDisplayZone);
   gridVisible = this.store.selectSignal(selectGridVisible);
   gridOpacity = this.store.selectSignal(selectGridOpacity);
   floatingToolbar = this.store.selectSignal(selectFloatingToolbar);
@@ -55,11 +55,8 @@ export class SettingsPanelComponent {
   } | null>(null);
 
   readonly presets = CHART_PRESETS;
-  readonly shiftPresets = DISPLAY_SHIFT_PRESETS;
-  readonly shiftOptions: DropdownOption[] = DISPLAY_SHIFTS.map((o) => ({
-    value: String(o.value),
-    label: o.label,
-  }));
+  readonly zonePresets = DISPLAY_ZONE_PRESETS;
+  readonly zoneOptions: DropdownOption[] = DISPLAY_ZONE_OPTIONS;
 
   readonly colorFields: { key: keyof ChartColors; label: string }[] = [
     { key: 'background', label: 'Color del Fondo' },
@@ -85,8 +82,8 @@ export class SettingsPanelComponent {
     this.store.dispatch(SettingsActions.restoreColors());
   }
 
-  onOffset(value: string): void {
-    this.store.dispatch(SettingsActions.changeUtcOffset({ utcOffset: +value }));
+  onZone(displayZone: string): void {
+    this.store.dispatch(SettingsActions.changeDisplayZone({ displayZone }));
   }
 
   toggleGrid(visible: boolean): void {

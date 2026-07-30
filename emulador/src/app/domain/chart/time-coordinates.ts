@@ -11,9 +11,7 @@ import type { IChartApi } from 'lightweight-charts';
  * to the same instant on every TF, gaps included.
  */
 export interface TimeAnchor {
-  /** Display offset in seconds (time zone). */
-  shift: number;
-  /** UTC times (no shift) of the currently rendered bars, ascending. */
+  /** Stored (server-clock) times of the currently rendered bars, ascending. */
   times: number[];
   /** Nominal seconds between bars of the active TF (out-of-range extrapolation). */
   barSpacing: number;
