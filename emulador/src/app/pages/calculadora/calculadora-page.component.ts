@@ -78,6 +78,19 @@ export class CalculadoraPageComponent {
   });
 
   /**
+   * `contractSize × pipSize` (L2): the $/pip value every forex trader
+   * already knows (EURUSD → 10), instead of the raw $/point figure which
+   * reads a hundredfold too large for a pip distance. `null` when the
+   * symbol has no pip size (index CFDs, metals) — those already read
+   * correctly in raw $/point terms. Purely relabels `contractSize` for
+   * display; never touches `lots`, not a sizing formula.
+   */
+  contractPerPip = computed(() => {
+    const pip = this.pipSize();
+    return pip !== null ? this.contractSize() * pip : null;
+  });
+
+  /**
    * Honest states 1 & 2 (spec §3.1): SL = entry, or balance/risk/entry
    * non-positive. Checked in `lotsForRisk`'s own evaluation order (distance
    * first) so the two mirror each other. `null` = a real lot figure exists.
@@ -91,10 +104,22 @@ export class CalculadoraPageComponent {
   });
 
   /**
-   * Honest state 3: the 0.01-lot floor. Only meaningful when a real lot
-   * figure exists (`invalidReason() === null`) — it is a warning ALONGSIDE
-   * the lot figure, never a replacement. Material difference per spec §3.1:
-   * requested risk > 0 and the real risk differs from it by more than 1%.
+   * Honest state 3: the 0.01-lot floor OR plain rounding to the 0.01 broker
+   * step (spec §3.1: «el mismo mecanismo cubre el redondeo a 0.01 hacia
+   * abajo»). Only meaningful when a real lot figure exists
+   * (`invalidReason() === null`) — it is a warning ALONGSIDE the lot figure,
+   * never a replacement. Material difference: requested risk > 0 and the
+   * real risk differs from it by more than 1%.
+   *
+   * The message must be honest about BOTH cause and direction — using only
+   * values already computed above, never a "raw lots before rounding"
+   * figure (that would be a second sizing formula, which is prohibited).
+   * `lots() === 0.01 && actual > requested` is the floor signature: the
+   * `lotsForRisk` minimum only ever pushes the real risk UP past the
+   * requested one. `lots() === 0.01` on its own is not enough — the natural
+   * rounded size can also land on exactly 0.01 — so the direction check
+   * disambiguates. Any other case is plain rounding to the 0.01 step, which
+   * moves the risk in either direction.
    */
   minLotWarning = computed<string | null>(() => {
     if (this.invalidReason() !== null) return null;
@@ -103,17 +128,34 @@ export class CalculadoraPageComponent {
     const actual = this.actualRisk();
     const diff = Math.abs(actual - requested) / requested;
     if (!(diff > 0.01)) return null;
-    return `El mínimo de 0.01 lotes arriesga $${actual.toFixed(2)}, por encima de los $${requested.toFixed(2)} solicitados.`;
+    const atFloor = this.lots() === 0.01 && actual > requested;
+    const cause = atFloor ? 'El mínimo de 0.01 lotes' : 'El redondeo al paso de 0.01 lotes';
+    const direction = actual > requested ? 'por encima de' : 'por debajo de';
+    return `${cause} arriesga $${actual.toFixed(2)}, ${direction} los $${requested.toFixed(2)} solicitados.`;
   });
 
   // ---- inverse block: given manual lots, the USD risk and % of account ----
-  manualRiskUsd = computed(() =>
-    riskForLots(this.manualLots(), this.entry(), this.sl(), this.contractSize()),
-  );
-  manualRiskPct = computed(() => {
+  /**
+   * `null` (L1) when distance is 0 (SL = entry) — the same degenerate setup
+   * that earns its own message in «Dimensionado», not a fabricated $0.00
+   * that reads as a valid zero-risk result. A genuine zero (e.g. 0 manual
+   * lots) is not degenerate and still renders as 0.
+   */
+  manualRiskUsd = computed<number | null>(() => {
+    if (this.distance() === 0) return null;
+    return riskForLots(this.manualLots(), this.entry(), this.sl(), this.contractSize());
+  });
+  /**
+   * `null` (L1) whenever the ratio is undefined: balance <= 0 (division by
+   * a non-positive quantity — previously hardcoded to a fabricated 0), or
+   * the USD numerator itself is undefined (distance 0). Never a fabricated
+   * 0.00 % standing in for "undefined".
+   */
+  manualRiskPct = computed<number | null>(() => {
     const balance = this.balance();
-    if (!(balance > 0)) return 0;
-    return (this.manualRiskUsd() / balance) * 100;
+    const usd = this.manualRiskUsd();
+    if (!(balance > 0) || usd === null) return null;
+    return (usd / balance) * 100;
   });
 
   onBalance(event: Event): void {

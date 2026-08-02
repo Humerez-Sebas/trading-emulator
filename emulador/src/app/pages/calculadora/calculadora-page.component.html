@@ -93,21 +93,29 @@
         <dl class="stats">
           <div>
             <dt>Riesgo solicitado</dt>
-            <dd>{{ requestedRisk() | number: '1.2-2' }} $</dd>
+            <dd class="requested-risk-value">{{ requestedRisk() | number: '1.2-2' }} $</dd>
           </div>
           <div>
             <dt>Riesgo real</dt>
-            <dd>{{ actualRisk() | number: '1.2-2' }} $</dd>
+            <dd class="actual-risk-value">{{ actualRisk() | number: '1.2-2' }} $</dd>
           </div>
           <div>
             <dt>Distancia</dt>
-            <dd>{{ distanceValue() | number: '1.0-2' }} {{ distanceLabel() }}</dd>
+            <dd class="distance-value">
+              {{ distanceValue() | number: '1.0-2' }} {{ distanceLabel() }}
+            </dd>
           </div>
         </dl>
       }
 
       <p class="contract-line">
-        {{ symbol() || '(sin símbolo)' }} → {{ contractSize() | number: '1.0-0' }} $/punto por lote
+        @if (pipSize() !== null) {
+          {{ symbol() || '(sin símbolo)' }} → {{ contractPerPip() | number: '1.0-2' }} $/pip por
+          lote ({{ contractSize() | number: '1.0-0' }} $/punto por lote)
+        } @else {
+          {{ symbol() || '(sin símbolo)' }} → {{ contractSize() | number: '1.0-0' }} $/punto por
+          lote
+        }
       </p>
     </section>
 
@@ -129,11 +137,23 @@
       <dl class="stats">
         <div>
           <dt>Riesgo</dt>
-          <dd>{{ manualRiskUsd() | number: '1.2-2' }} $</dd>
+          <dd class="manual-risk-usd">
+            @if (manualRiskUsd() === null) {
+              —
+            } @else {
+              {{ manualRiskUsd() | number: '1.2-2' }} $
+            }
+          </dd>
         </div>
         <div>
           <dt>% de la cuenta</dt>
-          <dd>{{ manualRiskPct() | number: '1.2-2' }} %</dd>
+          <dd class="manual-risk-pct">
+            @if (manualRiskPct() === null) {
+              —
+            } @else {
+              {{ manualRiskPct() | number: '1.2-2' }} %
+            }
+          </dd>
         </div>
       </dl>
     </section>
