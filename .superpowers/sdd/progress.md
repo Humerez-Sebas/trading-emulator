@@ -59,7 +59,9 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
 - [x] Task 3: lazy `/calculadora` route (`authGuard`, **no** `r2OnboardingGuard`) + nav
       link after «Nueva sesión» (LOW) — **committed, gates NOT yet re-run by the
       orchestrator (see below)**
-- [ ] Final: four gates + `npm run build` + invariant greps + whole-branch Opus audit
+- [x] Final gates + `npm run build` + invariant greps (all green, recorded below)
+- [x] Whole-branch Opus audit → **NOT PASS** (1 High, 1 Medium) → fix `dfa5dc9` →
+      re-audit pending
 - [ ] PR → `main` (GitHub MCP), then back-merge `main → develop`
 
 ## Completed
@@ -300,6 +302,81 @@ gates and the branch-level verification below were run on resume.)_
 - **Whole-branch diff vs `origin/main`:** 13 files, +1750/−28 — 3 committed docs
   (spec, plan, orchestrator prompt), the ledger, and 9 code files. Nothing outside the
   declared scope.
+
+## Whole-branch audit (`branch-auditor`, Opus) over `b8ae481..70dfe74` — **NOT PASS**
+
+Every gate green in the auditor's own run (78/1028, lint 0, Prettier clean, build
+611.53 kB with no new chunk types), every kernel invariant clean, and the ledger
+arithmetic re-derived from scratch rather than accepted: `it()` counts 8 + 14 + 5 = 27,
+`1028 − 27 = 1001`, `78 − 3 = 75`, and `git diff --name-only origin/main...HEAD | grep
+spec.ts` returns **only those three files** — no pre-existing spec was edited, so the
+derivation is airtight. It also killed all three Task 3 route-test mutations
+(adding `r2OnboardingGuard`, emptying `canActivate`, moving the wildcard), closing the
+implementer's honest vacuity note, and probed the route against the **real** Store and
+Router: the page lazy-loads, renders correctly with `assets: []`, and an anonymous user
+does not reach it.
+
+Two findings, both in the page's **input surface** — invisible to every previous check
+because all 14 page tests set the component's signals directly and none crossed the DOM:
+
+- **F1 (HIGH).** The five numeric fields bound `[value]="signal()"` and did
+  `signal.set(Number(target.value))` on every `input` event. `Number('')` is `0`, and
+  `<input type="number">` returns `''` for any invalid intermediate text (`"1."`, `"-"`,
+  a cleared field). So mid-keystroke the signal collapsed to `0`, the binding changed, and
+  Angular wrote `"0"` back into the field. **Typing `1.10952` left to right was
+  impossible** — the field snapped to `0` at the decimal point, every time, in Entrada,
+  Stop Loss, the free Riesgo % field and Lotes. Clearing a field was impossible too. On a
+  page titled *CFD/Forex*, whose own suite uses `EURUSD 1.1 → 1.094`, the shipped UI could
+  not accept those values from a keyboard. Index CFDs have integer prices, which is
+  exactly why the prefilled acceptance case and all 14 tests passed.
+- **F2 (MEDIUM).** None of the six inputs had an accessible name — `<div class="ui-field">`
+  plus a `<span>` with no `for`, and inputs with no `id`/`aria-label`. A screen reader
+  announced five indistinguishable spin buttons on a page whose whole purpose is putting
+  the right number in the right field. Production path, so §6 bars a convenience no-fix.
+- **L6, L7, L8 — ruled NO-FIX with written reasons.** L6: `invalidReason` does not reject
+  a *finite* negative SL — spec §3.1 lists exactly three honest states, and `lotsForRisk`
+  has the identical behaviour, so rejecting it here would break the emulator-parity
+  invariant this feature exists to guarantee; the correct home is `trading.models.ts`,
+  which this branch may not touch. L7: the symbol echoes un-normalized (`eurusd`) —
+  display-only, every figure correct. L8: the `ui-dropdown` branch had no coverage —
+  test-code only, and the auditor exercised it against the real store and found it
+  correct.
+
+### Final fix — `fix(calculadora): entradas que aceptan decimales y campos con nombre accesible`
+
+- **Commit:** `dfa5dc9` (`70dfe74..dfa5dc9`), 3 files, +286/−37, all inside
+  `pages/calculadora/`. Frozen files confirmed untouched:
+  `git diff --stat 70dfe74 -- domain/risk/ app.routes.ts app.html app.routes.spec.ts` is
+  empty.
+- **F1 closed by a design change, and the reason is worth keeping.** The implementer
+  probed jsdom directly and found that `<input type="number">.value` sanitizes incomplete
+  float text to `''` *on assignment*, before any Angular code runs — so **neither** repo
+  precedent cited in the brief could have survived while keeping `type="number"`. The five
+  fields became `type="text" inputmode="decimal"` with raw string signals (`entryText`, …)
+  bound to `[value]` and parsed by separate `computed(() => parseFloat(...))` — which is
+  structurally the `trade-panel.component.ts` pattern. `parseFloat('')` is `NaN`, never
+  `0`, so a cleared field drives an honest state instead of a confident wrong figure.
+- **Two consequential guards, both reasoned in-code:** `invalidReason` gained
+  `!Number.isFinite(sl())` — a **NaN check, not a positivity check**, so L6's ruled-no-fix
+  behaviour (finite negative SL still produces a figure, matching `lotsForRisk`) is
+  deliberately preserved; and `manualRiskUsd` gained NaN guards, since the inverse block
+  does not sit behind `invalidReason`.
+- **Red-before-green evidence:** 7 failures captured against the unfixed component (fields
+  snapping to `0`; no accessible name), then green with `1.10952` and `2650.50` surviving
+  keystroke-by-keystroke DOM entry. The new tests drive the real `<input>`
+  (`el.value = …; dispatchEvent(new Event('input'))`), which is what makes them able to
+  fail at all.
+- **L8 coverage added** (dropdown renders; `onAssetPick('XAUUSD')` re-sizes through
+  `contractSizeFor`) — green before the fix too, confirming it was a gap, not a defect.
+- **Evidence — gates re-run by the ORCHESTRATOR:** tsc app+spec clean ·
+  `npx ng test --watch=false` → **78 files / 1037 tests passed** · lint 0 ·
+  `format:check` clean · `npm run build` success, initial total **611.53 kB unchanged**,
+  no new chunk types.
+- **Test-count arithmetic:** 1028 → 1037 = +9 (page spec 14 → 23).
+- **Implementer-flagged for audit attention (honest, not a defect claim):** the Riesgo
+  group was wrapped in `<label>` per the brief's literal six-field list even though it
+  holds two controls (the slider and the free field), made safe by an explicit `aria-label`
+  on the free field.
 
 ## Deviations
 
