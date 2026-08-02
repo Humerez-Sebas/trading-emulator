@@ -29,16 +29,20 @@ describe('CalculadoraPageComponent', () => {
     return fixture;
   }
 
+  // Writes to the raw TEXT signals (F1: `balance`/`riskPct`/`entry`/`sl` are
+  // now read-only `computed(() => parseFloat(...Text()))`, parsed from the
+  // text the DOM actually holds — see the component's class doc). `String()`
+  // round-trips exactly for every literal used across this suite.
   function setInputs(
     fixture: ReturnType<typeof create>,
     v: { balance: number; riskPct: number; symbol: string; entry: number; sl: number },
   ) {
     const c = fixture.componentInstance;
-    c.balance.set(v.balance);
-    c.riskPct.set(v.riskPct);
+    c.balanceText.set(String(v.balance));
+    c.riskPctText.set(String(v.riskPct));
     c.symbol.set(v.symbol);
-    c.entry.set(v.entry);
-    c.sl.set(v.sl);
+    c.entryText.set(String(v.entry));
+    c.slText.set(String(v.sl));
     fixture.detectChanges();
   }
 
@@ -203,5 +207,156 @@ describe('CalculadoraPageComponent', () => {
     // The USD figure IS still defined here (distance > 0): manualLots
     // defaults to 1, so it must render a real number, not a dash.
     expect(el.querySelector('.manual-risk-usd')?.textContent?.trim()).not.toBe('—');
+  });
+
+  // ---- F1 (HIGH) regression — DOM-driven, not `.set()`. Every numeric field
+  // used to bind `[value]="signal()"` and write `signal.set(Number(target.value))`
+  // on every `input` event. `<input type="number">` returns `''` from
+  // `.value` for any invalid intermediate text ("1.", "-", a cleared field),
+  // and `Number('')` is `0` — so mid-keystroke the signal collapsed to `0`
+  // and Angular wrote "0" back into the field, destroying what was typed.
+  // These tests drive the real `<input>` element, exactly the DOM path the
+  // 14 tests above never touch (they all call `.set()` directly).
+  describe('F1 — decimal entry survives keystroke-by-keystroke typing (DOM-driven)', () => {
+    function inputByName(fixture: ReturnType<typeof create>, name: string): HTMLInputElement {
+      const el = fixture.nativeElement as HTMLElement;
+      const input = el.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+      if (!input) throw new Error(`no input[name="${name}"] found`);
+      return input;
+    }
+
+    function typeKeystrokes(
+      fixture: ReturnType<typeof create>,
+      input: HTMLInputElement,
+      text: string,
+    ): void {
+      let typed = '';
+      for (const ch of text) {
+        typed += ch;
+        input.value = typed;
+        input.dispatchEvent(new Event('input'));
+        fixture.detectChanges();
+        // The field must show EXACTLY what was typed so far at every single
+        // keystroke, including the intermediate "1." and "1.0" states that
+        // the old Number()-on-every-keystroke write-back destroyed.
+        expect(input.value).toBe(typed);
+      }
+    }
+
+    it('EURUSD entry 1.10952 typed left to right into Entrada never snaps to 0', () => {
+      const fixture = create();
+      const entry = inputByName(fixture, 'entry');
+      typeKeystrokes(fixture, entry, '1.10952');
+      expect(fixture.componentInstance.entry()).toBeCloseTo(1.10952, 5);
+    });
+
+    it('a trailing-zero price (2650.50) typed into Stop Loss never snaps to 0', () => {
+      const fixture = create();
+      const sl = inputByName(fixture, 'sl');
+      typeKeystrokes(fixture, sl, '2650.50');
+      expect(fixture.componentInstance.sl()).toBeCloseTo(2650.5, 5);
+    });
+
+    it('clearing Entrada leaves it visibly empty (no 0 snap-back) and lands in an honest state', () => {
+      const fixture = create();
+      const entry = inputByName(fixture, 'entry');
+      entry.value = '';
+      entry.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      expect(entry.value).toBe('');
+      const text = fixture.nativeElement.textContent ?? '';
+      expect(text.toLowerCase()).toContain('positivos');
+      expect(fixture.nativeElement.querySelector('.lots-hero')).toBeNull();
+    });
+
+    it('clearing Stop Loss leaves it visibly empty and does not render a confident wrong lot figure', () => {
+      const fixture = create();
+      const sl = inputByName(fixture, 'sl');
+      sl.value = '';
+      sl.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      expect(sl.value).toBe('');
+      // A cleared SL must NOT produce a "0.00 lotes" confident-looking
+      // figure (distance becomes undefined, not 0 — the SL-equals-entry
+      // state is a different, more specific honest state).
+      expect(fixture.nativeElement.querySelector('.lots-hero')).toBeNull();
+    });
+
+    it('the free Riesgo % field survives 1.5 typed left to right', () => {
+      const fixture = create();
+      const riskFree = inputByName(fixture, 'riskPctFree');
+      typeKeystrokes(fixture, riskFree, '1.5');
+      expect(fixture.componentInstance.riskPct()).toBeCloseTo(1.5, 5);
+    });
+
+    it('Lotes survives 0.5 typed left to right', () => {
+      const fixture = create();
+      const lots = inputByName(fixture, 'manualLots');
+      typeKeystrokes(fixture, lots, '0.5');
+      expect(fixture.componentInstance.manualLots()).toBeCloseTo(0.5, 5);
+    });
+
+    it('the risk slider still updates the free Riesgo % field (constraint 3 — do not break the one working direction)', () => {
+      const fixture = create();
+      const el = fixture.nativeElement as HTMLElement;
+      const rangeInput = el.querySelector<HTMLInputElement>('app-risk-slider input[type="range"]');
+      if (!rangeInput) throw new Error('no range input found inside app-risk-slider');
+      rangeInput.value = '2.5';
+      rangeInput.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      const riskFree = inputByName(fixture, 'riskPctFree');
+      expect(riskFree.value).toBe('2.5');
+      expect(fixture.componentInstance.riskPct()).toBeCloseTo(2.5, 5);
+    });
+  });
+
+  // ---- F2 (MEDIUM) regression — every `input[appInput]` in the page must
+  // have an accessible name: it sits inside a `<label>`, or it carries
+  // `aria-label`/`aria-labelledby`. Previously every field group was a
+  // `<div class="ui-field"><span>…</span><input …>`, giving screen readers
+  // five indistinguishable "spin button" controls.
+  it('F2 — every input[appInput] has an accessible name (label wrap or aria-label)', () => {
+    const fixture = create();
+    const el = fixture.nativeElement as HTMLElement;
+    const inputs = Array.from(el.querySelectorAll<HTMLInputElement>('input[appInput]'));
+    expect(inputs.length).toBeGreaterThan(0);
+    for (const input of inputs) {
+      const hasLabelAncestor = input.closest('label') !== null;
+      const hasAriaLabel = input.hasAttribute('aria-label');
+      const hasAriaLabelledby = input.hasAttribute('aria-labelledby');
+      const named = hasLabelAncestor || hasAriaLabel || hasAriaLabelledby;
+      expect(named, `input[name="${input.name}"] has no accessible name`).toBe(true);
+    }
+  });
+
+  // ---- L8 — the `ui-dropdown` branch (`@if (assetOptions().length)`) is
+  // never rendered by the suite above (every test overrides `selectAssets`
+  // to `[]`). This is a coverage gap, not a defect: exercise it against two
+  // assets and confirm picking a symbol re-sizes through `contractSizeFor`
+  // (the auditor's probe: with the prefilled defaults still in place —
+  // balance 5000, riskPct 1%, entry 40000, SL 39950 — picking XAUUSD flips
+  // contractSize from 1 (US30 falls through to the default) to 100, which
+  // re-sizes `lotsForRisk` down to its 0.01 floor).
+  it('L8 — renders the ui-dropdown when assets exist, and picking one re-sizes through contractSizeFor', () => {
+    TestBed.configureTestingModule({
+      providers: [provideMockStore()],
+    });
+    store = TestBed.inject(MockStore);
+    store.overrideSelector(selectAssets, [
+      { symbol: 'XAUUSD', lastModified: 1 },
+      { symbol: 'US30', lastModified: 1 },
+    ]);
+    store.refreshState();
+    const fixture = TestBed.createComponent(CalculadoraPageComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const dropdown = el.querySelector('ui-dropdown');
+    expect(dropdown).not.toBeNull();
+
+    fixture.componentInstance.onAssetPick('XAUUSD');
+    fixture.detectChanges();
+    expect(fixture.componentInstance.contractSize()).toBe(contractSizeFor('XAUUSD'));
+    expect(fixture.componentInstance.contractSize()).toBe(100);
+    expect(el.querySelector('.lots-value')?.textContent?.trim()).toBe('0.01');
   });
 });

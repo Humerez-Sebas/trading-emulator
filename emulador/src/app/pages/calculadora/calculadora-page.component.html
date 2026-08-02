@@ -13,12 +13,19 @@
     <section class="panel" aria-labelledby="inputs-title">
       <h2 id="inputs-title">Datos de la operación</h2>
 
-      <div class="ui-field">
+      <label class="ui-field">
         <span class="ui-field-label">Cuenta (USD)</span>
-        <input appInput type="number" step="1" [value]="balance()" (input)="onBalance($event)" />
-      </div>
+        <input
+          appInput
+          type="text"
+          inputmode="decimal"
+          name="balance"
+          [value]="balanceText()"
+          (input)="onBalance($event)"
+        />
+      </label>
 
-      <div class="ui-field">
+      <label class="ui-field">
         <span class="ui-field-label">Riesgo</span>
         <app-risk-slider
           [balance]="balance()"
@@ -28,16 +35,18 @@
         <div class="risk-free">
           <input
             appInput
-            type="number"
-            step="0.01"
-            [value]="riskPct()"
+            type="text"
+            inputmode="decimal"
+            name="riskPctFree"
+            aria-label="Riesgo % (campo libre)"
+            [value]="riskPctText()"
             (input)="onRiskPct($event)"
           />
           <span class="unit"
             >% — el campo acepta cualquier valor positivo, el slider es un atajo (0.1–5)</span
           >
         </div>
-      </div>
+      </label>
 
       <div class="ui-field">
         <span class="ui-field-label">Activo</span>
@@ -54,6 +63,8 @@
         <input
           appInput
           type="text"
+          name="symbol"
+          aria-label="Símbolo (texto libre)"
           placeholder="o escribe el símbolo, p. ej. US30"
           [value]="symbol()"
           (input)="onSymbol($event)"
@@ -61,14 +72,28 @@
       </div>
 
       <div class="row-2">
-        <div class="ui-field">
+        <label class="ui-field">
           <span class="ui-field-label">Entrada</span>
-          <input appInput type="number" step="any" [value]="entry()" (input)="onEntry($event)" />
-        </div>
-        <div class="ui-field">
+          <input
+            appInput
+            type="text"
+            inputmode="decimal"
+            name="entry"
+            [value]="entryText()"
+            (input)="onEntry($event)"
+          />
+        </label>
+        <label class="ui-field">
           <span class="ui-field-label">Stop Loss</span>
-          <input appInput type="number" step="any" [value]="sl()" (input)="onSl($event)" />
-        </div>
+          <input
+            appInput
+            type="text"
+            inputmode="decimal"
+            name="sl"
+            [value]="slText()"
+            (input)="onSl($event)"
+          />
+        </label>
       </div>
     </section>
 
@@ -123,16 +148,17 @@
       <h2 id="inverse-title">Desde lotes</h2>
       <p class="hint">Dado un número de lotes, cuánto arriesgas en USD y en % de la cuenta.</p>
 
-      <div class="ui-field">
+      <label class="ui-field">
         <span class="ui-field-label">Lotes</span>
         <input
           appInput
-          type="number"
-          step="0.01"
-          [value]="manualLots()"
+          type="text"
+          inputmode="decimal"
+          name="manualLots"
+          [value]="manualLotsText()"
           (input)="onManualLots($event)"
         />
-      </div>
+      </label>
 
       <dl class="stats">
         <div>

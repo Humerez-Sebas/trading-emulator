@@ -31,6 +31,36 @@ import { RiskSliderComponent } from '../../components/risk-slider.component';
  * Read-only NgRx: only `selectAssets`, to populate the asset dropdown. No
  * `dispatch`, no effects, no subscriptions — everything else is `computed`
  * over local input signals.
+ *
+ * ---- F1 fix (decimal entry) ----
+ * The five numeric fields (Cuenta, the free Riesgo % field, Entrada, Stop
+ * Loss, Lotes) are `type="text" inputmode="decimal"`, NOT `type="number"`:
+ * `<input type="number">.value` sanitizes to `''` for any intermediate text
+ * that isn't yet a valid float ("1.", "-", a lone "."), even when set via
+ * plain script assignment — verified empirically (jsdom, matching browser
+ * behaviour): `el.value = '1.'` reads back as `''` immediately, before any
+ * Angular code runs. No component-side guard can recover text the DOM
+ * already discarded, so `type="number"` cannot host this fix; `type="text"`
+ * never sanitizes `.value` at all.
+ *
+ * Each field is a RAW STRING signal (`entryText`, ...) bound directly to
+ * `[value]`, written verbatim from `event.target.value` on every `input`
+ * event — converging on the `trade-panel.component.ts` precedent
+ * (`entryText = signal('')`, parsed with `parseFloat` at read time; nothing
+ * is written back mid-edit). The numeric signals consumed by the sizing
+ * computeds below (`balance`, `riskPct`, `entry`, `sl`, `manualLots`) are
+ * `computed(() => parseFloat(...Text()))` — `parseFloat('')` is `NaN`, never
+ * `0`, so a cleared/invalid field drives an honest state instead of a
+ * confident wrong figure (constraint 2). Because `[value]` binds the RAW
+ * text signal and Angular's property binding no-ops when the bound
+ * expression is unchanged since the last render, the DOM is never written
+ * to except when the user's own typing (or the risk slider, § below)
+ * actually changed the text — so a value like "2650.50" that round-trips
+ * unchanged through the signal never gets re-rendered/re-canonicalized.
+ *
+ * The risk % free field stays in sync with `app-risk-slider` (constraint
+ * 3): `onRiskSlider` writes `riskPctText.set(String(value))` directly, the
+ * same single text signal the free field's own `(input)` handler writes to.
  */
 @Component({
   selector: 'app-calculadora-page',
@@ -48,13 +78,22 @@ export class CalculadoraPageComponent {
     this.assets().map((a) => ({ value: a.symbol, label: a.symbol })),
   );
 
-  // ---- inputs (prefilled with the owner's acceptance case) ----
-  balance = signal(5000);
-  riskPct = signal(1);
+  // ---- raw text inputs (prefilled with the owner's acceptance case) ----
+  // Bound directly to the DOM; see the class doc for why these are text,
+  // not numbers written back mid-edit.
+  balanceText = signal('5000');
+  riskPctText = signal('1');
   symbol = signal('US30');
-  entry = signal(40000);
-  sl = signal(39950);
-  manualLots = signal(1);
+  entryText = signal('40000');
+  slText = signal('39950');
+  manualLotsText = signal('1');
+
+  // ---- parsed at read time (never written back to the DOM) ----
+  balance = computed(() => parseFloat(this.balanceText()));
+  riskPct = computed(() => parseFloat(this.riskPctText()));
+  entry = computed(() => parseFloat(this.entryText()));
+  sl = computed(() => parseFloat(this.slText()));
+  manualLots = computed(() => parseFloat(this.manualLotsText()));
 
   // ---- composition: contractSizeFor/lotsForRisk (state) + risk-calculator (domain) ----
   contractSize = computed(() => contractSizeFor(this.symbol()));
@@ -94,10 +133,26 @@ export class CalculadoraPageComponent {
    * Honest states 1 & 2 (spec §3.1): SL = entry, or balance/risk/entry
    * non-positive. Checked in `lotsForRisk`'s own evaluation order (distance
    * first) so the two mirror each other. `null` = a real lot figure exists.
+   *
+   * The trailing `!Number.isFinite(this.sl())` clause is F1 constraint 2: a
+   * cleared Stop Loss parses to `NaN`, and `NaN !== 0` so it would otherwise
+   * slide past the SL-equals-entry check and past the balance/risk/entry
+   * check (none of which look at `sl`), reaching `lotsForRisk` with a NaN
+   * distance — which early-returns a literal `0`, rendering a confident
+   * "0.00 lotes" for what is actually an empty field. This is a NaN check,
+   * not a positivity check: a *finite* negative SL (L6, ruled no-fix — SL
+   * -1 for entry 1.1) must still fall through to a real lot figure, exactly
+   * as before, since `lotsForRisk` has the identical behaviour and fixing
+   * it belongs in `trading.models.ts`, which this branch may not touch.
    */
   invalidReason = computed<string | null>(() => {
     if (this.distance() === 0) return 'El SL coincide con la entrada.';
-    if (!(this.balance() > 0) || !(this.riskPct() > 0) || !(this.entry() > 0)) {
+    if (
+      !(this.balance() > 0) ||
+      !(this.riskPct() > 0) ||
+      !(this.entry() > 0) ||
+      !Number.isFinite(this.sl())
+    ) {
       return 'La cuenta, el riesgo y la entrada deben ser valores positivos.';
     }
     return null;
@@ -139,9 +194,21 @@ export class CalculadoraPageComponent {
    * `null` (L1) when distance is 0 (SL = entry) — the same degenerate setup
    * that earns its own message in «Dimensionado», not a fabricated $0.00
    * that reads as a valid zero-risk result. A genuine zero (e.g. 0 manual
-   * lots) is not degenerate and still renders as 0.
+   * lots) is not degenerate and still renders as 0. Also `null` (F1
+   * constraint 2) when entry, SL or manualLots is cleared/invalid (`NaN`):
+   * this section is NOT gated behind `invalidReason()` (it renders
+   * unconditionally, unlike «Dimensionado»), so without this guard a
+   * cleared field here would render a blank `$` from a NaN pipe input
+   * instead of the honest "—" the rest of this block already uses.
    */
   manualRiskUsd = computed<number | null>(() => {
+    if (
+      !Number.isFinite(this.entry()) ||
+      !Number.isFinite(this.sl()) ||
+      !Number.isFinite(this.manualLots())
+    ) {
+      return null;
+    }
     if (this.distance() === 0) return null;
     return riskForLots(this.manualLots(), this.entry(), this.sl(), this.contractSize());
   });
@@ -159,13 +226,14 @@ export class CalculadoraPageComponent {
   });
 
   onBalance(event: Event): void {
-    this.balance.set(Number((event.target as HTMLInputElement).value));
+    this.balanceText.set((event.target as HTMLInputElement).value);
   }
   onRiskPct(event: Event): void {
-    this.riskPct.set(Number((event.target as HTMLInputElement).value));
+    this.riskPctText.set((event.target as HTMLInputElement).value);
   }
+  /** Slider writes programmatically (constraint 3) — same text signal the free field's own `(input)` writes to, so it stays in sync. */
   onRiskSlider(value: number): void {
-    this.riskPct.set(value);
+    this.riskPctText.set(String(value));
   }
   onSymbol(event: Event): void {
     this.symbol.set((event.target as HTMLInputElement).value);
@@ -174,12 +242,12 @@ export class CalculadoraPageComponent {
     this.symbol.set(symbol);
   }
   onEntry(event: Event): void {
-    this.entry.set(Number((event.target as HTMLInputElement).value));
+    this.entryText.set((event.target as HTMLInputElement).value);
   }
   onSl(event: Event): void {
-    this.sl.set(Number((event.target as HTMLInputElement).value));
+    this.slText.set((event.target as HTMLInputElement).value);
   }
   onManualLots(event: Event): void {
-    this.manualLots.set(Number((event.target as HTMLInputElement).value));
+    this.manualLotsText.set((event.target as HTMLInputElement).value);
   }
 }
