@@ -321,12 +321,109 @@ describe('CalculadoraPageComponent', () => {
     const inputs = Array.from(el.querySelectorAll<HTMLInputElement>('input[appInput]'));
     expect(inputs.length).toBeGreaterThan(0);
     for (const input of inputs) {
-      const hasLabelAncestor = input.closest('label') !== null;
+      // L11: `closest('label')` is true for ANY descendant of a label, even
+      // one the label does not actually name (e.g. a label wrapping two
+      // controls, where the browser's implicit-association algorithm names
+      // only the first labelable descendant). `.labels` is the spec-accurate
+      // association the browser itself computes.
+      const hasLabelAssociation = input.labels !== null && input.labels.length > 0;
       const hasAriaLabel = input.hasAttribute('aria-label');
       const hasAriaLabelledby = input.hasAttribute('aria-labelledby');
-      const named = hasLabelAncestor || hasAriaLabel || hasAriaLabelledby;
+      const named = hasLabelAssociation || hasAriaLabel || hasAriaLabelledby;
       expect(named, `input[name="${input.name}"] has no accessible name`).toBe(true);
     }
+  });
+
+  // ---- F3 (HIGH) regression — DOM-driven, not `.set()`. `parseFloat`
+  // truncates at the first character it cannot consume instead of refusing
+  // the whole string: `parseFloat('2650,50')` reads `2650` (dropping the
+  // Spanish-keypad decimal comma with no NaN, no signal), and
+  // `parseFloat('1.5abc')` reads `1.5`. Both must land in the honest state
+  // instead of a confidently wrong lot figure.
+  describe('F3 — comma decimal / trailing junk parses fully or refuses (DOM-driven)', () => {
+    function inputByName(fixture: ReturnType<typeof create>, name: string): HTMLInputElement {
+      const el = fixture.nativeElement as HTMLElement;
+      const input = el.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+      if (!input) throw new Error(`no input[name="${name}"] found`);
+      return input;
+    }
+
+    function setViaDom(fixture: ReturnType<typeof create>, name: string, text: string): void {
+      const input = inputByName(fixture, name);
+      input.value = text;
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    // Auditor's own reproduction: XAUUSD, account 5000, risk 1%. Comma-typed
+    // entry/SL must render the SAME lot figure as the dot-typed version
+    // (0.20), never the truncated-parse figure (0.25) that a 25%-oversized
+    // position would come from.
+    it('renders 0.20 lots for comma-typed 2650,50 -> 2648,00 on XAUUSD (not the truncated 0.25)', () => {
+      const fixture = create();
+      setInputs(fixture, { balance: 5000, riskPct: 1, symbol: 'XAUUSD', entry: 40000, sl: 39950 });
+      setViaDom(fixture, 'entry', '2650,50');
+      setViaDom(fixture, 'sl', '2648,00');
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('.lots-value')?.textContent?.trim()).toBe('0.20');
+      expect(el.querySelector('.lots-value')?.textContent?.trim()).not.toBe('0.25');
+    });
+
+    it('renders the identical 0.20 lots for dot-typed 2650.50 -> 2648.00 on XAUUSD (parity with the comma case)', () => {
+      const fixture = create();
+      setInputs(fixture, { balance: 5000, riskPct: 1, symbol: 'XAUUSD', entry: 40000, sl: 39950 });
+      setViaDom(fixture, 'entry', '2650.50');
+      setViaDom(fixture, 'sl', '2648.00');
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('.lots-value')?.textContent?.trim()).toBe('0.20');
+    });
+
+    it('1.5abc typed into Entrada lands in the honest state, not a truncated 1.5', () => {
+      const fixture = create();
+      setViaDom(fixture, 'entry', '1.5abc');
+      expect(fixture.componentInstance.entry()).toBeNaN();
+      const text = fixture.nativeElement.textContent ?? '';
+      expect(text.toLowerCase()).toContain('positivos');
+      expect(fixture.nativeElement.querySelector('.lots-hero')).toBeNull();
+    });
+
+    it('1,234,56 (ambiguous multi-comma) typed into Entrada lands in the honest state', () => {
+      const fixture = create();
+      setViaDom(fixture, 'entry', '1,234,56');
+      expect(fixture.componentInstance.entry()).toBeNaN();
+    });
+
+    it('a lone "-" typed into Entrada lands in the honest state', () => {
+      const fixture = create();
+      setViaDom(fixture, 'entry', '-');
+      expect(fixture.componentInstance.entry()).toBeNaN();
+    });
+
+    // Mid-typing cases — must keep working or F3 breaks F1 (typing a decimal
+    // left to right stalls if "1." or "1," parses to NaN mid-keystroke).
+    it('a lone "1." typed into Entrada parses to 1 (mid-typing, do not break F1)', () => {
+      const fixture = create();
+      setViaDom(fixture, 'entry', '1.');
+      expect(fixture.componentInstance.entry()).toBe(1);
+    });
+
+    it('a lone "1," typed into Entrada parses to 1 (comma variant of mid-typing)', () => {
+      const fixture = create();
+      setViaDom(fixture, 'entry', '1,');
+      expect(fixture.componentInstance.entry()).toBe(1);
+    });
+
+    it('1e5 typed into Entrada still parses to 100000', () => {
+      const fixture = create();
+      setViaDom(fixture, 'entry', '1e5');
+      expect(fixture.componentInstance.entry()).toBe(100000);
+    });
+
+    it('-1 typed into Stop Loss still parses to a finite -1 (L6 depends on this)', () => {
+      const fixture = create();
+      setViaDom(fixture, 'sl', '-1');
+      expect(fixture.componentInstance.sl()).toBe(-1);
+    });
   });
 
   // ---- L8 — the `ui-dropdown` branch (`@if (assetOptions().length)`) is

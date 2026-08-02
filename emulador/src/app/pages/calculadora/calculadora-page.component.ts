@@ -46,11 +46,11 @@ import { RiskSliderComponent } from '../../components/risk-slider.component';
  * Each field is a RAW STRING signal (`entryText`, ...) bound directly to
  * `[value]`, written verbatim from `event.target.value` on every `input`
  * event — converging on the `trade-panel.component.ts` precedent
- * (`entryText = signal('')`, parsed with `parseFloat` at read time; nothing
- * is written back mid-edit). The numeric signals consumed by the sizing
- * computeds below (`balance`, `riskPct`, `entry`, `sl`, `manualLots`) are
- * `computed(() => parseFloat(...Text()))` — `parseFloat('')` is `NaN`, never
- * `0`, so a cleared/invalid field drives an honest state instead of a
+ * (`entryText = signal('')`, parsed at read time; nothing is written back
+ * mid-edit). The numeric signals consumed by the sizing computeds below
+ * (`balance`, `riskPct`, `entry`, `sl`, `manualLots`) are
+ * `computed(() => parseDecimal(...Text()))` — `parseDecimal('')` is `NaN`,
+ * never `0`, so a cleared/invalid field drives an honest state instead of a
  * confident wrong figure (constraint 2). Because `[value]` binds the RAW
  * text signal and Angular's property binding no-ops when the bound
  * expression is unchanged since the last render, the DOM is never written
@@ -61,7 +61,29 @@ import { RiskSliderComponent } from '../../components/risk-slider.component';
  * The risk % free field stays in sync with `app-risk-slider` (constraint
  * 3): `onRiskSlider` writes `riskPctText.set(String(value))` directly, the
  * same single text signal the free field's own `(input)` handler writes to.
+ *
+ * ---- F3 fix (comma decimal / trailing junk) ----
+ * `parseFloat` stops at the first character it cannot consume and returns
+ * the truncated prefix instead of refusing: `parseFloat('2650,50')` is
+ * `2650` (silently dropping the Spanish-keypad decimal comma — the app's UI
+ * is Spanish throughout), and `parseFloat('1.5abc')` is `1.5`. Neither
+ * produces `NaN`, so neither reaches the honest state; both produce a
+ * confidently wrong lot figure. `parseDecimal` below normalizes the comma
+ * separator, then hands the WHOLE string to `Number(...)`, which (unlike
+ * `parseFloat`) returns `NaN` for any trailing/embedded junk. It is the one
+ * helper all five computeds use, so the parsing rule cannot drift across
+ * fields. Mid-typing states ("1.", "1,") must still parse (F1 depends on
+ * it) and finite negatives ("-1") must still parse (L6 depends on it) —
+ * `Number` already handles both correctly.
  */
+function parseDecimal(text: string): number {
+  const trimmed = text.trim();
+  // Number('') is 0, not NaN — must be handled before Number sees it, or
+  // this reintroduces the F1 bug class (an empty field reading as zero).
+  if (trimmed === '') return NaN;
+  return Number(trimmed.replace(',', '.'));
+}
+
 @Component({
   selector: 'app-calculadora-page',
   standalone: true,
@@ -89,11 +111,11 @@ export class CalculadoraPageComponent {
   manualLotsText = signal('1');
 
   // ---- parsed at read time (never written back to the DOM) ----
-  balance = computed(() => parseFloat(this.balanceText()));
-  riskPct = computed(() => parseFloat(this.riskPctText()));
-  entry = computed(() => parseFloat(this.entryText()));
-  sl = computed(() => parseFloat(this.slText()));
-  manualLots = computed(() => parseFloat(this.manualLotsText()));
+  balance = computed(() => parseDecimal(this.balanceText()));
+  riskPct = computed(() => parseDecimal(this.riskPctText()));
+  entry = computed(() => parseDecimal(this.entryText()));
+  sl = computed(() => parseDecimal(this.slText()));
+  manualLots = computed(() => parseDecimal(this.manualLotsText()));
 
   // ---- composition: contractSizeFor/lotsForRisk (state) + risk-calculator (domain) ----
   contractSize = computed(() => contractSizeFor(this.symbol()));
