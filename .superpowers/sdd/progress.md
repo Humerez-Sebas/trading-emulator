@@ -56,8 +56,9 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
       the three honest states and the 0.01-floor warning (MEDIUM — correctness core)
 - [x] Checkpoint 1 — **GATE**: Batch A audit (Tasks 1+2) → **NOT PASS** (3 Medium) →
       fix commit `3a9185e` → **re-audit PASS ("Ship it")**
-- [ ] Task 3: lazy `/calculadora` route (`authGuard`, **no** `r2OnboardingGuard`) + nav
-      link after «Nueva sesión» (LOW)
+- [x] Task 3: lazy `/calculadora` route (`authGuard`, **no** `r2OnboardingGuard`) + nav
+      link after «Nueva sesión» (LOW) — **committed, gates NOT yet re-run by the
+      orchestrator (see below)**
 - [ ] Final: four gates + `npm run build` + invariant greps + whole-branch Opus audit
 - [ ] PR → `main` (GitHub MCP), then back-merge `main → develop`
 
@@ -243,6 +244,61 @@ emulator is this run's stated purpose; diverging on this one line would break th
 invariant the feature exists to guarantee. **Consequence:** the deferred follow-up spec
 (design doc §6) now has a second reason to exist beyond Futures — quote-currency
 conversion. This goes in the PR body.
+
+### Task 3 — `feat(calculadora): ruta lazy /calculadora y enlace de navegación`
+
+- **Commit:** `8140c56` (`3c252be..8140c56`), 3 files, +46/−0.
+- **Scope actually touched (orchestrator diff-scan):** `app.routes.ts` (+10),
+  `app.html` (+1), `app.routes.spec.ts` (+35, new). Nothing else; `git status` clean apart
+  from the four pre-existing untracked dirs.
+- **Read from the committed source, not the report:** the route sits **between**
+  `sesiones/crear` and `{ path: '**' }` — before the wildcard, as required — carries
+  `canActivate: [authGuard]` with **no `r2OnboardingGuard`** and a comment saying why, and
+  loads lazily via `loadComponent`. The nav link is on the line after «Nueva sesión»,
+  without `[routerLinkActiveOptions]` (correct: `/calculadora` is nobody's prefix, same as
+  `/mercados`).
+- **Implementer-reported evidence (CLAIM — not yet independently re-run):** 78 files /
+  **1028 tests** (+1 file, +5 tests), tsc app+spec clean, lint 0, and the lazy chunk
+  `calculadora-page-component` now splits out. `app.spec.ts` stayed green untouched.
+- **Deviations (2, both inert):** the new `app.routes.spec.ts` (pre-authorized in the
+  brief — the plan's File Structure lists only the two modified files, but the protocol
+  requires a failing test first, and a route with the wrong guard is exactly what a diff
+  read misses); and the optional nav-link render test was skipped, as the brief permitted.
+
+> **⚠ RUN PAUSED HERE at the owner's request** (usage limits) immediately after the Task 3
+> implementer returned. Task 3's gates have **not** been re-run by the orchestrator, and
+> the final whole-branch audit has not been dispatched. Nothing has been pushed; no PR
+> exists. Resume with §"Remaining work" below.
+
+## Remaining work (for the session that resumes this run)
+
+1. **Orchestrator re-runs Task 3's gates**, raw, from `emulador/`: tsc app, tsc spec,
+   `npx ng test --watch=false` (expect **78 files / 1028 tests**), `npm run lint` (0),
+   `npm run format:check`. Then record the evidence in the Task 3 entry above, replacing
+   the "CLAIM" wording. Fresh output is the only acceptable evidence.
+2. **`npm run build`** — watch for NEW chunk types (vitest sentinels). Expect the
+   `calculadora-page-component` lazy chunk to appear for the first time now that the route
+   exists; that one is the intended consequence of Task 3, not a regression. The
+   ~611 kB vs 500 kB budget warning is known-accepted and Arrow/parquet-dominated.
+3. **Invariant greps** (§4 of the orchestrator prompt): zero `state/` imports under
+   `domain/risk/`; `lotsForRisk` only as import + call site + the parity test; no
+   `Math.max(0.01` outside `trading.models.ts`; no `spec-util` import from app code; no
+   dependency additions vs `origin/main`.
+4. **Whole-branch Opus audit** (`branch-auditor`) over `b8ae481..HEAD`. Batch A already
+   passed over Tasks 1+2 at `3a9185e`, so the new surface is Task 3 only — but the audit
+   is whole-branch by protocol and is never skipped. PASS = zero Critical/High/Medium.
+5. **PR → `main`** via the GitHub MCP (product track). The body must carry: what/why,
+   test-count progression 1001 → 1028, gate evidence, the Batch A NOT PASS → fix → PASS
+   history, **the Futures deferral** (blocked on broker contract specs; inventing
+   multipliers would produce confident wrong sizing), and **L5** (no quote-currency
+   conversion — USDJPY's «$/pip por lote» overstates, a pre-existing property of
+   `trading.models.ts` that governs the whole emulator identically; it gives the deferred
+   follow-up spec a second reason to exist). Branch protection has no MCP/CLI path — if it
+   blocks the merge, say so in the PR as a human dashboard task.
+6. **Back-merge `main → develop`** immediately after the merge, tree clean, gates re-run
+   there (`git-workflow.md` §Two-track flow). This branch touches no file that diverges
+   between the two, so it should be clean — **a conflict means something landed outside
+   the declared scope: stop and investigate.**
 
 ## Deviations
 
