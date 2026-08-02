@@ -61,7 +61,7 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
       orchestrator (see below)**
 - [x] Final gates + `npm run build` + invariant greps (all green, recorded below)
 - [x] Whole-branch Opus audit → **NOT PASS** (1 High, 1 Medium) → fix `dfa5dc9` →
-      re-audit pending
+      re-audit **NOT PASS** (1 High, fix-introduced) → fix `8b6093a` → re-audit pending
 - [ ] PR → `main` (GitHub MCP), then back-merge `main → develop`
 
 ## Completed
@@ -377,6 +377,70 @@ because all 14 page tests set the component's signals directly and none crossed 
   group was wrapped in `<label>` per the brief's literal six-field list even though it
   holds two controls (the slider and the free field), made safe by an explicit `aria-label`
   on the free field.
+
+## Whole-branch re-audit over `dfa5dc9` — **NOT PASS** (1 High, introduced by the fix)
+
+F1 and F2 confirmed genuinely closed, with the auditor's own probes rather than the
+report's: every intermediate keystroke of `1.10952` and `2650.50` survives, the trailing
+zero is not canonicalized away, clearing lands in the honest state, all six inputs have
+accessible names (checked via `input.labels`, the spec-accurate association, not
+`closest()`), L6's finite-negative-SL behaviour is preserved exactly, and **no NaN reaches
+the screen**. Both F1 mutations were killed (reverting the field to `type="number"`;
+reinstating the numeric write-back). The `type="number"` sanitization claim was verified
+independently and the design change stands.
+
+**One correction the auditor put on the record, worth keeping:** the code comment implies
+*no* `type="number"` approach could have worked. Not quite — `risk-slider`'s
+`parseFloat` + `isNaN` guard would have stopped the clobbering (which is why that
+component has no such bug). What it could not do is distinguish a **cleared** field from a
+mid-decimal one, since `.value` is `''` for both, leaving a stale value behind an empty
+box. The design change is still the right call; the justification as written is stronger
+than the facts support.
+
+- **F3 (HIGH).** `parseFloat` stops at the first character it cannot consume and returns
+  the prefix. `parseFloat('2650,50')` is **`2650`** — and the comma is the decimal
+  separator on a Spanish numeric keypad and on a Spanish-locale phone's
+  `inputmode="decimal"` keypad, in an app whose UI is Spanish throughout. Measured on
+  XAUUSD / 5000 / 1 %: `2650,50 → 2648,00` renders **0.25 lots** where `2650.50 → 2648.00`
+  renders 0.20 — a **25 % oversized position**, with no honest state, no warning, the field
+  still displaying `2650,50`, and «Riesgo real 50.00 $» *false* (the real loss at the true
+  2.5-point stop is $62.50). `parseFloat('1.5abc')` → `1.5` shares the root cause. This is
+  the failure class the spec itself cites when deferring Futures — «dimensionado
+  incorrecto con apariencia de autoridad» — and the F1 fix caused it by moving off
+  `type="number"`, which is what had been normalizing the comma.
+- **L9, L10, L11 — ruled NO-FIX with written reasons.** L9: clearing Cuenta/Riesgo feeds
+  `NaN` to `app-risk-slider`, so `[style.width.%]` emits `NaN%`, the CSSOM rejects it and
+  the thumb keeps its last valid position while the field is empty — cosmetic, no NaN text
+  on screen, and the stale pixel lives in the shared `risk-slider.component.ts` this branch
+  may not widen scope to touch. L10: the Riesgo `<label>` wraps two controls so the
+  slider's computed name absorbs the tooltip text — verbose, but a strict improvement over
+  no name, and the alternative means editing the same shared component. L11 was test-code
+  only and got fixed anyway in the next commit. **L8 is now closed** — the dropdown-branch
+  test the auditor recommended exists.
+
+### F3 fix — `fix(calculadora): parsear el número completo o rechazarlo (coma decimal)`
+
+- **Commit:** `8b6093a` (`85ad656..8b6093a`), 2 files, +131/−12. Template unchanged;
+  `domain/risk/`, `app.routes.ts`, `app.html`, `components/` all confirmed zero-diff.
+- **The fix is one helper, deliberately:** `parseDecimal` = trim → empty-as-`NaN` →
+  comma-to-dot → `Number(...)`, which unlike `parseFloat` requires the **whole** string to
+  parse. All five computeds use it, so the parsing rule cannot drift between fields. The
+  `Number('') === 0` trap is handled before `Number` sees the string, with a comment saying
+  why — that is the F1 bug class and it must not come back.
+- **What the DOM holds did not change.** `2650,50` keeps displaying as `2650,50` while the
+  user types; only how the text is *read* changed. The two load-bearing carve-outs hold:
+  mid-typing (`1.`, `1,`) still parses, so F1 stays closed, and finite negatives (`-1`)
+  still parse, so L6's no-fix ruling stays true.
+- **Red-before-green:** 3 of the 9 new tests failed against the unmodified `parseFloat`
+  code — the comma-typed XAUUSD scenario rendering `0.25` instead of `0.20`, plus `1.5abc`
+  and `1,234,56` parsing to non-`NaN`.
+- **L11 closed in the same commit:** the accessible-name test now uses
+  `input.labels.length > 0` instead of `closest('label') !== null`, which was true for any
+  descendant of a label even when the label did not name it.
+- **Evidence — gates re-run by the ORCHESTRATOR:** tsc app+spec clean ·
+  `npx ng test --watch=false` → **78 files / 1046 tests passed** · lint 0 ·
+  `format:check` clean · `npm run build` success, initial total **611.53 kB unchanged**.
+- **Test-count arithmetic:** 1037 → 1046 = +9 (page spec 23 → 32).
 
 ## Deviations
 
