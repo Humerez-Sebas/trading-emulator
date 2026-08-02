@@ -61,7 +61,8 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
       orchestrator (see below)**
 - [x] Final gates + `npm run build` + invariant greps (all green, recorded below)
 - [x] Whole-branch Opus audit → **NOT PASS** (1 High, 1 Medium) → fix `dfa5dc9` →
-      re-audit **NOT PASS** (1 High, fix-introduced) → fix `8b6093a` → re-audit pending
+      re-audit **NOT PASS** (1 High, fix-introduced) → fix `8b6093a` →
+      **re-audit PASS ("Ship it")**
 - [ ] PR → `main` (GitHub MCP), then back-merge `main → develop`
 
 ## Completed
@@ -441,6 +442,63 @@ than the facts support.
   `npx ng test --watch=false` → **78 files / 1046 tests passed** · lint 0 ·
   `format:check` clean · `npm run build` success, initial total **611.53 kB unchanged**.
 - **Test-count arithmetic:** 1037 → 1046 = +9 (page spec 23 → 32).
+
+## Whole-branch re-audit over `8b6093a` — **PASS ("Ship it")**
+
+Gates re-run by the auditor: 78 files / **1046 tests**, tsc clean, lint 0, Prettier clean,
+build **611.53 kB unchanged**, no new chunk types (the lazy `calculadora-page-component`
+chunk grew 11.67 → 11.70 kB). Arithmetic re-derived: 32 + 8 + 5 = 45 new `it()`;
+`1046 − 45 = 1001` = the baseline; `78 − 3 = 75` files.
+
+- **F3 closed at the DOM.** The original reproduction now renders **identically** for both
+  separators: `2650,50 → 2648,00` and `2650.50 → 2648.00` both give `2.5 puntos` and
+  **0.20 lots**. The whole behaviour table walked and confirmed, including `1e5` → 100000,
+  `+40100` → 40100, `  5  ` → 5, `1_000` → honest state, and grouped input in either
+  locale format (`40.000,50`, `40,000.50`) landing on the honest state rather than a
+  plausible wrong number.
+- **F1 not broken again** — `1.10952` and `2650.50` re-verified keystroke by keystroke,
+  trailing zero intact, clearing still honest; the comma path now works end to end
+  (`2650,` → `2650,5` → `2650,50` → parsed 2650.5). `replace(',', '.')` replacing only the
+  first comma is inert: `1,234,56` lands on `NaN` either way.
+- **L6 re-verified precisely.** The auditor corrected a conflation in my own re-audit
+  request: a negative *entry* correctly gets the honest state via `!(entry > 0)`, while a
+  negative *SL* (EURUSD entry 1.1 / SL −1) still renders a real `0.01` lot figure with
+  `invalid-state = null` — which is the behaviour L6 was ruled no-fix to preserve, for
+  parity with `lotsForRisk`.
+- **Both mutations killed.** Reverting `parseDecimal` → `parseFloat` turned 3 tests red
+  (including the exact F3 symptom, `expected '0.25' to be '0.20'`); dropping *only* the
+  comma normalisation turned 2 red — so the normalisation is independently load-bearing,
+  not carried by the `Number` change. **L11's fix is load-bearing too:** turning Entrada's
+  `<label>` back into a `<div>` fails the accessible-name test for the right reason.
+- **Nothing frozen moved.** `git diff --stat origin/main...HEAD -- src/app/components/
+  src/app/state/` is **empty** across the whole branch — `risk-slider.component.ts` and
+  `trading.models.ts` are untouched, which is exactly what L9/L10 were ruled no-fix to
+  protect.
+
+### New Low — L12, ruled NO-FIX with written reasons
+
+`Number` accepts three literal forms `parseFloat` rejected: `Infinity`, `0x10` → 16,
+`0b101` → 5 (also `0o17` → 15). Measured: `Infinity` in Cuenta renders «∞ lotes»;
+in Entrada it trips the floor warning loudly («arriesga $Infinity»); in Stop Loss the
+`!Number.isFinite(sl())` guard already catches it. **No-fix, three reasons.** (a) Every
+one requires typing a Latin letter into the middle of a number — impossible from a numeric
+keypad. That is categorically different from F3, where the comma *was* the default decimal
+key on the target locale's keypad; that difference is precisely why F3 was High and this
+is Low. (b) The output is not a confident wrong figure — `∞` is unmistakable and cannot be
+acted on, and the hex/binary forms need a deliberate `0x`/`0b` prefix and land so far off
+that the floor warning fires. (c) The available fix — a post-normalisation shape regex —
+would have to admit `1e5`, `+40100`, `.5`, `-1` and the mid-typing states `1.` and `1,`
+that F1 depends on: a fourth round on an input path that has already produced one High,
+spent on input nobody types. Documented accepted risk with a bounded, non-deceptive
+failure mode, not a convenience ruling.
+
+### Standing no-fix rulings at ship time
+
+L3 (`invalidReason` priority) · L4 (two differently-clamped % inputs) · **L5 (no
+quote-currency conversion — OWNER-VISIBLE, goes in the PR body)** · L6 (finite negative
+SL) · L7 (symbol echoed un-normalised) · L9 (risk-slider stale visuals on a cleared
+field) · L10 (Riesgo label's verbose computed name) · L12 (above). **L8 and L11 are
+closed** by the last two fix commits.
 
 ## Deviations
 
