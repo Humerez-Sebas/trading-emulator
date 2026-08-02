@@ -52,7 +52,7 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
 ## Tasks
 
 - [x] Task 1: `domain/risk/risk-calculator.ts` — four pure parameterized functions (LOW)
-- [ ] Task 2: `pages/calculadora/` — page composing `lotsForRisk`/`contractSizeFor` with
+- [x] Task 2: `pages/calculadora/` — page composing `lotsForRisk`/`contractSizeFor` with
       the three honest states and the 0.01-floor warning (MEDIUM — correctness core)
 - [ ] Checkpoint 1 — **GATE**: Batch A audit (Tasks 1+2). PASS required before Task 3.
 - [ ] Task 3: lazy `/calculadora` route (`authGuard`, **no** `r2OnboardingGuard`) + nav
@@ -89,10 +89,58 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
   **doc-comment** lines in `state/layout/layout-invariants.ts`, a pre-existing untouched
   file. Not an import, so kernel invariant 7 (no vitest in the prod bundle) holds. Inert.
 
+### Task 2 — `feat(calculadora): página de dimensionado CFD/Forex con estados honestos`
+
+- **Commit:** `085c08d` (`5b3f521..085c08d`)
+- **Scope actually touched:** exactly the four files in the brief, all new —
+  `calculadora-page.component.{ts,html,css,spec.ts}` under `pages/calculadora/`.
+  `git show --stat` confirms 4 files / +549 / −0. **Task 3's files are untouched:**
+  `git diff --stat origin/main -- app.routes.ts app.html` is empty.
+- **Evidence — gates re-run by the ORCHESTRATOR:** tsc app clean · tsc spec clean ·
+  `npx ng test --watch=false` → **77 files / 1016 tests passed** · `npm run lint` →
+  "All files pass linting" (0 problems).
+- **Test-count arithmetic:** 1009 → 1016 = +7, matching the 7 `it()` blocks (the plan's
+  six required cases, with (c) split into balance and risk % — see deviations).
+- **Composition rule verified by reading the source, not the report:**
+  `calculadora-page.component.ts:5` imports `contractSizeFor`/`lotsForRisk` from
+  `state/trading/trading.models`; `domain/risk/` still imports nothing from `state/`.
+  Direction of dependency is page → {domain, state}, never domain → state.
+- **The prohibition holds:** `grep -rn "lotsForRisk" pages/calculadora/` returns one
+  import (line 5), one call site (line 65), and doc-comment prose. No second sizing
+  formula; `Math.max(0.01` appears nowhere in either new directory.
+- **The floor warning is two-sided,** which is the point: spec case (d) — 100 / 0.1 % /
+  40000→39950 — asserts `$0.50` and `$0.10` render; case (e) asserts the acceptance case
+  does **not** contain «mínimo de 0.01 lotes». A warning that always fires is not a
+  warning, and (e) is what proves it does not.
+- **Deviations (6 — five inert, one requires-attention):**
+  - *Inert:* (1) a first-draft doc comment quoted `Math.max(0.01, …)` and tripped the
+    implementer's own invariant grep; reworded **before** the commit, so the grep is
+    genuinely clean rather than needing an auditor's judgment call — self-caught and
+    self-reported. (2) ASCII-only commit body (the subject line keeps its accents).
+    (3) seven tests instead of six. (4) `invalidReason` checks SL = entry before the
+    non-positive branch — an unspecified priority, chosen to mirror `lotsForRisk`'s own
+    order; no required case exercises the overlap. (5) inputs prefill with the acceptance
+    case so the page opens on a working example.
+  - *Requires-attention:* (6) the contract-size line uses one fixed wording,
+    «{símbolo} → {contractSize} $/punto por lote», for **every** instrument. It is
+    numerically true in this domain model (`contractSize` is $ per 1.0 price-unit per lot
+    everywhere), but on a forex pair it renders «100000 $/punto por lote» beside a
+    distance shown in pips, which may read oddly. Not a defect and not a sizing error —
+    a copy decision the task was not asked to make. **Owner-visible item.**
+
 ## Deviations
 
-Task 1: two, both inert (formatter reflow; additive doc comment). See above.
+- Task 1: two, both inert (formatter reflow; additive doc comment).
+- Task 2: six — five inert, one **requires-attention** (#6, contract-size line wording).
+  All are described above and were self-reported by the implementer.
 
 ## FINAL-AUDIT ATTENTION flags
 
 - Nothing from Task 1: +89 lines across two new pure files, no private APIs, no DI.
+- **Task 2 is the largest diff of the run (+549) and carries all of its arithmetic.**
+  Read line by line: (a) that `lots` flows only from `lotsForRisk`; (b) that
+  `minLotWarning`'s 1 % threshold cannot fire on the acceptance case nor stay silent on
+  the 5× case; (c) that `invalidReason` replaces the lot figure instead of rendering
+  beside it; (d) that `distanceValue` divides by `pipSize` only when it is non-null.
+- No private-API use anywhere in the run. Public NgRx surface only
+  (`store.selectSignal(selectAssets)`), no `dispatch`, no effects, no subscriptions.
