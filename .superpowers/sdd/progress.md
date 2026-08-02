@@ -46,9 +46,12 @@ numeric field, per spec §3), `components/ui/` primitives (`index.ts` exports
 `app.routes.ts`, `app.html`. Note: the UI primitives live under
 `components/ui/`, **not** `src/app/ui/` as the orchestrator prompt stated.
 
+**Working artifacts:** `.superpowers/calculadora/task-N-{brief,report}.md` (local only,
+untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there survive).
+
 ## Tasks
 
-- [ ] Task 1: `domain/risk/risk-calculator.ts` — four pure parameterized functions (LOW)
+- [x] Task 1: `domain/risk/risk-calculator.ts` — four pure parameterized functions (LOW)
 - [ ] Task 2: `pages/calculadora/` — page composing `lotsForRisk`/`contractSizeFor` with
       the three honest states and the 0.01-floor warning (MEDIUM — correctness core)
 - [ ] Checkpoint 1 — **GATE**: Batch A audit (Tasks 1+2). PASS required before Task 3.
@@ -59,12 +62,37 @@ numeric field, per spec §3), `components/ui/` primitives (`index.ts` exports
 
 ## Completed
 
-_(nothing yet)_
+### Task 1 — `feat(risk): módulo puro de cálculo de riesgo parametrizado`
+
+- **Commit:** `5b3f521` (`4ff74e7..5b3f521`)
+- **Scope actually touched:** exactly the two files in the brief —
+  `emulador/src/app/domain/risk/risk-calculator.ts` (+44) and
+  `risk-calculator.spec.ts` (+45). `git show --stat` confirms 2 files / +89 / −0;
+  `git status` shows no stray staged or modified files.
+- **Evidence — gates re-run by the ORCHESTRATOR, not taken from the report:**
+  `npx tsc -p tsconfig.app.json --noEmit` clean · `npx tsc -p tsconfig.spec.json --noEmit`
+  clean · `npx ng test --watch=false` → **76 files / 1009 tests passed** ·
+  `npm run lint` → "All files pass linting" (0 problems).
+- **Test-count arithmetic:** 1001 → 1009 = +8, and the plan's Task 1 block specifies
+  exactly 8 `it()` blocks (4 `pipSizeFor` + 1 `priceDistance` + 1 `riskUsdFor` +
+  2 `riskForLots`). Consistent.
+- **Invariants:** `grep -rn "from '.*state/" emulador/src/app/domain/risk/` empty ·
+  `Math.max(0.01` in `domain/risk/` empty · `@angular|@ngrx` in `domain/risk/` empty ·
+  no `package.json`/lockfile diff vs `origin/main`. Verified against the committed source:
+  `pipSizeFor` discards `XAU*`/`XAG*` before testing `/^[A-Z]{6}$/`, mirroring
+  `contractSizeFor`.
+- **Deviations (2, both inert):**
+  1. `npm run format` reflowed the `riskForLots` signature onto one line — whitespace only.
+  2. An additive module-level doc comment stating the Dependency Rule and the Futures
+     exclusion, on top of the required `pipSizeFor` order comment.
+- **One reported non-finding, checked and agreed:** the `spec-util` grep matches two
+  **doc-comment** lines in `state/layout/layout-invariants.ts`, a pre-existing untouched
+  file. Not an import, so kernel invariant 7 (no vitest in the prod bundle) holds. Inert.
 
 ## Deviations
 
-_(none yet)_
+Task 1: two, both inert (formatter reflow; additive doc comment). See above.
 
 ## FINAL-AUDIT ATTENTION flags
 
-_(none yet)_
+- Nothing from Task 1: +89 lines across two new pure files, no private APIs, no DI.
