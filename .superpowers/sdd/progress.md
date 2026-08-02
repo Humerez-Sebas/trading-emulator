@@ -257,48 +257,49 @@ conversion. This goes in the PR body.
   loads lazily via `loadComponent`. The nav link is on the line after «Nueva sesión»,
   without `[routerLinkActiveOptions]` (correct: `/calculadora` is nobody's prefix, same as
   `/mercados`).
-- **Implementer-reported evidence (CLAIM — not yet independently re-run):** 78 files /
-  **1028 tests** (+1 file, +5 tests), tsc app+spec clean, lint 0, and the lazy chunk
-  `calculadora-page-component` now splits out. `app.spec.ts` stayed green untouched.
+- **Evidence — gates re-run by the ORCHESTRATOR on resume (2026-08-02):** tsc app clean ·
+  tsc spec clean · `npx ng test --watch=false` → **78 files / 1028 tests passed** ·
+  `npm run lint` 0 · `npm run format:check` clean. `app.spec.ts` stayed green untouched.
+- **Test-count arithmetic:** 1023 → 1028 = +5, matching the 5 assertions in the new
+  `app.routes.spec.ts`.
+- **Honest note from the implementer's report, carried forward for the auditor:** during
+  TDD only 3 of the 5 new assertions went red pre-implementation. The two guard-membership
+  assertions passed **vacuously**, because `calculadoraRoute?.canActivate` was `undefined`
+  and vitest's `toContain`/`not.toContain` do not throw on an undefined actual. The
+  implementer states they are non-vacuous now that the route exists. That claim is worth a
+  mutation check in the final audit, not a re-read.
 - **Deviations (2, both inert):** the new `app.routes.spec.ts` (pre-authorized in the
   brief — the plan's File Structure lists only the two modified files, but the protocol
   requires a failing test first, and a route with the wrong guard is exactly what a diff
   read misses); and the optional nav-link render test was skipped, as the brief permitted.
 
-> **⚠ RUN PAUSED HERE at the owner's request** (usage limits) immediately after the Task 3
-> implementer returned. Task 3's gates have **not** been re-run by the orchestrator, and
-> the final whole-branch audit has not been dispatched. Nothing has been pushed; no PR
-> exists. Resume with §"Remaining work" below.
+_(The run was paused here at the owner's request for one session, then resumed. Task 3's
+gates and the branch-level verification below were run on resume.)_
 
-## Remaining work (for the session that resumes this run)
+## Final branch verification (orchestrator, 2026-08-02)
 
-1. **Orchestrator re-runs Task 3's gates**, raw, from `emulador/`: tsc app, tsc spec,
-   `npx ng test --watch=false` (expect **78 files / 1028 tests**), `npm run lint` (0),
-   `npm run format:check`. Then record the evidence in the Task 3 entry above, replacing
-   the "CLAIM" wording. Fresh output is the only acceptable evidence.
-2. **`npm run build`** — watch for NEW chunk types (vitest sentinels). Expect the
-   `calculadora-page-component` lazy chunk to appear for the first time now that the route
-   exists; that one is the intended consequence of Task 3, not a regression. The
-   ~611 kB vs 500 kB budget warning is known-accepted and Arrow/parquet-dominated.
-3. **Invariant greps** (§4 of the orchestrator prompt): zero `state/` imports under
-   `domain/risk/`; `lotsForRisk` only as import + call site + the parity test; no
-   `Math.max(0.01` outside `trading.models.ts`; no `spec-util` import from app code; no
-   dependency additions vs `origin/main`.
-4. **Whole-branch Opus audit** (`branch-auditor`) over `b8ae481..HEAD`. Batch A already
-   passed over Tasks 1+2 at `3a9185e`, so the new surface is Task 3 only — but the audit
-   is whole-branch by protocol and is never skipped. PASS = zero Critical/High/Medium.
-5. **PR → `main`** via the GitHub MCP (product track). The body must carry: what/why,
-   test-count progression 1001 → 1028, gate evidence, the Batch A NOT PASS → fix → PASS
-   history, **the Futures deferral** (blocked on broker contract specs; inventing
-   multipliers would produce confident wrong sizing), and **L5** (no quote-currency
-   conversion — USDJPY's «$/pip por lote» overstates, a pre-existing property of
-   `trading.models.ts` that governs the whole emulator identically; it gives the deferred
-   follow-up spec a second reason to exist). Branch protection has no MCP/CLI path — if it
-   blocks the merge, say so in the PR as a human dashboard task.
-6. **Back-merge `main → develop`** immediately after the merge, tree clean, gates re-run
-   there (`git-workflow.md` §Two-track flow). This branch touches no file that diverges
-   between the two, so it should be clean — **a conflict means something landed outside
-   the declared scope: stop and investigate.**
+- **Four gates + `format:check`:** all green at `4cf1252` — 78 files / **1028 tests**,
+  tsc app+spec clean, lint 0, Prettier clean.
+- **`npm run build`:** success. Initial total **611.53 kB** (the auditor measured
+  611.21 kB pre-Task-3; the +0.32 kB is the route entry itself). **No new chunk types** —
+  no vitest sentinel. The one new lazy chunk is `calculadora-page-component` at 10.93 kB,
+  which is precisely what Task 3 was for: before the route existed the page was
+  tree-shaken out entirely. The 500 kB budget warning is the known-accepted
+  Arrow/parquet-dominated baseline, not a regression of this branch.
+- **Invariant greps — all clean:**
+  - `grep -rn "from '.*state/" emulador/src/app/domain/risk/` → **empty** (Dependency Rule)
+  - `grep -rn "Math.max(0.01" pages/calculadora/ domain/risk/` → **empty** (the floor stays
+    `lotsForRisk`'s alone)
+  - `grep -rn "lotsForRisk(" emulador/src/app --include=*.ts` → in this branch's surface,
+    exactly one app call site (`calculadora-page.component.ts:65`) plus the parity test.
+    All other hits are pre-existing (`chart.component.ts`, `trade-panel.component.ts`,
+    `trading.reducer.ts` and their specs) and untouched by this branch.
+  - `spec-util` in app code → only the two known-inert doc-comment lines in
+    `state/layout/layout-invariants.ts`
+  - `git diff --stat origin/main -- package.json package-lock.json` → **empty**
+- **Whole-branch diff vs `origin/main`:** 13 files, +1750/−28 — 3 committed docs
+  (spec, plan, orchestrator prompt), the ledger, and 9 code files. Nothing outside the
+  declared scope.
 
 ## Deviations
 
