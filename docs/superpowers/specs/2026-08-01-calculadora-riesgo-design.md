@@ -59,7 +59,8 @@ puro nuevo vive en `domain/risk/`. **El dominio no puede importar del estado** (
 
 La alternativa (mover las dos funciones a `domain/`) se descarta: obligaría a tocar
 `trading.models.ts` y su superficie de specs, poniendo en riesgo la paridad que este
-trabajo existe para garantizar. El coste de (c) es una línea de composición en la página.
+trabajo existe para garantizar. El coste de la opción elegida es una línea de
+composición en la página.
 
 ### 2.2 Superficie nueva
 
