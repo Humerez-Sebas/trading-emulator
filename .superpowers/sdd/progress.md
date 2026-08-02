@@ -54,7 +54,8 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
 - [x] Task 1: `domain/risk/risk-calculator.ts` — four pure parameterized functions (LOW)
 - [x] Task 2: `pages/calculadora/` — page composing `lotsForRisk`/`contractSizeFor` with
       the three honest states and the 0.01-floor warning (MEDIUM — correctness core)
-- [ ] Checkpoint 1 — **GATE**: Batch A audit (Tasks 1+2). PASS required before Task 3.
+- [x] Checkpoint 1 — **GATE**: Batch A audit (Tasks 1+2) → **NOT PASS** (3 Medium) →
+      fix commit `3a9185e` → re-audit pending
 - [ ] Task 3: lazy `/calculadora` route (`authGuard`, **no** `r2OnboardingGuard`) + nav
       link after «Nueva sesión» (LOW)
 - [ ] Final: four gates + `npm run build` + invariant greps + whole-branch Opus audit
@@ -127,6 +128,78 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
     everywhere), but on a forex pair it renders «100000 $/punto por lote» beside a
     distance shown in pips, which may read oddly. Not a defect and not a sizing error —
     a copy decision the task was not asked to make. **Owner-visible item.**
+
+### Checkpoint 1 — Batch A audit (`branch-auditor`, Opus) over `4ff74e7..7df6356`
+
+**VERDICT: NOT PASS.** All four gates green in the auditor's own re-run
+(77/1016, tsc clean, lint 0, `format:check` clean, `npm run build` clean with no new
+chunk types — only the known 611 kB Arrow/parquet budget warning). Every structural
+invariant held: `domain/risk/` dependency-free, `lotsForRisk` the only lot source,
+`pipSizeFor` correct on input classes the spec never listed (`''`, `XAUEUR`, `EURXAU`,
+`EURUSDX`, `JPYUSD`), the honest states genuinely exclusive in the template, zero Task 3
+scope leak, no new deps. The auditor also re-derived the baseline instead of trusting it:
+1016 − 15 new `it()` = **1001**, 77 − 2 = **75**. The defects were in *what the code said*
+and *what the tests actually proved*:
+
+- **M1 (Medium).** `minLotWarning` fired on any >1 % difference but hardcoded both the
+  floor narrative and the "above" direction. On an ordinary retail trade — 5000 / 1 % /
+  EURUSD 1.1000→1.0940 — it rendered, inside a `role="alert"`: «El mínimo de 0.01 lotes
+  arriesga $48.00, por encima de los $50.00 solicitados» while showing 0.08 lots. Two
+  false claims (the floor never applied; $48 is *below* $50) next to the figures that
+  contradict them. Spec §3.1 had assigned the rounding case to this same mechanism; the
+  mechanism was reused, the wording never was — and the Task 2 report had not caught it.
+- **M2 (Medium).** The three honest-state tests guarded the headline failure mode with
+  `not.toContain('0.00 lotes')`, which `preserveWhitespaces: false` makes **unsatisfiable**
+  — the DOM renders `1.00lotes`, no space. The guard could never fail.
+- **M3 (Medium).** The acceptance test — spec §4's «el test que da sentido al trabajo» —
+  asserted whole-page substrings that other fields also produce. The auditor deleted the
+  lot figure from the DOM and the test still passed.
+- **L1 (Low).** The inverse block rendered a fabricated `0.00 %` when balance ≤ 0.
+- **L2 (Low).** «$/punto por lote» is the wrong unit off index CFDs (EURUSD showed
+  «100,000 $/punto por lote» beneath a pip distance) — this was the Task 2 report's own
+  requires-attention deviation #6, confirmed as Low: no path from that line to a wrong
+  position size.
+- **L3, L4 — ruled NO-FIX with written reasons** (`decision-frameworks.md` §6), so they
+  are not re-litigated: `invalidReason`'s priority order (every ordering shows one of
+  several simultaneously-true conditions; the message shown is never false; the order
+  mirrors `lotsForRisk`'s own) and the two differently-clamped % inputs (spec §3 requires
+  both; the clamp is pre-existing shared-primitive behaviour; the caption discloses it;
+  verified no silent write-back).
+
+### Fix — `fix(calculadora): mensaje de aviso honesto y tests que fijan lo que afirman`
+
+- **Commit:** `3a9185e` (`7df6356..3a9185e`), 3 files, +193/−35, all inside
+  `pages/calculadora/`. `domain/risk/`, `trading.models.ts`, `app.routes.ts` and
+  `app.html` untouched.
+- **Orchestrator decision (recorded, not improvised):** the fix brief covered **M1–M3
+  plus L1 and L2**, not the Mediums alone. Both Lows live in the two files already open,
+  both are cheap, and each defeats a purpose the spec states outright — L1 reproduces the
+  «0.00 reads as valid» failure §3.1 exists to prevent, and L2 defeats §5's «make the
+  applied assumption checkable before operating» (a trader cross-multiplying 60 pips ×
+  100,000 gets 6,000,000 instead of $600). L3/L4 stay no-fix.
+- **M1 closed:** the message now branches on cause (`lots() === 0.01 && actual > requested`
+  = the floor signature — the minimum can only push risk *up*) and on direction, using
+  only already-computed values. **No "raw lots before rounding" is computed anywhere**;
+  that would have been the second sizing formula this run exists to prevent.
+- **M2/M3 closed:** assertions now pin elements (`.lots-hero`, `.lots-value`,
+  `.requested-risk-value`, `.distance-value`) instead of whole-page substrings, and the
+  parity test spec §4 asked for now exists — three cases (acceptance, floor, rounding)
+  comparing the rendered figure against `lotsForRisk` **called from the test**. Calling
+  the real function is the parity assertion; hand-deriving the arithmetic is what stays
+  forbidden.
+- **Red-before-green evidence** (demanded in the brief, since a test that would have
+  passed before the fix has closed nothing): M1 — reverted `minLotWarning` to the pre-fix
+  one-liner and captured the new test failing with the audit's exact false string. M2 —
+  the production code was already correct, so the implementer injected the regression the
+  guard exists to catch (hero rendering beside the invalid-state message), showed all
+  three new assertions red **and the reinstated old assertion passing** against the same
+  regression. M3 — deleted `.lots-hero` from the template, showed the four new tests red
+  while an old-style substring test still passed. All reverts removed before the commit;
+  `git status` clean.
+- **Evidence — gates re-run by the ORCHESTRATOR:** tsc app clean · tsc spec clean ·
+  `npx ng test --watch=false` → **77 files / 1023 tests passed** · `npm run lint` 0 ·
+  `npm run format:check` clean.
+- **Test-count arithmetic:** 1016 → 1023 = +7 (14 `it()` in the page spec, up from 7).
 
 ## Deviations
 
