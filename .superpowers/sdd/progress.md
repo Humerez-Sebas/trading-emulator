@@ -1,37 +1,70 @@
-# SDD Progress Ledger — Workspace Panel & Layout Polish
+# SDD Progress Ledger — Calculadora de riesgo (CFD/Forex) v1
 
-**Plan:** `docs/superpowers/plans/2026-07-08-workspace-panel-layout-polish.md`
-**Branch:** `fix/workspace-panel-layout-polish` (target: `develop`)
-**Base commit:** `971e31b` (merge-base with develop)
-**Execution:** subagent-driven-development. Implementer = `sdd-implementer` (sonnet). Final audit = `branch-auditor` (opus).
+**Plan:** `docs/superpowers/plans/2026-08-01-calculadora-riesgo.md`
+**Spec:** `docs/superpowers/specs/2026-08-01-calculadora-riesgo-design.md`
+**Orchestrator prompt:** `docs/superpowers/2026-08-01-calculadora-orchestrator-prompt.md`
+**RFC:** none — product track (`decision-frameworks.md` §1: not RFC territory; additive
+feature over audited machinery, nothing hard to reverse).
+**Branch:** `claude/calculadora-riesgo` (target: **`main`**, product track)
+**Base commit:** `b8ae481` (= `origin/main` tip; branch carries only the three doc commits
+plus merge `0509bf5` on top of it)
+**Baseline test count:** **75 files / 1001 tests** passed (`npx ng test --watch=false`,
+2026-08-02).
 
-## Run notes
-- Browser/preview verification is done by the USER, not by implementers. Implementers verify via `npx ng test --watch=false` + gates only; they must SKIP the plan's `preview_*` steps.
-- Bug 1 = inactive tab/panel `[hidden]` never hides (CSS cascade). Bug 2 = destructive template shrink loses panel positions.
-- Design decisions (locked with user): non-destructive/reversible "park cells" model; new tabs seed one active-symbol chart; new cells on GROW are empty "Sin panel".
+## Run mode — SEQUENTIAL, one batched review + final whole-branch audit
+
+`decision-frameworks.md` §8 leaf: **batched mode**. Nothing here touches persistence or
+migration, nothing reopens audited code (`trading.models.ts` is *consumed*, never
+edited), and the plan carries no requires-attention risk of the kind that forces full
+mode. All three tasks are additive: two new files, one new page, one route + one nav
+link.
+
+One deviation from plain batched mode, recorded as a decision: **Checkpoint 1 after
+Task 2** runs a `branch-auditor` dispatch over Tasks 1+2 together (Batch A) *before*
+Task 3. Reason: the 0.01-lot floor warning is the correctness core of the feature, and
+Task 3 is what exposes the page to users — routing to arithmetic that has not been
+audited is the wrong order. The final whole-branch audit still runs and still gates
+the PR.
+
+**No wave parallelism, deliberately.** The dependency chain is total (Task 2 consumes
+Task 1's module; Task 3 mounts Task 2's page). Three worktrees plus three `npm ci` runs
+to parallelize nothing would cost more than the run.
+
+**Roles:** Implementer = `sdd-implementer`. Auditor = `branch-auditor` (Opus), which
+re-runs every gate personally — implementer and orchestrator reports are claims, not
+evidence.
+
+## Base-drift note
+
+`origin/main` is ~400 commits behind `develop`. Nothing from RFC-014..019 exists on this
+base. Verified present on `b8ae481` by the orchestrator before dispatch:
+`state/trading/trading.models.ts:190,202` (`contractSizeFor`, `lotsForRisk`),
+`components/risk-slider.component.ts` (clamps to 0.1–5 → the page needs its own free
+numeric field, per spec §3), `components/ui/` primitives (`index.ts` exports
+`InputDirective`, `ButtonDirective`, `BadgeDirective`, `DropdownComponent`),
+`state/selectors.ts:63` (`selectAssets` → `AssetMeta[] = { symbol, lastModified }`),
+`app.routes.ts`, `app.html`. Note: the UI primitives live under
+`components/ui/`, **not** `src/app/ui/` as the orchestrator prompt stated.
 
 ## Tasks
-- [x] Task 1: `[hidden]` CSS cascade fix (viewport + chart-panel) — no unit test (jsdom can't compute display; user verifies in browser)
-- [x] Task 2: New tab seeds one active-symbol chart (`createTab` descriptor)
-- [x] Task 3: Park-cells reducer model (`fitCells`, `applyGridTemplate` + focus repair, `selectVisiblePanelIds`)
-- [x] Task 4: Viewport renders parked cells mounted-but-hidden (`renderedCount`)
-- [x] Task 5: Effect noop→filter cleanup + docs (workspace-panels.md) + actions.ts stale-comment fix
-- [x] Task 6: Chart focus on click/interactivity bugfix
-- [x] Task 7: Derived/unloaded timeframe focus synchronization fix
+
+- [ ] Task 1: `domain/risk/risk-calculator.ts` — four pure parameterized functions (LOW)
+- [ ] Task 2: `pages/calculadora/` — page composing `lotsForRisk`/`contractSizeFor` with
+      the three honest states and the 0.01-floor warning (MEDIUM — correctness core)
+- [ ] Checkpoint 1 — **GATE**: Batch A audit (Tasks 1+2). PASS required before Task 3.
+- [ ] Task 3: lazy `/calculadora` route (`authGuard`, **no** `r2OnboardingGuard`) + nav
+      link after «Nueva sesión» (LOW)
+- [ ] Final: four gates + `npm run build` + invariant greps + whole-branch Opus audit
+- [ ] PR → `main` (GitHub MCP), then back-merge `main → develop`
 
 ## Completed
-Task 1: complete (commit 971e31b..c84d9cc, review clean — Spec ✅, Quality Approved, 980/980)
-Task 2: complete (commit c84d9cc..cea238f, review clean — Spec ✅, Quality Approved, 980/980; twoTabs() helper restructured byte-identical, verified no STOP-rule violation)
-Task 3: complete (commit cea238f..9e71069, review clean — Spec ✅, Quality Approved, 984/984; fitCells cases + focus repair + selector slice verified by hand-trace, invariant test untouched)
-Task 4: complete (commit 9e71069..8db3211, review clean — Spec ✅, Quality Approved, 985/985; keep-alive @for preserved, parked cells [hidden], test non-vacuous)
-Task 5: complete (commit 8db3211..01458e4, review clean — Spec ✅, Quality Approved, 988/988; effect noop→filter + new layout.effects.spec.ts (3 tests) + docs + actions.ts comment; mapper untouched/deferred)
-Task 6: complete (commit bdce54c..4bbeae9, review clean — Spec ✅, Quality Approved, 989/989; chartFocused output decoupled store focusing)
-Task 7: complete (commit 5b4d759..f57d971, review clean — Spec ✅, Quality Approved, 992/992; syncTimeframeOnFocus check for loaded series)
 
-ALL TASKS COMPLETE.
+_(nothing yet)_
 
-## Final audit (branch-auditor, opus) — 971e31b..f57d971
-**VERDICT: PASS.** Gates re-run personally: tsc app+spec clean; `npx ng test --watch=false` = 74 files / 992 tests passed; lint 0; build success (only the known parquet/arrow budget warning). Invariant greps all pass (no factory selectors over panel/chart state; `layout-invariants.ts` vitest-free in prod bundle; engine purity; no new deps). Named risks cleared (fitCells lossless + position-preserving round-trip; no consumer assumes cells.length===template count; no dangling focusedPanelId; persistence round-trips clean; chart canvas focus works robustly via child outputs; unloaded timeframes sync cleanly). Zero Critical/Important/Minor findings. Ready for PR → develop.
+## Deviations
 
-## Minor findings rollup (for final audit triage)
-- Task 3 flagged: stale doc comment on `LayoutActions.applyGridTemplate` in `layout.actions.ts` still describes the old merge behavior → fold into Task 5 (docs/comments cleanup).
+_(none yet)_
+
+## FINAL-AUDIT ATTENTION flags
+
+_(none yet)_
