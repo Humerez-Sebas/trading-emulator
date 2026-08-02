@@ -55,7 +55,7 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
 - [x] Task 2: `pages/calculadora/` — page composing `lotsForRisk`/`contractSizeFor` with
       the three honest states and the 0.01-floor warning (MEDIUM — correctness core)
 - [x] Checkpoint 1 — **GATE**: Batch A audit (Tasks 1+2) → **NOT PASS** (3 Medium) →
-      fix commit `3a9185e` → re-audit pending
+      fix commit `3a9185e` → **re-audit PASS ("Ship it")**
 - [ ] Task 3: lazy `/calculadora` route (`authGuard`, **no** `r2OnboardingGuard`) + nav
       link after «Nueva sesión» (LOW)
 - [ ] Final: four gates + `npm run build` + invariant greps + whole-branch Opus audit
@@ -200,6 +200,49 @@ and *what the tests actually proved*:
   `npx ng test --watch=false` → **77 files / 1023 tests passed** · `npm run lint` 0 ·
   `npm run format:check` clean.
 - **Test-count arithmetic:** 1016 → 1023 = +7 (14 `it()` in the page spec, up from 7).
+
+### Checkpoint 1 re-audit (`branch-auditor`, Opus) over `3a9185e` — **PASS ("Ship it")**
+
+Gates re-run by the auditor: 77 files / **1023 tests**, tsc app+spec clean, lint 0,
+`format:check` clean, `npm run build` clean at 611.21 kB with **no new chunk types** (the
+page is still tree-shaken out — correct, nothing routes to it before Task 3). Arithmetic
+re-derived independently: the page spec now has 14 `it()` (was 7) → +7 → 1023, and
+`git diff 5b3f521 HEAD -- domain/risk/` is empty, so the whole delta is the page spec.
+
+**The auditor did not accept the fix report's red-before-green claim** — it injected its
+own mutations. Mutation A bound the lots hero to `manualLots()` instead of `lots()` (the
+mutation that had escaped the *entire* old suite) and reverted M1's message: the two
+parity cases and the rounding test went red. Mutation B rendered the hero beside the
+invalid message: all three honest-state guards went red. Six guards confirmed
+load-bearing.
+
+M1's boundary was mapped case by case rather than spot-checked — raw lots just under
+0.01, just over, exactly 0.01 (no warning, correctly), and both sides of the 1 % threshold
+(24.75 warns at relDiff 1.0101 %; 24.755 stays silent at 0.9897 %, exclusive per spec
+«> 1 %»). The original false message now reads «El redondeo al paso de 0.01 lotes arriesga
+$48.00, **por debajo de** los $50.00 solicitados.»
+
+Two things the auditor examined hardest and cleared explicitly, so they are not
+re-litigated: (1) at raw 0.008 the message says «mínimo de 0.01 lotes» although `Math.max`
+never clamped (`round2(0.008)` is already 0.01) — true as rendered, and no smaller size is
+tradeable either way, so the trader's takeaway is identical; (2) test (a) alone still
+passes under Mutation A because the prefilled `manualLots = 1` coincidentally renders
+`1.00` — the parity floor and rounding cases are what actually close M3, and they do.
+
+**New finding L5 — ruled NO-FIX with written reasons, and OWNER-VISIBLE.**
+`USDJPY → 1,000 $/pip por lote` overstates the pip value: the true value of one lot is
+¥1,000 ≈ $6.70. The model performs **no quote-currency conversion**. No-fix because
+(1) it is not introduced here and not a regression — it is a property of
+`contractSizeFor`/`lotsForRisk` in the already-audited `trading.models.ts`, and it governs
+every figure on the page identically (the same trade renders «Riesgo real $500.00» where
+the true figure is ~$3.35); the previous «100,000 $/punto por lote» carried the identical
+error in a unit nobody cross-checks. (2) Currency conversion is an explicit spec non-goal,
+so there is no in-scope correct fix — inventing an FX rate here is exactly the
+confident-wrong-number failure the Futures deferral exists to prevent. (3) Parity with the
+emulator is this run's stated purpose; diverging on this one line would break the
+invariant the feature exists to guarantee. **Consequence:** the deferred follow-up spec
+(design doc §6) now has a second reason to exist beyond Futures — quote-currency
+conversion. This goes in the PR body.
 
 ## Deviations
 
