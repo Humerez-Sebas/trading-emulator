@@ -17,7 +17,6 @@ function baseSource(items: Drawing[]): DrawingsSource {
     items,
     draft: null,
     selectedId: null,
-    shift: 0,
     times: [],
     barSpacing: 0,
     pointSize: 0.01,

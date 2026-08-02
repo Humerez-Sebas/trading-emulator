@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { describe, beforeEach, it, expect, vi } from 'vitest';
 import { PlaybackControllerComponent } from './playback-controller.component';
@@ -12,7 +13,7 @@ import {
   selectPlaying,
   selectResolutionMinutes,
   selectResolutionProgress,
-  selectUtcOffset,
+  selectDisplayZone,
 } from '../../state/selectors';
 
 describe('PlaybackControllerComponent', () => {
@@ -34,7 +35,7 @@ describe('PlaybackControllerComponent', () => {
     store.overrideSelector(selectMsPerCandle, 500);
     store.overrideSelector(replayFeature.selectJumpSize, 10);
     store.overrideSelector(selectCurrentTime, 0);
-    store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
     store.overrideSelector(selectDataRange, null);
     store.overrideSelector(selectAvailableResolutions, []);
     store.overrideSelector(selectResolutionMinutes, null);

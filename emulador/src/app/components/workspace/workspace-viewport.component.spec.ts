@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { Component, input, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -13,7 +14,7 @@ import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { LayoutActions } from '../../state/layout/layout.actions';
 import { layoutFeature } from '../../state/layout/layout.reducer';
-import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
+import { selectCurrentTime, selectSeries, selectDisplayZone } from '../../state/selectors';
 import {
   GridTemplate,
   LayoutState,
@@ -525,7 +526,7 @@ describe('WorkspaceViewportComponent lifecycle: create/hide/show/close (RFC-009,
       M15: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
     });
     store.overrideSelector(selectCurrentTime, 100);
-    store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
   });
 
   function create() {
@@ -623,7 +624,7 @@ describe('ChartSyncRouter wiring end-to-end (RFC-010 Task 5)', () => {
       M15: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
     });
     store.overrideSelector(selectCurrentTime, 100);
-    store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
   });
 
   function create() {

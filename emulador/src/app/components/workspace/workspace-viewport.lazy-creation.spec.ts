@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { Component, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -7,7 +8,7 @@ import { WorkspaceViewportComponent } from './workspace-viewport.component';
 import { ChartPanelComponent } from './chart-panel.component';
 import { ChartComponent, ChartControlHandle } from '../chart/chart.component';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
-import { selectCurrentTime, selectSeries, selectUtcOffset } from '../../state/selectors';
+import { selectCurrentTime, selectSeries, selectDisplayZone } from '../../state/selectors';
 import { LayoutState } from '../../state/layout/layout.models';
 
 /** Leaf stub of the audited ChartComponent — no engine, no canvas — one instance per mounted panel. */
@@ -68,7 +69,7 @@ describe('WorkspaceViewport lazy chart creation (RFC-012 Task 4)', () => {
     store = TestBed.inject(MockStore);
     store.overrideSelector(selectSeries, { M1: [], M5: [], M15: [], H1: [] });
     store.overrideSelector(selectCurrentTime, 0);
-    store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
   });
 
   function create() {

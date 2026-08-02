@@ -17,9 +17,10 @@ import { TradingActions } from '../../state/trading/trading.actions';
 import {
   selectClosedTradeBoxes,
   selectTradeBoxesVisible,
-  selectUtcOffset,
+  selectDisplayZone,
 } from '../../state/selectors';
 import { TooltipDirective } from '../ui';
+import { resolveDisplayZone, toDisplayTime } from '../../domain/chart/display-time';
 
 /**
  * The single source of truth for the drawing/trade tool buttons, shared by
@@ -49,7 +50,7 @@ export class ToolbarToolsComponent {
   private focusedPanelId = this.store.selectSignal(layoutFeature.selectFocusedPanelId);
   boxesVisible = this.store.selectSignal(selectTradeBoxesVisible);
   closedTrades = this.store.selectSignal(selectClosedTradeBoxes);
-  private utcOffset = this.store.selectSignal(selectUtcOffset);
+  private displayZone = this.store.selectSignal(selectDisplayZone);
 
   menuOpen = signal(false);
 
@@ -107,9 +108,12 @@ export class ToolbarToolsComponent {
     return this.closedTrades().slice().reverse();
   }
 
-  /** dd/MM HH:mm in the user's display time zone (data stays UTC). */
-  formatTime(utcSeconds: number): string {
-    const d = new Date((utcSeconds + this.utcOffset() * 3600) * 1000);
+  /**
+   * dd/MM HH:mm in the user's display time zone. The stored clock is broker
+   * SERVER time (New York + 7 h), not UTC — see domain/chart/display-time.ts.
+   */
+  formatTime(serverSeconds: number): string {
+    const d = new Date(toDisplayTime(serverSeconds, resolveDisplayZone(this.displayZone())) * 1000);
     const p = (n: number) => String(n).padStart(2, '0');
     return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
   }

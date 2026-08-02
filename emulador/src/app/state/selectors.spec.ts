@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { NEW_YORK_ZONE_ID } from '../domain/chart/display-time';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { firstValueFrom } from 'rxjs';
@@ -371,13 +372,21 @@ describe('selectCandleCountdown', () => {
 
 // ---- selectChartView ----
 describe('selectChartView', () => {
-  it('bundles tf/candles/idx/utcOffset/countdown', () => {
+  it('bundles tf/candles/idx/displayZone/countdown', () => {
     const candles = series(3);
-    const result = selectChartView.projector('H1', candles, 2, -4, null, null, '12:00');
+    const result = selectChartView.projector(
+      'H1',
+      candles,
+      2,
+      NEW_YORK_ZONE_ID,
+      null,
+      null,
+      '12:00',
+    );
     expect(result.tf).toBe('H1');
     expect(result.candles).toBe(candles);
     expect(result.idx).toBe(2);
-    expect(result.utcOffset).toBe(-4);
+    expect(result.displayZone).toBe(NEW_YORK_ZONE_ID);
     expect(result.countdown).toBe('12:00');
   });
 });

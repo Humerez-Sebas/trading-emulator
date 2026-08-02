@@ -72,7 +72,6 @@ describe('TradeBoxesPrimitive', () => {
   it('populates cachedBoxes from the source with correct projected pixel coordinates after setSource + updateAllViews', () => {
     primitive.setSource({
       items: [tradeBoxItem({ id: 'a', entry: 100, sl: 90, tp: 110, from: 0, to: 120 })],
-      shift: 0,
       times,
       barSpacing,
       tpColor: '#089981',
@@ -99,7 +98,6 @@ describe('TradeBoxesPrimitive', () => {
   it('projects a live box (to=null) up to one bar past the last rendered candle', () => {
     primitive.setSource({
       items: [tradeBoxItem({ id: 'live', from: 120, to: null })],
-      shift: 0,
       times,
       barSpacing,
       tpColor: '#089981',
@@ -128,7 +126,6 @@ describe('TradeBoxesPrimitive', () => {
             tp: 110,
           }),
         ],
-        shift: 0,
         times,
         barSpacing,
         tpColor: '#089981',
@@ -182,7 +179,6 @@ describe('TradeBoxesPrimitive', () => {
   it('recomputes the cache on every updateAllViews() call (pan/zoom-correct, not cross-call memoized)', () => {
     primitive.setSource({
       items: [tradeBoxItem({ id: 'a', from: 0, to: 60 })],
-      shift: 0,
       times,
       barSpacing,
       tpColor: '#089981',
@@ -209,7 +205,6 @@ describe('TradeBoxesPrimitive', () => {
   it('skips hidden boxes entirely', () => {
     primitive.setSource({
       items: [tradeBoxItem({ id: 'hidden', hidden: true })],
-      shift: 0,
       times,
       barSpacing,
       tpColor: '#089981',
@@ -226,7 +221,6 @@ describe('TradeBoxesPrimitive', () => {
     // (from/to logical ~100) resolves to x >> paneWidth + 10 and is culled.
     primitive.setSource({
       items: [tradeBoxItem({ id: 'offscreen', from: 100_000, to: 100_060 })],
-      shift: 0,
       times,
       barSpacing,
       tpColor: '#089981',
@@ -243,7 +237,6 @@ describe('TradeBoxesPrimitive', () => {
     // beyond paneWidth+10 and must be clamped to paneWidth+10, not left huge.
     primitive.setSource({
       items: [tradeBoxItem({ id: 'straddle', from: 0, to: 100_000 })],
-      shift: 0,
       times,
       barSpacing,
       tpColor: '#089981',
@@ -260,7 +253,6 @@ describe('TradeBoxesPrimitive', () => {
     primitive.detached();
     primitive.setSource({
       items: [tradeBoxItem()],
-      shift: 0,
       times,
       barSpacing,
       tpColor: '#089981',

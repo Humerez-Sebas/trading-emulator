@@ -1,4 +1,5 @@
 import { inject, Injectable, Signal } from '@angular/core';
+import type { DisplayZone } from '../../domain/chart/display-time';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 import { BehaviorSubject, combineLatest, Observable, ReplaySubject } from 'rxjs';
@@ -13,7 +14,7 @@ import {
   selectTradeMarkers,
   selectTradeBoxes,
   selectTradeBoxesVisible,
-  selectUtcOffset,
+  selectDisplayZone,
   selectReplayTfSeconds,
   selectReplaySeries,
   formatCountdown,
@@ -71,7 +72,7 @@ export interface PanelChartView {
   timeframe: Timeframe;
   candles: Candle[];
   idx: number;
-  utcOffset: number;
+  displayZone: string;
 }
 
 /** A panel's composed drawing layer: its own set plus its group's shared one, already resolved and ordered. */
@@ -347,14 +348,14 @@ export class ChartModelMapper {
     tf: string | null;
     candles: import('../../models').Candle[];
     idx: number;
-    utcOffset: number;
+    displayZone: string;
     forming: import('../../models').Candle | null;
     countdown: string | null;
   }> = combineLatest([
     this.panelDescriptor$.pipe(startWith(null)),
     this.store.select(selectSeries),
     this.store.select(selectCurrentTime),
-    this.store.select(selectUtcOffset),
+    this.store.select(selectDisplayZone),
     this.store.select(selectReplayTfSeconds),
     this.store.select(selectReplaySeries),
     this.store.select(selectCurrentAsset),
@@ -365,7 +366,7 @@ export class ChartModelMapper {
         descriptor,
         series,
         currentTime,
-        utcOffset,
+        displayZone,
         replayTfSeconds,
         replaySeries,
         currentAsset,
@@ -388,7 +389,7 @@ export class ChartModelMapper {
           panelTracksPrimarySeries(descriptor, currentAsset);
 
         if (!subGrain) {
-          return { tf, candles, idx, utcOffset, forming: null, countdown };
+          return { tf, candles, idx, displayZone, forming: null, countdown };
         }
 
         const bucketStart = Math.floor(currentTime / activeSeconds) * activeSeconds;
@@ -398,8 +399,8 @@ export class ChartModelMapper {
         // the degraded path must show the last CLOSED candle, never the containing one —
         // falling through to `idx` inclusive here would repaint the future candle.
         return idx >= 0
-          ? { tf, candles, idx: idx - 1, utcOffset, forming, countdown }
-          : { tf, candles, idx, utcOffset, forming, countdown };
+          ? { tf, candles, idx: idx - 1, displayZone, forming, countdown }
+          : { tf, candles, idx, displayZone, forming, countdown };
       },
     ),
     this.gated(),
@@ -731,7 +732,7 @@ export class ChartModelMapper {
     descriptor: PanelDescriptor;
     candles: Candle[];
     currentTime: number;
-    utcOffset: number;
+    displayZone: string;
   } | null = null;
   private lastPanelView: PanelChartView | null = null;
 
@@ -750,14 +751,14 @@ export class ChartModelMapper {
     descriptor: PanelDescriptor,
     candles: Candle[],
     currentTime: number,
-    utcOffset: number,
+    displayZone: string,
   ): PanelChartView {
     return {
       symbol: descriptor.symbol,
       timeframe: descriptor.timeframe,
       candles,
       idx: lastIndexAtOrBefore(candles, currentTime),
-      utcOffset,
+      displayZone,
     };
   }
 
@@ -780,9 +781,9 @@ export class ChartModelMapper {
     this.panelDescriptor$,
     this.store.select(selectSeries),
     this.store.select(selectCurrentTime),
-    this.store.select(selectUtcOffset),
+    this.store.select(selectDisplayZone),
   ]).pipe(
-    map(([descriptor, series, currentTime, utcOffset]) => {
+    map(([descriptor, series, currentTime, displayZone]) => {
       const candles = this.resolvePanelCandles(series, descriptor.timeframe);
       const last = this.lastPanelInputs;
       if (
@@ -790,12 +791,12 @@ export class ChartModelMapper {
         last.descriptor === descriptor &&
         last.candles === candles &&
         last.currentTime === currentTime &&
-        last.utcOffset === utcOffset
+        last.displayZone === displayZone
       ) {
         return this.lastPanelView!;
       }
-      this.lastPanelInputs = { descriptor, candles, currentTime, utcOffset };
-      this.lastPanelView = this.computePanelView(descriptor, candles, currentTime, utcOffset);
+      this.lastPanelInputs = { descriptor, candles, currentTime, displayZone };
+      this.lastPanelView = this.computePanelView(descriptor, candles, currentTime, displayZone);
       return this.lastPanelView;
     }),
     distinctUntilChanged(),
@@ -812,7 +813,6 @@ export class ChartModelMapper {
     activeTool: DrawingTool,
     selectedId: string | null,
     draft: Drawing | null,
-    shift: number,
     times: number[],
     barSpacing: number,
     pointSize: number,
@@ -823,7 +823,6 @@ export class ChartModelMapper {
       activeTool,
       selectedId,
       draft,
-      shift,
       times,
       barSpacing,
       pointSize,
@@ -840,7 +839,7 @@ export class ChartModelMapper {
     pendingOrders: PendingOrder[],
     boxes: TradeBoxItem[],
     markers: TradeMarker[],
-    shift: number,
+    zone: DisplayZone,
     times: number[],
     barSpacing: number,
     colors: ChartColors,
@@ -852,7 +851,7 @@ export class ChartModelMapper {
       pendingOrders,
       boxes,
       markers,
-      shift,
+      zone,
       times,
       barSpacing,
       colors,
@@ -867,12 +866,11 @@ export class ChartModelMapper {
    */
   buildSessionModel(
     sessionEnd: number | null,
-    shift: number,
     times: number[],
     barSpacing: number,
     color = '#7b7b7b',
   ): SessionModel {
-    return { sessionEnd, shift, times, barSpacing, color };
+    return { sessionEnd, times, barSpacing, color };
   }
 
   /**

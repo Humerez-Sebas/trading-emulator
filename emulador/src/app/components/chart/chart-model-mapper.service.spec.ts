@@ -1,4 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  NEW_YORK_ZONE_ID,
+  resolveDisplayZone,
+  SERVER_ZONE_ID,
+} from '../../domain/chart/display-time';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper, PanelChartView } from './chart-model-mapper.service';
@@ -8,7 +13,7 @@ import {
   selectCurrentAsset,
   selectCurrentTime,
   selectSeries,
-  selectUtcOffset,
+  selectDisplayZone,
   selectReplayTfSeconds,
   selectReplaySeries,
   selectChartView,
@@ -39,7 +44,6 @@ describe('ChartModelMapper', () => {
         'rect',
         'd1',
         null,
-        3600,
         [100, 200, 300],
         60,
         0.01,
@@ -49,7 +53,6 @@ describe('ChartModelMapper', () => {
       expect(result.activeTool).toBe('rect');
       expect(result.selectedId).toBe('d1');
       expect(result.draft).toBeNull();
-      expect(result.shift).toBe(3600);
       expect(result.times).toEqual([100, 200, 300]);
       expect(result.barSpacing).toBe(60);
       expect(result.pointSize).toBe(0.01);
@@ -63,7 +66,7 @@ describe('ChartModelMapper', () => {
         p1: { time: 1, price: 1 },
         p2: { time: 2, price: 2 },
       };
-      const result = mapper.buildDrawingsModel([], 'line', null, draft, 0, [], 60, 0.01, {
+      const result = mapper.buildDrawingsModel([], 'line', null, draft, [], 60, 0.01, {
         accent: '',
         up: '',
         down: '',
@@ -91,7 +94,7 @@ describe('ChartModelMapper', () => {
         [],
         [],
         [],
-        0,
+        resolveDisplayZone(SERVER_ZONE_ID),
         [100],
         60,
         {
@@ -117,13 +120,13 @@ describe('ChartModelMapper', () => {
 
   describe('buildSessionModel', () => {
     it('returns a SessionModel with default color when not provided', () => {
-      const result = mapper.buildSessionModel(1000, 3600, [100, 200], 60);
+      const result = mapper.buildSessionModel(1000, [100, 200], 60);
       expect(result.color).toBe('#7b7b7b');
       expect(result.sessionEnd).toBe(1000);
     });
 
     it('accepts a custom color override', () => {
-      const result = mapper.buildSessionModel(1000, 0, [], 60, '#ff0000');
+      const result = mapper.buildSessionModel(1000, [], 60, '#ff0000');
       expect(result.color).toBe('#ff0000');
     });
   });
@@ -398,7 +401,7 @@ describe('ChartModelMapper', () => {
     beforeEach(() => {
       store.overrideSelector(selectSeries, { M1: m1, M5: m5 });
       store.overrideSelector(selectCurrentTime, 200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
     });
 
     it('does not emit before configurePanel is called', () => {
@@ -415,7 +418,7 @@ describe('ChartModelMapper', () => {
       expect(view!.timeframe).toBe('M1');
       expect(view!.candles).toBe(m1);
       expect(view!.idx).toBe(1); // last candle at-or-before t=200 is time=160
-      expect(view!.utcOffset).toBe(0);
+      expect(view!.displayZone).toBe(SERVER_ZONE_ID);
     });
 
     it('yields empty candles and idx -1 for a timeframe with no loaded series', () => {
@@ -576,7 +579,7 @@ describe('ChartModelMapper', () => {
       });
       store.overrideSelector(selectSeries, { M1: [candle(100), candle(160)] });
       store.overrideSelector(selectCurrentTime, 100);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.refreshState();
       mapper.setUpdatesEnabled(false);
       mapper.configurePanel({ id: 'p1', symbol: 'SP500', timeframe: 'M1', linkGroupId: null });
@@ -619,7 +622,7 @@ describe('ChartModelMapper', () => {
       tf: null as string | null,
       candles: [] as Candle[],
       idx: -1,
-      utcOffset: 0,
+      displayZone: SERVER_ZONE_ID,
       forming: null as Candle | null,
       countdown: null as string | null,
     };
@@ -636,7 +639,7 @@ describe('ChartModelMapper', () => {
       tf: string | null;
       candles: Candle[];
       idx: number;
-      utcOffset: number;
+      displayZone: string;
       forming: Candle | null;
       countdown: string | null;
     } {
@@ -650,7 +653,7 @@ describe('ChartModelMapper', () => {
       const m1 = [candle(0), candle(60), candle(120)];
       store.overrideSelector(selectSeries, { M1: m1 });
       store.overrideSelector(selectCurrentTime, 130);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 60); // == TIMEFRAME_SECONDS['M1']
       store.overrideSelector(selectReplaySeries, m1);
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -671,7 +674,7 @@ describe('ChartModelMapper', () => {
       ];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 300);
       store.overrideSelector(selectReplaySeries, m5);
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -692,7 +695,7 @@ describe('ChartModelMapper', () => {
       const m5 = [candle(0)]; // nothing revealed inside [3600, 4200] — the uncomputable case
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 300);
       store.overrideSelector(selectReplaySeries, m5);
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -708,7 +711,7 @@ describe('ChartModelMapper', () => {
       const m1 = [candle(0), candle(60), candle(120), candle(180)];
       store.overrideSelector(selectSeries, { M1: m1 });
       store.overrideSelector(selectCurrentTime, 200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 3600); // H1 grain, coarser than the M1 panel
       store.overrideSelector(selectReplaySeries, []); // irrelevant: subGrain must be false before this is read
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -724,7 +727,7 @@ describe('ChartModelMapper', () => {
       const m5 = [candle(3600), candle(3900), candle(4200)];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 300);
       store.overrideSelector(selectReplaySeries, m5);
       store.overrideSelector(selectCurrentAsset, 'US30'); // primary asset
@@ -744,7 +747,7 @@ describe('ChartModelMapper', () => {
       ];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 300);
       store.overrideSelector(selectReplaySeries, m5);
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -766,7 +769,7 @@ describe('ChartModelMapper', () => {
       const m5 = [candle(3600), candle(3900), candle(4200)];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 300);
       store.overrideSelector(selectReplaySeries, m5);
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -789,7 +792,7 @@ describe('ChartModelMapper', () => {
       ];
       store.overrideSelector(selectSeries, { H1: h1 });
       store.overrideSelector(selectCurrentTime, 4200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 300);
       store.overrideSelector(selectReplaySeries, m5);
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -800,12 +803,13 @@ describe('ChartModelMapper', () => {
       const r1 = emissions[emissions.length - 1];
       expect(r1.forming).not.toBeNull();
 
-      // Unrelated input changes (utcOffset only) — the memo key (series, bucketStart,
-      // cursor) is untouched, so `aggregateFormingCandle` must NOT run again: same object.
-      store.overrideSelector(selectUtcOffset, 5);
+      // Unrelated input changes (the display zone only) — the memo key (series,
+      // bucketStart, cursor) is untouched, so `aggregateFormingCandle` must NOT run
+      // again: same object.
+      store.overrideSelector(selectDisplayZone, NEW_YORK_ZONE_ID);
       store.refreshState();
       const r2 = emissions[emissions.length - 1];
-      expect(r2.utcOffset).toBe(5); // the outer view DID recompute
+      expect(r2.displayZone).toBe(NEW_YORK_ZONE_ID); // the outer view DID recompute
       expect(r2.forming).toBe(r1.forming); // but the forming sub-computation is a cache hit
 
       // A REAL cursor change inside the same bucket — the memo key's `cursor` differs, so
@@ -828,7 +832,7 @@ describe('ChartModelMapper', () => {
       const series = { M1: m1 };
       store.overrideSelector(selectSeries, series);
       store.overrideSelector(selectCurrentTime, 200);
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 180); // == TIMEFRAME_SECONDS['M3'], subGrain false
       store.overrideSelector(selectReplaySeries, m1);
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -840,7 +844,7 @@ describe('ChartModelMapper', () => {
       expect(r1.candles.length).toBeGreaterThan(0); // generateCustomSeries actually produced M3 bars
 
       // Unrelated input change; `series` keeps the EXACT SAME object reference.
-      store.overrideSelector(selectUtcOffset, 7);
+      store.overrideSelector(selectDisplayZone, NEW_YORK_ZONE_ID);
       store.refreshState();
       const r2 = emissions[emissions.length - 1];
 
@@ -860,7 +864,7 @@ describe('ChartModelMapper', () => {
         candle(4200, 13, 14, 12, 13.5),
       ];
       store.overrideSelector(selectSeries, { H1: h1 });
-      store.overrideSelector(selectUtcOffset, 0);
+      store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
       store.overrideSelector(selectReplayTfSeconds, 300);
       store.overrideSelector(selectReplaySeries, m5);
       store.overrideSelector(selectCurrentAsset, 'US30');
@@ -949,7 +953,7 @@ describe('ChartModelMapper', () => {
         ];
         store.overrideSelector(selectSeries, { H1: h1 });
         store.overrideSelector(selectCurrentTime, 4200);
-        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
         store.overrideSelector(selectReplayTfSeconds, 300);
         store.overrideSelector(selectReplaySeries, m5);
         store.overrideSelector(selectCurrentAsset, 'US30');
@@ -980,7 +984,7 @@ describe('ChartModelMapper', () => {
         const cursor = 600;
         store.overrideSelector(selectSeries, { M5: m5 });
         store.overrideSelector(selectCurrentTime, cursor);
-        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
         store.overrideSelector(selectReplayTfSeconds, 300); // == TIMEFRAME_SECONDS['M5']: subGrain false
         store.overrideSelector(selectReplaySeries, m5);
         store.overrideSelector(selectCurrentAsset, 'US30');
@@ -1009,7 +1013,7 @@ describe('ChartModelMapper', () => {
         const m1 = [candle(0), candle(60), candle(120), candle(180)];
         store.overrideSelector(selectSeries, { M1: m1 });
         store.overrideSelector(selectCurrentTime, 200);
-        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
         store.overrideSelector(selectReplayTfSeconds, 3600); // H1 grain, coarser than the M1 panel
         store.overrideSelector(selectReplaySeries, []); // irrelevant: subGrain must be false before this is read
         store.overrideSelector(selectCurrentAsset, 'US30');
@@ -1026,7 +1030,7 @@ describe('ChartModelMapper', () => {
         const m5 = [candle(3600), candle(3900), candle(4200)];
         store.overrideSelector(selectSeries, { H1: h1 });
         store.overrideSelector(selectCurrentTime, 4200);
-        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
         store.overrideSelector(selectReplayTfSeconds, 300);
         store.overrideSelector(selectReplaySeries, m5);
         store.overrideSelector(selectCurrentAsset, 'US30');
@@ -1050,7 +1054,7 @@ describe('ChartModelMapper', () => {
         const m5 = [candle(0), candle(300), candle(600)];
         store.overrideSelector(selectSeries, { M5: m5 });
         store.overrideSelector(selectCurrentTime, 900);
-        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
         store.overrideSelector(selectReplayTfSeconds, 300);
         store.overrideSelector(selectReplaySeries, m5);
         store.overrideSelector(selectCurrentAsset, 'US30');
@@ -1080,7 +1084,7 @@ describe('ChartModelMapper', () => {
         const m5 = [candle(3600), candle(3900), candle(4200)];
         store.overrideSelector(selectSeries, { H1: h1 });
         store.overrideSelector(selectCurrentTime, 4200);
-        store.overrideSelector(selectUtcOffset, 0);
+        store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
         store.overrideSelector(selectReplayTfSeconds, 300);
         store.overrideSelector(selectReplaySeries, m5);
         store.overrideSelector(selectCurrentAsset, 'US30'); // primary asset

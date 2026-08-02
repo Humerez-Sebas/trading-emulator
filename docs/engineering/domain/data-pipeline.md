@@ -62,7 +62,17 @@ Two consequences the pipeline handles explicitly:
   corrupts the H1/D1 bucket containing it. `ultimo_minuto_cerrado` reads it from
   `symbol_info_tick`, which is on the same server clock as the bars.
 
-The display side compensates for this in the app; see `SettingsState.utcOffset`.
+The display side compensates for this in the app. `SettingsState.displayZone` names the
+clock the chart is painted in, and `domain/chart/display-time.ts` implements the two
+families:
+
+- **server-relative** (`ny`, `server`): a constant shift over the stored clock, which
+  tracks US DST for free because the server already does. `ny` is a constant −7 h, is
+  exact all year, and is the default — it also keeps the daily candle cutting at 17:00 ET.
+- **utc-fixed** (`utc-4`, `utc+9`, …): a real UTC offset, recovered by subtracting the
+  server's own +2/+3 via the US DST rule. Exact for zones without DST (Tokyo, La Paz);
+  for a zone that observes DST the clock stays put while the zone moves, so e.g. UTC−4
+  shows the New York open at 09:30 from March to November and at 10:30 in winter.
 
 ## Cold symbols truncate silently — always warm up first
 

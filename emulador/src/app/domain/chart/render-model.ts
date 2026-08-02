@@ -1,3 +1,5 @@
+import type { DisplayZone } from './display-time';
+
 /** OHLC candle. `time` in unix seconds (UTC), as expected by lightweight-charts. */
 export interface Candle {
   time: number;
@@ -98,7 +100,6 @@ export interface DrawingsModel {
   activeTool: DrawingTool;
   selectedId: string | null;
   draft: Drawing | null;
-  shift: number;
   times: number[];
   barSpacing: number;
   pointSize: number;
@@ -118,7 +119,6 @@ export interface CountdownModel {
 
 export interface SessionModel {
   sessionEnd: number | null;
-  shift: number;
   times: number[];
   barSpacing: number;
   color?: string;
@@ -129,7 +129,8 @@ export interface TradingModel {
   pendingOrders: PendingOrder[];
   boxes: TradeBoxItem[];
   markers: TradeMarker[];
-  shift: number;
+  /** Clock the chart is painted in; marker times go through it. */
+  zone: DisplayZone;
   times: number[];
   barSpacing: number;
   colors: ChartColors;

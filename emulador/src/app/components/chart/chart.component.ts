@@ -26,6 +26,13 @@ import {
 } from 'lightweight-charts';
 import { Candle, derivePointSize } from '../../models';
 import {
+  type DisplayZone,
+  fromDisplayTime,
+  resolveDisplayZone,
+  toDisplayTime,
+} from '../../domain/chart/display-time';
+import { DEFAULT_DISPLAY_ZONE_ID } from '../../state/settings/settings.models';
+import {
   selectActiveTfShortfall,
   selectCurrentAsset,
   selectDataRange,
@@ -483,7 +490,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   /** Up to which index (of the active TF) the chart is painted. */
   private renderedIdx = -1;
   private renderedTf: string | null = null;
-  private renderedOffset = 0;
+  private renderedZone: DisplayZone | null = null;
   /** Full active-TF series kept for lazy prepend; the window is a tail of it. */
   private renderedCandles: Candle[] = [];
   /** First index of the rendered window into `renderedCandles` (0 = all loaded). */
@@ -511,7 +518,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private currentAsset = this.store.selectSignal(selectCurrentAsset);
   /** The one-slot session clipboard: geometry and kind only, runtime-only, never persisted. */
   private clipboard = this.store.selectSignal(drawingsFeature.selectClipboard);
-  private shiftSecs = 0; // time zone offset applied to the chart
+  // Clock the chart is painted in. Resolved from the settings zone id; the
+  // stored candle clock is broker SERVER time, so turning it into what the user
+  // reads is `toDisplayTime` — not a constant offset, because a fixed UTC zone
+  // has to undo the server's own DST. See domain/chart/display-time.ts.
+  private displayZone: DisplayZone = resolveDisplayZone(DEFAULT_DISPLAY_ZONE_ID);
   private accent = CHART_ACCENT;
   private up = DARK_CHART_COLORS.upColor;
   private down = DARK_CHART_COLORS.downColor;
@@ -641,8 +652,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // data + replay cursor + display time zone
     this.mapper.chartView$
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ tf, candles, idx, utcOffset, forming, countdown }) =>
-        this.render(tf, candles, idx, utcOffset, forming, countdown),
+      .subscribe(({ tf, candles, idx, displayZone, forming, countdown }) =>
+        this.render(tf, candles, idx, displayZone, forming, countdown),
       );
 
     // session end indicator
@@ -741,14 +752,16 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     tf: string | null,
     candles: Candle[],
     idx: number,
-    utcOffset: number,
+    displayZone: string,
     forming: Candle | null,
     countdown: string | null,
   ): void {
     if (!this.series) return;
-    const shift = utcOffset * 3600;
-    if (shift !== this.shiftSecs) {
-      this.shiftSecs = shift;
+    // resolveDisplayZone returns the same object per id, so this is a cheap
+    // reference compare, exactly as the old numeric shift was.
+    const zone = resolveDisplayZone(displayZone);
+    if (zone !== this.displayZone) {
+      this.displayZone = zone;
       this.pushDrawings();
       this.pushTrading();
     }
@@ -768,18 +781,18 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (
       tf !== this.renderedTf ||
       idx < this.renderedIdx ||
-      shift !== this.renderedOffset ||
+      zone !== this.renderedZone ||
       forwardJump > 240
     ) {
       this.renderedCandles = candles;
-      this.renderWindow(idx, Math.max(0, idx + 1 - RENDER_WINDOW), shift);
+      this.renderWindow(idx, Math.max(0, idx + 1 - RENDER_WINDOW), zone);
       this.renderedTf = tf;
       this.renderedIdx = idx;
-      this.renderedOffset = shift;
+      this.renderedZone = zone;
       if (this.renderedTimes.length) this.chart?.timeScale().scrollToRealTime();
       this.pushDrawings();
       this.pushTrading();
-      this.applyForming(forming, shift);
+      this.applyForming(forming, zone);
       this.updateCountdown(forming, candles, idx, countdown);
       this.pushSession();
       return;
@@ -789,7 +802,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     while (this.renderedIdx < idx) {
       this.renderedIdx++;
       const c = candles[this.renderedIdx];
-      this.series.update({ ...c, time: (c.time + shift) as UTCTimestamp });
+      this.series.update({ ...c, time: toDisplayTime(c.time, zone) as UTCTimestamp });
       // Deduplicate by comparing with the last entry: in normal replay, times are
       // strictly increasing. Only the forming bucket can introduce a duplicate of
       // the most recent time. O(1) vs the previous O(n) renderedTimes.includes().
@@ -799,7 +812,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     }
     // live trade boxes grow with the last rendered candle
     this.pushTrading();
-    this.applyForming(forming, shift);
+    this.applyForming(forming, zone);
     this.updateCountdown(forming, candles, idx, countdown);
     this.pushSession();
   }
@@ -825,24 +838,24 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
 
   /** Paints/updates the live "forming" bar (resolution mode). */
-  private applyForming(forming: Candle | null, shift: number): void {
+  private applyForming(forming: Candle | null, zone: DisplayZone): void {
     if (!this.series || !forming) {
       this.renderedFormingTime = null;
       return;
     }
-    this.series.update({ ...forming, time: (forming.time + shift) as UTCTimestamp });
+    this.series.update({ ...forming, time: toDisplayTime(forming.time, zone) as UTCTimestamp });
     this.renderedFormingTime = forming.time;
     this.renderedTimes = [...this.renderedTimes.filter((t) => t !== forming.time), forming.time];
   }
 
   /** Paints the window [winStart, idx] of `renderedCandles` and records its
    * bar times (the anchor every overlay maps against). */
-  private renderWindow(idx: number, winStart: number, shift: number): void {
+  private renderWindow(idx: number, winStart: number, zone: DisplayZone): void {
     if (!this.series) return;
     const slice = idx >= 0 ? this.renderedCandles.slice(winStart, idx + 1) : [];
     this.winStart = winStart;
     this.renderedTimes = slice.map((c) => c.time);
-    const mapped = slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp }));
+    const mapped = slice.map((c) => ({ ...c, time: toDisplayTime(c.time, zone) as UTCTimestamp }));
     if (this.engine) {
       this.engine.render({ candles: mapped });
     }
@@ -860,7 +873,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const newStart = Math.max(0, this.winStart - LOAD_MORE_CHUNK);
     const added = this.winStart - newStart;
     if (added > 0) {
-      this.renderWindow(this.renderedIdx, newStart, this.shiftSecs);
+      this.renderWindow(this.renderedIdx, newStart, this.displayZone);
       this.chart?.timeScale().setVisibleLogicalRange({
         from: (range.from as number) + added,
         to: (range.to as number) + added,
@@ -873,7 +886,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** "Esta temporalidad solo tiene datos hasta 31 dic 14:30" for the banner. */
   private formatShortfall(lastUtc: number): string {
-    const when = new Date((lastUtc + this.shiftSecs) * 1000).toLocaleString('es', {
+    const when = new Date(toDisplayTime(lastUtc, this.displayZone) * 1000).toLocaleString('es', {
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
@@ -965,16 +978,19 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // ---- "Ir a fecha…" / "Programar fin…" ----
 
-  /** Epoch UTC seconds -> "yyyy-MM-ddTHH:mm" in the display time zone. */
+  /**
+   * Stored epoch (broker SERVER clock, not UTC) -> "yyyy-MM-ddTHH:mm" in the
+   * display time zone. See DISPLAY_SHIFTS in settings.models.ts.
+   */
   private toInputValue(epoch: number): string {
-    return new Date((epoch + this.shiftSecs) * 1000).toISOString().slice(0, 16);
+    return new Date(toDisplayTime(epoch, this.displayZone) * 1000).toISOString().slice(0, 16);
   }
 
-  /** "yyyy-MM-ddTHH:mm" in the display time zone -> epoch UTC seconds. */
+  /** "yyyy-MM-ddTHH:mm" in the display time zone -> stored epoch (server clock). */
   private fromInputValue(value: string): number | null {
     const ms = Date.parse(`${value}:00Z`);
     if (Number.isNaN(ms)) return null;
-    return Math.floor(ms / 1000) - this.shiftSecs;
+    return fromDisplayTime(Math.floor(ms / 1000), this.displayZone);
   }
 
   menuGoToDate(): void {
@@ -1164,7 +1180,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
           this.lastTradeView.orders,
           this.tradeBoxes,
           this.tradeMarkers,
-          this.shiftSecs,
+          this.displayZone,
           this.renderedTimes,
           this.barSpacing,
           this.lastConfig?.colors ?? DARK_CHART_COLORS,
@@ -1372,8 +1388,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private applySnap(p1: DrawingPoint, p2: DrawingPoint, kind: DrawingType): DrawingPoint {
     if (kind !== 'line' || !this.shiftKey || !this.chart || !this.series) return p2;
     const ts = this.chart.timeScale();
-    const x1 = ts.timeToCoordinate((p1.time + this.shiftSecs) as UTCTimestamp);
-    const x2 = ts.timeToCoordinate((p2.time + this.shiftSecs) as UTCTimestamp);
+    const x1 = ts.timeToCoordinate(toDisplayTime(p1.time, this.displayZone) as UTCTimestamp);
+    const x2 = ts.timeToCoordinate(toDisplayTime(p2.time, this.displayZone) as UTCTimestamp);
     const y1 = this.series.priceToCoordinate(p1.price);
     const y2 = this.series.priceToCoordinate(p2.price);
     if (x1 === null || x2 === null || y1 === null || y2 === null) return p2;
@@ -1641,7 +1657,6 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         this.activeTool(),
         this.panelDrawings.selectedId,
         this.draft,
-        this.shiftSecs,
         this.renderedTimes,
         this.barSpacing,
         this.pointSize,
@@ -1654,7 +1669,6 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.engine!.render({
       session: this.mapper.buildSessionModel(
         this.mapper.sessionEnd(),
-        this.shiftSecs,
         this.renderedTimes,
         this.barSpacing,
       ),

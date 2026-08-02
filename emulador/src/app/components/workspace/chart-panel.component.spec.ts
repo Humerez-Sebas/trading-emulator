@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { Component, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -15,7 +16,7 @@ import {
   selectCurrentTime,
   selectSeries,
   selectSessionTfs,
-  selectUtcOffset,
+  selectDisplayZone,
 } from '../../state/selectors';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
@@ -59,7 +60,7 @@ describe('ChartPanelComponent', () => {
       M5: [{ time: 100, open: 1, high: 1, low: 1, close: 42 }],
     });
     store.overrideSelector(selectCurrentTime, 100);
-    store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
     store.overrideSelector(selectSessionTfs, ['M1', 'M5', 'M15']);
     store.overrideSelector(linkGroupsFeature.selectGroups, {});
   });
