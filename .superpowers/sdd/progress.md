@@ -63,7 +63,8 @@ untracked — kept out of `.superpowers/sdd/` so the previous run's briefs there
 - [x] Whole-branch Opus audit → **NOT PASS** (1 High, 1 Medium) → fix `dfa5dc9` →
       re-audit **NOT PASS** (1 High, fix-introduced) → fix `8b6093a` →
       **re-audit PASS ("Ship it")**
-- [ ] PR → `main` (GitHub MCP), then back-merge `main → develop`
+- [x] PR → `main` (GitHub MCP): **[#53](https://github.com/Humerez-Sebas/trading-emulator/pull/53)**
+- [ ] Back-merge `main → develop` — **blocked on the owner merging #53** (see below)
 
 ## Completed
 
@@ -499,6 +500,28 @@ quote-currency conversion — OWNER-VISIBLE, goes in the PR body)** · L6 (finit
 SL) · L7 (symbol echoed un-normalised) · L9 (risk-slider stale visuals on a cleared
 field) · L10 (Riesgo label's verbose computed name) · L12 (above). **L8 and L11 are
 closed** by the last two fix commits.
+
+## PR — [#53](https://github.com/Humerez-Sebas/trading-emulator/pull/53) → `main`
+
+Branch pushed to `origin/claude/calculadora-riesgo` and the PR opened via the GitHub MCP.
+Body carries: what/why, the structural decision, the three honest states, the full
+test-count progression 1001 → 1046, the gate and build evidence, the three NOT PASS audits
+and what each caught, the **Futures deferral** and **L5** (no quote-currency conversion) as
+the two reasons the follow-up spec exists, and the remaining no-fix Lows.
+
+### Two items left for the owner — the run stops here on purpose
+
+1. **Merging #53 is the owner's call, not the orchestrator's.** Merging to `main` is what
+   deploys to production, and the run has no mandate to trigger a deploy. Note also the
+   pre-existing repo state recorded elsewhere: the CI **Pipeline job fails on unpinned
+   ruff** (39 errors in untouched code) and **`main` is not branch-protected** — neither is
+   caused by this branch, but both bear on whether a merge is safe right now. Branch
+   protection has no MCP/CLI path either way; it is a human dashboard task.
+2. **Back-merge `main → develop`** immediately after that merge, with a clean tree, and
+   re-run the gates there (`git-workflow.md` §Two-track flow). This branch touches no file
+   that diverges between the two — `git diff origin/main...HEAD -- src/app/components/
+   src/app/state/` is empty — so it should be clean. **A conflict would mean something
+   landed outside the declared scope: stop and investigate rather than resolving it.**
 
 ## Deviations
 
