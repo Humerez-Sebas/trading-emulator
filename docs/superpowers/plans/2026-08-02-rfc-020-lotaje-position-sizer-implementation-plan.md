@@ -290,9 +290,13 @@ Separator confirmed by S-1.c. Flash `--accent` for ~1.2 s via `--duration-fast`/
 Failure is **visible** (`'No se pudo copiar — selecciona y copia'`), never a silent false success.
 Disabled — not hidden — during honest states, so the layout does not jump.
 
-### Task D-4 — Ficha del activo + `$/point` guard-rail
+### Task D-4 — Ficha del activo
 Discloses `contractSize`, `tickSize`, `pointSize`, `pipSize`, `volumeStep`, `volumeMin`, currency,
-aliases and **provenance with its date**. Contract line adds the resulting position's `$/point`.
+aliases and **provenance with its date**. Opens from the symbol chip, unchanged by D-21.
+
+**D-21 (owner, 2026-08-03):** the companion's **contract line is removed** — with it the
+`$/point` guard-rail that this task used to add. The Ficha itself is untouched. Authority and
+scope: `.superpowers/rfc-020/dev-log.md` §8.6; product design §3.3.
 
 ### Task D-5 — Focus, select-on-focus, `Esc`, steppers
 Initial focus → **stop field** when context is restored; → **Cuenta** on cold start (P2). All numeric

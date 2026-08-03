@@ -542,6 +542,82 @@ that all measurements used **throwaway browser profiles**, so a site-level clipb
 owner's real profile is unverified. **Auditor and D-6 implementer: read that list before relying on
 any spike number.**
 
+### 8.6 Decision **D-21** — the companion's contract line is removed
+
+| Field | Value |
+| :--- | :--- |
+| **Decision** | The **contract line** under the lot figure — `US30 · 1 $/punto por lote · $2.22/punto` — is **removed from the product**, and with it the term `$/punto`. Zone 3 holds the lot figure, its label and the copy affordance. Nothing else |
+| **Authority** | **Owner, 2026-08-03.** PHILOSOPHY §3.1 level 1 — explicit user direction, which outranks the frozen product design |
+| **Classification** | **requires-attention** |
+| **Type** | **A render change, not a logic change** (see 8.6.3) |
+| **Status of D.20** | **Unchanged.** D-21 does not reopen the Design Review verdict D.20.1-6, is not a STOP, and is not optional. It is documentation of a decision already taken |
+
+**Why it is classified requires-attention, not inert.** It removes a mitigation the design named
+in writing. Product design §4.1 justified defaulting to Method B (distance) by three mitigations
+against a mistyped magnitude, and the position's `$/point` was the second and the only *new* one.
+Two survive — the dollar risk visible and constant in Zone 1, and the unit as a suffix inside the
+field. The trade-off in §13 #1 is therefore now carried with **less cover than the design assumed**,
+which is a real change to the product's safety argument and must not be filed as cosmetic. The
+owner's reversal clause on that trade-off ("one magnitude error in real use and the default flips")
+stands unchanged and becomes the primary remaining guard.
+
+#### 8.6.1 Propagation — what was edited, in the owner's order
+
+| # | File | Edit |
+| :--- | :--- | :--- |
+| 1 | `.superpowers/rfc-020/dev-log.md` | This section (§8.6) — the decision record |
+| 2 | product design §3.3 | Third bullet (the contract line) deleted, replaced by the D-21 note; the term `$/punto` gone from the zone |
+| 3 | product design §6.1 | Level 5 removed — the attention hierarchy is now **four** levels: figure → dollar risk → stop field → context |
+| 4 | product design §9.1 | Token-mapping row *Línea de contrato* removed |
+| 5 | product design §13 #1 | The `$/punto` mitigation struck; three mitigations → two, named explicitly |
+| 6 | plan, Task D-4 | Heading and body: `Contract line adds the resulting position's $/point` removed. **The Ficha del activo is intact and still opens from the chip** |
+
+**Four further edits in the product design, declared — consistency propagation, not new decisions.**
+The owner's instruction was to leave the three documents *consistent*; these four are the places
+where the removed line is still drawn or counted, and leaving them would have had a future Layer-D
+implementer build the thing D-21 deletes:
+
+| # | Location | Edit | Class |
+| :--- | :--- | :--- | :--- |
+| a | §3 ASCII diagram | The rendered line `US30 · 1 $/punto por lote · $2.22/punto` removed from Zone 3 | inert |
+| b | §4.1 mitigation list | Item 2 (the position's `$/point`) removed; list renumbered to two, with the reason written | **requires-attention** — this is the §13 #1 edit's factual source; the owner enumerated exactly the two survivors |
+| c | §4.4 "Qué se calcula solo" | `el valor por punto de la posición` removed — it is no longer rendered anywhere | inert |
+| d | §5.1 disclosure level 0 | `la línea de contrato` removed; "**Seis cosas**" → "**Cinco cosas**" | inert |
+
+#### 8.6.2 Residual drift, recorded rather than silently fixed
+
+Two documents the owner did not name still describe the removed line. Following the §6.4 precedent
+in this ledger, they are recorded here — **this section is the authority** — and not edited unasked:
+
+| Artifact | Stale wording | Correct reading after D-21 |
+| :--- | :--- | :--- |
+| `docs/superpowers/plans/2026-08-02-rfc-020-sdd-prompt.md` §3, Wave 4 table | `D-4 Ficha + $/point guard-rail` | `D-4 Ficha del activo`. The plan (§0-binding) and this ledger govern task content |
+| `docs/superpowers/specs/2026-08-02-position-sizer-architecture-validation.md:444` | V2's mitigation lists a *"visible contract line"* | The registry with declared provenance and the min-lot/rounding warning remain V2's mitigations; the contract line does not |
+
+Both are one-line fixes, offered to the owner, not performed.
+
+#### 8.6.3 Why it is a render change — and the one place it does subtract a test
+
+**It changes no arithmetic.** No kernel function, no registry lookup, no reducer, no selector is
+touched. Concretely:
+
+- **Parity proof V3 (Wave 2 / C-1) is unaffected.** Its four specs — `trading.models.spec.ts`,
+  `fill-engine.spec.ts`, `trading.reducer.spec.ts`, `calculadora-page.component.spec.ts` — assert
+  sizing behaviour and v1 page behaviour, and C-1 renders nothing. They still must pass
+  **unmodified**, exactly as before.
+- **No unmodified spec changes because of D-21**, and the STOP rule (PHILOSOPHY §5.7) is untouched:
+  no task may edit a pre-existing spec to accommodate it.
+- Waves 1 and 2 are entirely unaffected. D-21 first bites in **Wave 3 (D-1)**.
+
+**The one interaction, stated so no later dispatch trips over it.** The *v1* page renders its own
+contract-size line (`calculadora-page.component.html:139,141`) and two v1 assertions pin its text
+(`calculadora-page.component.spec.ts:175,187` — `'1 $/punto por lote'` and
+`'100,000 $/punto por lote'`). D-1 already deletes and rewrites that page and ports its specs as a
+**declared** rewrite. Under D-21 those two assertions are **not ported**, because the surface they
+describe no longer exists. That is a subtraction inside D-1's already-declared deletion scope — it
+is **not** an edit of an unmodified spec, and it must appear in D-1's report as a declared deletion
+alongside "Desde lotes" and `app-risk-slider`.
+
 ---
 
 ## §9 — Run state: **PAUSED after Wave 1 implementation** (2026-08-03)

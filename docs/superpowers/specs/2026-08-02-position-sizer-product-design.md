@@ -114,7 +114,6 @@ correcta son **tres zonas**, en este orden vertical:
 │
 │              2.22                          ⧉
 │              lotes
-│  US30 · 1 $/punto por lote · $2.22/punto
 └───────────────────────────────────────────────────
 ```
 
@@ -148,11 +147,11 @@ campo único por dos campos. Es el único cambio estructural que la interfaz adm
 - **La cifra de lotes**, el elemento más grande de la pantalla por un margen amplio.
 - **La cifra es el botón de copiar.** No hay un botón «Copiar» compitiendo por atención; el
   número *es* la acción. Un glifo de copia discreto (⧉) en su esquina aporta el afordance.
-- **La línea de contrato**, debajo, en `--text-2xs` `--text-muted`:
-  `US30 · 1 $/punto por lote · $2.22/punto`.
-  El tercer término es nuevo y es un **guardarraíl**: el valor por punto de *la posición
-  resultante*. Si un error de tecleo hace el stop diez veces más pequeño, el lote se multiplica por
-  diez y esta cifra lo hace visible sin necesidad de historial ni de feed de precios (§4.2).
+
+> **D-21 (owner, 2026-08-03): la línea de contrato se elimina.** La tercera línea de esta zona
+> (`US30 · 1 $/punto por lote · $2.22/punto`) queda fuera del producto, con ella el término
+> `$/punto`. La Zona 3 contiene la cifra, su etiqueta y el afordance de copia — nada más.
+> Autoridad: decisión del owner (PHILOSOPHY §3.1 nivel 1). Registro: `.superpowers/rfc-020/dev-log.md` §8.6.
 
 ### 3.4 Lo que NO es una zona
 
@@ -178,14 +177,16 @@ entrada/SL, donde ambos precios están en la escala del instrumento y un dígito
 vista. Y la dirección peligrosa es **una distancia demasiado pequeña** (`4.5` en vez de `45`
 multiplica el lote por diez).
 
-**Mitigaciones, en orden de fuerza:**
+**Mitigaciones, en orden de fuerza (dos, tras D-21):**
 
 1. **El riesgo en dólares es visible y constante** (Zona 1). El modelo garantiza que un error de
    distancia no cambia el riesgo nominal; cambia el lote.
-2. **El valor por punto de la posición resultante** (Zona 3). Un lote diez veces mayor produce un
-   `$/punto` diez veces mayor, en la misma línea donde se lee el resultado. Sin estado, sin
-   historial, sin feed.
-3. **La unidad es un sufijo dentro del campo**, no un selector separado.
+2. **La unidad es un sufijo dentro del campo**, no un selector separado.
+
+La tercera mitigación propuesta —el `$/punto` de la posición resultante en la Zona 3— **cae con
+D-21** (§3.3): la línea de contrato se elimina y con ella ese guardarraíl. El coste declarado del
+Método B se cubre por tanto con las dos mitigaciones de arriba, y el trade-off queda revisado
+en §13 #1.
 
 **Método A (entrada + SL) permanece a una tecla** (`Alt+M`) y es la vía natural cuando el
 instrumento es de pocos dígitos o cuando el trader prefiere autoverificarse. Ambos métodos son
@@ -218,7 +219,7 @@ confundirlos es un error de ×10, y por eso el sufijo del campo dice siempre cu�
 
 `contractSize`, `tickSize`, `pointSize`, `pipSize`, `volumeStep`, `volumeMin` (registro) ·
 `riesgo $` = cuenta × riesgo % · distancia en unidades de precio · la unidad predeterminada ·
-el lote · el riesgo real y su desviación · el valor por punto de la posición.
+el lote · el riesgo real y su desviación.
 
 ---
 
@@ -226,8 +227,8 @@ el lote · el riesgo real y su desviación · el valor por punto de la posición
 
 ### 5.1 Siempre visible (nivel 0)
 
-Símbolo · cuenta · riesgo % y su equivalente en $ · el campo de stop · el lote · la línea de
-contrato. Nada más. **Seis cosas.**
+Símbolo · cuenta · riesgo % y su equivalente en $ · el campo de stop · el lote. Nada más.
+**Cinco cosas** (eran seis; la línea de contrato cae con D-21, §3.3).
 
 ### 5.2 Se expande a petición (nivel 1)
 
@@ -263,7 +264,8 @@ La distinción sustituye-vs-acompaña ya está resuelta en el código enviado y 
    le pidió.
 3. **El campo de stop.** Donde vive el foco; visualmente presente pero por debajo del resultado.
 4. **El contexto** (símbolo, cuenta, riesgo %). Debe leerse como estado, no como formulario.
-5. **La línea de contrato.** Verificable, no protagonista.
+
+La jerarquía tiene **cuatro niveles**. El quinto —la línea de contrato— desaparece con D-21 (§3.3).
 
 ### 6.2 Qué debe desaparecer visualmente
 
@@ -413,7 +415,6 @@ respecto y la herramienta sigue siendo correcta.
 | Valores de contexto | `--text-sm`, `--text` |
 | **Cifra de lotes** | `--font-mono` + `tabular-nums`, `--weight-semibold`, color `--text` |
 | Riesgo en $ | `--text-md`, `--text`, `.font-mono` |
-| Línea de contrato | `--text-2xs`, `--text-muted`, `.font-mono` para las cifras |
 | Aviso de redondeo | `--warning` sobre `--warning-subtle`, radio `--radius-sm` |
 | Insignia de procedencia heurística | patrón `[appBadge]`, `--warning` |
 | Estados honestos | `--text-muted`, `--text-base` |
@@ -530,9 +531,12 @@ abrir  →  [foco en Cuenta]  →  10000  Tab  1  Tab  US30  Tab  45  →  Enter
 ## 13. Trade-offs asumidos, en firme
 
 1. **Velocidad por encima de autoverificación** (§4.1). La distancia por defecto ahorra ~80 % del
-   tecleo y pierde algo de detección de errores de magnitud. Compensado con tres mitigaciones, una
-   de ellas nueva (el `$/punto` de la posición). **Si el owner detecta en uso real un solo error de
-   magnitud, el predeterminado se invierte** — es reversible y no congelado.
+   tecleo y pierde algo de detección de errores de magnitud. Compensado con **dos** mitigaciones:
+   el riesgo en dólares visible y constante en la Zona 1, y la unidad como sufijo dentro del campo.
+   La tercera mitigación propuesta (el `$/punto` de la posición) **cae con D-21**, de modo que este
+   trade-off se asume con menos cobertura de la que tenía el diseño original. **Si el owner detecta
+   en uso real un solo error de magnitud, el predeterminado se invierte** — es reversible y no
+   congelado.
 2. **Densidad por encima de holgura.** `PRODUCT.md` §Design Principles pide «Clarity over
    Density». Aquí se tensiona deliberadamente: seis elementos visibles, mucho aire alrededor del
    héroe y ninguno alrededor del contexto. **No se viola el principio; se aplica priorizando qué
