@@ -1,0 +1,167 @@
+# RFC-020 — Dev Log
+
+**Run:** Lotaje (Position Sizer) v2 — design session
+**Branch:** `claude/lotaje-v2-core` @ `ad80b9f` (= `origin/main`, merge of PR #53)
+**Date opened:** 2026-08-02
+**Language:** English (agent artifact)
+
+This log records the **run**, not the product. Product decisions live in RFC-020.
+
+---
+
+## §1 — Session 1: Design Review + artifact generation
+
+### 1.1 Verified ground truth (measured, not assumed)
+
+| Fact | Command / file | Value |
+| :--- | :--- | :--- |
+| Branch and HEAD | `git rev-parse` | `claude/lotaje-v2-core` @ `ad80b9f` == `origin/main` |
+| Test baseline | `npx ng test --watch=false` | **78 files / 1046 tests, all passing** |
+| v1 page structure | `calculadora-page.component.html:13,100,147` | three `<section class="panel">` |
+| v1 spec size | `wc -l` | 459 LOC (page) + 45 LOC (`risk-calculator.spec.ts`) |
+| Kernel today | `domain/risk/risk-calculator.ts` | 44 LOC |
+| Sizing functions | `trading.models.ts:190` / `:202` | `contractSizeFor` / `lotsForRisk` |
+| Sizing consumers | grep | `trading.reducer.ts:86,107,154` · `selectors.ts:245` · `chart.component.ts:958,1126` · `trade-panel.component.ts:75` |
+| Persistence precedent | `settings.reducer.ts:16,54,78` + `settings.effects.ts:12` | key + per-field guard + persist effect |
+| JWT storage | `supabase.service.ts:14` | `persistSession: true` |
+| Second-bootstrap actors | `auth.effects.ts:24` · `workspaces.effects.ts:54` · `session-sync.effects.ts:50` | `ROOT_EFFECTS_INIT` chain |
+| Canonical symbol list | `fill_r2.py:54` · `update_r2.py:302` | `US30,NAS100,SP500,XAUUSD` |
+| The four `2026-08-02-*` specs | `git ls-files --others` | **untracked**; absent from `origin/main` and every commit |
+
+### 1.2 Design Review verdict
+
+| ID | Verdict | One-line reason |
+| :--- | :--- | :--- |
+| **D.20.1** vanilla view | **AMEND** | Justified only by the second mount, which is spike-gated → spike moves to Wave 0; the view is conditional on it |
+| **D.20.2** localStorage | **AMEND** | No encryption (proven); `storage`-event sync **out of scope** — machinery without a verified consumer |
+| **D.20.3** unit toggle | **REJECT** | `pipSizeFor` → `null` for all four curated symbols; the toggle has no valid second state |
+| **D.20.4** curated registry | **AMEND** | `nasdaq`/`sp500` are not MT5 symbol names here; read `HARVEST_SYMBOLS` instead |
+| **D.20.5** git product-track | **KEEP, risk corrected** | Owner's call (PHILOSOPHY §3.1 level 1); its stated risk was understated by an order of magnitude |
+| **D.20.6** UX P1-P8 | **KEEP except P7, P8** | P8 falls with D.20.3; P7 amended — restricting `Enter` to the window breaks the design's own metric |
+
+### 1.3 Architecture decisions taken during the review
+
+**A — The spike ordering was inverted, and that was the most consequential finding.**
+The proposal put the companion-window spike in Wave 5, after the framework-free view was already
+built. But the view's only justification is the second mount, and the second mount depends on a
+question no authoritative source answers (clipboard inside a Document PiP window). Building the
+expensive thing before pricing the option it serves is backwards. The spike is cheap, touches no
+production code, and blocks nothing in Waves 1-2. It moved to Wave 0 with an explicit NO-GO branch
+that re-scopes D-1 to an Angular view.
+
+**B — D.20.3 was resolved by a code fact, not by a design argument.**
+The preliminary decision asked us to choose between two toggle semantics (reinterpret vs. convert)
+and to settle validation and persistence for each. Reading `pipSizeFor`
+(`domain/risk/risk-calculator.ts:24`) against the curated set dissolved the question: `US30`,
+`NAS100` and `SP500` are not six-letter symbols and `XAUUSD` starts with `XAU`, so **all four
+resolve to `null` — points**. A control whose alternate state is invalid for the entire catalogue is
+not a convenience; it is a one-click ×10, in the exact direction the product design names as
+dangerous. Rejecting it removed three open sub-questions at once.
+
+**C — The `storage` listener is machinery looking for a consumer.**
+The repo listens to no `storage` event anywhere today. Whether one is needed depends on Q2 (are the
+page and the companion open simultaneously?), which is unanswered. Per PHILOSOPHY §2.6 it is
+reserved, not implemented — keeping untested machinery out of a HIGH-risk wave.
+
+**D — The registry generator reads `HARVEST_SYMBOLS` rather than owning a second list.**
+Beyond fixing the wrong symbol names, this makes registry coverage and R2 candle coverage identical
+by construction. The two can never drift, because there is one list.
+
+**E — Encryption was rejected with a proof, not a preference.**
+`supabase.service.ts:14` sets `persistSession: true`, so the JWT already lives in this origin's
+`localStorage`. Our key sits beside it: an XSS that reads ours already reads the token, and a
+cipher key held in the same origin is stolen with the data. The absence of encryption is now
+documented so it is not re-litigated.
+
+### 1.4 Deviations from the brief given to this session
+
+| # | Deviation | Class | Reason |
+| :--- | :--- | :--- | :--- |
+| 1 | **Step 0 (back-merge `main`→`develop`) NOT executed, NOT dispatched, NOT pushed** | **requires-attention** | The brief's premise is materially wrong — see §2. The authorised action was a routine 33-commit hygiene merge; the measured reality is a reunification of two histories with no recent common ancestor and a silent-data-loss failure mode. Escalated to the owner rather than executed |
+| 2 | Preliminary decisions 1-4 and P7-P8 changed rather than adopted | inert | The brief commissioned a Design Review with final authority and instructed that artifacts reflect the verdict, not the premises |
+| 3 | Wave numbering differs from the brief (spike moved 5 → 0) | inert | §1.3-A. Recorded in the plan as binding correction C1 |
+
+---
+
+## §2 — BLOCKER: the back-merge premise is wrong
+
+**Status: not executed. Owner decision required.**
+
+The brief framed Step 0 as routine hygiene — "develop is 33 commits behind main after PR #53" —
+and pre-authorised a push to `origin/develop`. Measurement contradicts the framing:
+
+| Measurement | Command | Result |
+| :--- | :--- | :--- |
+| Merge base | `git merge-base origin/develop origin/main` | `7b5e977` — **2026-06-30**, merge of PR #14 |
+| Divergence | `git rev-list --left-right --count` | develop **+400** · main **+33** |
+| Conflicts | `git merge-tree --write-tree` | **65 files**: **45 `add/add`**, 20 `content` |
+| Base contains `chart-engine.ts`? | `git cat-file -e` | **No** |
+| Content delta | `git diff --shortstat origin/develop origin/main -- emulador/src` | 267 files, +2 000, **−34 416** |
+| RFCs on develop, absent from main | `git ls-tree` | **015, 016, 017, 018, 019** |
+
+**What this means.** The two branches have not been merged since 2026-06-30, so git has no useful
+common ancestor. 45 of the 65 conflicts are `add/add` — both branches independently created the
+same file — including `chart-engine.ts`, `fill-engine.ts`, `session-sync.*` and their specs. There
+is no base to three-way-merge against, so each of those 45 files is a manual decision about which
+branch is authoritative across ~34 k lines of divergence.
+
+**Why it was not delegated.** The failure mode is silent. Because the `.spec.ts` files sit in the
+same conflict list as their implementations, taking `main`'s side consistently for a subsystem
+deletes RFC-015..019 work **and its tests together** — leaving all four gates green. A test-count
+drop would be the only signal, and the brief's Step 0 mandates no baseline comparison. Pushing that
+to a shared branch is not recoverable by a normal revert once other work lands on top.
+
+**Recommended path (owner's call, not taken here):**
+
+1. Treat it as a **history reunification**, not a back-merge; give it its own run and ledger.
+2. Record `origin/develop`'s test count **before** starting; it is the only mechanical detector of
+   silently dropped work.
+3. Resolve `add/add` conflicts by **subsystem**, not file-by-file: RFC-015..019 subsystems take
+   develop's side wholesale; the 33 product commits (calculadora, server-time fix, R2 refresh) take
+   main's side wholesale; only genuinely shared files (`CLAUDE.md`, `.gitignore`, `progress.md`,
+   the docs) get line-level resolution. `progress.md` merges by append, never overwrite.
+4. Gate on **test count ≥ develop's pre-merge count**, not merely on green gates.
+5. Only then push.
+
+**This does not block RFC-020.** The four artifacts are written on `claude/lotaje-v2-core`, cut from
+`main`; nothing in this run depends on `develop`.
+
+---
+
+## §3 — Artifacts generated
+
+| # | Path | Language |
+| :-- | :--- | :--- |
+| 1 | `docs/architecture/rfcs/020-lotaje-position-sizer.md` | Spanish |
+| 2 | `docs/superpowers/plans/2026-08-02-rfc-020-lotaje-position-sizer-implementation-plan.md` | English |
+| 3 | `docs/superpowers/plans/2026-08-02-rfc-020-sdd-prompt.md` | English |
+| 4 | `.superpowers/rfc-020/dev-log.md` | English |
+
+Committed alongside them: the four `docs/superpowers/specs/2026-08-02-*.md` source specs, which
+were untracked. Without them the RFC would cite paths that exist in no commit.
+
+**No `emulador/` source was touched in this session.**
+
+---
+
+## §4 — Owner queue
+
+| # | Item | Type |
+| :--- | :--- | :--- |
+| **Q1** | Accept the Shared Kernel size discipline (math + instrument data only; no formatting, copy or view helpers), enforced by audit grep? | Decision — blocks Task A-1 |
+| **Q2** | Are the page and the companion ever open **simultaneously**? If no, the `storage` listener is never built | Decision — blocks Wave 4 |
+| **Q3** | Does MT5's volume field on Spanish Windows require a decimal comma? | Answered by spike S-1.c |
+| **Q4** | **`develop` ↔ `main` reunification** (§2) — how and when. Not a mechanical back-merge | Decision — outside RFC-020 |
+| **Q5** | Branch protection on `main` | **Human dashboard task** — no MCP/CLI path |
+| **Q6** | On spike NO-GO, confirm the D-1 re-scope to an Angular view and the removal of Wave 4 from the RFC | Decision — contingent |
+
+---
+
+## §5 — Run state
+
+| Field | Value |
+| :--- | :--- |
+| Phase | Design complete; implementation **not started** |
+| Next action | Owner answers Q1-Q2, then dispatch Wave 0 (S-1) and Wave 1 (A-1, B-1) |
+| Gates at close of session | Not re-run — no `emulador/` source changed. Baseline stands at 78 files / 1046 tests |
+| Push | **None.** Local commit only |
