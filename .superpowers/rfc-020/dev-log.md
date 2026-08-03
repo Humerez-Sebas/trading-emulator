@@ -661,3 +661,65 @@ be pasted into a cold session with no memory of this one.
 2. **S-1.c / Q3 may differ per terminal** (§8.5.4). Two MT5 terminals on this machine disagree on
    configured language. The 30-second probe is in the spike report; it gates only D-3.
 
+---
+
+## §10 — Session 4: resume (2026-08-03). **Supersedes §9's run state**
+
+**Append-only.** §1-§9 stand as written.
+
+### 10.1 One correction to the resume brief, before anything else
+
+`docs/superpowers/plans/2026-08-03-rfc-020-resume-prompt.md` §1 records **HEAD at pause = `31786b9`**.
+Measured on resume, HEAD was **`72a21a7`** — the commit that recorded the S-1 GO verdict (§8.5) and
+wrote the resume brief itself. The brief could not name the commit that contained it. Benign, but
+recorded rather than glossed: the resume brief's own §1 table is off by one commit, and §9's commit
+list omits `72a21a7` for the same reason.
+
+### 10.2 Owner decision **D-21** applied
+
+Registered at **§8.6** and propagated across the three documents the owner named, plus four declared
+consistency edits inside the product design and two residual-drift items left unfixed on the record.
+Commit **`0249683`** — `docs(rfc-020): record and propagate owner decision D-21 (remove the contract
+line)`, **3 files, +105/−21, no `emulador/` or `pipeline/` source touched.**
+
+D-21 is a **render change, not a logic change** (§8.6.3): parity proof V3 is unaffected, no
+unmodified spec changes because of it, and it first bites in Wave 3 (D-1). It does **not** reopen the
+D.20 verdict.
+
+### 10.3 Tree re-verified on resume — measured, not inherited
+
+The resume brief's instruction was to trust nothing. Four gates, raw, from `emulador/`, chained so a
+non-zero exit stops the chain, **no pipes**:
+
+```
+npx tsc -p tsconfig.app.json --noEmit && npx tsc -p tsconfig.spec.json --noEmit && npm run lint && npx ng test --watch=false
+```
+
+| Gate | Result |
+| :--- | :--- |
+| tsc app | exit **0**, no output |
+| tsc spec | exit **0**, no output |
+| lint | exit **0** — `All files pass linting.` |
+| tests | `Test Files 79 passed (79)` · `Tests 1064 passed (1064)` · duration 24.42 s |
+
+**Whole chain exit code 0. 79 files / 1064 tests — exactly the figure §9 claimed**, so the paused
+state was accurate and the arithmetic origin 1046 → 1053 → 1064 still stands for the auditor to
+re-derive.
+
+*Ordering note, for honesty:* the gate run was started before the D-21 commit landed and finished
+after it. That changes nothing — all three D-21 files are documentation (`docs/superpowers/**`,
+`.superpowers/**`); none is an input to `tsc`, `ng test` or `ng lint`. The evidence is valid for the
+tree at `0249683`.
+
+### 10.4 Next action — Wave 1 audit dispatched
+
+`branch-auditor` dispatched over **`2d943cd` (A-1) + `33970ff` (B-1)**, batched per §8.0.1. Brief at
+`.superpowers/rfc-020/wave1-audit-brief.md`, report to `.superpowers/rfc-020/wave1-audit-report.md`.
+It re-runs all seven gates (four TS + `pytest`/`ruff check`/`ruff format --check`) personally and is
+pointed at the three FINAL-AUDIT ATTENTION items from §8.3/§8.4, plus one addition by the
+orchestrator: **it must independently verify the zero-delta finding of §8.4.1**, because that finding
+is about to be handed to C-1 as a binding instruction and it contradicts what the plan anticipated.
+Verifying it after C-1 acts on it would be the wrong order.
+
+**C-1 is not dispatched until that audit comes back green.**
+
