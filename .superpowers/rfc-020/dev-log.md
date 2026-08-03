@@ -165,3 +165,76 @@ were untracked. Without them the RFC would cite paths that exist in no commit.
 | Next action | Owner answers Q1-Q2, then dispatch Wave 0 (S-1) and Wave 1 (A-1, B-1) |
 | Gates at close of session | Not re-run — no `emulador/` source changed. Baseline stands at 78 files / 1046 tests |
 | Push | **None.** Local commit only |
+
+---
+
+## §6 — Session 2: owner rulings (2026-08-03)
+
+**Append-only.** This section **supersedes §5's "Next action" row**; §1-§5 stand as written and are
+not edited. The rulings below are level-1 authority (PHILOSOPHY §3.1) and close the owner queue
+opened in §4.
+
+### 6.1 Verdict and run state accepted
+
+The owner accepted **D.20.1 – D.20.6** as written and confirmed that **not executing the back-merge
+was correct**. Nothing is pushed to `develop` in this run. Commit `24dd48d` stands as the design
+commit.
+
+### 6.2 Rulings
+
+| # | Ruling | Effect on the run |
+| :--- | :--- | :--- |
+| **Q1** | **ACCEPTED.** Shared Kernel size discipline binds: *math and instrument data only — no formatting, no user-facing copy, no view helpers*, enforced by audit grep | **Task A-1 is unblocked.** The discipline is now a standing invariant for `domain/sizing/`, checked in every task's pre-report invariant sweep, not only in A-1 |
+| **Q2** | **NO.** The page and the companion are **never used simultaneously**; the companion exists only to copy | The `storage`-event listener is **not built**, and its **reservation is withdrawn** (§6.3). Wave 4 / Task C-2 is persist-on-change + read-on-mount, full stop |
+| **Q4** | **DELEGATED.** `develop` ↔ `main` reunification is a real task with its own ledger, designed by a **separate Opus agent in a separate run**. Target: reunified once RFC-020 lands | **Explicitly out of scope for this run and for any RFC-020 dispatch.** No agent working RFC-020 touches `develop` |
+| **Q5** | **HUMAN.** Branch protection on `main` — the owner does it in the GitHub dashboard | Out of scope. No MCP/CLI path exists; do not attempt |
+| **Q6** | **CONTINGENT, pre-approved.** On S-1 = NO-GO the owner accepts the D-1 re-scope to an Angular view and the removal of Wave 4 from the RFC | The orchestrator does **not** need to stop and ask on NO-GO. It records the verdict in the ledger, re-scopes D-1, cuts Wave 4, and continues |
+
+**Q4 — the delegated brief, as ruled** (recorded verbatim so the other run inherits it):
+per-subsystem resolution — RFC-015..019 subsystems take **develop**'s side wholesale; the 33 product
+commits take **main**'s side wholesale; `docs/`, `CLAUDE.md` and `progress.md` resolve at line level,
+with `progress.md` merged **by append, never overwrite**. Gate: `develop`'s pre-merge test count
+**plus** four green gates.
+
+### 6.3 Reservation withdrawn — and the two that survive
+
+Q2's answer retires a reservation. Precision matters here, because D.20.2 carried **three**
+distinct reserved items and only one is affected:
+
+| Reserved item | Origin | Status after §6.2 |
+| :--- | :--- | :--- |
+| `storage`-event cross-surface sync | D.20.2, pending Q2 | **WITHDRAWN.** Not reserved, not implemented, no field, no interface. If it is ever wanted it re-enters as its own decision with its own rationale — it is no longer a dormant seam anyone may "finish" |
+| `v` schema-version field on `emulador.calculadora` | D.20.2, for future payload migration | **STANDS.** Zero read sites; the audit verifies it stays unread (PHILOSOPHY §2.6) |
+| Account profiles / presets schema | RFC §7.1 item 8 | **STANDS.** Zero read sites |
+
+A future agent reading "reserved" in RFC §1.2 must apply this table: the sync is gone, the `v` field
+and the profiles schema are not.
+
+### 6.4 Documentation drift created by these rulings
+
+Recorded rather than silently fixed — the artifacts were committed at `24dd48d` and still phrase
+these as open:
+
+| Artifact | Stale wording | Correct reading after §6.2 |
+| :--- | :--- | :--- |
+| RFC §1.2 (D.20.2) | *"queda reservada, no implementada"* (the `storage` sync) | Withdrawn, not reserved (§6.3) |
+| RFC §7.2 | Q1/Q2/Q4/Q5 listed as open | Answered; only Q3 (spike) and Q6 (contingent, pre-approved) remain |
+| Plan §0 C4 | *"reserved with zero read sites until Q2 is answered"* | Q2 answered; the listener is cut |
+| SDD prompt §5 | *"Open questions Q1-Q5 … If a task blocks on one, stop and ask"* | Only Q3 remains, and S-1 answers it |
+
+**This ledger section is the authority on all four points.** Aligning the artifact wording is a
+documentation-only follow-up, offered to the owner and not performed unasked.
+
+---
+
+## §7 — Run state (supersedes §5)
+
+| Field | Value |
+| :--- | :--- |
+| Phase | Design complete and **owner-ratified**; implementation not started |
+| Owner queue | **Closed** except Q3 (answered by spike S-1.c) and Q6 (contingent, pre-approved) |
+| Next action | Dispatch **Wave 0 (S-1)** and **Wave 1 (A-1, B-1)** in parallel. No further owner input required to start |
+| Blocked | Nothing |
+| Out of scope for every RFC-020 dispatch | `develop` (Q4, delegated run) · branch protection (Q5, human) |
+| Gates | Not re-run; no `emulador/` source changed. Baseline stands at **78 files / 1046 tests** |
+| Push | **None.** Local commits only |
