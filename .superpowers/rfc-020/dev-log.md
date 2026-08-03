@@ -723,3 +723,142 @@ Verifying it after C-1 acts on it would be the wrong order.
 
 **C-1 is not dispatched until that audit comes back green.**
 
+### 10.5 Wave 1 audit — **NOT PASS** (0 Critical / 0 High / **1 Medium** / 4 Low)
+
+Report: `.superpowers/rfc-020/wave1-audit-report.md`. The auditor re-ran all seven gates personally
+and left the tree byte-identical (every mutation reverted, nothing pushed, MT5 never touched).
+
+| Gate | Auditor's own result |
+| :--- | :--- |
+| tsc app / tsc spec | no output, exit 0 (both) |
+| lint | `All files pass linting.` exit 0 |
+| `ng test` | `Test Files 79 passed (79)` · `Tests 1064 passed (1064)`, exit 0, **no skipped/todo line** |
+| `pytest` / `ruff check` / `ruff format --check` | `121 passed` · `All checks passed!` · `14 files already formatted` |
+| `npm run build` (extra, not required this wave) | `Initial total 611.87 kB`, **no new chunk types**, exit 0 |
+
+**The arithmetic was re-derived, not accepted.** The auditor first validated the identity it would
+rely on — `it.each` / `test(` / `it.skip` / `it.only` all zero at both ends, so `it()` count ≡ test
+count — then measured 1046 → 1053 (+7) → 1064 (+11) by counting at each commit. The +7 is
+`position-sizing.spec.ts` 15 `it()` **minus** the deleted `risk-calculator.spec.ts` 8. It also
+`diff`ed the relocated assertions old-vs-new: **zero differences**. And
+`git diff --name-status ad80b9f..HEAD -- '*.spec.ts'` = one `D`, two `A`, **zero `M`** — no
+pre-existing spec was edited anywhere on the branch.
+
+#### 10.5.1 **F-1 (Medium)** — the declared tripwire has a hole. §8.4's ATTENTION #1 claim was false
+
+`asset-registry.spec.ts:71` vs `asset-registry.ts:70`. The equivalence loop's symbols are
+`['EURUSD','GBPJPY','USDJPY','BTCUSD','XAGUSD','ABC']` — **none is an `XAU*` symbol**, and `XAUUSD`
+is in `GENERATED_ASSETS`, so it never reaches the heuristic. Mutating
+`if (symbolUpper.startsWith('XAU')) return 100;` → `return 999;` leaves **the full suite green,
+79 files / 1064 tests, exit 0.**
+
+Seven of the eight heuristic branches *are* load-bearing (the order swap goes red with
+`expected 100000 to be 5000`; dropping `XAU` from `heuristicPipSize` goes red). This one is not.
+
+**This directly falsifies what §8.4 asserted** — that the equivalence spec "would fail if either copy
+drifted." It would not, for gold's contract size. Since the duplication was accepted *only* on the
+strength of that tripwire, and since **C-1's brief was about to inherit the claim**, this is exactly
+the finding the audit existed to catch. Failure scenario, in the auditor's words: a legitimate
+correction to gold's contract size lands in `contractSizeFor` (whose value specs pin it in three
+files), `asset-registry.ts:70` keeps the stale `100`, and after C-1 wires `contractSizeFor` →
+`resolveAsset` every non-curated `XAU*` symbol silently mis-sizes.
+
+**Remedy: one string.** `'XAUEUR'` added to that array — six letters *and* `XAU`-prefixed, so it
+reaches the heuristic and pins both the value and the evaluation order. Dispatched as a fix task;
+brief at `.superpowers/rfc-020/task-w1fix-brief.md`, red-before-green mandatory.
+
+#### 10.5.2 The four Lows — all **ruled no-fix with written reasons** (PHILOSOPHY §3.5)
+
+Recorded so they are not re-litigated at the final audit:
+
+| # | Finding | Why no-fix |
+| :--- | :--- | :--- |
+| **F-2** | `lotsForRisk` diverges from the pre-move function when `balance × riskPct / 100` underflows to `0` (`1e-300, 1e-25` → old `0.01`, new `0`; 7 other vectors identical) | Unreachable (needs ≲5e-322) and **the new value is the safer one**. "Fixing" it would restore a path that returns a tradeable lot for a zero risk budget |
+| **F-3** | `export_symbols.py:205` emits unquoted keys; `HARVEST_SYMBOLS=XAUUSD.m` would render invalid TS | Fails loudly at the next tsc gate, never produces a wrong number, dev-host script |
+| **F-4** | A-1 translated the relocated doc comments Spanish→English without declaring it (ledger declares only D1/D2) | Behaviour-free; reverting yields a mixed-language module. **Ledger addendum, not a code change** — recorded here as A-1 deviation **D3** |
+| **F-5** | This ledger carried 4 of B-1's 8 implementer-declared deviations | D6 was promoted to an attention item and D7 is the plan's own design; **D5** (`pipSize` computed independently of `source`) and **D8** (read-only probe run) appeared in no row. The auditor re-judged both independently: **correct and within permission**. Recorded now |
+
+#### 10.5.3 The three attention items, and the zero-delta claim
+
+- **§3.1 tripwire — PARTIAL** (that is F-1). Both copies were verified **token-identical**
+  independently of any test, by normalised body extraction: `IDENTICAL: True` for both functions,
+  evaluation order included. So there is no drift *today*; what is missing is the detector for
+  tomorrow.
+- **§3.2 `export_symbols.py` — CLEAN.** Never run, MT5 never touched. Full API surface is
+  `initialize`, `symbol_info`, `account_info`, `terminal_info`, `shutdown`, `last_error`; the
+  negative grep for `order_send|order_check|positions_|symbol_select|history_*|TRADE_ACTION` is
+  empty. Raises `SimboloNoEncontrado` on `None`. Reads `HARVEST_SYMBOLS` with `fill_r2.py:54`'s exact
+  default (C2 satisfied). **Strongest evidence:** the auditor re-rendered the artifact from
+  `render_ts` against a stub `MetaTrader5` and got a **byte-identical, order-independent** match to
+  the committed file — it is genuinely this generator's output, unedited by hand.
+- **§3.3 A-1 parity — HOLDS.** All five consumer paths were confirmed to **exist at `ad80b9f`**, so
+  the empty diff is a real negative rather than five typos. The money-bug guard was proven
+  non-vacuous by mutation: deleting `!(balance > 0) || !(riskPct > 0)` turns the named spec red
+  (`expected 0.1 to be +0`).
+- **Zero-delta claim (§8.4.1) — CONFIRMED on all four sub-claims.** Generated values match the
+  heuristic four-for-four; `MANUAL_ASSETS` empty; fall-through generated → manual → heuristic with
+  `source` set on all three paths; all four curated resolve `pipSize === null`, and that assertion is
+  live (killed by mutation). **C-1's binding "measure, find zero, report zero" instruction stands.**
+
+Also verified clean: kernel-boundary grep, the precise `spec-util` grep (Trap 1 not re-litigated), no
+dependency diff, no factory selectors, `syncPriceScale` still zero production reads, kernel size
+discipline in all three new files, and — a check the brief did not ask for — the registry is
+**absent from the built bundle** (`grep -rl "Five Percent Online\|resolveAsset" emulador/dist` → no
+match), so B-1's "inert" is true at bundle level, not merely in source.
+
+#### 10.5.4 Two carry-forwards into C-1's brief
+
+Both come from the auditor and neither is a defect in Wave 1:
+
+1. **`SP500` is pinned by no spec anywhere.** Post-cutover only 3 of the 4 curated contract sizes are
+   regression-pinned. C-1 should close that gap in `position-sizing.spec.ts`, which is already in its
+   scope table.
+2. **The equivalence spec becomes tautological once `contractSizeFor` *is* `resolveAsset`.** After
+   C-1 the tripwire stops being a tripwire, so value-pinning specs — not the equivalence loop — must
+   carry the anti-drift weight from that point on. C-1's brief must say so explicitly.
+
+#### 10.5.5 Two corrections the auditor made to the orchestrator's brief
+
+Recorded because the brief was the orchestrator's work, not a dispatch's: the non-source commit list
+omitted `24dd48d`, `0301caf` and `775a865` (all three verified source-free by the auditor), and the
+ledger-only commit `be54d8a` landed mid-audit, so HEAD moved from `0249683` to `be54d8a` during the
+run. Neither changes the verdict; both are the kind of drift that makes a scope-scan unreliable if
+left unstated.
+
+### 10.6 F-1 fix — the tripwire is now load-bearing on gold
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, orchestrator diff-scan passed |
+| Commit | `7d83b1a` — `test(rfc-020): cover the XAU contract-size branch in the heuristic equivalence tripwire (F-1)` |
+| Diff | **1 file, +1/−1.** `asset-registry.spec.ts:71` — `'XAUEUR'` appended to the equivalence loop's symbol array. Nothing else |
+| Tests | **1064 → 1064**, unchanged — the symbol is one more iteration inside the existing `it()`, not a new test case |
+| Gates | tsc app 0 · tsc spec 0 · lint `All files pass linting.` · `ng test` 79 files / 1064 tests, exit 0 |
+| Report | `.superpowers/rfc-020/task-w1fix-report.md` |
+
+**Scope check (orchestrator, mechanical).** `git show --stat 7d83b1a` = exactly one file, and the
+diff is the single array line. **`asset-registry.ts` is absent from the commit** — the production
+heuristic was not touched, which is the whole point: the fix adds a detector, it does not change
+behaviour.
+
+**Red-before-green, which is what makes this a closure rather than a gesture.** With `'XAUEUR'` in
+place, the implementer re-applied the auditor's exact mutation (`asset-registry.ts:70`,
+`return 100;` → `return 999;`) and the suite failed **inside the equivalence spec** —
+`asset-registry.spec.ts:73`, `AssertionError: expected 999 to be 100`, 1063/1064 otherwise green.
+Before the fix that same mutation left all 1064 green. The mutation was then reverted and `git diff`
+on `asset-registry.ts` confirmed empty (no output, exit 0) before the commit; it was never staged.
+
+**Why `'XAUEUR'` and not a new value-assertion spec.** It is six letters *and* `XAU`-prefixed, so it
+is absent from `GENERATED_ASSETS`, reaches the heuristic, and pins **both** the value (`100`) and the
+evaluation order (metal before the six-letter regex) in one symbol — a naive six-letter-first
+implementation returns `100000` and fails. It closes the hole inside the existing tripwire instead of
+adding a parallel assertion that could itself drift.
+
+**Deviations declared — two, both inert:** the pre-existing uncommitted `dev-log.md` edit and the
+four off-limits untracked dirs already in the shared tree (untouched, and excluded automatically by
+the pathspec commit); and the mutate/revert cycle on `asset-registry.ts`, which the brief itself
+mandated as the evidence requirement and which left the file byte-identical.
+
+**F-1 is closed.** A focused re-audit over `7d83b1a` follows; the whole-branch audit at the end of
+the run is still never skipped.
+
