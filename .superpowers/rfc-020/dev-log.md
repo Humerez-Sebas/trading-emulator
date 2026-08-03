@@ -295,3 +295,84 @@ Working tree at run open: clean except four untracked directories that are expli
 every dispatch (`.opencode/`, `.superpowers/calculadora/`, `.superpowers/rfc-018/`,
 `.superpowers/rfc-019/`).
 
+### 8.2 Orchestrator deviation — Wave 1 runs sequentially, not in parallel
+
+**Class: requires-attention** (a documented departure from the SDD prompt's wave table, decided by
+the orchestrator, not by any implementer).
+
+The prompt marks Wave 1 **PARALLEL** on the grounds that A-1 and B-1 are independent. They are
+independent in **files** — A-1 owns `position-sizing.ts`, B-1 owns `asset-registry*.ts`, neither
+imports the other — but they are **not independent in the build sandbox**, and that is what decides
+how they can be run:
+
+1. Both must run `npx ng test --watch=false` in the same `emulador/` directory. The Angular
+   unit-test builder runs vitest with `isolate: false` and shares `.angular/cache` and
+   `node_modules/.vite`; `docs/engineering/testing.md` records the optimizeDeps cache race as the
+   mechanism behind the PR #23 flakes. Two concurrent runs invite exactly that race.
+2. Test-count arithmetic would stop being attributable. Each agent would observe the other's specs
+   landing mid-run, and that arithmetic is the auditor's primary detector of silently dropped or
+   skipped specs (`testing.md` §Evidence discipline).
+
+**Resolution:** S-1 still ran fully in parallel (it touches no tree and makes no commit). A-1 ran to
+completion, then B-1 was dispatched with A-1's post-task count as its starting number. **The batched
+Wave 1 review is unaffected** — both tasks are still audited together, which is what the batching
+permission in 8.0.1 actually grants.
+
+**Cost:** wall-clock only. **Benefit:** attributable arithmetic and no cache race in the wave whose
+whole claim is "no behaviour change".
+
+### 8.3 Task A-1 — kernel move + pure re-export
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, orchestrator diff-scan passed |
+| Commit | `2d943cd` — `refactor(rfc-020): move sizing kernel to domain/sizing, re-export from trading.models (D.20.1)` |
+| Tests | **1046 → 1053** (+7, all in the new `position-sizing.spec.ts`: 4 for `lotsForRiskDistance`, 1 for the negative-balance/negative-riskPct guard, 2 equivalence). File count unchanged at 78 — one spec moved out, one moved in |
+| Gates | tsc app 0 · tsc spec 0 · lint `All files pass linting` · `ng test` 78 files / 1053 tests, 0 failures |
+| Report | `.superpowers/rfc-020/task-a1-report.md` (untracked per `.superpowers/rfc-020/.gitignore`) |
+
+**Scope check (orchestrator, mechanical).** `git show --stat 2d943cd` = exactly 6 files, all inside
+the brief's scope table: `domain/sizing/position-sizing.{ts,spec.ts}` added,
+`domain/risk/risk-calculator.{ts,spec.ts}` deleted, `trading.models.ts` (−35/+9),
+`calculadora-page.component.ts` (±4).
+
+**The parity property holds, and it was verified mechanically, not taken on report.**
+`git diff ad80b9f..2d943cd --name-only` over `trading.reducer.ts`, `selectors.ts`,
+`chart.component.ts`, `trade-panel.component.ts` and `trading.models.spec.ts` returns **nothing** —
+none of the five consumers was touched, and all of them still compile and pass. `trading.models.ts`
+now ends in a single line:
+
+```ts
+export { contractSizeFor, lotsForRisk } from '../../domain/sizing/position-sizing';
+```
+
+That is plan correction **C5** satisfied literally.
+
+**The money-bug guard was kept, as instructed.** `lotsForRisk` retains its own
+`!(balance > 0) || !(riskPct > 0)` checks rather than delegating to a `riskUsd > 0` test on the new
+primitive. Not equivalent: a negative balance with a negative risk % yields a *positive* `riskUsd`,
+so the delegation would have converted today's `0` into a real lot figure. There is now a named spec
+for exactly that input.
+
+**Deviations declared by the implementer — both verified inert:**
+
+| # | Deviation | Class | Orchestrator finding |
+| :--- | :--- | :--- | :--- |
+| D1 | Also updated one doc-comment string in `calculadora-page.component.ts` (`domain/risk/risk-calculator.ts` → `domain/sizing/position-sizing.ts`), where the brief said "import path only" | **inert** | **Caused by the brief, not by the implementer.** The brief's own invariant `grep -rn "domain/risk" emulador/src` demands zero hits, which a stale doc-comment would have failed. Prose only, in a file already in scope |
+| D2 | The invariant grep `grep -rn "spec-util" … \| grep -v "\.spec\.ts"` is **not** empty | **inert, pre-existing** | **Confirmed a false positive in the grep, not a violation.** Both hits are comment prose at `state/layout/layout-invariants.ts:10,12` describing the pure-production-twin pattern; the only real `spec-util` *imports* are in `.spec.ts` files, which is permitted. The file is untouched by this task and predates the branch. Invariant 7 holds |
+
+**Grep refinement carried forward to every later task in this run.** The `spec-util` detector as
+written cannot distinguish an import from a comment naming the file, so it will keep firing on
+`layout-invariants.ts`. The precise form is:
+
+```
+grep -rnE "from '.*spec-util'|require\(.*spec-util" emulador/src/app --include=*.ts | grep -v "\.spec\.ts"
+```
+
+Recorded here so the final auditor does not re-litigate D2, and so no future implementer either
+"fixes" untouched pre-existing prose or waves through a real import (PHILOSOPHY §3.5).
+
+**FINAL-AUDIT ATTENTION:** none for this task. Largest diff is `position-sizing.ts` at 110 added
+lines, all relocated or the new primitive; no private-API use; no new dependency
+(`git diff --stat ad80b9f..2d943cd -- emulador/package.json emulador/package-lock.json` = empty).
+
