@@ -11,23 +11,18 @@
  * multipliers and tick sizes are available.
  */
 
+import { resolveAsset } from './asset-registry';
+
 /**
- * Pip size. Evaluated IN THIS ORDER — the same order `contractSizeFor` below
- * uses — because the order is the contract, not an implementation detail.
- *
- *  1) metals (`XAU*`, `XAG*`) -> null   (measured in points even though they
- *     are 6 letters — a naive "6 letters ⇒ forex" rule would give them
- *     nonexistent pips)
- *  2) 6-letter pairs with JPY   -> 0.01  (applying 0.0001 here would inflate
- *     the pip distance ×100)
- *  3) other 6-letter pairs      -> 0.0001
- *  4) any other symbol          -> null  (indices and CFDs: points, not pips)
+ * Pip size. Backed by the asset registry (RFC-020 Task C-1, D.20.4):
+ * `resolveAsset` computes `pipSize` the same way for every symbol regardless
+ * of provenance (curated or heuristic) — see `AssetSpec.pipSize`. Evaluation
+ * order (metals before the 6-letter regex, JPY before the flat 0.0001) lives
+ * in `resolveAsset`'s heuristic branch now; this function's signature is
+ * unchanged.
  */
 export function pipSizeFor(symbol: string): number | null {
-  const s = symbol.toUpperCase();
-  if (s.startsWith('XAU') || s.startsWith('XAG')) return null;
-  if (/^[A-Z]{6}$/.test(s)) return s.includes('JPY') ? 0.01 : 0.0001;
-  return null;
+  return resolveAsset(symbol).pipSize;
 }
 
 /** Entry↔SL distance in price units. Always >= 0. */
@@ -51,17 +46,15 @@ export function riskForLots(
 }
 
 /**
- * Contract size (units per 1.0 lot) by symbol: gold = 100 oz, silver =
- * 5000 oz, 6-letter forex pairs = 100,000. Anything else (US30, NAS100 and
- * other index CFDs) uses the broker-typical 1 $/point per lot — the old 100
- * fallback inflated index P/L and risk a hundredfold.
+ * Contract size (units per 1.0 lot) by symbol. Backed by the asset registry
+ * (RFC-020 Task C-1, D.20.4): `resolveAsset` resolves generated MT5 data ->
+ * manual override -> name-shape heuristic (gold = 100 oz, silver = 5000 oz,
+ * 6-letter forex pairs = 100,000, anything else = 1 $/point per lot). The
+ * heuristic branch reproduces this function's old body exactly, evaluation
+ * order included. Signature unchanged.
  */
 export function contractSizeFor(symbol: string): number {
-  const s = symbol.toUpperCase();
-  if (s.startsWith('XAU')) return 100;
-  if (s.startsWith('XAG')) return 5000;
-  if (/^[A-Z]{6}$/.test(s)) return 100000;
-  return 1;
+  return resolveAsset(symbol).contractSize;
 }
 
 /**

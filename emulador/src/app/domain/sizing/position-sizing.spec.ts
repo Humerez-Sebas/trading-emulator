@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  contractSizeFor,
   lotsForRisk,
   lotsForRiskDistance,
   pipSizeFor,
@@ -7,6 +8,7 @@ import {
   riskForLots,
   riskUsdFor,
 } from './position-sizing';
+import { resolveAsset } from './asset-registry';
 
 describe('pipSizeFor — orden de evaluación', () => {
   it('los metales van primero: son de 6 letras pero se miden en puntos', () => {
@@ -101,5 +103,75 @@ describe('lotsForRisk ≡ lotsForRiskDistance para entradas positivas (D.20.1)',
     expect(lotsForRisk(balance, riskPct, entry, sl, contractSize)).toBe(
       lotsForRiskDistance(riskUsdFor(balance, riskPct), Math.abs(entry - sl), contractSize),
     );
+  });
+});
+
+/**
+ * Literal-value pins (RFC-020 Task C-1, §4): expected values are written as
+ * literals, never derived by calling the code under test. These encode
+ * TODAY's behaviour BEFORE the registry cutover, and must still be green
+ * AFTER it — the cutover has zero measured deltas (RFC-020 ledger §8.4.1,
+ * §10.5.3; Wave 1 audit confirmed on all four sub-claims). If any of these
+ * ever goes red, that is either a real delta (stop and report) or a mistake
+ * in the cutover — not an invitation to edit the expected literal.
+ *
+ * Two coverage gaps this table closes (Wave 1 audit findings):
+ *  - SP500 is pinned by no other spec in the repo (row 1).
+ *  - `asset-registry.spec.ts`'s equivalence test
+ *    (`resolveAsset(s).contractSize === contractSizeFor(s)`) goes tautological
+ *    the instant `contractSizeFor` becomes a thin wrapper over `resolveAsset`
+ *    — it would compare a function to itself and could no longer catch
+ *    heuristic drift. These literal pins take over that anti-drift role for
+ *    `position-sizing.ts`'s public surface.
+ */
+describe('contractSizeFor/pipSizeFor — pines de valor literal (RFC-020 Task C-1, §4)', () => {
+  it('SP500 -> contractSize 1, pipSize null (pinned nowhere else)', () => {
+    expect(contractSizeFor('SP500')).toBe(1);
+    expect(pipSizeFor('SP500')).toBeNull();
+  });
+
+  it('XAUEUR -> contractSize 100, pipSize null (rama XAU* de la heurística, fuera del registro generado)', () => {
+    expect(contractSizeFor('XAUEUR')).toBe(100);
+    expect(pipSizeFor('XAUEUR')).toBeNull();
+  });
+
+  it('XAGUSD -> contractSize 5000, pipSize null (metal antes del regex de 6 letras)', () => {
+    expect(contractSizeFor('XAGUSD')).toBe(5000);
+    expect(pipSizeFor('XAGUSD')).toBeNull();
+  });
+
+  it('EURUSD -> contractSize 100000, pipSize 0.0001 (forex de 6 letras)', () => {
+    expect(contractSizeFor('EURUSD')).toBe(100000);
+    expect(pipSizeFor('EURUSD')).toBe(0.0001);
+  });
+
+  it('GBPJPY -> contractSize 100000, pipSize 0.01 (pip JPY)', () => {
+    expect(contractSizeFor('GBPJPY')).toBe(100000);
+    expect(pipSizeFor('GBPJPY')).toBe(0.01);
+  });
+
+  it('ABC -> contractSize 1, pipSize null (fallback)', () => {
+    expect(contractSizeFor('ABC')).toBe(1);
+    expect(pipSizeFor('ABC')).toBeNull();
+  });
+
+  it('BTCUSD -> contractSize 100000, pipSize 0.0001 (defecto conocido, no corregido por esta tarea — RFC-020 §2.1)', () => {
+    // Documenta el estado actual, no lo aprueba: BTCUSD coincide con
+    // /^[A-Z]{6}$/ y no está en HARVEST_SYMBOLS, así que sigue cayendo a la
+    // heurística sin corregirse tras el cutover de C-1 (por diseño).
+    expect(contractSizeFor('BTCUSD')).toBe(100000);
+    expect(pipSizeFor('BTCUSD')).toBe(0.0001);
+  });
+
+  it('los cuatro símbolos curados leen genuinamente el registro tras el cutover (source MT5, no heurística)', () => {
+    // Prueba que contractSizeFor/pipSizeFor están respaldados por
+    // resolveAsset() y no solo coinciden por casualidad con la heurística:
+    // el `source` de los cuatro curados debe ser la cabecera de procedencia
+    // MT5, nunca 'heuristic'.
+    for (const symbol of ['US30', 'NAS100', 'SP500', 'XAUUSD']) {
+      const spec = resolveAsset(symbol);
+      expect(spec.source).not.toBe('heuristic');
+      expect(contractSizeFor(symbol)).toBe(spec.contractSize);
+    }
   });
 });
