@@ -68,7 +68,7 @@ describe('resolveAsset — símbolo fuera del registro cae a la heurística', ()
     // — resolveAsset() NO importa position-sizing.ts en tiempo de ejecución
     // (evita el ciclo que crearía la Tarea C-1), así que ambas copias deben
     // mantenerse iguales a mano.
-    for (const symbol of ['EURUSD', 'GBPJPY', 'USDJPY', 'BTCUSD', 'XAGUSD', 'ABC']) {
+    for (const symbol of ['EURUSD', 'GBPJPY', 'USDJPY', 'BTCUSD', 'XAGUSD', 'ABC', 'XAUEUR']) {
       const spec = resolveAsset(symbol);
       expect(spec.contractSize).toBe(contractSizeFor(symbol));
       expect(spec.pipSize).toBe(pipSizeFor(symbol));
