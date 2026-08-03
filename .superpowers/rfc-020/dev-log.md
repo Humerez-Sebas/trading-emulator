@@ -908,3 +908,63 @@ Tree at close: `git diff` and `git diff --cached` empty, only the four off-limit
 
 **Wave 1 is complete and audited. Wave 2 (C-1) is unblocked.**
 
+---
+
+## §11 — Wave 2: Task C-1, the registry cutover
+
+### 11.1 C-1 — implementation complete, orchestrator diff-scan passed
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, awaiting individual audit (HIGH risk, no batching) |
+| Commit | `25a0ec2` — `feat(rfc-020): back contractSizeFor/pipSizeFor with the asset registry (D.20.4)` |
+| Diff | **exactly 2 files**, +88/−23: `position-sizing.ts` (+16/−23) and `position-sizing.spec.ts` (+72) |
+| Tests | **1064 → 1072** (+8, matching the 8 new literal pins). Files unchanged at 79 |
+| Gates | tsc app 0 · tsc spec 0 · lint 0 problems · `ng test` 79 files / 1072 tests |
+| Report | `.superpowers/rfc-020/task-c1-report.md` |
+
+**The cutover is exactly the delegation, and nothing else.** Both bodies collapse to one line each —
+`return resolveAsset(symbol).pipSize;` and `return resolveAsset(symbol).contractSize;` — with
+**signatures unchanged**. The import direction is the safe one: `position-sizing.ts` imports
+`./asset-registry`, never the reverse, which is precisely the inversion the Wave 1 duplication exists
+to permit.
+
+**Parity proof V3 holds, verified mechanically rather than by report.**
+`git diff --name-status ad80b9f..HEAD -- '*.spec.ts'` returns one `D`
+(`risk-calculator.spec.ts`, A-1's relocation), two `A` (`asset-registry.spec.ts`,
+`position-sizing.spec.ts`) and **zero `M`**. No pre-existing spec was edited anywhere on the branch,
+so the four V3 gate specs — `trading.models.spec.ts`, `calculadora-page.component.spec.ts`,
+`fill-engine.spec.ts`, `trading.reducer.spec.ts` — are byte-identical to `ad80b9f` and passing.
+
+**Zero deltas, and the way it was proven is the interesting part.** The implementer wrote the eight
+literal pins **first, against the un-cut-over code** (1072 green), then landed the cutover and the
+same 1072 stayed green. *The count not moving a second time is the proof.* `MANUAL_ASSETS` untouched
+and empty; the heuristic untouched; `contractSizeFor('BTCUSD') === 100000` still pinned explicitly as
+documenting the known defect rather than approving it. **The prohibition in §8.4.1 was respected: C-1
+measured, found zero, reported zero.**
+
+### 11.2 The `modifyOrder` finding — the mechanism exists; this commit gives it nothing to fire on
+
+The plan demanded this be **read**, not assumed. Read at `trading.reducer.ts:153-165`:
+`contractSize` is destructured **straight from the dispatched action**, which traces through
+`state/selectors.ts:245-247` (`selectContractSize`) to a **live `contractSizeFor(currentAsset)` call
+at edit time** — it is never a persisted field.
+
+So the answer is more precise than "no": **the mechanism by which a changed contract size could move
+a restored session's pending order does exist**, and it would fire on the next edit rather than on
+restore. It is inert here **only because this commit changes no contract size for any symbol**. That
+distinction matters for any future task that does change one — it is not protected by persistence.
+`Position` objects carry their own fixed `lots`/`riskUsd` and are unaffected either way.
+
+### 11.3 Deviations declared — two inert, two requires-attention
+
+| # | Deviation | Class | Orchestrator note |
+| :--- | :--- | :--- | :--- |
+| D1/D2 | Spec-file-only import additions | **inert** | Within the brief's own instructions |
+| **D3** | `asset-registry.spec.ts:65-76`'s equivalence spec is **now tautological** — it compares `resolveAsset(...).contractSize` to `contractSizeFor(...)`, which *is* that expression after the cutover | **requires-attention** | **Predicted by the Wave 1 audit (§10.5.4) and deliberately left unedited** — the file is outside C-1's scope table. The eight new literal pins in `position-sizing.spec.ts` take over its anti-drift role. **The auditor rules on whether it is retired or re-pointed at literals** |
+| **D4** | A now-stale `INERT` doc comment in `asset-registry.ts` (the registry is no longer inert — `position-sizing.ts` imports it) | **requires-attention** | Correctly flagged rather than fixed: `asset-registry.ts` is outside C-1's scope. A one-line prose correction for the auditor to rule on |
+
+Both requires-attention items are the same shape and the right shape: a scope-bounded implementer
+found two things that need changing in a file it was told not to touch, and **reported them instead
+of touching it**.
+
