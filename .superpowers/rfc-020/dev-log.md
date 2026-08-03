@@ -862,3 +862,49 @@ mandated as the evidence requirement and which left the file byte-identical.
 **F-1 is closed.** A focused re-audit over `7d83b1a` follows; the whole-branch audit at the end of
 the run is still never skipped.
 
+### 10.7 Wave 1 re-audit — **PASS ("Ship it")**. Wave 2 unblocked
+
+Same auditor, resumed with its own Wave 1 context intact so it would re-run **its own** mutation with
+its own methodology rather than a fresh agent's approximation. Scoped to the fix; the full Wave 1
+sweep was not redone, because it had already cleared and the whole-branch audit still runs at the
+end. `wave1-audit-report.md` §0 is marked superseded, the original NOT PASS is preserved unedited as
+the record, and §11 carries the re-audit.
+
+**0 Critical / 0 High / 0 Medium / 4 Low** — the same four Lows, unchanged and still no-fix.
+
+| Gate (auditor's own run, clean tree, pre-mutation) | Result |
+| :--- | :--- |
+| tsc app / tsc spec | exit 0 (both) |
+| lint | `All files pass linting.` exit 0 |
+| `ng test` | `Test Files 79 passed (79)` · `Tests 1064 passed (1064)`, exit 0, no `skipped`/`todo` |
+
+Pipeline gates correctly skipped — `git show --name-only 7d83b1a` is one `.spec.ts`, no Python.
+
+**The mutation now goes red, and red in the right place.** Re-running the identical mutation
+(`asset-registry.ts:70`, `return 100;` → `return 999;`):
+
+```
+FAIL  src/app/domain/sizing/asset-registry.spec.ts > resolveAsset — símbolo fuera del registro cae
+a la heurística > reproduce pipSizeFor/contractSizeFor EXACTAMENTE, orden de evaluación incluido
+AssertionError: expected 999 to be 100 // Object.is equality
+ ❯ src/app/domain/sizing/asset-registry.spec.ts:73:33
+Test Files  1 failed | 78 passed (79)   ·   Tests  1 failed | 1063 passed (1064)   ·   exit 1
+```
+
+Against `1064 passed`, exit 0 for the same mutation before the fix. It fails on the `contractSize`
+assertion at `:73:33` — the intended detector, nothing incidental. Reverted; `git diff` on
+`asset-registry.ts` empty, line 70 reads `return 100;`.
+
+**Nothing was weakened, and the coverage claim is now true as written.** The diff is a pure append —
+all six original symbols retained over a byte-identical implementation
+(`git diff --stat 33970ff..HEAD -- asset-registry.ts` is **empty**). The evaluation-order mutation
+still goes red with the same two failures. **Tripwire branch coverage is 8 of 8**, so ledger §8.4
+ATTENTION #1's assertion is finally accurate rather than aspirational. `XAUEUR` was confirmed absent
+from `GENERATED_ASSETS`, so the fix is not vacuous. Spec integrity re-confirmed:
+`git diff --name-status ad80b9f..HEAD -- '*.spec.ts'` → one `D`, two `A`, **zero `M`**.
+
+Tree at close: `git diff` and `git diff --cached` empty, only the four off-limits untracked dirs in
+`git status`. Nothing pushed, `develop` untouched, MT5 never contacted.
+
+**Wave 1 is complete and audited. Wave 2 (C-1) is unblocked.**
+
