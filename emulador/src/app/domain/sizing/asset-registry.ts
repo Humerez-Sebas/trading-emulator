@@ -7,9 +7,11 @@
  * §4.2) and ALWAYS sets `source` so provenance is declarable at the point of
  * use (the Ficha del activo, Task D-4) rather than buried in a file header.
  *
- * INERT: nothing in the app imports `resolveAsset` yet, and
- * `contractSizeFor`/`pipSizeFor` in `position-sizing.ts` are untouched. The
- * cutover is Task C-1, a separate, individually-audited task.
+ * LIVE since RFC-020 Task C-1 (D.20.4): `position-sizing.ts` imports
+ * `resolveAsset`, and `contractSizeFor`/`pipSizeFor` are backed by it. This
+ * file is now on the load-time path of the emulator's sizing — it ships in
+ * an initial bundle chunk, and RFC §4.3 requires the lookup stay synchronous
+ * and available at load.
  *
  * Kernel size discipline (owner ruling Q1): math and instrument data only —
  * no formatting, no user-facing copy, no view helpers.
@@ -91,13 +93,12 @@ function heuristicPipSize(symbolUpper: string): number | null {
  *
  * NOTE on the duplication above: `heuristicContractSize`/`heuristicPipSize`
  * re-implement `contractSizeFor`/`pipSizeFor` from `position-sizing.ts`
- * rather than importing them. This is deliberate: Task C-1 (RFC-020) rewires
- * `position-sizing.ts` to call `resolveAsset` FROM this file. Importing
- * `position-sizing.ts` here would create a circular dependency the moment
- * C-1 lands. If the heuristic ever changes, both copies must change
- * together — the equivalence spec in `asset-registry.spec.ts` (which DOES
- * import `position-sizing.ts`, safe in a spec file with no runtime edge) is
- * the tripwire that catches drift.
+ * rather than importing them. This is deliberate: RFC-020 Task C-1 rewired
+ * `position-sizing.ts` to call `resolveAsset` FROM this file, so importing
+ * `position-sizing.ts` here would create a real circular dependency. If the
+ * heuristic ever changes, both copies must change together — the
+ * literal-value pins in `position-sizing.spec.ts` (RFC-020 Task C-1, §4) are
+ * where that behaviour is pinned now.
  */
 export function resolveAsset(symbol: string): AssetSpec {
   const upper = symbol.toUpperCase();

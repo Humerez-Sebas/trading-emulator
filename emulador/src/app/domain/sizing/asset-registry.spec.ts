@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GENERATED_ASSETS, GENERATED_SOURCE } from './asset-registry.generated';
 import { resolveAsset } from './asset-registry';
-import { contractSizeFor, pipSizeFor } from './position-sizing';
 
 const CURADOS = ['US30', 'NAS100', 'SP500', 'XAUUSD'];
 
@@ -60,19 +59,6 @@ describe('resolveAsset — símbolo fuera del registro cae a la heurística', ()
     expect(spec.volumeMin).toBeNull();
     expect(spec.digits).toBeNull();
     expect(spec.currency).toBeNull();
-  });
-
-  it('reproduce pipSizeFor/contractSizeFor EXACTAMENTE, orden de evaluación incluido', () => {
-    // Equivalencia contra el propio position-sizing.ts (Tarea A-1): si algún
-    // día las heurísticas divergen, esta prueba es el tripwire que lo detecta
-    // — resolveAsset() NO importa position-sizing.ts en tiempo de ejecución
-    // (evita el ciclo que crearía la Tarea C-1), así que ambas copias deben
-    // mantenerse iguales a mano.
-    for (const symbol of ['EURUSD', 'GBPJPY', 'USDJPY', 'BTCUSD', 'XAGUSD', 'ABC', 'XAUEUR']) {
-      const spec = resolveAsset(symbol);
-      expect(spec.contractSize).toBe(contractSizeFor(symbol));
-      expect(spec.pipSize).toBe(pipSizeFor(symbol));
-    }
   });
 
   it('BTCUSD reproduce el bug conocido de contractSizeFor (100000) — la corrección es la Tarea C-1, no esta', () => {

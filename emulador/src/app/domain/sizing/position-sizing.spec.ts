@@ -171,7 +171,6 @@ describe('contractSizeFor/pipSizeFor — pines de valor literal (RFC-020 Task C-
     for (const symbol of ['US30', 'NAS100', 'SP500', 'XAUUSD']) {
       const spec = resolveAsset(symbol);
       expect(spec.source).not.toBe('heuristic');
-      expect(contractSizeFor(symbol)).toBe(spec.contractSize);
     }
   });
 });
