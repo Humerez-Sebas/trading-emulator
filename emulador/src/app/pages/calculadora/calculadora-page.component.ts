@@ -8,7 +8,7 @@ import {
   priceDistance,
   riskForLots,
   riskUsdFor,
-} from '../../domain/risk/risk-calculator';
+} from '../../domain/sizing/position-sizing';
 import { InputDirective } from '../../components/ui/input.directive';
 import { BadgeDirective } from '../../components/ui/badge.directive';
 import { DropdownComponent, DropdownOption } from '../../components/ui/dropdown.component';
@@ -16,7 +16,7 @@ import { RiskSliderComponent } from '../../components/risk-slider.component';
 
 /**
  * Sizes a CFD/Forex position EXACTLY like the emulator, without a session or
- * downloaded data. This page is the composition point: `domain/risk/risk-calculator.ts`
+ * downloaded data. This page is the composition point: `domain/sizing/position-sizing.ts`
  * stays parameterized and pure (no `state/` import — Dependency Rule), so THIS
  * page is what imports `contractSizeFor`/`lotsForRisk` from `state/trading/trading.models`
  * and wires them to the four pure functions. `lotsForRisk` is the ONLY source
