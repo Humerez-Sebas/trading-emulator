@@ -968,3 +968,107 @@ Both requires-attention items are the same shape and the right shape: a scope-bo
 found two things that need changing in a file it was told not to touch, and **reported them instead
 of touching it**.
 
+### 11.4 C-1 audit — **PASS ("Ship it")**, 0 Critical / 0 High / 0 Medium / **3 Low**
+
+Report: `.superpowers/rfc-020/c1-audit-report.md`. Tree left exactly as found.
+
+| Gate (auditor's own run) | Result |
+| :--- | :--- |
+| tsc app / tsc spec | exit 0 (both) |
+| lint | `All files pass linting.` exit 0 |
+| `ng test` | `Test Files 79 passed (79)` · `Tests 1072 passed (1072)`, exit 0 |
+| `npm run build` | `Initial total 612.62 kB`, exit 0 — **no circular-dependency warning of any kind**, no new chunk types; the budget warning is the only warning in the output |
+
+Arithmetic re-derived independently: 1046 → 1064 → **1072** (+8 = the eight new `it()`), 79 files
+throughout, no drop anywhere.
+
+#### 11.4.1 The zero-delta claim survived a real attack — **126 symbols, 0 divergences**
+
+This is the evidence that matters, and it is stronger than what §11.1 originally rested on. The
+auditor extracted `contractSizeFor` from `ad80b9f:trading.models.ts` and `pipSizeFor` from
+`ad80b9f:domain/risk/risk-calculator.ts` **by brace-matching the committed blobs** (verbatim, no
+transcription), transpiled both old and new with the repo's own `tsc --strict`, and compared with
+`Object.is` over a **126-symbol corpus**: the four curated symbols, 27 case variants, the heuristic
+classes including `EURXAU` / `XAU` / `XAUU` / `JPYUSD` / `AJPYBC`, boundary shapes from `''` through
+`ABCDEFGH` / `EURUSDX` / `123456`, **14 broker-suffixed forms** (`XAUUSD.m`, `.raw`, `#`, `_i`,
+`-ECN`, `US30.cash`…), prototype-key probes (`constructor`, `__proto__`, `toString`), and accented
+and full-width symbols.
+
+**`CORPUS SIZE: 126` · `DIVERGENCES: 0`.**
+
+**The harness was proven falsifiable rather than assumed so:** injecting `XAUUSD` generated
+`contractSize` 100 → 1 in a scratchpad copy produced `DIVERGENCES: 5`, through every case variant.
+And the cutover is **not** cosmetic — the four curated symbols now resolve with
+`source = "mt5:Five Percent Online Ltd@2026-08-03"`, not `'heuristic'`. Zero delta here is a genuine
+**equality of two different code paths**, not one path renamed.
+
+**Structural checks:** no import cycle (`position-sizing → asset-registry → asset-registry.generated`,
+acyclic; `asset-registry.ts` names `position-sizing.ts` only in comment prose). **RFC §4.3 satisfied
+in the artifact, not just the source** — `grep -rl "Five Percent Online" emulador/dist` resolves to
+`chunk-PE4VUUMO.js`, an **initial** chunk, so the registry ships at load time and the synchronous
+reducer/selector contract holds. Grep for `async|await|import(|Promise|indexedDB|fetch(` over
+non-spec `domain/sizing` → empty. `asset-registry*.ts` byte-unchanged since `7d83b1a`;
+`MANUAL_ASSETS` still `{}` — **no manufactured delta**.
+
+**All eight pins are load-bearing**, each killed by at least one mutation: XAU→999 kills XAUEUR ·
+XAG→999 kills XAGUSD · six-letter→999 kills EURUSD, GBPJPY **and** BTCUSD · JPY→0.0001 kills the
+GBPJPY pip pin · fallback→999 kills ABC · generated SP500→999 kills the SP500 pin (**closing the
+Wave 1 gap**) · removing SP500 from `GENERATED_ASSETS` kills the curated-source pin.
+
+#### 11.4.2 A correction to §11.1's own reasoning, accepted
+
+§11.1 proved zero deltas by **TDD ordering** — pins written first, green before and after. The
+auditor's objection is correct and worth keeping: **the pins and the cutover landed in the same
+commit**, so that ordering cannot be verified from history and therefore rests on the implementer's
+word. The 126-symbol differential reaches the same conclusion **from git blobs alone and is
+reproducible by anyone**. *That* is the citable proof of zero deltas; the TDD ordering is corroboration,
+not evidence.
+
+#### 11.4.3 A correction to §11.2 — positions are **not** unaffected
+
+§11.2 recorded the implementer's finding that `Position` objects "carry their own fixed `lots`/`riskUsd`
+and are unaffected." The auditor verified the `modifyOrder` reasoning as **correct** —
+`trading.reducer.ts:140` destructures `contractSize` from the action; dispatchers pass
+`view().contractSize` / `ctx.contractSize` → `selectTradePanelView` (`:645-649`) / `selectFillContext`
+(`:592-607`) → `selectContractSize` (`:245-247`) → live `contractSizeFor(symbol ?? '')`; neither
+`PendingOrder` nor `Position` carries a `contractSize` field — and then sharpened it twice:
+
+1. **The trigger is narrower than "the next edit."** `trading.reducer.ts:153` guards on
+   `entryPrice !== undefined || sl !== undefined`, so a **TP-only** edit (dispatched at
+   `trade-panel:228` *with* `contractSize`) does **not** re-size the pending order.
+2. **"Positions unaffected" is true of *sizing* but false of *valuation*** — recorded as audit
+   finding **C1-L3**. `contractSize` is a live input to `floatingPnl` (`selectors.ts:636-639`) and to
+   `profitOf` / `closeTrade` (`fill-engine.ts:18-31`) via `selectFillContext` →
+   `replay.effects.ts:174-179`, `closePosition`, `endSession`. **A future contract-size change
+   re-values every open position immediately**, not merely pending orders on edit.
+
+**§11.2 is superseded on this point by this subsection.** The operational consequence is worth
+stating plainly for whoever regenerates the registry: **a registry regeneration changes displayed and
+realised P&L without changing a line of code.**
+
+#### 11.4.4 Rulings on D3 and D4 — both **fix**, not no-fix
+
+| ID | Finding | Ruling |
+| :--- | :--- | :--- |
+| **C1-L1** (D3) | The equivalence `it()` at `asset-registry.spec.ts:65-76` is fully neutralised. **Measured:** mutating `XAU` 100→999 now leaves that file **11 passed (11)**; one commit earlier the identical mutation turned it red at `:73:33` | **RETIRE it.** The drift it guarded is now **impossible by construction** — C-1 deleted the second copy — and the eight proven pins lose no coverage. Decisive factor: its own comment at `:66-70` still calls it *«el tripwire que lo detecta»*, so it is **false reassurance**, which is worse than absence |
+| **C1-L2** (D4) | `asset-registry.ts:10-12` — *"INERT: nothing in the app imports `resolveAsset` yet…"*. Both clauses are now false, and the registry ships in the initial bundle | **CORRECT it**, and remove the "tripwire" reference at `:98-100` along with the retirement above |
+
+**Orchestrator decision, recorded rather than improvised.** Both are Lows and could be ruled no-fix.
+They are being **fixed** instead, for the reason the calculadora run used in the same position: a Low
+that *defeats a purpose the artifact states outright* is not a convenience item. This one is sharper
+than that — F-1 was a Medium precisely because a tripwire that cannot fail is dangerous, and leaving
+a **fully** dead tripwire whose comment advertises it as live would re-create that exact hazard one
+commit after closing it. Cost is a few lines; the alternative is a documented lie in the codebase.
+
+Between the auditor's two options — retire, or re-point the loop at a literal table — **retire**.
+Re-pointing would duplicate coverage the eight pins already provide through the same code path, and
+`decision-frameworks` favours not maintaining two assertions of one fact.
+
+**This will move the test count 1072 → 1071.** A *falling* count is normally the signal that a spec
+was silently dropped, so it is declared here in advance, with the measurement that justifies it: the
+retired `it()` is provably incapable of failing.
+
+**Also to fix in the same pass:** the auditor found the same tautology inside the **eighth pin's
+second assertion** (M6 left it green while SP500 was wrong by 999×). Its *first* assertion is what M7
+kills, so the pin survives — but the dead half should go with the rest.
+
