@@ -376,3 +376,93 @@ Recorded here so the final auditor does not re-litigate D2, and so no future imp
 lines, all relocated or the new primitive; no private-API use; no new dependency
 (`git diff --stat ad80b9f..2d943cd -- emulador/package.json emulador/package-lock.json` = empty).
 
+### 8.4 Task B-1 — registry generator, inert
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, orchestrator diff-scan passed |
+| Commit | `33970ff` — `feat(rfc-020): generate the MT5-sourced asset registry, inert (D.20.4)` |
+| Tests | **1053 → 1064** (+11, all in the new `asset-registry.spec.ts`). Files 78 → 79. Pipeline: 121 passed |
+| Gates | tsc app 0 · tsc spec 0 · lint 0 problems · `ng test` 79 files / 1064 tests · `pytest` 121 passed · `ruff check` clean · `ruff format --check` clean |
+| Report | `.superpowers/rfc-020/task-b1-report.md` |
+
+**Scope check (orchestrator, mechanical).** `git show --stat 33970ff` = exactly 5 files, all inside
+the brief's scope table, **760 insertions, 0 deletions** — consistent with a purely additive, inert
+task. `pipeline/tests/conftest.py`, `pipeline/mt5_common.py`, `position-sizing.ts` and
+`trading.models.ts` are all absent from the diff: the shared `FakeMT5` double was **not** widened
+(`symbol_info` was monkeypatched from inside the new test file, as the brief required), and A-1's
+kernel was not pre-emptively rewired.
+
+**The registry holds real broker data.** Generated read-only from the live terminal
+(`initialize`/`symbol_info`/`account_info`/`terminal_info`/`shutdown` only; no trading call, no GUI
+interaction). Provenance header: `mt5:Five Percent Online Ltd@2026-08-03`.
+
+| Symbol | contractSize | tickSize | volumeStep | volumeMin | digits | currency |
+| :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| `NAS100` | 1 | 0.01 | 0.01 | 0.01 | 2 | USD |
+| `SP500` | 1 | 0.01 | 0.01 | 0.01 | 2 | USD |
+| `US30` | 1 | 0.01 | 0.01 | 0.01 | 2 | USD |
+| `XAUUSD` | 100 | 0.01 | 0.01 | 0.01 | 2 | USD |
+
+#### 8.4.1 The finding that governs Task C-1: **the cutover has zero deltas**
+
+This is the most consequential fact produced by Wave 1, and it **contradicts the plan's
+expectation**, so it is recorded before C-1 is briefed rather than discovered inside it.
+
+The plan (Task C-1 §4) anticipates deltas: *"Expected deltas: six-letter non-FX instruments
+(`BTCUSD`: 100000 → registry/heuristic-correct value) and any curated symbol whose MT5 value differs
+from the heuristic."* Measured against the real registry, **neither class exists:**
+
+1. **No curated symbol differs.** Today's heuristic gives `US30`/`NAS100`/`SP500` → `1` (not
+   six letters) and `XAUUSD` → `100` (`XAU*`). MT5 reports exactly `1`, `1`, `1`, `100`. The
+   name-shape heuristic was *right* for all four.
+2. **No uncurated symbol changes either.** `resolveAsset` falls through generated → manual →
+   heuristic, `MANUAL_ASSETS` is empty, and `heuristicContractSize`/`heuristicPipSize` reproduce
+   `contractSizeFor`/`pipSizeFor` exactly, evaluation order included. So `BTCUSD` still resolves to
+   `100000` — **through the heuristic branch, unchanged.**
+
+**Therefore C-1 is a pure refactor with no behaviour change for any input**, and parity proof V3
+should come out clean with **zero** named-delta tests. That is the safest possible outcome for the
+run's highest-risk task, but it must not be mistaken for the task having been skipped.
+
+**Binding instruction carried into the C-1 brief:** C-1 **must not manufacture** the delta the plan
+expected. Adding `BTCUSD` (or anything else) to `MANUAL_ASSETS`, or altering the heuristic to make
+the registry "win", would be an unrequested change to the emulator's sizing inside the one task
+nobody wants surprises in. C-1 measures, finds zero, and reports zero.
+
+#### 8.4.2 Open finding for the owner — the `BTCUSD` defect is **not** fixed by this RFC
+
+RFC §2.1 motivates the work partly with `contractSizeFor('BTCUSD') === 100000`, *"un error de cinco
+órdenes de magnitud en una herramienta de dinero real."* Per 8.4.1, that defect **survives RFC-020
+unchanged**, because the registry is curated (RFC §1.4 chose *curado, no barrido completo*) and
+`BTCUSD` is not in `HARVEST_SYMBOLS`.
+
+This is **not** a contradiction to resolve inside a dispatch — the curated design is deliberate and
+frozen, and `MANUAL_ASSETS` exists precisely as the seam for it (empty by design today). It is
+recorded here as an **owner-facing finding**: if correcting `BTCUSD` and similar six-letter non-FX
+symbols is wanted, it is a one-entry `MANUAL_ASSETS` addition with its own tests, and it belongs to
+a decision the owner makes, not to this run's scope.
+
+**Deviations declared — all four verified inert:**
+
+| # | Deviation | Class | Orchestrator finding |
+| :--- | :--- | :--- | :--- |
+| D1 | First draft typed `AssetSource` as a union keyed off `typeof GENERATED_SOURCE` and annotated the generated constant `: string`; lint rejected it (`no-inferrable-types`) | **inert** | Root-caused rather than patched — the annotation existed to protect a union that had already been widened to `string`. Correct resolution; final gates green |
+| D2 | `currency` sourced from MT5's `currency_profit` (not `currency_base`/`currency_margin`) | **inert** | Sound: `currency_profit` is the currency P&L is denominated in, which is what a USD-account risk tool needs (RFC §7.1 no-goal 8). Documented in code |
+| D3 | `broker_name()` prefers `account_info().company` over `terminal_info().company` | **inert** | The two genuinely differ on this machine (`Five Percent Online Ltd` vs `WSFunded Ltd.`) — a prop-firm/white-label split. Preferring the account's broker is right: provenance must identify **whose** contract sizes these are. Discrepancy documented in the docstring |
+| D4 | `AssetSpec` nullability pinned: `tickSize`/`volumeStep`/`volumeMin`/`digits`/`currency` are nullable and `null` whenever `source === 'heuristic'` | **inert** | Correct modelling — a bare name yields only name-derived facts. Makes "we don't actually know this" unrepresentable as a fake number |
+
+**FINAL-AUDIT ATTENTION (2 items):**
+
+1. **`asset-registry.ts:69-85` duplicates the heuristic** rather than importing
+   `contractSizeFor`/`pipSizeFor`. Deliberate, and correctly reasoned: C-1 rewires
+   `position-sizing.ts` to call `resolveAsset`, so an import here becomes a **circular dependency**
+   the moment C-1 lands. The declared tripwire against drift is an equivalence spec in
+   `asset-registry.spec.ts` that *does* import `position-sizing.ts` (safe in a spec, no runtime
+   edge). **Auditor: verify that equivalence spec actually exists, covers both functions, and would
+   fail if either copy drifted** — the duplication is only acceptable while the tripwire is real.
+2. **`pipeline/export_symbols.py` is the largest single new file (257 LOC)** and it talks to a live
+   trading terminal. Verify by reading that it calls **only** `initialize`, `symbol_info`,
+   `account_info`, `terminal_info`, `shutdown` — no trading API, no order function, no
+   `symbol_select` side effect beyond what the pipeline already does.
+
