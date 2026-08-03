@@ -238,3 +238,60 @@ documentation-only follow-up, offered to the owner and not performed unasked.
 | Out of scope for every RFC-020 dispatch | `develop` (Q4, delegated run) · branch protection (Q5, human) |
 | Gates | Not re-run; no `emulador/` source changed. Baseline stands at **78 files / 1046 tests** |
 | Push | **None.** Local commits only |
+
+---
+
+## §8 — Session 3: implementation run
+
+**Append-only.** §1-§7 stand as written. This section is the ledger of the implementation run and
+supersedes §7's "Next action" row.
+
+### 8.0 Run header
+
+| Field | Value |
+| :--- | :--- |
+| Plan | `docs/superpowers/plans/2026-08-02-rfc-020-lotaje-position-sizer-implementation-plan.md` (§0 C1-C5 binding) |
+| RFC | `docs/architecture/rfcs/020-lotaje-position-sizer.md` (§1 verdict D.20.1-6 normative) |
+| SDD prompt | `docs/superpowers/plans/2026-08-02-rfc-020-sdd-prompt.md` |
+| Branch | `claude/lotaje-v2-core` |
+| Base | `origin/main` @ `ad80b9f` |
+| HEAD at run open | `775a865` (design commits only; no `emulador/` source touched) |
+| PR target | **`main`** — declared product-track exception (RFC §6.1 / D.20.5, owner decision, PHILOSOPHY §3.1 level 1) |
+| **Run mode** | **WAVED with risk-based review batching** (`decision-frameworks.md` §8) — see 8.0.1 |
+| Ledger | this file (`.superpowers/rfc-020/dev-log.md`), appended per wave |
+| Out of scope for every dispatch | `develop` (Q4, delegated run) · branch protection on `main` (Q5, human dashboard) · pushing (owner's call) |
+
+#### 8.0.1 Run mode and where batching is permitted
+
+Not uniform. Review effort is budgeted by risk (PHILOSOPHY §5.5), and each batch is justified here
+rather than improvised:
+
+| Wave | Tasks | Risk | Review |
+| :--- | :--- | :--- | :--- |
+| 0 | S-1 spike | NONE | Orchestrator reads the report. No audit — no production code, no commit to `emulador/` |
+| 1 | A-1, B-1 | LOW | **Batched (permitted).** Both are mechanical with no behaviour change, and they are file-disjoint: A-1 owns `position-sizing.ts`, B-1 owns `asset-registry*.ts`; neither imports the other in this wave. One audit after both land |
+| 2 | C-1 | **HIGH** | **Individual audit. No batching.** The only task in the run that changes the emulator's sizing |
+| 3 | D-1 | **HIGH** | **Individual audit. No batching.** Replaces shipped, tested UI |
+| 4 | D-2…D-5, C-2 | LOW-MED | **Batched (permitted).** All five sit on machinery already audited in Waves 1-3; none changes sizing |
+| 5 | D-6, D-7 | **HIGH** | **Individual audit.** Gated on S-1 = GO; architecture boundary (second document, no second bootstrap) |
+
+Plus one **final whole-branch audit** gating the PR, which is never skipped.
+
+### 8.1 Baseline — measured, not claimed
+
+Run first, before any dispatch, on a clean tree at `775a865`, raw from `emulador/`, no pipes:
+
+| Gate | Command | Result |
+| :--- | :--- | :--- |
+| tsc app | `npx tsc -p tsconfig.app.json --noEmit` | exit **0**, no output |
+| tsc spec | `npx tsc -p tsconfig.spec.json --noEmit` | exit **0**, no output |
+| lint | `npm run lint` | exit **0** — `All files pass linting.` |
+| tests | `npx ng test --watch=false` | exit **0** — `Test Files 78 passed (78)` · `Tests 1046 passed (1046)` |
+
+**Baseline = 78 files / 1046 tests.** This **matches** the plan's expected figure, so no discrepancy
+to record. It is the arithmetic origin for every task's test-count progression.
+
+Working tree at run open: clean except four untracked directories that are explicitly off-limits to
+every dispatch (`.opencode/`, `.superpowers/calculadora/`, `.superpowers/rfc-018/`,
+`.superpowers/rfc-019/`).
+
