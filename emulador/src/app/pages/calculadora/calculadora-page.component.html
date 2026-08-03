@@ -1,0 +1,187 @@
+<div class="page">
+  <header class="head">
+    <div>
+      <h1>Calculadora de riesgo</h1>
+      <p class="sub">
+        Dimensiona la posición exactamente igual que el emulador — sin sesión, sin datos
+        descargados.
+      </p>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="panel" aria-labelledby="inputs-title">
+      <h2 id="inputs-title">Datos de la operación</h2>
+
+      <label class="ui-field">
+        <span class="ui-field-label">Cuenta (USD)</span>
+        <input
+          appInput
+          type="text"
+          inputmode="decimal"
+          name="balance"
+          [value]="balanceText()"
+          (input)="onBalance($event)"
+        />
+      </label>
+
+      <label class="ui-field">
+        <span class="ui-field-label">Riesgo</span>
+        <app-risk-slider
+          [balance]="balance()"
+          [value]="riskPct()"
+          (valueChange)="onRiskSlider($event)"
+        />
+        <div class="risk-free">
+          <input
+            appInput
+            type="text"
+            inputmode="decimal"
+            name="riskPctFree"
+            aria-label="Riesgo % (campo libre)"
+            [value]="riskPctText()"
+            (input)="onRiskPct($event)"
+          />
+          <span class="unit"
+            >% — el campo acepta cualquier valor positivo, el slider es un atajo (0.1–5)</span
+          >
+        </div>
+      </label>
+
+      <div class="ui-field">
+        <span class="ui-field-label">Activo</span>
+        @if (assetOptions().length) {
+          <ui-dropdown
+            ariaLabel="Activo (del registro)"
+            [block]="true"
+            [options]="assetOptions()"
+            [value]="symbol()"
+            placeholder="Elegir del registro…"
+            (valueChange)="onAssetPick($event)"
+          />
+        }
+        <input
+          appInput
+          type="text"
+          name="symbol"
+          aria-label="Símbolo (texto libre)"
+          placeholder="o escribe el símbolo, p. ej. US30"
+          [value]="symbol()"
+          (input)="onSymbol($event)"
+        />
+      </div>
+
+      <div class="row-2">
+        <label class="ui-field">
+          <span class="ui-field-label">Entrada</span>
+          <input
+            appInput
+            type="text"
+            inputmode="decimal"
+            name="entry"
+            [value]="entryText()"
+            (input)="onEntry($event)"
+          />
+        </label>
+        <label class="ui-field">
+          <span class="ui-field-label">Stop Loss</span>
+          <input
+            appInput
+            type="text"
+            inputmode="decimal"
+            name="sl"
+            [value]="slText()"
+            (input)="onSl($event)"
+          />
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="results-title">
+      <h2 id="results-title">Dimensionado</h2>
+
+      @if (invalidReason(); as reason) {
+        <p class="invalid-state" role="alert">{{ reason }}</p>
+      } @else {
+        <div class="lots-hero">
+          <span class="lots-value">{{ lots() | number: '1.2-2' }}</span>
+          <span class="lots-label">lotes</span>
+        </div>
+
+        @if (minLotWarning(); as warning) {
+          <p class="floor-warning" role="alert">
+            <span appBadge tone="down">Aviso</span>
+            {{ warning }}
+          </p>
+        }
+
+        <dl class="stats">
+          <div>
+            <dt>Riesgo solicitado</dt>
+            <dd class="requested-risk-value">{{ requestedRisk() | number: '1.2-2' }} $</dd>
+          </div>
+          <div>
+            <dt>Riesgo real</dt>
+            <dd class="actual-risk-value">{{ actualRisk() | number: '1.2-2' }} $</dd>
+          </div>
+          <div>
+            <dt>Distancia</dt>
+            <dd class="distance-value">
+              {{ distanceValue() | number: '1.0-2' }} {{ distanceLabel() }}
+            </dd>
+          </div>
+        </dl>
+      }
+
+      <p class="contract-line">
+        @if (pipSize() !== null) {
+          {{ symbol() || '(sin símbolo)' }} → {{ contractPerPip() | number: '1.0-2' }} $/pip por
+          lote ({{ contractSize() | number: '1.0-0' }} $/punto por lote)
+        } @else {
+          {{ symbol() || '(sin símbolo)' }} → {{ contractSize() | number: '1.0-0' }} $/punto por
+          lote
+        }
+      </p>
+    </section>
+
+    <section class="panel" aria-labelledby="inverse-title">
+      <h2 id="inverse-title">Desde lotes</h2>
+      <p class="hint">Dado un número de lotes, cuánto arriesgas en USD y en % de la cuenta.</p>
+
+      <label class="ui-field">
+        <span class="ui-field-label">Lotes</span>
+        <input
+          appInput
+          type="text"
+          inputmode="decimal"
+          name="manualLots"
+          [value]="manualLotsText()"
+          (input)="onManualLots($event)"
+        />
+      </label>
+
+      <dl class="stats">
+        <div>
+          <dt>Riesgo</dt>
+          <dd class="manual-risk-usd">
+            @if (manualRiskUsd() === null) {
+              —
+            } @else {
+              {{ manualRiskUsd() | number: '1.2-2' }} $
+            }
+          </dd>
+        </div>
+        <div>
+          <dt>% de la cuenta</dt>
+          <dd class="manual-risk-pct">
+            @if (manualRiskPct() === null) {
+              —
+            } @else {
+              {{ manualRiskPct() | number: '1.2-2' }} %
+            }
+          </dd>
+        </div>
+      </dl>
+    </section>
+  </div>
+</div>

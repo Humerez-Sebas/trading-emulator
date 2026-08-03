@@ -36,5 +36,15 @@ export const routes: Routes = [
         (m) => m.CrearSesionPageComponent,
       ),
   },
+  {
+    path: 'calculadora',
+    // No r2OnboardingGuard: the calculator sizes any account on any symbol with no
+    // session and nothing downloaded — same treatment as /mercados and /sesiones.
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./pages/calculadora/calculadora-page.component').then(
+        (m) => m.CalculadoraPageComponent,
+      ),
+  },
   { path: '**', redirectTo: '' },
 ];
