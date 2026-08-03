@@ -466,3 +466,122 @@ a decision the owner makes, not to this run's scope.
    `account_info`, `terminal_info`, `shutdown` — no trading API, no order function, no
    `symbol_select` side effect beyond what the pipeline already does.
 
+### 8.5 Task S-1 — companion-window spike: **verdict GO**
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE.** No production code, no commit — `git status` byte-identical to session start |
+| **Verdict** | **GO**, on **`documentPictureInPicture`**. Both mechanisms pass the decisive probes; PiP is the one to build |
+| Report | `.superpowers/rfc-020/spike-s1-report.md` (the authority; this is a summary) |
+| Browsers | Edge `151.0.4129.59` and Brave `151.0.7922.71` |
+
+**Consequences, applied now (owner ruling Q6 pre-approved both branches):**
+
+- **D-1 builds the framework-free view.** No re-scope to Angular.
+- **Wave 4 stays in scope.** **Wave 5 (D-6/D-7) is unlocked.**
+- `domain/sizing/` stays framework-free either way — already true after A-1/B-1.
+
+**What was proven.** In two real Chromium browsers, a same-origin companion opened from a **trusted
+click** hosted a mounted framework-free view **and** a live same-origin iframe, and wrote `2.22` to
+the **Windows** clipboard from its own realm — verified by reading the OS clipboard back through
+PowerShell after every write, against a unique sentinel per attempt. That closes S-1.b and S-1.d,
+which are the only two gating probes.
+
+#### 8.5.1 Binding input to Task D-6 — the target-window navigator is a hard requirement
+
+The plan's line *"Clipboard is called on the **target window's** `navigator`"* is now a **measured
+requirement, not a stylistic preference.** Calling the **opener's** navigator from inside the
+companion fails with:
+
+```
+NotAllowedError: Failed to execute 'writeText' on 'Clipboard': Document is not focused.
+```
+
+because once the companion holds focus, the opener document does not. This is a latent bug that
+**passes casual manual testing and fails in real use**. D-6's audit must check it explicitly.
+
+#### 8.5.2 Why PiP beats `window.open` — a Win32 z-order fact
+
+Both mechanisms pass S-1.b and S-1.d identically; **S-1.a separates them.** The PiP window carries
+`WS_EX_TOPMOST` (`0x00200108`); MT5's maximized main window does not (`0x00000100`). Win32
+z-banding therefore guarantees PiP floats over MT5 **regardless of focus**. The `window.open` popup
+shares MT5's z-band and disappears behind it on the first click on MT5 — which is exactly the
+moment the tool is being used. PiP also survives the opener tab going `visibilityState: hidden`.
+
+**Sizing measurement for D-6:** PiP floors width at **240 CSS px**; a requested 380×520 is granted
+exactly. But see the undetermined list — PiP may remember a user-resized size and override the
+request, so **D-6 must not assume the requested size is what it gets**.
+
+#### 8.5.3 A tooling trap, recorded so it is not repeated
+
+**The in-app Browser pane would have produced a false NO-GO.** It is Electron
+(`Claude/1.24012.9 Chrome/148 Electron/42.7.0`), where `documentPictureInPicture` throws
+`InvalidStateError: Internal error: no window` and `window.open` returns `null`. Those are
+**embedder host-policy facts, not web-platform facts.** The spike correctly discarded them and drove
+real browsers over CDP instead, hit-testing every click with `elementFromPoint` before dispatch.
+
+Had it reported the Electron result as the platform's answer, this run would have cut Wave 4 and
+Wave 5 and re-scoped D-1 on a measurement artifact. Recorded per PHILOSOPHY §4.5: the incident
+becomes a named rule — **the Browser pane is not a conformance oracle for window/clipboard APIs.**
+
+#### 8.5.4 S-1.c (owner question Q3) — **undetermined, and it may have two answers**
+
+MT5 was **not** touched, by instruction. The report carries a numbered ~30-second owner probe under
+`## Owner probe — S-1.c (Q3)`.
+
+Indicative-only evidence, explicitly not a conclusion: the **running** terminal (WSFunded) has no
+`Language=` key and inherits Windows' `en-US`, which points to a **dot**; but a second terminal on
+this machine (FTMO) has `Language=Spanish` in its `terminal.ini`, so **the accepted separator may
+differ per terminal.**
+
+**This gates only D-3's copy payload in Wave 4.** It gates nothing in Waves 1-3 and it did not gate
+this GO.
+
+**Seven items are listed as explicitly undetermined** in the report rather than assumed — including
+that all measurements used **throwaway browser profiles**, so a site-level clipboard block in the
+owner's real profile is unverified. **Auditor and D-6 implementer: read that list before relying on
+any spike number.**
+
+---
+
+## §9 — Run state: **PAUSED after Wave 1 implementation** (2026-08-03)
+
+Paused by the owner mid-run, at the usage limit. Nothing is half-finished: Waves 0 and 1 are
+complete and committed, and the run stops on a clean tree at a natural boundary.
+
+| Field | Value |
+| :--- | :--- |
+| Waves complete | **0 (S-1, GO)** and **1 (A-1, B-1)** — implementation only |
+| Waves outstanding | Wave 1 **audit** (not yet dispatched), then 2, 3, 4, 5, final audit, PR |
+| HEAD | `31786b9` |
+| Tests | **1064** (79 files). Baseline was 1046 |
+| Gates | Green as of B-1's run. **Not re-run by an auditor yet — that is the next action** |
+| Working tree | Clean except the four permanently off-limits untracked dirs |
+| Push | **None.** All commits local, as instructed |
+| Owner queue | Q1/Q2/Q4/Q5 closed (§6.2). **Q3 open** — S-1.c owner probe, gates only D-3. Q6 resolved moot by the GO |
+
+**Commits on the branch from this run, in order:**
+
+| Hash | What |
+| :--- | :--- |
+| `f0be21b` | ledger opened, baseline measured |
+| `2d943cd` | **A-1** — kernel move + pure re-export |
+| `995a3b9` | ledger: A-1 + the Wave 1 sequencing deviation |
+| `33970ff` | **B-1** — MT5-sourced asset registry, inert |
+| `31786b9` | ledger: B-1 + the zero-delta finding |
+
+**The next action is a `branch-auditor` over Wave 1 (commits `2d943cd` + `33970ff`).** It must
+re-run all gates personally — no report in this ledger is evidence (PHILOSOPHY §1.1, §5.4).
+
+**Resumption brief:** `docs/superpowers/plans/2026-08-03-rfc-020-resume-prompt.md`. It is written to
+be pasted into a cold session with no memory of this one.
+
+### 9.1 Two findings awaiting an owner decision — neither blocks resumption
+
+1. **`BTCUSD` is not fixed by this RFC** (§8.4.2). RFC §2.1 cites it as motivation, but the curated
+   registry does not cover it and the heuristic fallback returns the same `100000` as before.
+   Fixing it is a one-entry `MANUAL_ASSETS` addition with tests — an owner decision, not this run's
+   scope.
+2. **S-1.c / Q3 may differ per terminal** (§8.5.4). Two MT5 terminals on this machine disagree on
+   configured language. The 30-second probe is in the spike report; it gates only D-3.
+
