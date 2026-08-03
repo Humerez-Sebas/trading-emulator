@@ -235,5 +235,11 @@ grep -rnE "@angular/|\.\./\.\./state/|domain/chart" emulador/src/app/domain/sizi
 - Do not touch `.opencode/`, `.superpowers/calculadora/`, `.superpowers/rfc-018/`,
   `.superpowers/rfc-019/`, `docs/superpowers/plans/task-*`.
 - **Do not push.** Branch finalization and the PR are the owner's call.
-- Open questions Q1-Q5 (RFC §7.2) are **owner decisions**. If a task blocks on one, stop and ask —
-  do not decide it inside a dispatch.
+- **Owner queue is closed except Q3.** Q1, Q2, Q4 and Q5 were answered on 2026-08-03
+  (`.superpowers/rfc-020/dev-log.md` §6.2 — the authority; RFC §7.2 mirrors it). **Q3** — MT5's
+  decimal separator — is the only one left, and **spike S-1.c answers it**; do not escalate it to
+  the owner. **Q6** is contingent and **pre-approved**: on a NO-GO you do **not** stop and ask —
+  record the verdict in the ledger, re-scope D-1 to an Angular view, cut Wave 4, and continue.
+  Two standing consequences: **`develop` is out of scope for every dispatch** (Q4 is delegated to a
+  separate run), and branch protection on `main` is a **human dashboard task** (Q5) — do not attempt
+  it. If a task blocks on anything genuinely new, stop and ask; never decide it inside a dispatch.

@@ -99,7 +99,12 @@ más un campo `v` **reservado sin sitios de lectura** para una migración futura
 **Enmienda — fuera de alcance la sincronización por evento `storage`.** El repo no escucha ese
 evento en ningún sitio hoy: sería maquinaria nueva. Y su consumidor no está verificado: **si la
 página y el acompañante nunca están abiertos a la vez, no hay nada que sincronizar** (persistir y
-releer al montar basta). Esa pregunta es del owner (§7 Q2) y queda **reservada, no implementada**.
+releer al montar basta). Esa pregunta era del owner (§7 Q2) y **fue respondida: no**. La escucha
+queda por tanto **retirada por Q2: no reservada, no implementada, sin campo ni interfaz** — si
+alguna vez hiciera falta, reentra como decisión propia con su racional. Autoridad y alcance exacto
+de la retirada: `.superpowers/rfc-020/dev-log.md` §6.3, que distingue esta retirada de las dos
+reservas que **sí siguen vigentes** (el campo `v` de versión de esquema y el esquema de perfiles de
+cuenta, ambos con cero sitios de lectura).
 
 ### 1.3 D.20.3 — El toggle de unidad se rechaza sobre un hecho del código
 
@@ -397,15 +402,24 @@ Las decisiones de producto conservan sus identificadores `P1`–`P8`.
    La exención es verificable: la utilidad no porta `ChartEngine`, ni panel, ni reloj de replay, ni
    estado de sesión.
 
-### 7.2 Preguntas abiertas del owner
+### 7.2 Preguntas del owner
 
-| # | Pregunta | Bloquea |
+Resueltas el 2026-08-03. El registro con su efecto operativo está en
+`.superpowers/rfc-020/dev-log.md` §6.2, que es la autoridad sobre estas respuestas.
+
+| # | Pregunta | Estado |
 | :--- | :--- | :--- |
-| **Q1** | ¿Se acepta la disciplina de tamaño del Shared Kernel — «solo matemática y datos de instrumento; nada de formateo, copy ni helpers de vista» — aplicada por grep de auditoría? | Tarea A |
-| **Q2** | ¿Se usan la página y el acompañante **simultáneamente**? Si no, la sincronización por evento `storage` no se construye nunca | Wave 4 |
-| **Q3** | ¿El campo de volumen de MT5 en Windows en español exige coma decimal? | El payload de copiado (spike) |
-| **Q4** | Reunificación `develop` ↔ `main` (§6.1): ¿cómo y cuándo? No es un back-merge mecánico | Fuera de este RFC |
-| **Q5** | Protección de rama sobre `main` — tarea humana de dashboard, sin ruta MCP/CLI | Fuera de este RFC |
+| **Q1** | Disciplina de tamaño del Shared Kernel — «solo matemática y datos de instrumento; nada de formateo, copy ni helpers de vista», aplicada por grep de auditoría | **RESPONDIDA: aceptada.** Invariante permanente de `domain/sizing/`, verificada en el barrido previo al reporte de cada tarea. Tarea A desbloqueada |
+| **Q2** | ¿Se usan la página y el acompañante simultáneamente? | **RESPONDIDA: no.** El acompañante solo se usa para copiar. La escucha del evento `storage` no se construye y su reserva queda retirada (§1.2) |
+| **Q4** | Reunificación `develop` ↔ `main` (§6.1) | **RESPONDIDA: delegada** a un run aparte con ledger propio. **Fuera del alcance de este RFC y de todo dispatch suyo**: ningún agente de RFC-020 toca `develop` |
+| **Q5** | Protección de rama sobre `main` | **RESPONDIDA: tarea humana** de dashboard, la ejecuta el owner. Sin ruta MCP/CLI; no intentarlo |
+
+**Abiertas — las únicas dos:**
+
+| # | Pregunta | Cómo se cierra |
+| :--- | :--- | :--- |
+| **Q3** | ¿El campo de volumen de MT5 en Windows en español exige coma decimal? | La responde el spike **S-1.c**; determina el payload de copiado (Tarea D-3) |
+| **Q6** | Si el spike da NO-GO: ¿se acepta el re-escopo de D-1 a vista Angular y la retirada de la Wave 4? | **Contingente y pre-aprobada.** El orquestador **no se detiene a preguntar**: registra el veredicto, re-escopa D-1, corta la Wave 4 y continúa |
 
 ---
 

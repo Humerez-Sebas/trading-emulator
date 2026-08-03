@@ -24,8 +24,12 @@ that exact string. Task B-1 reads that same variable rather than hardcoding a se
 **C3 — No unit toggle anywhere.** D.20.3. The unit suffix is a derived label. Any task that adds a
 click handler to it is out of scope.
 
-**C4 — No `storage`-event listener.** D.20.2. Persist-on-change and read-on-mount only. The
-listener is reserved with zero read sites until Q2 is answered.
+**C4 — No `storage`-event listener.** D.20.2. Persist-on-change and read-on-mount only. Q2 is
+**answered — no**: the page and the companion are never used simultaneously, so the listener is
+**cut by owner decision**, not reserved. There is no field and no interface for it; adding one is an
+automatic finding. (`.superpowers/rfc-020/dev-log.md` §6.3 is the authority, and distinguishes this
+withdrawal from the `v` schema-version field and the profiles schema, which **do** remain reserved
+with zero read sites.)
 
 **C5 — `trading.models.ts` becomes a pure re-export.** No consumer edits, no spec edits. That
 property *is* the parity proof; if a consumer needs editing, the move was done wrong.
