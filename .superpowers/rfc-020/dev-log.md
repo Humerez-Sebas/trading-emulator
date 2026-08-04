@@ -2285,3 +2285,88 @@ window makes it measurable for real.
 **Next action:** read `.superpowers/rfc-020/spike-s1-report.md` **in full**, including its seven-item
 *undetermined* list — mandatory before the D-6 brief may be written — then write, verify and dispatch
 `task-d6-brief.md`.
+
+---
+
+## §21 — Wave 5: Task D-6, the companion window adapter
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, orchestrator mechanical scan passed |
+| Commit | `21fe8f7` — `feat(rfc-020): mount the Lotaje view in a companion window (D-6)` |
+| Parent | `97453c5` exactly |
+| Diff | **5 files, +903/−6** — exactly the brief's §1 scope table |
+| Tests | **84 / 1191 → 85 / 1210** (+16 `companion-window.spec.ts`, +3 `lotaje-view.spec.ts`) |
+| Gates | tsc app 0 · tsc spec 0 · lint 0 problems · `ng test` 85/1210 · build 612.60 kB, no new chunk types |
+| Brief / report | `.superpowers/rfc-020/task-d6-brief.md` · `task-d6-report.md` |
+
+**Orchestrator verification, first-hand:** direct parent `97453c5`; exactly the five scoped files;
+`calculadora-page.component.ts/.html/.spec.ts` absent from the diff; **`ng test` re-run personally →
+85 files / 1210 tests, exit 0**; branch-wide spec invariant still **exactly one `M`**
+(`companion-window.spec.ts` is `A`); `package.json`/lockfile diff empty; **zero** forbidden
+`state|components|domain/chart` imports under `lotaje/`; tree clean.
+
+**§4.1 decision (the single-mount move):** the host shows a trivial placeholder
+(`.lotaje-companion-placeholder` plus one «Volver aquí» button calling `companionWin.close()`) while
+the companion owns the view. No new UI surface invented.
+
+**Real-browser validation actually happened** — real Edge 151 driven over raw CDP against the
+committed source bundled with esbuild, in a scratchpad harness. Not the Electron pane, which cannot
+do PiP at all.
+
+| Measurement | Result |
+| :--- | :--- |
+| 380 × 520 requested | granted exactly, both PiP and popup-fallback |
+| request below 240 px wide | granted **240 × 400** — width floored, S-1's floor confirmed independently |
+| `pipWin.localStorage` | **accessible** (write/read/readback all worked) — closes the §4.2 gap the spike never probed |
+| `pagehide` teardown | confirmed end to end; host re-mounted with carried state |
+| second open from inside the companion | no second window (target count 1 → 1) — closes S-1 undetermined #5 |
+| clipboard | real **OS** clipboard read back `1.30`, the exact expected figure for the seeded state |
+
+**Environment fact, not a product defect:** `Target.setAutoAttach` on a browser-level CDP session
+deadlocks `documentPictureInPicture.requestWindow()` on this machine. Connecting to each target's own
+WebSocket URL via the `/json` endpoint resolves it. Recorded so the next spike does not lose a day.
+
+**F21-1 — layout breaks at the 240 px floor (`requires-attention`, NOT fixed).** At the floor the
+context row and the centred hero hold, but `.lotaje-method-toggle` overflows the viewport by ~83 px.
+The rule is **pre-existing Zone 2 CSS, outside D-6's scope**, so it was reported rather than touched.
+This finally settles the question V-1 left open: the orchestrator could not corroborate the
+zero-slack claim at 240 px, and the honest answer is that the layout does **not** fully survive there.
+
+### 21.1 Owner-reported defects, recorded 2026-08-04 — none of them D-6's
+
+Raised by the owner while D-6 was running. **All three are pre-existing and outside Wave 5's scope.**
+
+1. **F21-2 (High) — non-FX distance is off by the symbol's point size.**
+   `sizing-view-model.ts:82` computes `const priceUnitsPerDisplayUnit = pipSize ?? 1`, so every symbol
+   without a `pipSize` is labelled `pts` and multiplied by **1**. `XAUUSD` carries only
+   `contractSize: 100, tickSize: 0.01, digits: 2` and **no `pipSize`**, so a typed `50` is treated as a
+   **$50** gold move when the trader means **$0.50** — a **100×** error. US30 only *appears* correct
+   because an index trader's "point" happens to equal 1.0 price unit. This is the **points-side twin of
+   D1-H1**, which fixed the pips side and left this one at `×1`. Note also that product design §221
+   lists `pointSize` as a registry field, yet the generated registry has none — the Ficha's «Punto»
+   is derived, not stored. **Fixing this is a product decision about what `pts` denotes**, not a
+   mechanical patch.
+2. **F21-3 — «Otro símbolo» is inert.** The free-text symbol input in the disclosure carries no
+   working behaviour the owner can see.
+3. **F21-4 — the companion trigger's name and placement** are the owner's to define; D-6 shipped
+   «Abrir ventana» from the RFC §5 diagram (line 301) as a placeholder, which is what the owner
+   independently asked for (a button on the calculadora page).
+
+### 21.2 Run state — **PAUSED by the owner** after D-6 (2026-08-04)
+
+Paused for a usage-limit reset, at a clean boundary.
+
+| Field | Value |
+| :--- | :--- |
+| HEAD | `21fe8f7` (plus the ledger commit carrying this section) |
+| Ahead of `origin/main` | 45 commits before this ledger commit; **none pushed** |
+| Tests | **85 files / 1210 tests**, five gates green |
+| Wave 5 | V-1 done · **D-6 done** · **D-7 NOT started** |
+| Outstanding | D-7, then the mandatory whole-branch final audit, then the PR (owner's call) |
+| Working tree | tracked clean; only the four permanently off-limits untracked directories |
+
+**Next session:** D-7 (`Alt+M` / `Alt+A` / `Alt+S`, companion window only — `Enter`, `Esc`, `↑/↓`
+already exist in both hosts from D-5 and must not be duplicated), then the whole-branch final audit
+including the `pipeline/` gates, because B-1 changed `pipeline/`. A separate design/polish track for
+the calculadora page and the companion toolbar is owner-led and is **not** part of this run.
