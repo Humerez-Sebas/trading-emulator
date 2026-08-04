@@ -47,6 +47,43 @@ describe('deriveLots — Method B (distance), the default', () => {
     expect(d.minLotWarning).toBeNull();
   });
 
+  it('EURUSD: 45 displayed pips sizes 0.22 lots', () => {
+    const d = deriveLots(
+      state({ balanceText: '10000', riskPctText: '1', symbolText: 'EURUSD', distanceText: '45' }),
+    );
+    expect(d.unitLabel).toBe('pips');
+    expect(d.lots).toBe(0.22);
+  });
+
+  it('EURUSD: the rounded 0.22 lots over 45 displayed pips risks exactly $99.00', () => {
+    const d = deriveLots(
+      state({ balanceText: '10000', riskPctText: '1', symbolText: 'EURUSD', distanceText: '45' }),
+    );
+    expect(d.actualRiskUsd.toFixed(2)).toBe('99.00');
+  });
+
+  it('GBPJPY: displayed pips have parity with the kernel after conversion to price units', () => {
+    const balance = 1_000_000;
+    const riskPct = 1;
+    const displayedPips = 30;
+    const pipSize = 0.01;
+    const d = deriveLots(
+      state({
+        balanceText: String(balance),
+        riskPctText: String(riskPct),
+        symbolText: 'GBPJPY',
+        distanceText: String(displayedPips),
+      }),
+    );
+    const expected = lotsForRiskDistance(
+      riskUsdFor(balance, riskPct),
+      displayedPips * pipSize,
+      contractSizeFor('GBPJPY'),
+    );
+    expect(d.pipSize).toBe(pipSize);
+    expect(d.lots).toBe(expected);
+  });
+
   it('parity: lots equals lotsForRiskDistance(...) called directly, never a hand-derived figure', () => {
     const d = deriveLots(
       state({ balanceText: '100', riskPctText: '0.1', symbolText: 'US30', distanceText: '50' }),
@@ -109,7 +146,7 @@ describe('deriveLots — Method B (distance), the default', () => {
 
   it('plain rounding (not the floor) warns with the correct "below" direction', () => {
     const d = deriveLots(
-      state({ balanceText: '5000', riskPctText: '1', symbolText: 'EURUSD', distanceText: '0.006' }),
+      state({ balanceText: '5000', riskPctText: '1', symbolText: 'EURUSD', distanceText: '60' }),
     );
     expect(d.minLotWarning).toBe(
       'El redondeo al paso de 0.01 lotes arriesga $48.00, por debajo de los $50.00 solicitados.',
@@ -213,6 +250,34 @@ describe('switchMethod — P4, converts, never resets', () => {
     const back = switchMethod(switchMethod(s));
     expect(back.method).toBe('distance');
     expect(Number(back.distanceText)).toBeCloseTo(0.006, 8);
+  });
+
+  it('EURUSD distance -> prices converts displayed pips to a price-unit SL distance', () => {
+    const s = state({
+      symbolText: 'EURUSD',
+      method: 'distance',
+      entryText: '1.1',
+      distanceText: '45',
+    });
+    const converted = switchMethod(s);
+    expect(converted.method).toBe('prices');
+    expect(converted.slText).toBe('1.0955');
+  });
+
+  it('EURUSD prices -> distance converts price units to pips and round-trips without scaling drift', () => {
+    const s = state({
+      symbolText: 'EURUSD',
+      method: 'prices',
+      entryText: '1.1',
+      slText: '1.0955',
+    });
+    const converted = switchMethod(s);
+    expect(converted.method).toBe('distance');
+    expect(converted.distanceText).toBe('45');
+
+    const roundTrip = switchMethod(converted);
+    expect(roundTrip.method).toBe('prices');
+    expect(roundTrip.slText).toBe('1.0955');
   });
 
   it('switching with nothing typed yet (cold start) loses nothing — fields stay blank, not clobbered', () => {

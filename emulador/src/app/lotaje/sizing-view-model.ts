@@ -7,8 +7,9 @@
  * `Math.max(0.01, …)` reimplemented here.
  *
  * Product design authority: docs/superpowers/specs/2026-08-02-position-sizer-product-design.md
- * §4.1 (method B default, conversion never resets), §7.4 (validation rules),
- * §8.2/§8.3 (empty states, verbatim messages).
+ * §4.1 (method B default, conversion never resets), §4.2 (display units
+ * derive from the symbol), §7.4 (validation rules), §8.2/§8.3 (empty states,
+ * verbatim messages).
  */
 import {
   lotsForRisk,
@@ -27,7 +28,7 @@ export interface LotajeState {
   readonly riskPctText: string;
   readonly symbolText: string;
   readonly method: Method;
-  /** Method B — the stop expressed as a distance from entry, in price units. */
+  /** Method B — the stop in the symbol's displayed unit (`pips` or `pts`). */
   readonly distanceText: string;
   /** Method A — memorized even while in Method B (P4: convert, never reset). */
   readonly entryText: string;
@@ -60,6 +61,7 @@ export interface LotajeDerived {
   readonly symbolSource: AssetSource;
   /** True only when there IS a symbol and the registry fell back to the name-shape heuristic for it. */
   readonly isHeuristic: boolean;
+  /** Stop distance normalized to price units for the sizing kernel. */
   readonly distance: number;
   readonly requestedRiskUsd: number;
   /** The only lot figure in this module — always from the kernel, never NaN (0 minimum). */
@@ -67,6 +69,18 @@ export interface LotajeDerived {
   readonly actualRiskUsd: number;
   readonly invalidReason: string | null;
   readonly minLotWarning: string | null;
+}
+
+/** Converts between the displayed stop unit and the kernel's price units. */
+function convertDistance(
+  distance: number,
+  pipSize: number | null,
+  direction: 'display-to-price' | 'price-to-display',
+): number {
+  const priceUnitsPerDisplayUnit = pipSize ?? 1;
+  return direction === 'display-to-price'
+    ? distance * priceUnitsPerDisplayUnit
+    : distance / priceUnitsPerDisplayUnit;
 }
 
 /**
@@ -93,7 +107,9 @@ export function deriveLots(state: LotajeState): LotajeDerived {
   const entry = parseDecimal(state.entryText);
   const sl = parseDecimal(state.slText);
   const distance =
-    state.method === 'distance' ? parseDecimal(state.distanceText) : priceDistance(entry, sl);
+    state.method === 'distance'
+      ? convertDistance(parseDecimal(state.distanceText), pipSize, 'display-to-price')
+      : priceDistance(entry, sl);
 
   const requestedRiskUsd = riskUsdFor(balance, riskPct);
 
@@ -183,23 +199,30 @@ function roundForDisplay(n: number): number {
 /**
  * P4 — method state, frozen: switching method CONVERTS, never resets.
  *
- * distance -> prices: the memorized `entryText` is kept as-is; `slText` is
- * RECOMPUTED as `entry - distance` (a fixed, documented convention — SL below
- * entry — chosen because direction is mathematically irrelevant to the sizing
- * result (product design §4.3) and it is the only direction every worked
- * example in this codebase actually uses). If entry or distance is not a
- * valid finite number (e.g. the very first switch, cold start, both blank),
- * `slText` is left UNCHANGED rather than clobbered — nothing typed is ever
- * lost, even when there is nothing yet to derive from.
+ * distance -> prices: the memorized `entryText` is kept as-is; the displayed
+ * distance is converted to price units and `slText` is RECOMPUTED as `entry -
+ * distance` (a fixed, documented convention — SL below entry — chosen because
+ * direction is mathematically irrelevant to the sizing result (product design
+ * §4.3) and it is the only direction every worked example in this codebase
+ * actually uses). If entry or distance is not a valid finite number (e.g. the
+ * very first switch, cold start, both blank), `slText` is left UNCHANGED rather
+ * than clobbered — nothing typed is ever lost, even when there is nothing yet
+ * to derive from.
  *
- * prices -> distance: `distanceText` becomes the current |entry - SL|. If
- * entry or SL is not a valid finite number, `distanceText` is left
- * UNCHANGED (the same "never lose what's there" rule).
+ * prices -> distance: the current |entry - SL| is converted from price units
+ * to the symbol's displayed unit before it becomes `distanceText`. If entry or
+ * SL is not a valid finite number, `distanceText` is left UNCHANGED (the same
+ * "never lose what's there" rule).
  */
 export function switchMethod(state: LotajeState): LotajeState {
+  const pipSize = resolveAsset(state.symbolText.trim()).pipSize;
   if (state.method === 'distance') {
     const entry = parseDecimal(state.entryText);
-    const distance = parseDecimal(state.distanceText);
+    const distance = convertDistance(
+      parseDecimal(state.distanceText),
+      pipSize,
+      'display-to-price',
+    );
     const canDerive = Number.isFinite(entry) && Number.isFinite(distance);
     return {
       ...state,
@@ -209,7 +232,7 @@ export function switchMethod(state: LotajeState): LotajeState {
   }
   const entry = parseDecimal(state.entryText);
   const sl = parseDecimal(state.slText);
-  const distance = priceDistance(entry, sl);
+  const distance = convertDistance(priceDistance(entry, sl), pipSize, 'price-to-display');
   return {
     ...state,
     method: 'distance',

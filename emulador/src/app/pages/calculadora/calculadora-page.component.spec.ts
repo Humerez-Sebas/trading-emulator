@@ -5,6 +5,7 @@ import {
   contractSizeFor,
   lotsForRisk,
   lotsForRiskDistance,
+  pipSizeFor,
   riskUsdFor,
 } from '../../domain/sizing/position-sizing';
 
@@ -150,6 +151,14 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     expect(el(fixture).querySelector('.lotaje-stop-unit')?.textContent?.trim()).toBe('pts');
   });
 
+  it('renders 0.22 lots for EURUSD when the labelled stop field contains 45 pips', () => {
+    const fixture = create();
+    setContext(fixture, { balance: 10000, riskPct: 1, symbol: 'EURUSD' });
+    setViaDom(fixture, 'distance', '45');
+    expect(el(fixture).querySelector('.lotaje-stop-unit')?.textContent?.trim()).toBe('pips');
+    expect(lotsValueText(fixture)).toBe('0.22');
+  });
+
   // (a2) parity invariant, RE-EXPRESSED onto the Method B kernel primitive
   // (`lotsForRiskDistance`) the view actually calls for the default method —
   // never a hand-derived figure, never a second sizing formula.
@@ -159,9 +168,11 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
   ) {
     setContext(fixture, c);
     setViaDom(fixture, 'distance', String(c.distance));
+    const pipSize = pipSizeFor(c.symbol);
+    const distanceInPrice = pipSize === null ? c.distance : c.distance * pipSize;
     const expected = lotsForRiskDistance(
       riskUsdFor(c.balance, c.riskPct),
-      c.distance,
+      distanceInPrice,
       contractSizeFor(c.symbol),
     );
     expect(lotsValueText(fixture)).toBe(expected.toFixed(2));
@@ -180,7 +191,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
       balance: 5000,
       riskPct: 1,
       symbol: 'EURUSD',
-      distance: 0.006,
+      distance: 60,
     });
   });
 
@@ -223,13 +234,14 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     expect(text).toContain('$0.50');
     expect(text).toContain('$0.10');
     expect(text).toContain('por encima');
+    expect(el(fixture).querySelector('.lotaje-hero')).not.toBeNull();
   });
 
   // (d2) the rounding case (no floor involved) — literal pin preserved.
-  it('warns about plain rounding (not the floor) and the correct "below" direction for an ordinary trade (5000 / 1% / EURUSD, distance 0.006)', () => {
+  it('warns about plain rounding (not the floor) and the correct "below" direction for an ordinary trade (5000 / 1% / EURUSD, distance 60 pips)', () => {
     const fixture = create();
     setContext(fixture, { balance: 5000, riskPct: 1, symbol: 'EURUSD' });
-    setViaDom(fixture, 'distance', '0.006');
+    setViaDom(fixture, 'distance', '60');
     const text = el(fixture).textContent ?? '';
     expect(text).toContain('redondeo');
     expect(text).toContain('$48.00');
