@@ -2044,3 +2044,74 @@ and more specific than §13.5.4's list:
 
 Non-blocking and owner-gated, per §16.7. An owner-provisioned identity exists but no agent may
 authenticate with it.
+
+---
+
+## §18 — W4-FIX: the six Lows closed. **Wave 4 is complete.**
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, orchestrator mechanical scan passed |
+| Commit | `67bf87c` — `fix(rfc-020): close the six Wave 4 audit Lows (L-1..L-6)` |
+| Parent | `7b6ea28` exactly |
+| Diff | **5 files, +117/−8** |
+| Tests | **84/1188 → 84/1191** (+1 each for L-2, L-3, L-4; L-1/L-5/L-6 carry no delta, as ruled) |
+| Gates | tsc app 0 · tsc spec 0 · `ng test` 84/1191, 0 skipped · lint 0 problems · build **612.60 kB**, known budget warning only, no vitest sentinel in `dist/` |
+| Brief / report | `.superpowers/rfc-020/task-w4fix-brief.md` · `task-w4fix-report.md` |
+
+**What each fix actually was:**
+
+| ID | Closure |
+| :--- | :--- |
+| **L-1** | Both tests **renamed** to what they verify (`a clean remount renders P2 defaults from empty storage`, `open/close cycles leave no duplicate or leaked symbol DOM`), each cross-referencing `IN-05` as the owner of the in-memory-leak claim. **Zero assertion delta, neither test deleted** — they were never vacuous, only misnamed |
+| **L-2** | New test for the uncovered stale-rejection scenario. Production guard **unchanged** |
+| **L-3** | New host test seeding `emulador.calculadora` before `create()`, cooperating with C-2's key scrubs. The component was **not** edited |
+| **L-4** | The task's only production change: `if (derived.invalidReason !== null)` → `if (derived.invalidReason !== null \|\| !Number.isFinite(derived.lots))`, with the reason written into the comment |
+| **L-5** | Product-design §4.2/§5.2 now state the unit suffix is a derived label, not a control, citing D.20.3 |
+| **L-6** | `sizing-view-model.ts:56` comment corrected — comment-only, no executable line moved |
+
+**The mutation cycles are the evidence, and all three closed properly.** L-2 and L-3 guard code that
+was already correct, so a bare added test would have proved nothing (the §10.6 F-1 pattern):
+
+| ID | Mutation applied | Result | Revert |
+| :--- | :--- | :--- | :--- |
+| **L-2** | Delete `copyAttemptGeneration === capturedAttemptGeneration` from `isCurrentCopyAttempt` | **exactly the new test red** — `1190 passed \| 1 failed` | reverted; `lotaje-view.ts` diff shows only the L-4 change |
+| **L-3** | `mount(this.doc, win)` → `mount(this.doc, win, undefined)` | **exactly the new test red** — `1190 passed \| 1 failed` | reverted; `git diff --exit-code` on the component **empty**, and the file is absent from the commit |
+| **L-4** | none needed — ordinary RED → GREEN against the real defect | new test red on unmodified code (hero enabled, em-dash payload), green after the guard | n/a |
+
+No mutation was ever staged or committed.
+
+**Orchestrator mechanical scan, run first-hand:** direct parent `7b6ea28`; exactly the five brief
+paths, no sixth; `calculadora-page.component.ts`, `domain/sizing/*`, `persistence.ts`, CSS, tokens,
+package files, lockfile and pipeline all absent from the diff; the branch-wide spec invariant still
+**exactly one `M`**; `sizing-view-model.ts` changed a doc-comment line only. **Arithmetic re-derived
+independently by counting rather than reading the report: 1191 `it(` across 84 spec files, with zero
+`it.each` / `test(` / `it.skip` / `it.only` / `.todo(` anywhere**, so the counting identity the
+auditor established still holds. Tracked tree clean.
+
+**Deviation:** one `inert` — the brief's invariant-grep block needed running from the repository root
+rather than `emulador/` for the `emulador/src/**/*.spec.ts` pathspec to resolve. Re-run from root, all
+four checks matched the audit's expected results. Zero `requires-attention`.
+
+### 18.1 Run state at the pause (2026-08-04)
+
+Paused by the owner at a natural boundary: Wave 4 is implemented, audited **PASS**, and its six Lows
+are closed. Nothing is half-finished.
+
+| Field | Value |
+| :--- | :--- |
+| HEAD | `67bf87c` (plus the ledger commit that carries this section) |
+| Ahead of `origin/main` | 40 commits before this ledger commit; **none pushed** |
+| Tests | **84 files / 1191 tests**, four gates + build green |
+| Waves complete | 0 (S-1 **GO**), 1 (audited PASS), 2 (audited PASS), 3 (audited PASS), **4 (audited PASS, Lows closed)** |
+| Waves outstanding | **5 (D-6, D-7)**, then the mandatory whole-branch final audit, then the PR |
+| Working tree | tracked clean; only the four permanently off-limits untracked directories |
+| Owner queue | closed. Q1/Q2/Q4/Q5 §6.2 · Q3 §12.3.1 · Q6 moot by the GO |
+| Push / PR | none; still the owner's call |
+
+**Open owner-facing items, none blocking Wave 5:** D1-L1 (cold-start copy decision), `BTCUSD` still
+heuristic `100000` by design (§8.4.2), a registry regeneration re-values open and realised P&L
+(§11.4.3), the ten-item visual pass (§17.4), `develop`↔`main` reunification as a separate run (§6.1),
+and branch protection on `main` as a human dashboard task.
+
+**Resume prompt:** `docs/superpowers/plans/2026-08-04-rfc-020-wave5-resume-prompt.md`.
