@@ -1781,3 +1781,176 @@ be the pause HEAD and to have `f0dfdff` as its direct parent. A fresh session mu
 hash rather than trying to name a commit from inside the commit itself.
 
 **Resume prompt:** `docs/superpowers/plans/2026-08-04-rfc-020-wave4-resume-prompt.md`.
+
+---
+
+## §16 — Session 7: resume, C-2, and the mount-precedence collision
+
+**Append-only.** §1-§15 stand as written.
+
+### 16.1 Resume state — measured, not inherited
+
+Pause HEAD resolved to **`a5448dd`** with direct parent `f0dfdff`, exactly as §15.6 predicted without
+being able to name itself. Branch **36 commits** ahead of `origin/main`, nothing pushed. Tracked tree
+clean; only the four permanently off-limits untracked directories present.
+
+Four gates, raw and unpiped from `emulador/`, before any dispatch:
+
+| Gate | Result |
+| :--- | :--- |
+| tsc app / tsc spec | exit **0**, no output (both) |
+| lint | exit **0** — `All files pass linting.` |
+| tests | exit **0** — `Test Files 83 passed (83)` · `Tests 1165 passed (1165)` |
+
+`git diff --name-status ad80b9f..HEAD -- '*.spec.ts'` returned exactly one `M`
+(`calculadora-page.component.spec.ts`), all `lotaje/` specs `A`. **83 files / 1165 tests** is the
+attributable arithmetic origin for C-2.
+
+### 16.2 The C-2 brief was verified against the tree before dispatch, and three things were corrected
+
+The prepared brief (§15.5) is an orchestrator artifact, not evidence. Checked against the live
+source, three items needed correcting in the dispatch rather than being passed through:
+
+| # | Brief claim | Measured reality | Disposition |
+| :--- | :--- | :--- | :--- |
+| 1 | Precondition 7: live seam is `mount(doc, win, initialState?)` | `lotaje-view.ts:822-826` is `initialState: LotajeState = INITIAL_STATE` — a **default-parameter** form | Wording imprecision only; the brief's own Mount Precedence section already mandates the conversion. Corrected in the dispatch, explicitly **not** a STOP |
+| 2 | Arity mechanism unspecified | The contract requires an *explicitly passed* `undefined` to win **without** reading storage, so `initialState === undefined` cannot distinguish it from omission | Real arity mandated (rest tuple or `arguments.length`), implementer's choice, stated in the report |
+| 3 | Execution HEAD "supplied by the orchestrator" | `a5448dd…`, with `git diff --exit-code f0dfdff a5448dd -- emulador/src/app` **empty** | Supplied in full; the documentation-only property of the intervening commit proven, not assumed |
+
+Independently confirmed before dispatch: 49 `it(` in `lotaje-view.spec.ts` with zero
+`it.each`/`skip`/`only` (so the 49+13=62 and 72-focused arithmetic is sound), `Method`/`LotajeState`/
+`INITIAL_STATE` exported from `sizing-view-model.ts`, `currentState` assigned outside mount/unmount in
+exactly two places (`setState:113`, `onMethodToggleClick:151`), and the stale
+*«This seam does not read storage»* comment live at `lotaje-view.ts:817`.
+
+### 16.3 The first C-2 dispatch returned **STOP**, and it was right to
+
+The implementer built all four scoped files with hard TDD — pure module 10/10 green, all 13 new
+integration tests green — and then the unfiltered `ng test` gate went red at **84 files / 1188 tests
+with 13 failures**, deterministic across two runs. It committed nothing and edited nothing outside
+scope.
+
+**The mechanism, verified by the orchestrator rather than taken on report:**
+`calculadora-page.component.ts:43` calls `mount(this.doc, win)` with **two** arguments, and
+`this.doc.defaultView` is the **real ambient window** in production and in every TestBed test. That is
+the omitted-argument branch, so it now reads persisted context. The host spec has **zero** storage
+cleanup — a single `afterEach` doing fixture destroy only. Under `isolate:false` every test in the
+file shares that one ambient `localStorage`, so a test whose DOM interaction changes context writes
+it, and the next test's `create()` reads it back instead of the P2 cold defaults it was written for.
+Confirmed intra-file: the host spec fails 11/29 **run completely alone**. The two
+`lotaje-view.spec.ts` failures are the same shape inside a single test body —
+`mount → context edit → unmount → mount`, asserting the second mount is cold.
+
+### 16.4 Orchestrator ruling — a scope amendment, not a contract change
+
+**Class: `requires-attention`.** Attributed to the orchestrator, not to the implementer.
+
+The implementer framed this as needing an owner-level decision. That overstates it, on two grounds it
+did not have:
+
+1. **The one-`M` invariant was never at risk.** `calculadora-page.component.spec.ts` is *already* the
+   branch's single `M` relative to `ad80b9f` (D-1's declared rewrite, §13.1). Editing it again leaves
+   the branch at **exactly one `M`**. The brief's "the Calculadora host spec needs any edit → STOP"
+   was an orchestrator scope fence, not a repo invariant, and a fence I own is a fence I may amend on
+   the record.
+2. **The production contract is correct and none of the 13 tests contests it.** They assert F1/F3
+   decimal entry, L8 registry sizing, and in-memory cross-mount isolation — nothing about
+   persistence. Restoring saved context on open *is* the feature (P1/P2). What is stale is the test
+   setup, and the leak class is the one `docs/engineering/testing.md` documents and PR #25 already
+   fixed once with hygiene hooks rather than assertion edits.
+
+**PHILOSOPHY §5.7 is not violated.** Its concern is modifying a pre-existing spec to *accommodate*
+your change — weakening or deleting someone else's claim. Adding a key-scoped cleanup hook that
+restores the cold-start precondition the test was written under is categorically different: no claim
+moves.
+
+**Amendment:** scope four files → **five**, adding `calculadora-page.component.spec.ts` for
+**test-hygiene hooks only**. Bound by: zero assertion edits anywhere; host spec stays at exactly 29
+tests; key-scoped `removeItem` only, **never `localStorage.clear()`** (poisons sibling specs under
+`isolate:false`); the two cross-mount view tests keep their assertions verbatim; and a **mandatory
+mutation proof** that those two restored assertions can still fail — a hygiene fix that quietly
+neuters them would be worse than the red. If any host test still failed after the hooks, that was to
+be a second STOP, not an adjustment.
+
+### 16.5 C-2 — complete, orchestrator mechanical scan passed
+
+| Field | Value |
+| :--- | :--- |
+| Status | **IMPLEMENTATION COMPLETE**; awaits the batched Wave 4 audit |
+| Commit | `5080735` — `feat(rfc-020): persist Lotaje context locally (C-2)` |
+| Parent | `a5448dd` exactly |
+| Diff | **5 files, +869/−19** |
+| Tests | **83/1165 → 84/1188** (+1 file; +10 pure, +13 integration) |
+| Gates (implementer's claim) | tsc app 0 · tsc spec 0 · `ng test` 84/1188 · lint 0 problems · build **612.60 kB**, identical to D-5, known budget warning only |
+| Report | `.superpowers/rfc-020/task-c2-report.md` (local; original STOP analysis preserved as historical record) |
+
+**Orchestrator mechanical scan — run first-hand, not read from the report:**
+
+- Commit descends directly from `a5448dd`; exactly the five amended paths, no sixth.
+- **One-`M` invariant holds**: `git diff --name-status ad80b9f -- ":(glob)emulador/src/**/*.spec.ts"`
+  returns one `M` (the host spec), one `D`, and seven `A` including the new `persistence.spec.ts`.
+- **Arithmetic independently re-derived** by counting `it(`: host **29**, view **62**, persistence
+  **10**. 1165 + 13 + 10 = **1188**. The +23 is attributable, not asserted.
+- **Host spec diff is hygiene and nothing else**: one import line, one `beforeEach`, one line appended
+  to the existing `afterEach`, plus an explanatory comment. Key-scoped `removeItem`; no `clear()`.
+- **The only deleted line in the entire `lotaje-view.spec.ts` diff is the `vitest` import.** Every
+  pre-existing assertion survives byte-identical; the two cross-mount tests received a `removeItem`
+  insertion and nothing more.
+- `v writes=1; v reads=0` (AST, not grep). No `StorageEvent`/`onstorage`/`'storage'` in production
+  `lotaje/`. Framework-boundary grep empty. Production `spec-util` grep empty. Package and lockfile
+  diffs empty. The two bare-global grep hits are ` * ` doc-comment prose in `lotaje-view.ts:12` and
+  `sizing-view-model.ts:4`, no executable global.
+- Tracked tree clean after the commit; only the four off-limits untracked directories.
+
+### 16.6 The mutation-lever discrepancy — **FINAL-AUDIT ATTENTION**
+
+**Class: `requires-attention`.** The orchestrator's amendment prescribed a specific mutation lever:
+remove `unmount()`'s `currentState = INITIAL_STATE` reset and watch the two cross-mount assertions go
+red. **The implementer found that lever vacuous and said so instead of manufacturing a red.** Its
+reasoning is correct and the orchestrator re-verified it against `lotaje-view.ts:843-861`: `mount()`
+fully reconstructs `currentState` from the supplied state with `INITIAL_STATE` fallbacks and never
+reads the prior `currentState`, so a stale value left behind by `unmount()` cannot reach any
+assertion. That was true before C-2 as well. **Reporting a prescribed proof as vacuous, rather than
+substituting silently, is the behaviour this protocol wants and is recorded as such.**
+
+It then ran the mutation that *is* load-bearing — disabling the `removeItem` lines — and reproduced
+the original RED exactly, reverting both experiments cleanly.
+
+**The open question, which is the auditor's to rule on and not the orchestrator's:** that substitute
+proves the *fix* is load-bearing; it does not establish that the two cross-mount assertions retain
+detection power for an actual in-memory leak. They may now be weak **by construction** rather than
+weakened by C-2 — but this run has twice been burned by precisely this shape (F-1, a Medium in
+Wave 1; C1-L1 in Wave 2), and the standing lesson is that an assertion that cannot fail is worse than
+none. **The auditor must determine whether either assertion can still fail for any cause, and rule:
+retire, re-point, or accept with a written reason.**
+
+### 16.7 §14.4 partially superseded — a test identity now exists
+
+The owner created a dedicated Supabase test identity (`ai-account@gmail.com`) on 2026-08-04 for
+in-browser verification. §14.4's finding that the connected MCP cannot mint one stands unchanged; what
+changed is that the owner provisioned it directly.
+
+**This does not by itself close the visual gap.** Entering a password to authenticate is a standing
+prohibition for every agent in this run, so no dispatch may type that credential into the login form,
+and the credential is deliberately not recorded in any repo or memory artifact. The workable pattern
+is: **the owner signs in once** in the browser to be driven; `SupabaseService` runs `persistSession:
+true`, so the session lands in that origin's `localStorage` and every subsequent agent-driven page
+load is authenticated. Only the sign-in itself requires a human. The visual pass (Zone 1 CSS-order
+reflow, hero hierarchy, suffix/value overlap at 88/96 px, the 560 px breakpoint, contrast) remains a
+**non-blocking owner-gated item**, unchanged in substance from §13.5.4 and §14.4.
+
+### 16.8 Wave 4 state — implementation complete, audit is the next action
+
+| Task | Commit | Files/tests after |
+| :--- | :--- | :--- |
+| D-2 | `0f4237e` | 83 / 1131 |
+| D-3 | `714b9a8` | 83 / 1140 |
+| D-4 | `a4dad35` | 83 / 1149 |
+| D-5 | `f0dfdff` | 83 / 1165 |
+| **C-2** | **`5080735`** | **84 / 1188** |
+
+All five Wave 4 implementations have landed and passed orchestrator mechanical scans. **None has been
+audited.** The single permitted batched Wave 4 audit is the next action, and it re-runs every gate
+personally — no figure in this ledger is evidence (PHILOSOPHY §1.1, §5.4). Wave 5 (D-6/D-7) stays
+blocked until that audit returns PASS with zero Critical/High/Medium. The whole-branch final audit
+remains mandatory and is never skipped.
