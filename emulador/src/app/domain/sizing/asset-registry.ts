@@ -91,14 +91,14 @@ function heuristicPipSize(symbolUpper: string): number | null {
  * then a manual override, then the name-shape heuristic. `pipSize` is always
  * computed independently of the other three (see `AssetSpec.pipSize`).
  *
- * NOTE on the duplication above: `heuristicContractSize`/`heuristicPipSize`
- * re-implement `contractSizeFor`/`pipSizeFor` from `position-sizing.ts`
- * rather than importing them. This is deliberate: RFC-020 Task C-1 rewired
- * `position-sizing.ts` to call `resolveAsset` FROM this file, so importing
- * `position-sizing.ts` here would create a real circular dependency. If the
- * heuristic ever changes, both copies must change together — the
- * literal-value pins in `position-sizing.spec.ts` (RFC-020 Task C-1, §4) are
- * where that behaviour is pinned now.
+ * NOTE on `heuristicContractSize`/`heuristicPipSize` above: these are the
+ * SOLE implementation of the name-shape fallback — `resolveAsset` falls back
+ * to them as the last resort after generated and manual. `position-sizing.ts`'s
+ * `contractSizeFor`/`pipSizeFor` are one-line delegations to `resolveAsset`,
+ * so the import direction is `position-sizing.ts` -> `asset-registry.ts` and
+ * must never be reversed — importing `position-sizing.ts` from here would
+ * create a real circular dependency. The behaviour is pinned by the
+ * literal-value pins in `position-sizing.spec.ts` (RFC-020 Task C-1).
  */
 export function resolveAsset(symbol: string): AssetSpec {
   const upper = symbol.toUpperCase();
