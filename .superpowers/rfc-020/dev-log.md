@@ -2195,8 +2195,93 @@ The third track is the reserved feedback column (~18 ch), and reserving it is ex
 zero-jump behaviour verified in §19.3. Centring the hero on the card and keeping the no-jump guarantee
 are in direct tension; which one wins is a product call, not an implementation defect.
 
-### 19.6 State at the end of §19
+### 19.6 State at the end of §19 *(superseded by §20 — V-1 has since landed)*
 
 Unchanged from §18.1 except that the run is measured-green on this machine and the browser-validation
 gap is now partly closed. **Wave 5 (D-6, D-7) is still not started**, no brief has been dispatched,
 nothing pushed.
+
+---
+
+## §20 — Task V-1: the balance clip and the hero centring, both closed (CSS-only)
+
+Inserted into Wave 5 by owner decision on 2026-08-04, after §19's browser validation surfaced V-1 and
+measured the hero offset. **Not** a D-6/D-7 task.
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, orchestrator mechanical scan passed |
+| Commit | `9900345` — `fix(rfc-020): stop the balance field clipping and centre the hero (V-1)` |
+| Parent | `9788ca7` exactly |
+| Diff | **1 file, +28/−10** — `calculadora-page.component.css` and nothing else |
+| Tests | **84 / 1191 → 84 / 1191**, zero delta **by design** |
+| Gates | tsc app 0 · tsc spec 0 · lint 0 problems · `ng test` 84/1191 · build 612.60 kB, known budget warning only |
+| Brief / report | `.superpowers/rfc-020/task-v1-brief.md` · `task-v1-report.md` (both untracked by the directory `.gitignore`, which tracks only `dev-log.md`) |
+
+**V-1a — the clip.** The shared rule `.lotaje-field-balance input, .lotaje-field-risk input { width:
+88px }` was split. Balance now takes `width: calc(8ch + (var(--space-3) * 2) + 28px)` plus
+`text-overflow: ellipsis`; risk keeps `88px`. `ch` was chosen over a second magic pixel constant so the
+width tracks the field's own font. The implementer's first attempt (`width: auto` + `min-width: 9ch`)
+was wrong on two axes and **was caught only by measuring in the browser**, not by any gate: an
+`<input>` without `size` carries a ~20-character UA intrinsic width, so `width: auto` resolved to
+~223 px, and 9ch still overflowed the context row's slack.
+
+**V-1b — the centring.** `.lotaje-copy-shell` became a single centred column
+(`grid-template-columns: minmax(0, 1fr)`, `justify-items: center`, `align-content: center`,
+`row-gap`), and **all four** stale `grid-column` declarations were removed — `.lotaje-hero`,
+`.lotaje-invalid-state`, `.lotaje-copy-action--unavailable`, `.lotaje-copy-feedback`. Leaving any one
+of them would implicitly generate extra tracks and reopen the offset. `.lotaje-copy-feedback` flipped
+`text-align: left → center`. **`min-height` was deliberately left untouched** — it, not the reserved
+third column, is what buys the no-jump guarantee.
+
+**Verification was browser-measured, and the brief explicitly forbade a unit test.** The suite runs
+without a layout engine, so `getBoundingClientRect()` returns zeros and `scrollWidth`/`clientWidth`
+are `0`; a `scrollWidth <= clientWidth` assertion would pass on the **unfixed** code. Writing one
+would have reproduced the L-1 vacuous-test class the Wave 4 audit already raised. Hence the deliberate
+zero test delta.
+
+**Orchestrator verification, run first-hand (not taken from the report):**
+
+| Check | Result |
+| :--- | :--- |
+| Direct parent | `9788ca7` ✔ |
+| Scope | exactly one file, and it is `.css` ✔ |
+| Tests | `ng test` re-run personally: **84 files / 1191 tests**, exit 0 ✔ |
+| Spec invariant | still **exactly one `M`** ✔ |
+| `package.json` / lockfile | diff empty ✔ |
+| `spec-util` in production | **zero** — the only two hits are inside `.spec.ts` files, which the precise detector excludes ✔ |
+| Off-limits dirs | absent from the diff; tree clean ✔ |
+| Live re-measure | balance `10000` **and** `1000000` unclipped (`scrollWidth == clientWidth == 116`); hero offset **0**; shell height 76 px unchanged ✔ |
+
+**Both `requires-attention` deviations were checked in the browser and both are accurate as reported:**
+
+1. **Context row wraps at the 7-digit stress value.** At `balance = 1000000` the derived readout also
+   grows (`· $10000.00`) and drops to a second row. At the ordinary `10000` it does **not** — balance
+   and risk share `y=86` and the readout's `y=94` is baseline centring of a shorter box, not a wrap.
+   *(The orchestrator's first pass misread this as a regression at `10000`; the `ONE_LINE` probe
+   compared box tops across elements of differing heights, and a separate reading was taken at a
+   400 px viewport below the responsive breakpoint. Corrected by re-measuring. The implementer's
+   disclosure was right.)* Resolved in favour of never clipping the balance figure.
+2. **The invalid state now stacks** (message above the disabled copy affordance) instead of sitting
+   side by side — an unavoidable structural consequence of the single-column grid that exact centring
+   requires. Shell height is unchanged at 76 px, so it introduces no jump. Visible but benign; flagged
+   for the owner's glance rather than silently absorbed.
+
+**Still unverified:** the 240 px PiP floor. The implementer reports zero slack there; the orchestrator
+could not corroborate it, because simulating narrow widths via `max-width` overrides produced
+geometrically impossible numbers and was discarded. **Carry this into D-6**, where the companion
+window makes it measurable for real.
+
+### 20.1 State after V-1
+
+| Field | Value |
+| :--- | :--- |
+| HEAD | `9900345` (plus the ledger commit carrying this section) |
+| Ahead of `origin/main` | 43 commits before this ledger commit; **none pushed** |
+| Tests | **84 files / 1191 tests**, five gates green |
+| Wave 5 | **V-1 done. D-6 and D-7 still not started** |
+| Push / PR | none; still the owner's call |
+
+**Next action:** read `.superpowers/rfc-020/spike-s1-report.md` **in full**, including its seven-item
+*undetermined* list — mandatory before the D-6 brief may be written — then write, verify and dispatch
+`task-d6-brief.md`.
