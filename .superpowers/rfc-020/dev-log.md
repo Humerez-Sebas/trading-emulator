@@ -1567,3 +1567,43 @@ credential, SQL write, form login, or auth bypass occurred. Per the owner's expl
 in-browser visual pass remains an **owner task**, non-blocking for the run: CSS-order reflow, hero
 hierarchy, suffix/value overlap at 88/96 px, the 560 px breakpoint, and contrast. Structural coverage
 from §13.5.4 remains valid but is not misrepresented as a visual pass.
+
+---
+
+## §15 — Wave 4 implementation (batched review)
+
+**Run rule:** D-2, D-3, D-4, D-5, and C-2 run strictly sequentially despite their file-level
+independence. No Angular test/build process overlaps another. Individual task reports are claims;
+the wave receives one independent audit only after all five task-scoped commits land.
+
+### 15.1 Task D-2 — context strip + hero token
+
+| Field | Value |
+| :--- | :--- |
+| Status | **IMPLEMENTATION COMPLETE**, orchestrator mechanical diff-scan passed; awaits batched Wave 4 audit |
+| Commit | `0f4237e` — `feat(rfc-020): complete Lotaje context strip and hero token (D-2)` |
+| Parent | `58e275c` exactly |
+| Diff | **3 files, +27/−22**: `src/styles.css`, Calculadora CSS, and comment-only `lotaje-view.ts` |
+| Tests | **83 → 83 files**, **1131 → 1131 tests** (+0/−0) |
+| Gates | tsc app 0 · tsc spec 0 · `ng test` 83/1131 · lint 0 problems · build **612.60 kB**, known budget warning only |
+| Report | `.superpowers/rfc-020/task-d2-report.md` |
+
+The task added the single global `--text-hero: 44px` token with its one-dominant-figure restriction,
+made `.lotaje-lots-value` its sole production consumer, set `--leading-none`, and overrode the token
+to exactly **36px** on `.lotaje-root` inside the existing 560px compact query. Zone 1's derived dollar
+risk now carries the specified `--text-md`/mono/tabular/`--text` secondary hierarchy. No executable
+view code or DOM changed.
+
+**Mechanical scope scan:** the commit descends directly from its dispatch HEAD and contains exactly
+the three brief paths. `lotaje-view.ts` changed comments only. Specs, package files, lockfile,
+`domain/sizing/*`, later-task behavior, and off-limits paths are absent. The branch-wide spec diff
+still has exactly one `M`, the Calculadora rewrite.
+
+**Evidence strategy:** no fake CSS test was added. Pre-edit source probes showed the absent token,
+the live D-1 placeholder, and the missing risk hierarchy; post-edit token/consumer/boundary probes
+plus the production build established the structural contract. This does not claim the unavailable
+authenticated visual pass.
+
+**Deviation:** one `inert`, zero `requires-attention`. `rg` was not on PowerShell's PATH, so the
+implementer reran the same expressions and arguments with VS Code's bundled ripgrep. No behavior,
+scope, or evidence meaning changed.
