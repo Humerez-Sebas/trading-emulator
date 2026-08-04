@@ -2115,3 +2115,88 @@ heuristic `100000` by design (§8.4.2), a registry regeneration re-values open a
 and branch protection on `main` as a human dashboard task.
 
 **Resume prompt:** `docs/superpowers/plans/2026-08-04-rfc-020-wave5-resume-prompt.md`.
+
+---
+
+## §19 — Session 8: resume, and the first **authenticated browser validation** of `/calculadora`
+
+No dispatch in this section. It records the §1 resume measurement and the first time the shipped
+Lotaje view was exercised against a **real authenticated app** rather than a test double — the gap
+§17.4 flagged and §6.1 of the resume prompt carried forward.
+
+### 19.1 Resume measurement — matches the resume prompt exactly
+
+| Check | Expected | Measured |
+| :--- | :--- | :--- |
+| Branch | `claude/lotaje-v2-core` | ✔ |
+| HEAD | ledger commit, parent `67bf87c` | `80d0036` ✔ |
+| Ahead of `origin/main` | 41, none pushed | ✔ |
+| Untracked | exactly the four off-limits dirs | ✔ (none opened, searched or touched) |
+| Spec diff vs `ad80b9f` | **exactly one `M`** | ✔ `calculadora-page.component.spec.ts`; every `lotaje/` spec `A`; the single `D` is C-1's `risk-calculator.spec.ts`, already audited PASS in Wave 2 |
+| Gates | 84 / 1191, all green | tsc app 0 · tsc spec 0 · lint `All files pass linting.` · **84 files / 1191 tests**, exit 0, 0 skipped/todo |
+
+`ng serve` was **stopped before `ng test`** — the two share `.angular/cache` and `node_modules/.vite`,
+which is the documented PR #23 flake mechanism.
+
+### 19.2 How the authentication constraint was actually satisfied
+
+The owner drove sign-in personally. The agent never handled a credential. The preview opened already
+carrying a stale `sebas@gmail.com` session, the owner elected to sign out and re-authenticate, and the
+run continued under the dedicated identity **`ai-account@gmail.com`**. `persistSession: true` then
+carried that session across every later agent-driven page load, exactly the pattern §6.1 predicted.
+
+### 19.3 What the live app confirmed — items that no longer need human eyes
+
+| Claim | Evidence |
+| :--- | :--- |
+| **Copy-failure layout stability (§7.5 forbids the jump)** | With the failure string rendered, `grid-template-columns` stayed `184.312px 0px 181.688px` and `.lotaje-hero` stayed at `x=312` — **byte-identical before and after**. No jump. |
+| Copy-failure string is the frozen §8 copy | Rendered «No se pudo copiar — selecciona y copia», verbatim against product-design §355 and plan §290 |
+| Copy payload | `writeText("2.00")` — bare number, no unit suffix |
+| **C3 / D.20.3 unit-toggle ban** | `USD`, `%`, `pts` suffixes all `pointer-events: none`, no `onclick`, none inside a `button`. Only `lotes` is clickable, because the whole hero **is** the copy control |
+| C-2 persistence | `emulador.calculadora` = `{"v":1,...,"method":"distance"}`, and `method` flipped to `"prices"` on toggle. Reserved `v` still written, never read |
+| Provenance badge | `heurística` correctly `hidden` (`display:none`) for registry-backed US30 (`mt5:Five Percent Online Ltd@2026-08-03`) |
+| D-5 keyboard, mounted host | `↑`/`↓` step ±1 with `preventDefault: true`; `Enter` handled; `Esc` clears |
+| **D-7 baseline** | `Alt+M` / `Alt+A` / `Alt+S` are **inert** in the mounted host — `defaultPrevented: false`, no focus change. Correct pre-D-7 state under P7 (companion-only) |
+| Cross-mode arithmetic | distance `50 pts` and prices `44000 → 43950` both yield **2.00** lots; stepping to 51/52 gives 1.96/1.92 — rounded **down** to the 0.01 volume step, the risk-safe direction |
+
+**A non-finding, resolved rather than filed:** the `pts` suffix sizes against *price units* while the
+ficha reports `Punto 0.01`. This looked like a unit bug until checked — product design line 222 defines
+the distance as «distancia en unidades de precio», so the behaviour is spec-conformant. Recorded so it
+is not re-litigated.
+
+**A second non-finding:** `writeText` threw
+`NotAllowedError: … Document is not focused.` with `document.hasFocus() === false`. That is the
+Electron pane's focus artifact, **not** a product defect — precisely the §8.5.3 class of measurement
+that must never be reported as a web-platform fact. It did, incidentally, exercise the real
+degradation path end to end.
+
+### 19.4 One genuine defect found — **V-1**, and it is not a Wave 5 defect
+
+| Field | Value |
+| :--- | :--- |
+| Where | balance field, `input[name="balance"]` in `.lotaje-zone--context` |
+| Symptom | the account balance **renders visibly truncated**. Model holds `10000`; the field displays `1000` |
+| Measurement | `clientWidth 86` vs `scrollWidth 94` → `clipped: true`, with `width: 88px`, `overflow: clip`, `text-overflow: clip` |
+| Corroboration | the risk readout beside it reads `· $100.00`, i.e. 1 % of **10 000** — so the model is right and only the rendering is wrong |
+| Severity | user-facing and silent. A five-digit balance is ordinary and six/seven-digit balances are common; the failure mode is a **10× misread** of the number the whole tool is derived from |
+| Origin | the context zone, i.e. Wave 1/Wave 4 territory — **not** D-6/D-7 |
+
+It survived every gate because unit tests assert on the view model, never on rendered width — the
+identical mechanism recorded for the two High input bugs in the calculadora run. **Not fixed in this
+session:** it lies outside any Wave 5 brief scope table, and touching it unilaterally would be the
+scope breach §4 forbids. Owner disposition required.
+
+### 19.5 The one item still genuinely needing human eyes
+
+**Hero centring is confirmed off-centre, and it is a trade-off rather than a bug.** `.lotaje-hero`
+carries `grid-column: 1 / 3` with `justify-self: center` over tracks `184.312px 0px 181.688px`, so it
+centres inside **184 px** of a **382 px** shell — its centre sits **~99 px left** of the card's centre.
+The third track is the reserved feedback column (~18 ch), and reserving it is exactly what buys the
+zero-jump behaviour verified in §19.3. Centring the hero on the card and keeping the no-jump guarantee
+are in direct tension; which one wins is a product call, not an implementation defect.
+
+### 19.6 State at the end of §19
+
+Unchanged from §18.1 except that the run is measured-green on this machine and the browser-validation
+gap is now partly closed. **Wave 5 (D-6, D-7) is still not started**, no brief has been dispatched,
+nothing pushed.
