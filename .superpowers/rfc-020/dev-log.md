@@ -1607,3 +1607,44 @@ authenticated visual pass.
 **Deviation:** one `inert`, zero `requires-attention`. `rg` was not on PowerShell's PATH, so the
 implementer reran the same expressions and arguments with VS Code's bundled ripgrep. No behavior,
 scope, or evidence meaning changed.
+
+### 15.2 Task D-3 — target-realm copy action
+
+| Field | Value |
+| :--- | :--- |
+| Status | **IMPLEMENTATION COMPLETE**, orchestrator mechanical diff-scan passed; awaits batched Wave 4 audit |
+| Commit | `714b9a8` — `feat(rfc-020): add target-realm Lotaje copy action (D-3)` |
+| Parent | `cd2544d` exactly |
+| Diff | **3 files, +582/−40**: `lotaje-view.{ts,spec.ts}` and Calculadora CSS |
+| Tests | **83 files unchanged**, **1131 → 1140** (`−1` inert D-1 case + `10` D-3 cases = net `+9`) |
+| Gates | tsc app 0 · tsc spec 0 · `ng test` 83/1140 · lint 0 problems · build **612.60 kB**, known budget warning only |
+| Report | `.superpowers/rfc-020/task-d3-report.md` |
+
+The result figure is now a native, named copy button. It writes the exact rendered bare payload
+(`2.22`, dot, two decimals) through the **mounted target window's** `navigator.clipboard`, never the
+ambient/opener realm. Fulfilment alone produces `Copiado` and the tokenized 1200ms accent state;
+rejection or synchronous throw produces the exact visible fallback. No input change auto-copies.
+
+The honest-state doctrine remains intact: a neutral `.lotaje-copy-shell` owns stable geometry, but
+`.lotaje-hero`, the numeric value, and `lotes` remain absent when the honest message replaces them.
+A visible native glyph-only button stays disabled in the affordance slot. Minimum-lot/rounding states
+keep an enabled real-lot copy action and their accompanying warning.
+
+**TDD evidence:** replacing the one inert D-1 copy case with ten behavior cases yielded exactly
+`10 failed / 14 passed` before production code and `24 passed` after. The cases pin exact payload,
+target-vs-ambient realm, no auto-copy, fulfilled timing, rejected/synchronous failure, honest-state
+disablement, warning-state copy, stale promise settlements, realm-owned timers, and unmount/remount
+teardown under `isolate:false`.
+
+**Mechanical scope scan:** direct parent, exactly the three brief files, no package/lock/kernel/host
+spec/later-task path. The branch-wide spec invariant remains exactly one `M`; `lotaje-view.spec.ts`
+remains `A` relative to `ad80b9f`. Boundary and production `spec-util` checks are empty.
+
+**Deviation:** one `inert`, zero `requires-attention`. During GREEN, an `HTMLCollection` assertion was
+converted to `Array.from(content.children)` so the matcher could pin the same exact child order; no
+behavior, scope, or coverage changed.
+
+**FINAL-AUDIT ATTENTION:** read D-3 line by line. It is the wave's largest diff and introduces
+asynchronous clipboard settlement, two generations, target-realm timer ownership, and teardown
+guards. Independently attack out-of-order fulfil/reject, render invalidation, unmount/remount, and the
+requirement that no ambient navigator or bare timer path exists.
