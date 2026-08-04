@@ -14,10 +14,10 @@
  *
  * Builds the three zones of product design §3 and the method-state switch of
  * §4.1/P4 (distance ⇄ prices; switching CONVERTS, never resets). The host
- * stylesheet supplies the completed context-strip and hero hierarchy.
- * Deliberately NOT built here: the copy action's click handler (D-3), the
- * Ficha del activo (D-4), focus management / select-on-focus / Esc / steppers /
- * Alt-shortcuts (D-5), and persistence (C-2).
+ * stylesheet supplies the completed context-strip, hero hierarchy and copy
+ * feedback states. Deliberately NOT built here: the Ficha del activo (D-4),
+ * focus management / select-on-focus / Esc / steppers / Alt-shortcuts (D-5),
+ * and persistence (C-2).
  */
 import { deriveLots, switchMethod, INITIAL_STATE, type LotajeDerived, type LotajeState, type Method } from './sizing-view-model';
 import { formatLots, formatMoney } from './format';
@@ -44,6 +44,12 @@ let currentDoc: Document | null = null;
 let currentWindow: Window | null = null;
 let currentRoot: HTMLElement | null = null;
 let refs: Refs | null = null;
+let mountGeneration = 0;
+let copyAttemptGeneration = 0;
+let activeFeedbackTimer: { window: Window; id: number } | null = null;
+
+const COPY_FEEDBACK_DURATION_MS = 1200;
+const COPY_FAILURE = 'No se pudo copiar — selecciona y copia';
 
 type ZoneQuestionFields =
   | { method: 'distance'; input: HTMLInputElement; unit: HTMLElement }
@@ -60,11 +66,11 @@ interface Refs {
   questionFieldsContainer: HTMLElement;
   questionFields: ZoneQuestionFields;
   methodToggle: HTMLButtonElement;
-  // Zone 3 — no input lives here; safe to rebuild on every render.
+  // Zone 3 — no input lives here; render invalidates its async copy lifecycle before rebuilding.
   answerContainer: HTMLElement;
 }
 
-/** Retrieves the window `mount()` was given, for future tasks (D-3, D-6). Unused by D-1 itself. */
+/** Retrieves the active realm used by clipboard and feedback timers, and later by D-6. */
 export function getMountedWindow(): Window | null {
   return currentWindow;
 }
@@ -108,6 +114,156 @@ function onSlInput(e: Event): void {
 function onMethodToggleClick(): void {
   currentState = switchMethod(currentState);
   render();
+}
+
+// ---- copy feedback lifecycle -----------------------------------------------
+function clearFeedbackTimer(): void {
+  if (!activeFeedbackTimer) return;
+  activeFeedbackTimer.window.clearTimeout(activeFeedbackTimer.id);
+  activeFeedbackTimer = null;
+}
+
+function clearCurrentCopyFeedback(): void {
+  clearFeedbackTimer();
+  currentRoot
+    ?.querySelector('.lotaje-copy-action--copied')
+    ?.classList.remove('lotaje-copy-action--copied');
+  const feedback = currentRoot?.querySelector<HTMLElement>('.lotaje-copy-feedback');
+  if (feedback) feedback.textContent = '';
+}
+
+function invalidateCopyAttempt(): void {
+  copyAttemptGeneration += 1;
+  clearCurrentCopyFeedback();
+}
+
+function isCurrentCopyAttempt(
+  capturedMountGeneration: number,
+  capturedAttemptGeneration: number,
+  mountedWindow: Window,
+  button: HTMLButtonElement,
+  feedback: HTMLElement,
+): boolean {
+  return (
+    mountGeneration === capturedMountGeneration &&
+    copyAttemptGeneration === capturedAttemptGeneration &&
+    currentWindow === mountedWindow &&
+    currentRoot !== null &&
+    currentRoot.contains(button) &&
+    currentRoot.contains(feedback)
+  );
+}
+
+function showCopyFailure(
+  capturedMountGeneration: number,
+  capturedAttemptGeneration: number,
+  mountedWindow: Window,
+  button: HTMLButtonElement,
+  feedback: HTMLElement,
+): void {
+  if (
+    !isCurrentCopyAttempt(
+      capturedMountGeneration,
+      capturedAttemptGeneration,
+      mountedWindow,
+      button,
+      feedback,
+    )
+  ) {
+    return;
+  }
+  clearFeedbackTimer();
+  button.classList.remove('lotaje-copy-action--copied');
+  feedback.textContent = COPY_FAILURE;
+}
+
+function showCopySuccess(
+  capturedMountGeneration: number,
+  capturedAttemptGeneration: number,
+  mountedWindow: Window,
+  button: HTMLButtonElement,
+  feedback: HTMLElement,
+): void {
+  if (
+    !isCurrentCopyAttempt(
+      capturedMountGeneration,
+      capturedAttemptGeneration,
+      mountedWindow,
+      button,
+      feedback,
+    )
+  ) {
+    return;
+  }
+
+  clearFeedbackTimer();
+  button.classList.add('lotaje-copy-action--copied');
+  feedback.textContent = 'Copiado';
+
+  const timerId = mountedWindow.setTimeout(() => {
+    if (
+      !isCurrentCopyAttempt(
+        capturedMountGeneration,
+        capturedAttemptGeneration,
+        mountedWindow,
+        button,
+        feedback,
+      )
+    ) {
+      return;
+    }
+    activeFeedbackTimer = null;
+    button.classList.remove('lotaje-copy-action--copied');
+    feedback.textContent = '';
+  }, COPY_FEEDBACK_DURATION_MS);
+  activeFeedbackTimer = { window: mountedWindow, id: timerId };
+}
+
+function onCopyActionClick(
+  button: HTMLButtonElement,
+  feedback: HTMLElement,
+  payload: string,
+): void {
+  const mountedWindow = currentWindow;
+  if (!mountedWindow || !currentRoot?.contains(button)) return;
+
+  const capturedMountGeneration = mountGeneration;
+  const capturedAttemptGeneration = ++copyAttemptGeneration;
+  clearCurrentCopyFeedback();
+
+  let write: Promise<void>;
+  try {
+    // This target-realm call must stay synchronous in the trusted click stack.
+    write = mountedWindow.navigator.clipboard.writeText(payload);
+  } catch {
+    showCopyFailure(
+      capturedMountGeneration,
+      capturedAttemptGeneration,
+      mountedWindow,
+      button,
+      feedback,
+    );
+    return;
+  }
+
+  void write.then(
+    () =>
+      showCopySuccess(
+        capturedMountGeneration,
+        capturedAttemptGeneration,
+        mountedWindow,
+        button,
+        feedback,
+      ),
+    () =>
+      showCopyFailure(
+        capturedMountGeneration,
+        capturedAttemptGeneration,
+        mountedWindow,
+        button,
+        feedback,
+      ),
+  );
 }
 
 // ---- Zone 1 · Contexto ----------------------------------------------------
@@ -276,34 +432,67 @@ function methodToggleLabel(method: Method): string {
 function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: LotajeDerived): void {
   container.innerHTML = '';
 
+  const shell = doc.createElement('div');
+  shell.className = 'lotaje-copy-shell';
+  const feedback = doc.createElement('span');
+  feedback.className = 'lotaje-copy-feedback';
+  feedback.setAttribute('role', 'status');
+  feedback.setAttribute('aria-live', 'polite');
+  feedback.setAttribute('aria-atomic', 'true');
+
   if (derived.invalidReason !== null) {
     // Honest states REPLACE the lot figure — never sit beside it (product
     // design §5.3, brief §6).
     const message = doc.createElement('p');
+    message.id = 'lotaje-copy-unavailable-reason';
     message.className = 'lotaje-invalid-state';
     message.setAttribute('role', 'alert');
     message.textContent = derived.invalidReason;
-    container.append(message);
+
+    const copyAction = doc.createElement('button');
+    copyAction.type = 'button';
+    copyAction.className = 'lotaje-copy-action lotaje-copy-action--unavailable';
+    copyAction.setAttribute('aria-label', 'Copiar lotaje');
+    copyAction.setAttribute('aria-describedby', 'lotaje-copy-unavailable-reason');
+    copyAction.title = 'Copiar lotaje';
+    copyAction.disabled = true;
+    const copyAffordance = doc.createElement('span');
+    copyAffordance.className = 'lotaje-copy-affordance';
+    copyAffordance.setAttribute('aria-hidden', 'true');
+    copyAffordance.textContent = '⧉';
+    copyAction.append(copyAffordance);
+
+    shell.append(message, copyAction, feedback);
+    container.append(shell);
     return;
   }
 
   const hero = doc.createElement('div');
   hero.className = 'lotaje-hero';
+  const copyAction = doc.createElement('button');
+  copyAction.type = 'button';
+  copyAction.className = 'lotaje-copy-action';
+  copyAction.setAttribute('aria-label', 'Copiar lotaje');
+  copyAction.title = 'Copiar lotaje';
+  const copyContent = doc.createElement('span');
+  copyContent.className = 'lotaje-copy-content';
   const lotsValue = doc.createElement('span');
   lotsValue.className = 'lotaje-lots-value';
-  lotsValue.textContent = formatLots(derived.lots);
-  // The copy glyph is rendered — the affordance is structural to Zone 3 —
-  // but it has NO click handler. Wiring the clipboard, the flash, the
-  // failure message and the disabled state is Task D-3.
+  const payload = formatLots(derived.lots);
+  lotsValue.textContent = payload;
+  const lotsLabel = doc.createElement('span');
+  lotsLabel.className = 'lotaje-lots-label';
+  lotsLabel.textContent = 'lotes';
+  copyContent.append(lotsValue, lotsLabel);
   const copyAffordance = doc.createElement('span');
   copyAffordance.className = 'lotaje-copy-affordance';
   copyAffordance.setAttribute('aria-hidden', 'true');
   copyAffordance.textContent = '⧉';
-  const lotsLabel = doc.createElement('span');
-  lotsLabel.className = 'lotaje-lots-label';
-  lotsLabel.textContent = 'lotes';
-  hero.append(lotsValue, copyAffordance, lotsLabel);
-  container.append(hero);
+  copyAction.append(copyContent, copyAffordance);
+  copyAction.addEventListener('click', () => onCopyActionClick(copyAction, feedback, payload));
+  hero.append(copyAction);
+  shell.append(hero, feedback);
+  container.append(shell);
 
   // The min-lot/rounding warning ACCOMPANIES the figure — never instead of it.
   if (derived.minLotWarning !== null) {
@@ -318,6 +507,7 @@ function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: Lot
 // ---- render ----------------------------------------------------------------
 function render(): void {
   if (!refs || !currentDoc) return;
+  invalidateCopyAttempt();
   const derived = deriveLots(currentState);
 
   // Zone 1 — sync in place, never recreated.
@@ -346,7 +536,7 @@ function render(): void {
     syncValue(refs.questionFields.sl, currentState.slText);
   }
 
-  // Zone 3 — always rebuilt (no focus to preserve there).
+  // Zone 3 — pending copy work is invalidated above, then the subtree is rebuilt.
   buildZoneAnswerBody(currentDoc, refs.answerContainer, derived);
 }
 
@@ -401,14 +591,17 @@ export function mount(doc: Document, win: Window): void {
 }
 
 /**
- * Tears down the mounted view: removes the root subtree from the DOM (every
- * listener this module attached lives on a descendant of it, so removing it
- * and dropping every reference here is a complete cleanup — D-1 never adds a
- * listener to `doc` or `win` themselves; window-level shortcuts are D-5) and
- * resets module state to cold start. Safe to call when nothing is mounted.
- * D-6 calls this from `pagehide`.
+ * Tears down the mounted view: invalidates pending clipboard settlements,
+ * clears the realm-owned feedback timer, removes the root subtree and its
+ * descendant listeners, drops every realm/DOM reference, and resets sizing
+ * state. D-3 adds no document/window listener; D-5 and D-6 own those separate
+ * lifecycles. Safe to call when nothing is mounted. D-6 calls this from
+ * `pagehide`.
  */
 export function unmount(): void {
+  mountGeneration += 1;
+  copyAttemptGeneration += 1;
+  clearCurrentCopyFeedback();
   if (currentRoot?.parentNode) {
     currentRoot.parentNode.removeChild(currentRoot);
   }
