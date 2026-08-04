@@ -1543,3 +1543,27 @@ the exact one-`M` spec invariant all passed independently.
 **Wave 3 is complete and audited PASS. Wave 4 is unblocked.** Its five implementations still run
 strictly sequentially because the Angular/Vite caches are shared, followed by the one permitted
 batched Wave 4 audit. The whole-branch final audit remains mandatory.
+
+### 14.4 Visual-test identity — current MCP cannot mint the required session
+
+The owner authorized a dedicated Supabase test identity and required session injection rather than
+typing a password into a form. The connected MCP was checked against the current Supabase Auth
+documentation before any write:
+
+- `auth.admin.createUser()` is the supported user-creation path, but it requires a server-side
+  secret/service-role credential. The MCP exposes project URL and publishable keys, not an Auth
+  Admin call or a secret key.
+- Creating a user returns a user, **not a session**. Supabase documents no admin operation that mints
+  an ordinary user's access/refresh pair without a sign-in flow.
+- `auth.admin.generateLink()` still requires a secret-key Admin call and subsequent link/OTP
+  verification before a session exists.
+- `auth.setSession({ access_token, refresh_token })` is the supported way to install an already-valid
+  pair into a `persistSession: true` client; it does not mint the pair.
+- Direct inserts into managed `auth.users` / `auth.identities` are not a supported hosted-user
+  provisioning flow and do not create a valid login session. They were not attempted.
+
+**Disposition:** no test identity was created, so there is no identity or secret to record. No token,
+credential, SQL write, form login, or auth bypass occurred. Per the owner's explicit fallback, the
+in-browser visual pass remains an **owner task**, non-blocking for the run: CSS-order reflow, hero
+hierarchy, suffix/value overlap at 88/96 px, the 560 px breakpoint, and contrast. Structural coverage
+from §13.5.4 remains valid but is not misrepresented as a visual pass.
