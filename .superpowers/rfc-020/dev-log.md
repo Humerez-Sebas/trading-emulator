@@ -1256,3 +1256,82 @@ owner prefers another home; nothing outside the new directory depends on the nam
 Gates for D-1 are the four **plus `npm run build`**. Test count starts at **1071** and will move in
 both directions.
 
+---
+
+## §13 — Wave 3: Task D-1, the view
+
+### 13.1 D-1 — implementation complete, orchestrator diff-scan passed
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, awaiting individual audit |
+| Commit | `a61ca59` — `feat(rfc-020): framework-free Lotaje view with a thin Angular host (D.20.1, P3)` |
+| Diff | **12 files, +1741/−842** — 8 new under `lotaje/`, 4 rewritten under `pages/calculadora/` |
+| Tests | **1071 → 1125.** Files 79 → 83 |
+| Report | `.superpowers/rfc-020/task-d1-report.md` |
+
+**Test arithmetic, and it reconciles:** −32 (the old page spec, wholly replaced) +28 (the rewritten
+host spec) +58 (four new `lotaje/` spec files) = **1125**. Of the 32 v1 `it()`, **6 were deleted by
+the three declared deletions** and **26 were ported or re-expressed** — the report lists every one.
+
+**Scope check (orchestrator, mechanical).** All 12 files sit inside the brief's scope table.
+`git diff --name-status ad80b9f..HEAD -- '*.spec.ts'` returns **exactly one `M`** —
+`calculadora-page.component.spec.ts`, the declared rewrite — with everything else `A` or `D`. That is
+the new correct value of the invariant per §12.7, and it holds.
+
+**The mandatory ordering was followed and is evidenced.** The spec was rewritten first and run
+against the not-yet-built structure: **28/28 red**, failing with `NG0201: No provider found for Store`
+— the old component required NgRx and the new one does not. That is a real red, captured before any
+view code existed.
+
+### 13.2 Six declared `requires-attention` deviations — the first is a product question
+
+All six were self-flagged by the implementer, which is the behaviour the protocol wants. The
+orchestrator's reading, pending the auditor's independent ruling:
+
+| # | Deviation | Orchestrator note |
+| :--- | :--- | :--- |
+| **1** | **The symbol chip.** The brief said "render the chip, but it opens nothing yet"; the implementer shipped an **always-visible free-text `input[name="symbol"]`** inside it, with **no press behaviour and no selection list**, and re-expressed the L8 `ui-dropdown` test as a plain-text-field test (`components/*` is banned in `lotaje/`) | **See §13.3 — this one is not routine** |
+| 2 | `ViewEncapsulation.None` on the host — unavoidable, since vanilla `createElement` DOM never receives Angular's `_ngcontent-*` attribute. Makes the page CSS **global**; mitigated by a `lotaje-` prefix | **First use in this repo.** Auditor asked to verify every selector is incapable of leaking |
+| 3 | `mount()` looks for `#lotaje-mount` and creates one on `doc.body` only if absent | Sensible reconciliation of a two-argument signature with a routed host |
+| 4 | Method switch reconstructs `sl = entry − distance` | P4 fixes "converts, never resets" but not the direction; direction is irrelevant to sizing (§4.3). Documented and round-trip tested |
+| 5 | **The Method-B money-bug guard.** `lotsForRiskDistance` has no `balance>0`/`riskPct>0` guard — only `lotsForRisk` does, because a negative balance × a negative risk % yields a *positive* `riskUsd`. `deriveLots` reproduces that guard for the Method-B path rather than silently losing it | **The right instinct.** This is the same money bug A-1 was careful to preserve, one level up. `domain/sizing/*` untouched. Auditor asked to mutation-verify it is non-vacuous |
+| 6 | Zone 1 DOM order (cuenta → riesgo → símbolo) vs visual order via CSS `order` | Product design §7.1 explicitly permits DOM and focus order to diverge |
+
+### 13.3 The symbol chip — a real design gap, currently owned by no task
+
+Product design **§3.1** specifies *«un chip pulsable, no un desplegable siempre abierto… Pulsarlo
+abre selección + texto libre»*. D-1 ships the opposite shape: an always-visible free-text field, no
+press, no selection list.
+
+**The implementer's justification is sound as far as it goes** — several claims this task had to port
+(the XAUUSD comma/dot F3 tests, EURUSD parity, L8) simply cannot be expressed as DOM-driven
+assertions without *some* way to set a symbol, and the brief's "the chip opens nothing yet" was
+written about the **Ficha** (D-4's metadata panel), not about symbol entry. It flagged the ambiguity
+loudly instead of burying it, and explicitly warned against the decision being "silently inherited."
+
+**But the gap is real and must not be inherited silently, so it is recorded here as owner-visible:**
+§3.1's press-to-open disclosure model and the selection list are, as of this commit, implemented by
+**no task in the plan**. D-4 owns the *Ficha* opening from the chip; D-5 owns `Alt+S` focusing it;
+neither owns the chip's own press-to-open selection.
+
+**Provisional assignment (orchestrator): extend Task D-4 in Wave 4** to cover the chip's press-to-open
+selection + free text, since D-4 already owns "opens from the symbol chip." The D-1 auditor has been
+asked to rule on both halves — whether the always-visible input is an acceptable **interim** state,
+and whether that assignment is right. **If the owner's intent was "no symbol input of any kind until
+D-4," this is the place to say so.**
+
+### 13.4 A verification gap, disclosed rather than worked around
+
+**No in-browser visual check was performed.** `/calculadora` sits behind `authGuard` and this repo has
+no guest mode (CLAUDE.md: *login is required*). The dev server was started, `/calculadora` correctly
+redirected to `/login`, and the implementer **refused to enter credentials** — which is right, both
+as policy and as a standing prohibition, and it disclosed the gap instead of working around it.
+
+**Consequence, stated plainly:** the run's most UI-heavy task ships on **1125 passing tests and
+structural assertions — with no pixel-level confirmation that the three zones render as designed.**
+The auditor is asked to quantify the residual risk and to say what can be closed structurally
+(computed styles in jsdom) versus what needs a human looking at the page. **This is an owner-facing
+item:** a visual pass on `/calculadora` before the PR merges is the only thing that closes it, and it
+needs the owner's own logged-in session.
+
