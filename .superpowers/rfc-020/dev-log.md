@@ -1190,3 +1190,69 @@ resume-brief 5.1.2 — concurrent `ng test` runs share `.angular/cache` and `nod
 optimizeDeps race behind the PR #23 flakes, and concurrent runs also destroy attributable test-count
 arithmetic).
 
+### 12.6 The residual prose fix — `bf2b211`
+
+| Field | Value |
+| :--- | :--- |
+| Commit | `bf2b211` — `docs(rfc-020): the heuristic is no longer a duplicate - correct the resolveAsset NOTE (C1-L2)` |
+| Diff | **1 file, +8/−8** — `asset-registry.ts` only |
+| Tests | **1071**, unchanged (a comment cannot move the count) |
+| Gates | tsc app 0 · tsc spec 0 · lint 0 problems · `ng test` 79 files / 1071 tests |
+
+**Orchestrator diff-scan:** filtering the diff for changed lines that are *not* comment-body lines
+returns **nothing** — the change is comment-only, no executable line moved, `return 100;` intact.
+
+The block now states what is true: `heuristicContractSize`/`heuristicPipSize` are the **sole**
+implementation of the name-shape fallback, `resolveAsset` uses them as the last resort after
+generated and manual, `position-sizing.ts`'s functions are one-line delegations, **the import
+direction is `position-sizing.ts → asset-registry.ts` and must never be reversed**, and the behaviour
+is pinned by the literal-value pins in `position-sizing.spec.ts`. The implementer confirmed the
+premise by reading `position-sizing.ts` first rather than taking the brief's word for it.
+
+**C1-L1 and C1-L2 are both fully closed.** All three C-1 audit Lows are now dispositioned: L1 and L2
+fixed, L3 (positions re-valued, not merely re-sized) absorbed as the §11.4.3 ledger correction.
+
+### 12.7 Wave 3 dispatched — D-1, and a plan conflict resolved on the record
+
+**Deviation from the plan, class: requires-attention.** The plan's Task D-1 places the framework-free
+view at `emulador/src/app/domain/sizing/view/`. **The brief overrides that path.** It contradicts two
+higher authorities:
+
+- **Owner ruling Q1** (§6.2, PHILOSOPHY §3.1 **level 1**): the Shared Kernel discipline is a
+  *standing invariant for `domain/sizing/`* — **math and instrument data only; no formatting, no
+  user-facing copy, no view helpers.** A view is all three, and this view carries verbatim Spanish UI
+  copy.
+- **The plan's own §1 layer table**: Layer A owns `domain/sizing/*` and **never touches UI**; the View
+  is Layer D.
+
+So the plan contradicts itself, and the authority hierarchy decides it rather than taste: a level-1
+owner ruling outranks a plan path. **The view lives at `emulador/src/app/lotaje/`** — a Layer-D
+feature directory, sibling to `domain/`, which keeps the kernel pure and gives RFC §7.1 item 6 ("the
+tool depends on no `state/*` and no `domain/chart`") a single grep target. Cheap to reverse if the
+owner prefers another home; nothing outside the new directory depends on the name.
+
+**Also bound into the D-1 brief:**
+
+- The framework-free boundary is grep-enforced over `lotaje/`, spec files included, and
+  **`mount(doc, win)`/`unmount()` must take their document and window as arguments** — never the
+  globals. D-6 mounts this same view into a PiP window, a **different realm** (`win.navigator !==
+  window.navigator`, measured in S-1), and one global reference breaks it.
+- **The `*.spec.ts` invariant changes shape here.** Through Wave 2 it required **zero `M`**; from D-1
+  it requires **exactly one** — `calculadora-page.component.spec.ts`, inside the declared rewrite
+  scope of RFC §6.2. **Any other `M` is a STOP.** Recorded because the invariant's whole value is
+  that a reader knows which value is correct at which commit.
+- **The prefill reconciliation.** Several v1 assertions rely on the page's prefilled acceptance case;
+  P2 fixes cold start at `10 000 / 1 % / no symbol` and persistence is a later wave. Ported
+  assertions must **re-express** those claims by driving the DOM, never drop them, and every
+  re-expression is listed with before/after.
+- **The §12.2 lesson is now a brief requirement**, not just a ledger note: D-1 must re-read every
+  comment in every file it touches, because it deletes a page whose comments describe panels,
+  «Desde lotes», the slider and the contract line — all of which cease to exist.
+- Scope fences against later tasks: **no** `--text-hero` token (D-2), **no** copy action (D-3), **no**
+  Ficha (D-4), **no** focus/shortcuts/steppers (D-5), **no** persistence (C-2). Three automatic
+  findings if produced: a click handler on the unit suffix, a `storage` listener, or a "Calcular"
+  button.
+
+Gates for D-1 are the four **plus `npm run build`**. Test count starts at **1071** and will move in
+both directions.
+
