@@ -1648,3 +1648,46 @@ behavior, scope, or coverage changed.
 asynchronous clipboard settlement, two generations, target-realm timer ownership, and teardown
 guards. Independently attack out-of-order fulfil/reject, render invalidation, unmount/remount, and the
 requirement that no ambient navigator or bare timer path exists.
+
+### 15.3 Task D-4 — symbol disclosure + Ficha del activo
+
+| Field | Value |
+| :--- | :--- |
+| Status | **IMPLEMENTATION COMPLETE**, orchestrator mechanical diff-scan passed; awaits batched Wave 4 audit |
+| Commit | `a4dad35` — `feat(rfc-020): add Lotaje asset disclosure and symbol picker (D-4)` |
+| Parent | `dff3c88` exactly |
+| Diff | **3 files, +621/−33**: `lotaje-view.{ts,spec.ts}` and Calculadora CSS |
+| Tests | **83 files unchanged**, **1140 → 1149** (`−1` inert D-1 case + `10` D-4 cases = net `+9`) |
+| Gates | tsc app 0 · tsc spec 0 · `ng test` 83/1149 · lint 0 problems · build **612.60 kB**, known budget warning only |
+| Report | `.superpowers/rfc-020/task-d4-report.md` |
+
+D-1's interim always-visible symbol field is now a native collapsed chip. Its DOM-resident disclosure
+opens from that chip and contains a native generated-symbol selector, free text, and the semantic
+Ficha. The four options come from `Object.keys(GENERATED_ASSETS)`; there is no duplicated production
+list, NgRx/component import, or downloaded-asset source. Selection and free text update the same live
+`symbolText` and audited sizing path.
+
+The Ficha renders nine ordered metadata rows. `pointSize` is a Layer-D display derivation from
+`digits`; absent alias data and unknown heuristic fields render `No disponible`; generated provenance
+retains the full broker and ISO date. No registry/domain shape changed. `Punto`/`Pip` remain metadata,
+not controls; no unit toggle or D-21 contract line returned.
+
+**TDD evidence:** after correcting a test-only TS4111 bracket-access error, the focused run produced
+exactly `10 failed / 23 passed`; GREEN produced `33 passed`. Tests pin the collapsed chip, shared
+disclosure, data-sourced options, generated selection, free text and heuristic badge, generated and
+heuristic Ficha values, absence of a unit control, D-3 target-realm copy after disclosure activity,
+and repeated toggle/remount reset.
+
+**Mechanical scope scan:** direct parent and exactly the three brief paths. Domain/registry/sizing,
+the pre-existing Calculadora spec, host, package/lock, global tokens, state, and later-task paths are
+absent. The exact one-`M` spec invariant and both framework boundaries remain clean.
+
+**Deviation:** one `inert`, zero `requires-attention`. The initial test-only run used dot access on an
+index signature; bracket access fixed the compile error before any production/CSS edit and left the
+required behavioral RED intact.
+
+**FINAL-AUDIT ATTENTION:** read D-4 line by line. It is another large diff layered onto D-3. Verify
+the hidden DOM-resident free-text input does not undermine the closed-chip product model, option keys
+come only from generated data, no metadata becomes a second sizing path, disclosure-only toggles do
+not invalidate copy feedback, symbol renders still do invalidate stale copy work, no listeners
+accumulate, and unavailable/provenance values are honest.
