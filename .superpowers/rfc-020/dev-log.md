@@ -1072,3 +1072,121 @@ retired `it()` is provably incapable of failing.
 second assertion** (M6 left it green while SP500 was wrong by 999×). Its *first* assertion is what M7
 kills, so the pin survives — but the dead half should go with the rest.
 
+---
+
+## §12 — C-1 audit cleanup, two owner decisions, and the interruption
+
+**Append-only.** §1-§11 stand as written.
+
+### 12.1 C1-L1 / C1-L2 closed — `04f6db9`
+
+| Field | Value |
+| :--- | :--- |
+| Commit | `04f6db9` — `chore(rfc-020): retire the neutralised drift tripwire and correct the registry's stale prose (C1-L1, C1-L2)` |
+| Diff | **3 files, +11/−25** |
+| Tests | **1072 → 1071**, exactly the drop pre-declared in §11.4.4 |
+| Gates | tsc app 0 · tsc spec 0 · lint `All files pass linting` · `ng test` 79 files / 1071 tests |
+
+Three edits, all as ruled: the dead equivalence `it()` at `asset-registry.spec.ts:65-76` retired
+along with its now-unused `contractSizeFor`/`pipSizeFor` import; the stale `INERT` paragraph at
+`asset-registry.ts:10-12` replaced with `LIVE since RFC-020 Task C-1`, stating that the file is now
+on the **load-time path of the emulator's sizing**; and the tautological half of the eighth pin
+(`position-sizing.spec.ts:174`) deleted, its live half (`source` ≠ `'heuristic'`) kept.
+
+**Orchestrator diff-scan.** Both `asset-registry.ts` hunks sit entirely inside `/** */` blocks —
+**comment-only, no executable line moved**, `return 100;` intact.
+`git diff --name-status ad80b9f..HEAD -- '*.spec.ts'` still returns one `D`, two `A`, **zero `M`**.
+
+**The falling count was proven safe rather than asserted safe.** A dropping test count is the primary
+detector of silently removed coverage, so the brief required a mutation: with the retirement in
+place, mutating `asset-registry.ts:70` (`XAU` → `999`) **still goes red** — now at
+`position-sizing.spec.ts:134`, the `XAUEUR` pin, `1 failed | 1070 passed (1071)`. A dead detector was
+removed; the live one that replaced it fires.
+
+### 12.2 A residual falsehood the cleanup did not reach — and the pattern behind it
+
+`04f6db9` corrected two comments and left a third describing the two-copy world C-1 abolished. The
+`NOTE on the duplication above` block preceding `resolveAsset` still says *"re-implement … rather than
+importing them"* and, worst of all, ***"If the heuristic ever changes, both copies must change
+together."*** **There is one copy.** C-1 deleted the other; `heuristicContractSize`/`heuristicPipSize`
+are the sole implementation of the name-shape fallback, and `contractSizeFor`/`pipSizeFor` reach them
+through `resolveAsset`. That sentence is the kind that sends a future reader hunting for a second
+implementation — or restoring one. The circular-dependency warning inside the block stays, with its
+framing inverted: do not import `position-sizing.ts` here **because `position-sizing.ts` imports this
+file**.
+
+Fixed rather than recorded, for consistency with §11.4.4's own ruling: the point of C1-L2 was that
+false statements do not get to live in the codebase, and stopping one sentence short would be
+arbitrary.
+
+**Named lesson — comments outlive the code they describe (PHILOSOPHY §4.5).** This is the **third**
+instance in this run: B-1's `INERT` header, the tripwire claim, and now the duplication note. All
+three asserted an **architectural relationship** — what imports what, what duplicates what, what
+guards what — and a cutover falsified all three while `tsc`, `lint`, the suite and the build stayed
+green. **No gate in this repo can catch a false comment.** The rule to inherit: *when a task performs
+a cutover, its brief must explicitly require auditing the comments that assert architectural
+relationships in every file it touches.* Carried into every remaining brief in this run.
+
+### 12.3 Owner decisions, 2026-08-03 (authority: owner, PHILOSOPHY §3.1 level 1)
+
+#### 12.3.1 **Q3 is CLOSED — the decimal separator is the dot.**
+
+MT5 uses the **dot**. **D-3's copy payload is `2.22` — dot, two decimals, no unit, no label, no
+whitespace.** No separator logic, no setting, no reserved field.
+
+This resolves **S-1.c**, the one probe the spike deliberately left undetermined (§8.5.4), and it does
+so by owner decision rather than by the probe: **the 30-second owner probe in the spike report is no
+longer needed and must not be requested.** The spike's indicative evidence pointed the same way (the
+running WSFunded terminal has no `Language=` key and inherits Windows' `en-US`), and the terminal-may-
+differ caveat is now moot as a gate — the owner has decided the payload.
+
+**The owner queue is now fully closed.** Q1, Q2, Q4, Q5 closed in §6.2; Q6 resolved moot by the S-1
+GO; **Q3 closed here.** Nothing in this run escalates to the owner again — record and continue.
+
+*Documentation drift, recorded not fixed* (the §6.4 / §8.6.2 precedent; **this subsection is the
+authority**): RFC §7.2 still lists Q3 as open; the plan's Task D-3 still says *"Separator confirmed by
+S-1.c"*; the spike report §4 item 1 and §5 still present it as undetermined with a probe. **D-3's
+brief will carry the resolved answer directly**, so no dispatch can read the stale wording as live.
+
+#### 12.3.2 Scope discipline — the curated four are the comparison surface
+
+**Owner note:** the registry/cutover comparison should have covered **only the four frozen curated
+symbols — `US30`, `NAS100`, `SP500`, `XAUUSD`** — not a broader symbol corpus.
+
+**Explicitly: this does not invalidate the completed zero-delta proof, and no rework is requested.**
+The C-1 audit's 126-symbol differential (§11.4.1) stands as recorded; its verdict for the curated
+four is a strict subset of what it measured, and all four were covered with zero divergences.
+
+**Applied going forward:** where a task compares, pins or reasons about registry behaviour, the
+frozen surface is those four symbols. The heuristic fallback remains real code and keeps its existing
+pins — §11.4.1's mutation results show each is load-bearing — but breadth beyond the curated set is
+not something a future task should generate or be asked to defend. This is consistent with RFC §1.4
+(*curado, no barrido completo*) and with §8.4.2's ruling that `BTCUSD` is deliberately out of scope.
+
+### 12.4 The interruption, recorded
+
+The run stopped mid-dispatch at a session limit: the residual-prose fix (§12.2) was dispatched and
+**terminated before returning**. Verified on resume — **it committed nothing**: HEAD was still
+`04f6db9`, the working tree clean apart from the four permanently off-limits untracked dirs, and the
+stale NOTE block byte-for-byte unchanged. No partial state to unwind. The fix was re-dispatched
+unchanged.
+
+### 12.5 Tree re-verified on resume
+
+Four gates, raw, chained from `emulador/` so a non-zero exit stops the chain, **no pipes**:
+
+| Gate | Result |
+| :--- | :--- |
+| tsc app / tsc spec | exit 0, no output (both) |
+| lint | exit 0 — `All files pass linting.` |
+| tests | `Test Files 79 passed (79)` · `Tests 1071 passed (1071)` · 7.74 s |
+
+**Whole chain exit 0.** Matches §12.1 exactly, so the interrupted session left the tree in the state
+the ledger claims. Branch is **18 commits ahead of `origin/main`**; nothing pushed.
+
+**Next: Wave 3 — D-1, the view.** Dispatched only after the §12.2 prose fix returns, never alongside
+it: `domain/sizing/` and `pages/calculadora/` are file-disjoint but **not sandbox-disjoint** (§10 /
+resume-brief 5.1.2 — concurrent `ng test` runs share `.angular/cache` and `node_modules/.vite`, the
+optimizeDeps race behind the PR #23 flakes, and concurrent runs also destroy attributable test-count
+arithmetic).
+
