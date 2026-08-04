@@ -1691,3 +1691,93 @@ the hidden DOM-resident free-text input does not undermine the closed-chip produ
 come only from generated data, no metadata becomes a second sizing path, disclosure-only toggles do
 not invalidate copy feedback, symbol renders still do invalidate stale copy work, no listeners
 accumulate, and unavailable/provenance values are honest.
+
+### 15.4 Task D-5 — focus, local keyboard actions, and touch steppers
+
+| Field | Value |
+| :--- | :--- |
+| Status | **IMPLEMENTATION COMPLETE**, orchestrator mechanical diff-scan passed; awaits batched Wave 4 audit |
+| Commit | `f0dfdff` — `feat(rfc-020): add Lotaje focus and keyboard controls (D-5)` |
+| Parent | `97d8520` exactly |
+| Diff | **3 files, +813/−26**: `lotaje-view.{ts,spec.ts}` and Calculadora CSS |
+| Tests | **83 files unchanged**, **1149 → 1165** (+16 additive view tests; focused 33 → 49) |
+| Gates | tsc app 0 · tsc spec 0 · `ng test` 83/1165 · lint 0 problems · build **612.60 kB**, known budget warning only |
+| Report | `.superpowers/rfc-020/task-d5-report.md` |
+
+D-5 adds one root-scoped `focusin` listener and one root-scoped `keydown` listener, both with stable
+module-level identities and explicit physical removal before root teardown. Cold two-argument mount
+focuses/selects Cuenta; an optional, per-field-guarded initial state is the non-persistent C-2 seam.
+Restored Method B focuses distance; restored Method A focuses literal SL. Numeric focus selects the
+full raw value while symbol text preserves its caret.
+
+`Escape` clears only the active method's stop question. One displayed-unit step path serves focused
+distance arrows and the two native touch buttons; Shift multiplies by ten, values floor at zero, and
+no pip conversion occurs in the handler. Steppers are non-layout by default and enabled only by exact
+`@media (hover: none)`. Eligible editable-field Enter synchronously clicks the current D-3 native copy
+action; native controls retain their own Enter semantics, preventing duplicate activation. No Alt
+shortcut, persistence, storage, PiP, ambient navigator, or global listener was added.
+
+**TDD evidence:** five staged slices produced their required REDs and focused GREEN counts:
+`1/33 → 34`, TS2554 → `37`, `3/37 → 40`, `4/40 → 44`, and `5/44 → 49`. All 33 existing D-3/D-4
+tests remained present. A contextless `createHTMLDocument()` cannot move `activeElement`, so focus
+tests use fresh iframe-backed documents; the required RED was reproduced after correcting the test
+harness and before final production GREEN.
+
+**Mechanical scope scan:** direct parent, exactly the three brief paths, no package/lock/kernel/host
+spec/later-task path. The exact one-`M` branch invariant remains. Listener registration shows exactly
+one root `focusin` and one root `keydown`; their matching removal calls and test spy evidence are in
+the report. No storage/pagehide/Alt/PiP leakage appears in the task diff.
+
+**Deviations:** six `inert`, zero `requires-attention`: iframe-backed focus harness and its reproduced
+RED; explicit live-root null guard after TS18047; a test-only unused local caught by the first lint
+run followed by a full five-gate restart; Git-for-Windows grep substituted for absent GNU grep on
+PATH; and the inherited deleted risk spec was reported unfiltered while the one-`M` condition stayed
+true. None changes product behavior or scope.
+
+**FINAL-AUDIT ATTENTION:** D-5 is the largest Wave 4 diff. Independently verify target-realm focus,
+physical root-listener removal, no double copy on native controls, Enter's trusted call chain,
+display-unit stepping for pips and points, Method-A exclusion, no stale D-3 settlement after
+step/Escape, D-4 disclosure preservation, and the CSS-only hover gate for touch steppers.
+
+### 15.5 C-2 brief prepared — implementation not started
+
+Ready-to-use local brief: `.superpowers/rfc-020/task-c2-brief.md`. It scopes C-2 to four files:
+new `lotaje/persistence.{ts,spec.ts}` plus `lotaje-view.{ts,spec.ts}`. Expected arithmetic is
+**83/1165 → 84/1188** (+1 file, +23 tests). The next session must read the brief critically, supply
+its actual documentation-only handoff HEAD, and dispatch one implementer; no C-2 source, test, gate,
+or commit exists yet.
+
+The brief fixes: key `emulador.calculadora`; context-only DTO; omitted third mount argument loads from
+the supplied window while an explicit third argument wins without reading storage; no mount write;
+one centralized post-transition write for actual balance/risk/symbol/method changes; no writes for
+question/copy/disclosure/focus actions; reserved `v: 1` with **one write and zero reads**; per-field
+fallback; silent storage failures; and no `storage` listener or synchronization reservation.
+
+**Planning-process deviation — `requires-attention`:** the C-2 brief author ran a repository-wide
+grep that unintentionally returned matches from the four off-limits directories. It reported the
+breach immediately. No off-limits file was modified, staged, or committed, and no C-2 implementation
+began. The brief itself was read only at its permitted path and its commit protocol was corrected to
+a direct four-path pathspec commit. The next session must not repeat repository-wide searches: every
+search receives an explicit `emulador/`, `docs/`, or `.superpowers/rfc-020/` root.
+
+### 15.6 Pause state after D-5 (2026-08-04)
+
+The owner stopped the run at a natural boundary immediately after D-5 implementation. Nothing is
+half-finished. At the pre-handoff source commit:
+
+| Field | Value |
+| :--- | :--- |
+| Source HEAD | `f0dfdff` (D-5) |
+| Ahead of `origin/main` | **35 commits** before the documentation handoff commit; none pushed |
+| Tests | **83 files / 1165 tests** |
+| Working tree | tracked clean; only the four permanently off-limits untracked directories |
+| Wave 3 | **AUDITED PASS** after D1-H1 fix `ea06fb4` |
+| Wave 4 | D-2 `0f4237e`, D-3 `714b9a8`, D-4 `a4dad35`, D-5 `f0dfdff` implemented and mechanically scanned; **not audited** |
+| Next task | **C-2**, then the one permitted batched Wave 4 audit |
+| Push / PR | none; still the owner's call |
+
+The documentation handoff commit that contains this section and the new resume prompt is expected to
+be the pause HEAD and to have `f0dfdff` as its direct parent. A fresh session must derive its actual
+hash rather than trying to name a commit from inside the commit itself.
+
+**Resume prompt:** `docs/superpowers/plans/2026-08-04-rfc-020-wave4-resume-prompt.md`.
