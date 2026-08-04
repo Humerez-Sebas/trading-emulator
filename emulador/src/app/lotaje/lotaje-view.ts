@@ -1,9 +1,9 @@
 /**
- * RFC-020 Task D-1 — the Lotaje view. Framework-free: this module and its
- * siblings under `emulador/src/app/lotaje` import nothing from Angular, NgRx,
- * the app's NgRx state tree, its shared UI component library, or the chart
- * engine (RFC §7.1 item 6, grep-checked in the task report). May import
- * `domain/sizing/*` — the Shared Kernel exists for exactly this.
+ * RFC-020 Lotaje view. Framework-free: this module and its siblings under
+ * `emulador/src/app/lotaje` import nothing from Angular, NgRx, the app's NgRx
+ * state tree, its shared UI component library, or the chart engine (RFC §7.1
+ * item 6, grep-checked in task reports). May import `domain/sizing/*` — the
+ * Shared Kernel exists for exactly this.
  *
  * `mount(doc, win)` / `unmount()` take their document and window as EXPLICIT
  * arguments and never reference the bare globals `document`/`window`. This is
@@ -13,11 +13,11 @@
  * reference is what would break that.
  *
  * Builds the three zones of product design §3 and the method-state switch of
- * §4.1/P4 (distance ⇄ prices; switching CONVERTS, never resets). Deliberately
- * NOT built here (later tasks, see the D-1 brief §7): the `--text-hero` token
- * (D-2), the copy action's click handler (D-3), the Ficha del activo (D-4),
- * focus management / select-on-focus / Esc / steppers / Alt-shortcuts (D-5),
- * persistence (C-2).
+ * §4.1/P4 (distance ⇄ prices; switching CONVERTS, never resets). The host
+ * stylesheet supplies the completed context-strip and hero hierarchy.
+ * Deliberately NOT built here: the copy action's click handler (D-3), the
+ * Ficha del activo (D-4), focus management / select-on-focus / Esc / steppers /
+ * Alt-shortcuts (D-5), and persistence (C-2).
  */
 import { deriveLots, switchMethod, INITIAL_STATE, type LotajeDerived, type LotajeState, type Method } from './sizing-view-model';
 import { formatLots, formatMoney } from './format';

@@ -1,15 +1,14 @@
 /*
- * RFC-020 Task D-1. This component uses ViewEncapsulation.None (see the .ts
- * class doc) because the Lotaje view's DOM is built with
+ * RFC-020 Lotaje view. This component uses ViewEncapsulation.None (see the
+ * .ts class doc) because the view's DOM is built with
  * `document.createElement`, which Angular's default emulated encapsulation
  * cannot scope. Every selector below is namespaced under `.lotaje-` to stay
  * safe as global CSS.
  *
- * Token usage follows product design §9.1 exactly. NOT built here (later
- * tasks, see the D-1 brief §7): the `--text-hero` token (D-2 — the hero
- * figure below uses `--text-xl`, the largest existing token, as an explicit
- * placeholder), the copy action's visual states (D-3), the Ficha del activo
- * (D-4), focus rings beyond the browser default / steppers (D-5).
+ * The context strip and hero typography follow product design §9.1-§9.2.
+ * Later work owns the copy action's visual states (D-3), the Ficha del activo
+ * (D-4), focus rings beyond the browser default / steppers (D-5), and
+ * persistence (C-2).
  */
 
 .lotaje-page {
@@ -45,8 +44,9 @@
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
-/* Visual order (chip, cuenta, riesgo) deliberately diverges from DOM order
-   (cuenta, riesgo, chip = the accessible tab order — see lotaje-view.ts). */
+/* Visual order (symbol, cuenta, riesgo, riesgo derivado) deliberately diverges
+   from DOM order (cuenta, riesgo, riesgo derivado, symbol). The derived value
+   is not focusable, so natural tab order remains cuenta, riesgo, symbol, stop. */
 .lotaje-symbol-chip {
   order: 0;
 }
@@ -105,6 +105,7 @@
 .lotaje-risk-usd {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-size: var(--text-md);
   color: var(--text);
 }
 
@@ -175,12 +176,12 @@
   gap: var(--space-2);
 }
 .lotaje-lots-value {
-  /* Placeholder for --text-hero (Task D-2); --text-xl is the largest token
-     that exists today. */
+  /* The screen's sole dominant figure (product design §6.1 and §9.2). */
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-xl);
+  font-size: var(--text-hero);
   font-weight: var(--weight-semibold);
+  line-height: var(--leading-none);
   color: var(--text);
   letter-spacing: -0.01em;
 }
@@ -209,6 +210,9 @@
 }
 
 @media (max-width: 560px) {
+  .lotaje-root {
+    --text-hero: 36px;
+  }
   .lotaje-page {
     padding: var(--space-5) var(--space-4) var(--space-8);
   }
