@@ -7,24 +7,30 @@
  *
  * `mount(doc, win, initialState?)` / `unmount()` take their document and window
  * as EXPLICIT arguments and never reference the bare globals
- * `document`/`window`. The optional state is a validated C-2 seam, not a
- * persistence path. This is not a style preference: Task D-6 mounts this same
- * view into a Document Picture-in-Picture window, a different realm
+ * `document`/`window`. This is not a style preference: Task D-6 mounts this
+ * same view into a Document Picture-in-Picture window, a different realm
  * (`win.navigator !== window.navigator`, measured in the S-1 spike), and a
- * single global reference is what would break that.
+ * single global reference is what would break that. An OMITTED third
+ * argument loads persisted context from the mounted `win` (Task C-2,
+ * `./persistence`); an explicit third argument — including an explicit
+ * `undefined` — bypasses storage entirely and is arity-detected, never
+ * value-detected.
  *
  * Builds the three zones of product design §3 and the method-state switch of
  * §4.1/P4 (distance ⇄ prices; switching CONVERTS, never resets). The host
  * stylesheet supplies the completed context-strip, asset disclosure, hero
  * hierarchy, copy feedback and touch-stepper states. D-5 owns the root-scoped
- * focus and keyboard listeners here. Deliberately excluded: persistence
- * (C-2), the companion adapter (D-6), and companion-only Alt shortcuts (D-7).
+ * focus and keyboard listeners here. C-2 owns the one centralized
+ * post-transition persistence side effect (`transitionState`, below).
+ * Deliberately excluded: the companion adapter (D-6) and companion-only Alt
+ * shortcuts (D-7).
  */
 import { resolveAsset } from '../domain/sizing/asset-registry';
 import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
 import { deriveLots, switchMethod, INITIAL_STATE, type LotajeDerived, type LotajeState, type Method } from './sizing-view-model';
 import { formatLots, formatMoney } from './format';
 import { parseDecimal } from './parse-decimal';
+import { loadLotajeContext, saveLotajeContext } from './persistence';
 
 /**
  * The Angular host (`pages/calculadora/calculadora-page.component.ts`)
@@ -110,9 +116,30 @@ function syncValue(input: HTMLInputElement, text: string): void {
 }
 
 // ---- event handlers (stable module-level identities over live mount state) ----
-function setState(patch: Partial<LotajeState>): void {
-  currentState = { ...currentState, ...patch };
+/**
+ * The single choke point for every `LotajeState` change (Task C-2): assign,
+ * render, then persist only if an actual CONTEXT field (balance/risk/symbol/
+ * method) changed. Typing distance/entry/SL, stepping, Escape, and every
+ * D-3/D-4/D-5 UI action never produce a context diff here, so they never
+ * write. A write failure never rolls back this already-rendered state —
+ * `saveLotajeContext` is best-effort (`./persistence`).
+ */
+function transitionState(next: LotajeState): void {
+  const previous = currentState;
+  currentState = next;
   render();
+  const contextChanged =
+    previous.balanceText !== currentState.balanceText ||
+    previous.riskPctText !== currentState.riskPctText ||
+    previous.symbolText !== currentState.symbolText ||
+    previous.method !== currentState.method;
+  if (contextChanged && currentWindow) {
+    saveLotajeContext(currentWindow, currentState);
+  }
+}
+
+function setState(patch: Partial<LotajeState>): void {
+  transitionState({ ...currentState, ...patch });
 }
 
 function onBalanceInput(e: Event): void {
@@ -149,8 +176,7 @@ function onSlInput(e: Event): void {
   setState({ slText: (e.target as HTMLInputElement).value });
 }
 function onMethodToggleClick(): void {
-  currentState = switchMethod(currentState);
-  render();
+  transitionState(switchMethod(currentState));
 }
 
 function stepDistance(direction: -1 | 1, multiplier: 1 | 10): void {
@@ -813,17 +839,22 @@ function render(): void {
 
 // ---- mount / unmount --------------------------------------------------------
 /**
- * Builds the Lotaje view into `doc` from a guarded optional initial state, or
- * the P2 cold-start defaults when omitted. This seam does not read storage.
+ * Builds the Lotaje view into `doc`. An explicit third argument (including an
+ * explicit `undefined`) is guarded per field and used as-is, never consulting
+ * storage. An OMITTED third argument loads the persisted context via
+ * `loadLotajeContext(win)` (Task C-2), merges it over `INITIAL_STATE`, and
+ * runs it through the same per-field guard below — so a missing key,
+ * malformed JSON/root, or a read failure all degrade to the identical P2
+ * cold-start defaults. Neither path ever writes: the first save happens only
+ * after a later actual context transition (see `transitionState`, above).
+ * Precedence is decided by call ARITY (`rest.length`), not by the value
+ * passed — an explicitly passed `undefined` still counts as "supplied" and
+ * bypasses storage.
  * Idempotent: always tears down any previous mount first (see the module doc
  * above). Looks for an existing `#lotaje-mount` container in `doc`; creates one
  * on `doc.body` if none exists.
  */
-export function mount(
-  doc: Document,
-  win: Window,
-  initialState: LotajeState = INITIAL_STATE,
-): void {
+export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void {
   unmount();
 
   let container = doc.getElementById(LOTAJE_MOUNT_ID);
@@ -836,6 +867,8 @@ export function mount(
 
   currentDoc = doc;
   currentWindow = win;
+  const initialState: LotajeState | undefined =
+    rest.length === 0 ? { ...INITIAL_STATE, ...loadLotajeContext(win) } : rest[0];
   const supplied =
     initialState !== null && typeof initialState === 'object'
       ? (initialState as Partial<Record<keyof LotajeState, unknown>>)

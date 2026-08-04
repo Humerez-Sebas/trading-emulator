@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CalculadoraPageComponent } from './calculadora-page.component';
 import {
   contractSizeFor,
@@ -8,6 +8,7 @@ import {
   pipSizeFor,
   riskUsdFor,
 } from '../../domain/sizing/position-sizing';
+import { LOTAJE_STORAGE_KEY } from '../../lotaje/persistence';
 
 /**
  * RFC-020 Task D-1 — rewritten for the framework-free Lotaje view.
@@ -68,6 +69,18 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     return fixture;
   }
 
+  // Task C-2 (orchestrator scope amendment): `ngAfterViewInit` calls
+  // `mount(this.doc, win)` with exactly two arguments, and `this.doc.defaultView`
+  // is the real ambient `window` in every TestBed test, so an omitted-argument
+  // mount now reads persisted Lotaje context from real `window.localStorage`.
+  // Under this suite's isolate:false runner (docs/engineering/testing.md) that
+  // storage is shared across every test in this file, so the key is scrubbed
+  // before AND after each test — never `localStorage.clear()`, which could
+  // poison another spec file.
+  beforeEach(() => {
+    window.localStorage.removeItem(LOTAJE_STORAGE_KEY);
+  });
+
   // `mount()`/`unmount()` own module-level state (the mounted DOM subtree, its
   // listeners). Under the suite's isolate:false runner every spec in this file
   // shares that module registry, so a fixture left un-destroyed would leak into
@@ -78,6 +91,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     currentFixture?.destroy();
     currentFixture = null;
     TestBed.resetTestingModule();
+    window.localStorage.removeItem(LOTAJE_STORAGE_KEY);
   });
 
   function el(fixture: ReturnType<typeof create>): HTMLElement {

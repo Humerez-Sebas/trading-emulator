@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GENERATED_ASSETS, GENERATED_SOURCE } from '../domain/sizing/asset-registry.generated';
 import { getMountedWindow, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view';
+import { LOTAJE_STORAGE_KEY } from './persistence';
 import type { LotajeState } from './sizing-view-model';
 
 /**
@@ -17,6 +18,16 @@ describe('lotaje-view: mount/unmount', () => {
   let ambientClipboardDescriptor: PropertyDescriptor | undefined;
   let ambientClipboardInstrumented = false;
   const focusFrames: HTMLIFrameElement[] = [];
+
+  // Task C-2: many pre-existing tests mount into the real ambient `window`,
+  // which now means a real (jsdom) `window.localStorage` round trip whenever
+  // context actually changes. Under this suite's isolate:false runner
+  // (docs/engineering/testing.md) that ambient storage is shared across every
+  // test in this file, so the key is scrubbed before AND after each test —
+  // never `localStorage.clear()`, which could poison another spec file.
+  beforeEach(() => {
+    window.localStorage.removeItem(LOTAJE_STORAGE_KEY);
+  });
 
   afterEach(() => {
     try {
@@ -36,6 +47,7 @@ describe('lotaje-view: mount/unmount', () => {
         for (const frame of focusFrames.splice(0)) frame.remove();
         vi.useRealTimers();
         vi.restoreAllMocks();
+        window.localStorage.removeItem(LOTAJE_STORAGE_KEY);
       }
     }
   });
@@ -121,6 +133,38 @@ describe('lotaje-view: mount/unmount', () => {
       configurable: true,
       value: { writeText },
     });
+  }
+
+  /** Task C-2: an in-memory `Storage` double, never the ambient realm. */
+  function fakeStorage(initial?: Record<string, string>): Storage {
+    const store = new Map<string, string>(initial ? Object.entries(initial) : []);
+    return {
+      getItem: vi.fn((key: string) => (store.has(key) ? (store.get(key) as string) : null)),
+      setItem: vi.fn((key: string, value: string) => {
+        store.set(key, value);
+      }),
+      removeItem: vi.fn((key: string) => {
+        store.delete(key);
+      }),
+      clear: vi.fn(() => store.clear()),
+      key: vi.fn((index: number) => Array.from(store.keys())[index] ?? null),
+      get length() {
+        return store.size;
+      },
+    } as unknown as Storage;
+  }
+
+  /** Task C-2: a target-realm window carrying its own storage double, clipboard, and timers. */
+  function persistedWindow(
+    storage: Storage,
+    writeText: (text: string) => Promise<void> = () => Promise.resolve(),
+  ): Window {
+    return {
+      localStorage: storage,
+      navigator: { clipboard: { writeText } } as unknown as Navigator,
+      setTimeout: vi.fn(window.setTimeout.bind(window)),
+      clearTimeout: vi.fn(window.clearTimeout.bind(window)),
+    } as unknown as Window;
   }
 
   function driveRealLot(doc: Document, distance = '45'): void {
@@ -215,6 +259,11 @@ describe('lotaje-view: mount/unmount', () => {
     balanceA.value = '99999';
     balanceA.dispatchEvent(new Event('input'));
     unmount();
+    // Task C-2: this test's cold-start precondition predates persistence — the
+    // edit above now also writes real ambient `window.localStorage`. Scrub the
+    // key (never `localStorage.clear()`) so this test still isolates the
+    // in-memory leak it names, not a storage round trip a later task owns.
+    window.localStorage.removeItem(LOTAJE_STORAGE_KEY);
 
     const docB = freshDoc();
     mount(docB, window);
@@ -529,6 +578,9 @@ describe('lotaje-view: mount/unmount', () => {
     chip.click();
     setValue(firstDoc, 'symbol', 'EURUSD');
     unmount();
+    // Task C-2: as above — scrub the key so this test still isolates the
+    // in-memory symbol-disclosure leak it names, not a storage round trip.
+    window.localStorage.removeItem(LOTAJE_STORAGE_KEY);
 
     const secondDoc = freshDoc();
     mount(secondDoc, window);
@@ -1361,6 +1413,424 @@ describe('lotaje-view: mount/unmount', () => {
     await settleMicrotasks();
     expect(doc.querySelector('.lotaje-copy-feedback')?.textContent).toBe('Copiado');
     expect(target.setTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('IN-01 absent cold mount reads the supplied realm once, writes zero times, and focuses Cuenta with P2 defaults', () => {
+    const storage = fakeStorage();
+    const win = persistedWindow(storage);
+    const doc = freshFocusableDoc();
+
+    mount(doc, win);
+
+    expect(storage.getItem).toHaveBeenCalledTimes(1);
+    expect(storage.getItem).toHaveBeenCalledWith(LOTAJE_STORAGE_KEY);
+    expect(storage.setItem).not.toHaveBeenCalled();
+    const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    expect(balance.value).toBe('10000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('');
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
+    expect(doc.activeElement).toBe(balance);
+    expect(balance.selectionStart).toBe(0);
+    expect(balance.selectionEnd).toBe(5);
+  });
+
+  it('IN-02 corrupt cold mount: malformed JSON and a malformed root each stay P2-cold with no mount write', () => {
+    const jsonStorage = fakeStorage({ [LOTAJE_STORAGE_KEY]: 'not json {' });
+    const jsonWin = persistedWindow(jsonStorage);
+    const jsonDoc = freshFocusableDoc();
+    mount(jsonDoc, jsonWin);
+    const jsonBalance = jsonDoc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    expect(jsonBalance.value).toBe('10000');
+    expect(jsonDoc.activeElement).toBe(jsonBalance);
+    expect(jsonStorage.setItem).not.toHaveBeenCalled();
+
+    const rootStorage = fakeStorage({ [LOTAJE_STORAGE_KEY]: JSON.stringify([1, 2, 3]) });
+    const rootWin = persistedWindow(rootStorage);
+    const rootDoc = freshFocusableDoc();
+    mount(rootDoc, rootWin);
+    const rootBalance = rootDoc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    expect(rootBalance.value).toBe('10000');
+    expect(rootDoc.activeElement).toBe(rootBalance);
+    expect(rootStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('IN-03 restored Method B: omitted mount restores raw context, leaves distance blank, and focuses distance without a write', () => {
+    const storage = fakeStorage({
+      [LOTAJE_STORAGE_KEY]: JSON.stringify({
+        v: 1,
+        balanceText: '25000',
+        riskPctText: '2',
+        symbolText: 'US30',
+        method: 'distance',
+      }),
+    });
+    const win = persistedWindow(storage);
+    const doc = freshFocusableDoc();
+
+    mount(doc, win);
+
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('25000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('2');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    expect(distance.value).toBe('');
+    expect(doc.activeElement).toBe(distance);
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('IN-04 restored Method A/exclusions: extra runtime fields in storage restore only context, leave entry/SL blank, and focus SL', () => {
+    const storage = fakeStorage({
+      [LOTAJE_STORAGE_KEY]: JSON.stringify({
+        v: 1,
+        balanceText: '40000',
+        riskPctText: '1.5',
+        symbolText: 'XAUUSD',
+        method: 'prices',
+        distanceText: '999',
+        entryText: '40000',
+        slText: '39955',
+        lots: 4.4,
+        requestedRiskUsd: 600,
+        isHeuristic: true,
+        symbolDisclosureOpen: true,
+        copyFeedback: 'Copiado',
+        focusedField: 'sl',
+      }),
+    });
+    const win = persistedWindow(storage);
+    const doc = freshFocusableDoc();
+
+    mount(doc, win);
+
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('40000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1.5');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('XAUUSD');
+    const entry = doc.querySelector<HTMLInputElement>('input[name="entry"]')!;
+    const sl = doc.querySelector<HTMLInputElement>('input[name="sl"]')!;
+    expect(entry.value).toBe('');
+    expect(sl.value).toBe('');
+    expect(doc.activeElement).toBe(sl);
+    expect(
+      doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')?.getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('IN-05 explicit precedence: an explicit third argument wins over stored context and never reads storage; explicit undefined validates to P2 with no read either', () => {
+    const storage = fakeStorage({
+      [LOTAJE_STORAGE_KEY]: JSON.stringify({
+        v: 1,
+        balanceText: '99999',
+        riskPctText: '9',
+        symbolText: 'NAS100',
+        method: 'prices',
+      }),
+    });
+    const win = persistedWindow(storage);
+    const doc = freshFocusableDoc();
+
+    mount(
+      doc,
+      win,
+      state({ balanceText: '12345', riskPctText: '2', symbolText: 'US30', distanceText: '45' }),
+    );
+
+    expect(storage.getItem).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('12345');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('2');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+
+    setValue(doc, 'balance', '54321');
+    expect(storage.getItem).not.toHaveBeenCalled();
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+    expect(storage.setItem).toHaveBeenLastCalledWith(
+      LOTAJE_STORAGE_KEY,
+      '{"v":1,"balanceText":"54321","riskPctText":"2","symbolText":"US30","method":"distance"}',
+    );
+
+    const undefinedStorage = fakeStorage({
+      [LOTAJE_STORAGE_KEY]: JSON.stringify({
+        v: 1,
+        balanceText: '77777',
+        riskPctText: '7',
+        symbolText: 'SP500',
+        method: 'prices',
+      }),
+    });
+    const undefinedWin = persistedWindow(undefinedStorage);
+    const undefinedDoc = freshFocusableDoc();
+
+    mount(undefinedDoc, undefinedWin, undefined);
+
+    expect(undefinedStorage.getItem).not.toHaveBeenCalled();
+    expect(undefinedStorage.setItem).not.toHaveBeenCalled();
+    expect(undefinedDoc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
+      '10000',
+    );
+    expect(undefinedDoc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
+    expect(undefinedDoc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('');
+  });
+
+  it('IN-06 raw round trip: comma/whitespace/leading-zero context survives unmount + omitted remount byte-for-byte while question fields reopen blank', () => {
+    const storage = fakeStorage();
+    const win = persistedWindow(storage);
+    const doc = freshDoc();
+    mount(doc, win);
+
+    setValue(doc, 'balance', '012,345.00');
+    setValue(doc, 'riskPct', ' 1.5 ');
+    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
+    setValue(doc, 'symbol', '  US30  ');
+    setValue(doc, 'distance', '45');
+
+    unmount();
+
+    const reopened = freshDoc();
+    mount(reopened, win);
+
+    expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
+      '012,345.00',
+    );
+    expect(reopened.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe(' 1.5 ');
+    expect(reopened.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe(
+      '  US30  ',
+    );
+    expect(reopened.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
+  });
+
+  it('IN-07 positive trigger matrix: balance, risk, free-symbol, curated-symbol, and method changes each write exactly once with the exact latest JSON', () => {
+    const storage = fakeStorage();
+    const win = persistedWindow(storage);
+    const doc = freshDoc();
+    mount(doc, win);
+    expect(storage.setItem).not.toHaveBeenCalled();
+
+    setValue(doc, 'balance', '20000');
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+    expect(storage.setItem).toHaveBeenLastCalledWith(
+      LOTAJE_STORAGE_KEY,
+      '{"v":1,"balanceText":"20000","riskPctText":"1","symbolText":"","method":"distance"}',
+    );
+
+    setValue(doc, 'riskPct', '2');
+    expect(storage.setItem).toHaveBeenCalledTimes(2);
+    expect(storage.setItem).toHaveBeenLastCalledWith(
+      LOTAJE_STORAGE_KEY,
+      '{"v":1,"balanceText":"20000","riskPctText":"2","symbolText":"","method":"distance"}',
+    );
+
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    setValue(doc, 'symbol', 'EURUSD');
+    expect(storage.setItem).toHaveBeenCalledTimes(3);
+    expect(storage.setItem).toHaveBeenLastCalledWith(
+      LOTAJE_STORAGE_KEY,
+      '{"v":1,"balanceText":"20000","riskPctText":"2","symbolText":"EURUSD","method":"distance"}',
+    );
+
+    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset')!;
+    select.value = 'XAUUSD';
+    select.dispatchEvent(new Event('change'));
+    expect(storage.setItem).toHaveBeenCalledTimes(4);
+    expect(storage.setItem).toHaveBeenLastCalledWith(
+      LOTAJE_STORAGE_KEY,
+      '{"v":1,"balanceText":"20000","riskPctText":"2","symbolText":"XAUUSD","method":"distance"}',
+    );
+    // Curated selection also closes the disclosure — no duplicate write from that.
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    expect(storage.setItem).toHaveBeenCalledTimes(4);
+
+    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    expect(storage.setItem).toHaveBeenCalledTimes(5);
+    expect(storage.setItem).toHaveBeenLastCalledWith(
+      LOTAJE_STORAGE_KEY,
+      '{"v":1,"balanceText":"20000","riskPctText":"2","symbolText":"XAUUSD","method":"prices"}',
+    );
+  });
+
+  it('IN-08 Method B no-trigger matrix: distance typing, stepping, Esc, disclosure toggling, and copy settlement write zero times', async () => {
+    const storage = fakeStorage();
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const win = persistedWindow(storage, writeText);
+    const doc = freshFocusableDoc();
+    mount(doc, win, state());
+    expect(storage.setItem).not.toHaveBeenCalled();
+
+    setValue(doc, 'distance', '50');
+    const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    distance.focus();
+    dispatchKey(distance, 'ArrowUp');
+    dispatchKey(distance, 'ArrowUp', { shiftKey: true });
+    dispatchKey(distance, 'Escape');
+
+    const increment = doc.querySelector<HTMLButtonElement>(
+      '.lotaje-stop-step[aria-label="Aumentar distancia del stop"]',
+    )!;
+    increment.click();
+
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    chip.click();
+
+    distance.focus();
+    const enter = dispatchKey(distance, 'Enter');
+    expect(enter.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    await settleMicrotasks();
+
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('IN-09 Method A no-trigger matrix: entry typing, SL typing, Esc, focus, and Enter-copy write zero times', async () => {
+    const storage = fakeStorage();
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const win = persistedWindow(storage, writeText);
+    const doc = freshFocusableDoc();
+    mount(doc, win, state({ method: 'prices', entryText: '40000', slText: '39955' }));
+    expect(storage.setItem).not.toHaveBeenCalled();
+
+    setValue(doc, 'entry', '40100');
+    setValue(doc, 'sl', '40000');
+    const sl = doc.querySelector<HTMLInputElement>('input[name="sl"]')!;
+    sl.focus();
+    dispatchKey(sl, 'Escape');
+    const entry = doc.querySelector<HTMLInputElement>('input[name="entry"]')!;
+    entry.focus();
+    dispatchKey(entry, 'Enter');
+    await settleMicrotasks();
+
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('IN-10 target realm only: omitted load and a later write hit the target double while ambient localStorage stays untouched', () => {
+    const ambientGetItemSpy = vi.spyOn(window.localStorage, 'getItem');
+    const ambientSetItemSpy = vi.spyOn(window.localStorage, 'setItem');
+    const storage = fakeStorage();
+    const win = persistedWindow(storage);
+    const doc = freshDoc();
+
+    mount(doc, win);
+    setValue(doc, 'balance', '30000');
+
+    expect(storage.getItem).toHaveBeenCalledTimes(1);
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+    expect(ambientGetItemSpy).not.toHaveBeenCalled();
+    expect(ambientSetItemSpy).not.toHaveBeenCalled();
+  });
+
+  it('IN-11 no synchronization listener: mount, transitions, unmount, and remount never touch storage listeners', () => {
+    const storage = fakeStorage();
+    const addEventListenerSpy = vi.fn();
+    const removeEventListenerSpy = vi.fn();
+    const win = {
+      ...persistedWindow(storage),
+      addEventListener: addEventListenerSpy,
+      removeEventListener: removeEventListenerSpy,
+    } as unknown as Window;
+    const doc = freshDoc();
+
+    mount(doc, win);
+    setValue(doc, 'balance', '15000');
+    unmount();
+    mount(doc, win);
+
+    expect(addEventListenerSpy).not.toHaveBeenCalled();
+    expect(removeEventListenerSpy).not.toHaveBeenCalled();
+  });
+
+  it('IN-12 remount/read-only timing: changing backing storage while mounted does not mutate the live DOM; a later omitted remount reads the new context with no mount write', () => {
+    const storage = fakeStorage({
+      [LOTAJE_STORAGE_KEY]: JSON.stringify({
+        v: 1,
+        balanceText: '10000',
+        riskPctText: '1',
+        symbolText: 'US30',
+        method: 'distance',
+      }),
+    });
+    const win = persistedWindow(storage);
+    const doc = freshDoc();
+    mount(doc, win);
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
+
+    storage.setItem(
+      LOTAJE_STORAGE_KEY,
+      JSON.stringify({
+        v: 1,
+        balanceText: '77777',
+        riskPctText: '9',
+        symbolText: 'SP500',
+        method: 'prices',
+      }),
+    );
+
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
+
+    unmount();
+    (storage.setItem as ReturnType<typeof vi.fn>).mockClear();
+    const reopened = freshDoc();
+    mount(reopened, win);
+
+    expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
+      '77777',
+    );
+    expect(reopened.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('9');
+    expect(reopened.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe(
+      'SP500',
+    );
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('IN-13 write-failure preservation: a throwing setItem keeps context correct in memory and D-3/D-4/D-5 behavior intact', async () => {
+    const throwingStorage = {
+      getItem: () => null,
+      setItem: vi.fn(() => {
+        throw new Error('quota exceeded');
+      }),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+      key: vi.fn(() => null),
+      length: 0,
+    } as unknown as Storage;
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const win = persistedWindow(throwingStorage, writeText);
+    const doc = freshFocusableDoc();
+
+    mount(doc, win, state());
+
+    expect(() => setValue(doc, 'balance', '31000')).not.toThrow();
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('31000');
+    expect(throwingStorage.setItem).toHaveBeenCalled();
+
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+
+    const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    distance.focus();
+    const enter = dispatchKey(distance, 'Enter');
+    expect(enter.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    await settleMicrotasks();
+    expect(doc.querySelector('.lotaje-copy-feedback')?.textContent).toBe('Copiado');
+
+    dispatchKey(distance, 'ArrowUp');
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('46');
+    dispatchKey(distance, 'Escape');
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
+
+    const removeListenerSpy = vi.spyOn(doc.querySelector('.lotaje-root')!, 'removeEventListener');
+    expect(() => unmount()).not.toThrow();
+    expect(removeListenerSpy.mock.calls.filter(([type]) => type === 'focusin')).toHaveLength(1);
+    expect(removeListenerSpy.mock.calls.filter(([type]) => type === 'keydown')).toHaveLength(1);
+
+    const reopened = freshFocusableDoc();
+    expect(() => mount(reopened, win, state())).not.toThrow();
+    expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
+      '10000',
+    );
   });
 
   function setValue(doc: Document, name: string, text: string): void {
