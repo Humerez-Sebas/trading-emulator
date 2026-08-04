@@ -21,12 +21,18 @@
  * stylesheet supplies the completed context-strip, asset disclosure, hero
  * hierarchy, copy feedback and touch-stepper states. D-5 owns the root-scoped
  * focus and keyboard listeners here. C-2 owns the one centralized
- * post-transition persistence side effect (`transitionState`, below).
- * Deliberately excluded: the companion adapter (D-6) and companion-only Alt
+ * post-transition persistence side effect (`transitionState`, below). D-6
+ * wires the «Abrir ventana» trigger to `./companion-window`, which MOVES
+ * this same mounted view into a companion realm and back — there is exactly
+ * one active mount module-wide (see `mount`/`unmount` below), so opening the
+ * companion is a relocation, never a second copy. `./companion-window`
+ * itself imports nothing from Angular/NgRx/`state/*`/`components/*`/
+ * `domain/chart/*` either. Deliberately excluded here: companion-only Alt
  * shortcuts (D-7).
  */
 import { resolveAsset } from '../domain/sizing/asset-registry';
 import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
+import { openCompanionWindow } from './companion-window';
 import { deriveLots, switchMethod, INITIAL_STATE, type LotajeDerived, type LotajeState, type Method } from './sizing-view-model';
 import { formatLots, formatMoney } from './format';
 import { parseDecimal } from './parse-decimal';
@@ -98,9 +104,24 @@ interface Refs {
   answerContainer: HTMLElement;
 }
 
-/** Retrieves the active realm used by clipboard and feedback timers, and later by D-6. */
+/** Retrieves the active realm used by clipboard and feedback timers, and by D-6's companion adapter. */
 export function getMountedWindow(): Window | null {
   return currentWindow;
+}
+
+/**
+ * Retrieves the live in-memory state of the current mount. D-6's companion
+ * adapter reads this immediately before each leg of the host↔companion move
+ * — the ONLY narrow accessor this task adds — because `mount()` calls
+ * `unmount()` first, which resets `currentState` to `INITIAL_STATE`; reading
+ * it here, before that reset, is what carries a typed-but-unpersisted
+ * distance/entry/SL across the move (S-1 spike report §4.2). Never mutated
+ * by the caller: `LotajeState` fields are all primitives and every write
+ * path here (`transitionState`) already replaces the object rather than
+ * mutating it in place.
+ */
+export function getMountedState(): LotajeState {
+  return currentState;
 }
 
 // ---- value sync (never clobber a field mid-edit) -------------------------
@@ -177,6 +198,19 @@ function onSlInput(e: Event): void {
 }
 function onMethodToggleClick(): void {
   transitionState(switchMethod(currentState));
+}
+
+/**
+ * Wired to the «Abrir ventana» trigger. `currentDoc`/`currentWindow` are
+ * read at CLICK time (the stable-identity pattern this module already uses
+ * for every other handler), never captured at build time — the trigger is
+ * rebuilt on every fresh `mount()`, but reading module state here rather
+ * than closing over the `doc`/`win` mount() was called with keeps this
+ * handler's shape identical to the rest of the file.
+ */
+function onCompanionTriggerClick(): void {
+  if (!currentDoc || !currentWindow) return;
+  openCompanionWindow(currentDoc, currentWindow);
 }
 
 function stepDistance(direction: -1 | 1, multiplier: 1 | 10): void {
@@ -912,6 +946,15 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
   const root = doc.createElement('div');
   root.className = 'lotaje-root';
 
+  const companionTriggerRow = doc.createElement('div');
+  companionTriggerRow.className = 'lotaje-companion-trigger-row';
+  const companionTrigger = doc.createElement('button');
+  companionTrigger.type = 'button';
+  companionTrigger.className = 'lotaje-companion-trigger';
+  companionTrigger.textContent = 'Abrir ventana';
+  companionTrigger.addEventListener('click', onCompanionTriggerClick);
+  companionTriggerRow.append(companionTrigger);
+
   const derived = deriveLots(currentState);
   const zone1 = buildZoneContext(doc, currentState, derived);
   const zone2 = buildZoneQuestion(doc, currentState, derived);
@@ -920,7 +963,7 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
   zone3.setAttribute('aria-label', 'La respuesta');
   buildZoneAnswerBody(doc, zone3, derived);
 
-  root.append(zone1.root, zone2.root, zone3);
+  root.append(companionTriggerRow, zone1.root, zone2.root, zone3);
   container.append(root);
   currentRoot = root;
 

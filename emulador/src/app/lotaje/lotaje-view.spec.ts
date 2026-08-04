@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GENERATED_ASSETS, GENERATED_SOURCE } from '../domain/sizing/asset-registry.generated';
-import { getMountedWindow, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view';
+import { COMPANION_HEIGHT, COMPANION_WIDTH } from './companion-window';
+import { getMountedState, getMountedWindow, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view';
 import { LOTAJE_STORAGE_KEY } from './persistence';
-import type { LotajeState } from './sizing-view-model';
+import { INITIAL_STATE, type LotajeState } from './sizing-view-model';
 
 /**
  * New specs for the framework-free view itself (as opposed to the ported/
@@ -1904,6 +1905,87 @@ describe('lotaje-view: mount/unmount', () => {
     expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
       '10000',
     );
+  });
+
+  // ---- Task D-6: the «Abrir ventana» trigger --------------------------------
+  it('renders the "Abrir ventana" trigger as a native button, not part of any zone', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-companion-trigger');
+    expect(trigger?.tagName).toBe('BUTTON');
+    expect(trigger?.type).toBe('button');
+    expect(trigger?.textContent).toBe('Abrir ventana');
+    expect(trigger?.closest('[aria-label="Contexto"]')).toBeNull();
+    expect(trigger?.closest('[aria-label="La pregunta"]')).toBeNull();
+    expect(trigger?.closest('[aria-label="La respuesta"]')).toBeNull();
+  });
+
+  // `vi.mock` cannot substitute a sibling relative import under this
+  // repo's Angular vitest builder ("The 'vi.mock' and related methods are
+  // not supported for relative imports with the Angular unit-test system" —
+  // measured, not assumed) — so this proves the wiring end to end against
+  // the REAL `./companion-window`, the same way the rest of this file
+  // proves behaviour against the real `mount`/`unmount`. `companion-window
+  // .spec.ts` separately covers the adapter's own mechanics (PiP/popup
+  // choice, singleton, teardown, style copy) for every doc/win pair — this
+  // test's only job is proving the trigger hands off the CURRENTLY MOUNTED
+  // doc/window, not some other pair.
+  it('the trigger hands the currently mounted document/window to the real companion adapter', () => {
+    const doc = freshDoc();
+    const popupDoc = document.implementation.createHTMLDocument('popup');
+    const popupBus = new EventTarget();
+    const popup = {
+      document: popupDoc,
+      closed: false,
+      focus: vi.fn(),
+      addEventListener: (type: string, listener: EventListenerOrEventListenerObject) =>
+        popupBus.addEventListener(type, listener),
+      removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) =>
+        popupBus.removeEventListener(type, listener),
+      close: vi.fn(() => popupBus.dispatchEvent(new Event('pagehide'))),
+    };
+    const openPopup = vi.fn().mockReturnValue(popup);
+    const hostWin = { open: openPopup } as unknown as Window;
+    mount(doc, hostWin, state({ distanceText: '77' }));
+
+    doc.querySelector<HTMLButtonElement>('.lotaje-companion-trigger')!.click();
+
+    expect(openPopup).toHaveBeenCalledTimes(1);
+    expect(openPopup).toHaveBeenCalledWith(
+      '',
+      '',
+      `width=${COMPANION_WIDTH},height=${COMPANION_HEIGHT}`,
+    );
+    // The real adapter moved the REAL mount into `popupDoc`, carrying the
+    // live distance — proof the handler forwarded THIS mount's doc/window,
+    // not some other pair.
+    expect(popupDoc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('77');
+    expect(doc.querySelector('.lotaje-companion-placeholder')).not.toBeNull();
+    expect(doc.querySelector('input[name="distance"]')).toBeNull();
+
+    // Tear down the real adapter's own module state (a SEPARATE module from
+    // this file's `unmount()`) so it cannot leak into
+    // companion-window.spec.ts under this suite's isolate:false runner
+    // (docs/engineering/testing.md) — mirrors a real window close.
+    popup.close();
+  });
+
+  it('getMountedState() exposes the live in-memory state D-6 carries across the move', () => {
+    const doc = freshDoc();
+    mount(doc, window, state({ distanceText: '77' }));
+
+    expect(getMountedState().distanceText).toBe('77');
+    expect(getMountedState()).toEqual(state({ distanceText: '77' }));
+
+    setValue(doc, 'distance', '88');
+    expect(getMountedState().distanceText).toBe('88');
+
+    // unmount() resets to INITIAL_STATE (D-6 brief §4.2) — this is exactly
+    // why the adapter must read getMountedState() BEFORE calling mount() on
+    // the other side, never after.
+    unmount();
+    expect(getMountedState()).toEqual(INITIAL_STATE);
   });
 
   function setValue(doc: Document, name: string, text: string): void {

@@ -428,6 +428,76 @@
   text-align: left;
 }
 
+/* ---- D-6 companion window: trigger, host placeholder, companion elevation ---- */
+.lotaje-companion-trigger-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3) 0;
+}
+.lotaje-companion-trigger {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.lotaje-companion-trigger:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lotaje-companion-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* §4.1: shown in the host page's #lotaje-mount container while the
+   companion window owns the view — a trivial placeholder, not a second
+   surface. */
+.lotaje-companion-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.lotaje-companion-return {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.lotaje-companion-return:hover {
+  border-color: var(--border-strong);
+}
+.lotaje-companion-return:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* Product design §9.1/§6.3 ("El acompañante en ventana propia sí lleva
+   --elevation-2, pero eso es la ventana, no la jerarquía interna"): the
+   companion floats over other windows and its root carries --elevation-2;
+   the in-page version stays flat. `companion-window.ts` stamps this
+   attribute on the companion document's own <html> only — never on the
+   host document. */
+html[data-lotaje-companion] .lotaje-root {
+  box-shadow: var(--elevation-2);
+}
+
 @media (hover: none) {
   .lotaje-stop-step {
     display: inline-flex;
