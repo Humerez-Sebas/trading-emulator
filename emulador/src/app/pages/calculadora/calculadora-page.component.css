@@ -1,154 +1,218 @@
-.page {
+/*
+ * RFC-020 Task D-1. This component uses ViewEncapsulation.None (see the .ts
+ * class doc) because the Lotaje view's DOM is built with
+ * `document.createElement`, which Angular's default emulated encapsulation
+ * cannot scope. Every selector below is namespaced under `.lotaje-` to stay
+ * safe as global CSS.
+ *
+ * Token usage follows product design §9.1 exactly. NOT built here (later
+ * tasks, see the D-1 brief §7): the `--text-hero` token (D-2 — the hero
+ * figure below uses `--text-xl`, the largest existing token, as an explicit
+ * placeholder), the copy action's visual states (D-3), the Ficha del activo
+ * (D-4), focus rings beyond the browser default / steppers (D-5).
+ */
+
+.lotaje-page {
   height: 100%;
   overflow-y: auto;
   padding: var(--space-6) var(--space-8) var(--space-10);
-  max-width: 1280px;
+  max-width: 480px;
   margin: 0 auto;
 }
 
-.head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-h1 {
-  margin: 0;
-  font-size: var(--text-xl);
-  font-weight: var(--weight-semibold);
-}
-.sub {
-  margin: 4px 0 0;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  max-width: 56ch;
-}
-
-.layout {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: var(--space-5);
-  margin-top: var(--space-5);
-  align-items: start;
-}
-
-.panel {
-  padding: var(--space-4);
+.lotaje-root {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-}
-.panel h2 {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
 }
 
-.risk-free {
+/* A single 1px divider between zones — NOT three bordered cards (product design §6.2). */
+.lotaje-zone {
+  padding: var(--space-4);
+}
+.lotaje-zone + .lotaje-zone {
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Zone 1 · Contexto — reads as a status header, not a form ---- */
+.lotaje-zone--context {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
-.risk-free input {
-  max-width: 96px;
+/* Visual order (chip, cuenta, riesgo) deliberately diverges from DOM order
+   (cuenta, riesgo, chip = the accessible tab order — see lotaje-view.ts). */
+.lotaje-symbol-chip {
+  order: 0;
 }
-.risk-free .unit {
+.lotaje-field-balance {
+  order: 1;
+}
+.lotaje-field-risk {
+  order: 2;
+}
+.lotaje-risk-usd {
+  order: 3;
+}
+
+.lotaje-symbol-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.lotaje-symbol-input {
+  width: 96px;
+  text-transform: uppercase;
+}
+.lotaje-symbol-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--warning-subtle);
+  color: var(--warning);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+.lotaje-symbol-badge[hidden] {
+  display: none;
+}
+
+.lotaje-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.lotaje-field-balance input,
+.lotaje-field-risk input {
+  width: 88px;
+  padding-right: calc(var(--space-3) + 28px);
+}
+.lotaje-field-suffix {
+  position: absolute;
+  right: var(--space-2);
   font-size: var(--text-2xs);
   color: var(--text-muted);
+  pointer-events: none;
 }
 
-.row-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.lotaje-risk-usd {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ---- Zone 2 · La pregunta — where the focus lives ---- */
+.lotaje-zone--question {
+  display: flex;
+  align-items: center;
   gap: var(--space-3);
 }
-
-.hint {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+.lotaje-question-fields {
+  display: flex;
+  gap: var(--space-2);
+  flex: 1;
+}
+.lotaje-field-stop,
+.lotaje-field-entry,
+.lotaje-field-sl {
+  flex: 1;
+}
+.lotaje-field-stop input {
+  padding-right: calc(var(--space-3) + 34px);
+}
+.lotaje-stop-unit {
+  right: var(--space-2);
 }
 
-/* ---- results ---- */
-.invalid-state {
-  margin: 0;
-  padding: var(--space-3);
-  background: var(--surface-2);
-  border: 1px dashed var(--border-strong);
+.lotaje-method-toggle {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.lotaje-method-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lotaje-method-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
-.lots-hero {
+/* ---- Zone 3 · La respuesta — the hero ---- */
+.lotaje-zone--answer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-6);
+}
+
+.lotaje-invalid-state {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  max-width: 32ch;
+}
+
+.lotaje-hero {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
 }
-.lots-value {
+.lotaje-lots-value {
+  /* Placeholder for --text-hero (Task D-2); --text-xl is the largest token
+     that exists today. */
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-xl);
   font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
+  color: var(--text);
   letter-spacing: -0.01em;
 }
-.lots-label {
+.lotaje-copy-affordance {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.lotaje-lots-label {
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
-.floor-warning {
+.lotaje-floor-warning {
   margin: 0;
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  background: var(--down-subtle);
-  border: 1px solid var(--down);
+  background: var(--warning-subtle);
+  border: 1px solid var(--warning);
   border-radius: var(--radius-sm);
-  color: var(--down);
-  font-size: var(--text-sm);
-}
-
-.stats {
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-3);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
-}
-.stats dt {
-  font-size: var(--text-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-.stats dd {
-  margin: 2px 0 0;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
-}
-
-.contract-line {
-  margin: 0;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
+  color: var(--warning);
   font-size: var(--text-xs);
-  color: var(--text-muted);
+  max-width: 36ch;
+  text-align: left;
 }
 
-@media (max-width: 760px) {
-  .page {
+@media (max-width: 560px) {
+  .lotaje-page {
     padding: var(--space-5) var(--space-4) var(--space-8);
   }
-  .row-2 {
-    grid-template-columns: 1fr;
+  .lotaje-zone--context {
+    gap: var(--space-2);
   }
 }
