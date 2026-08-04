@@ -1954,3 +1954,93 @@ audited.** The single permitted batched Wave 4 audit is the next action, and it 
 personally — no figure in this ledger is evidence (PHILOSOPHY §1.1, §5.4). Wave 5 (D-6/D-7) stays
 blocked until that audit returns PASS with zero Critical/High/Medium. The whole-branch final audit
 remains mandatory and is never skipped.
+
+---
+
+## §17 — Wave 4 batched audit — **PASS ("Ship it")**
+
+Report: `.superpowers/rfc-020/wave4-audit-report.md`. Brief:
+`.superpowers/rfc-020/wave4-audit-brief.md`. Tracked tree left byte-identical at `78d8983`; all four
+mutations reverted and each revert proved with a clean `git diff`.
+
+**0 Critical / 0 High / 0 Medium / 6 Low**, plus one process observation. **Wave 5 is unblocked.**
+
+| Gate (auditor's own run, raw and unpiped) | Result |
+| :--- | :--- |
+| tsc app / tsc spec | exit **0**, no output (both) |
+| lint | exit **0** — `All files pass linting.` |
+| `ng test` | exit **0** — **84 files / 1188 tests**, zero skipped/todo |
+| `npm run build` | exit **0** — **612.60 kB**; no new chunk type, no vitest/spec sentinel, no circular-dependency warning; `grep -rl vitest dist/…/browser` empty; known budget warning only |
+
+**The arithmetic was re-derived by counting, not read.** `it(` counted per commit tree: 1131 → 1131 →
+1140 → 1149 → 1165 → 1188, files 83 → 84. The counting identity was validated at both ends first
+(zero `it.each` / `test(` / `it.skip` / `it.only` / `.todo(` anywhere), and the suite-wide `it(` total
+equals `ng test`'s number. All standing invariants green: exactly one `M`, empty package diff, no
+production `spec-util`, no framework imports in `lotaje/`, no factory selectors, `syncPriceScale`
+still zero production reads, `v` one write / zero reads, no `storage` machinery, no bare globals,
+`domain/sizing/*` untouched by Wave 4.
+
+### 17.1 The two rulings the orchestrator asked for
+
+**(a) The C-2 scope amendment (§16.4) — UPHELD as sound hygiene.** Verified independently rather than
+accepted: one `M` branch-wide; the only `-` line in the whole `lotaje-view.spec.ts` diff is its
+`vitest` import; the host spec holds exactly 29 tests; `localStorage.clear()` appears nowhere. **No
+claim moved — only the cold-start precondition was restored**, the same remedy PR #25 applied to this
+leak class. PHILOSOPHY §5.7 is not engaged. One consequence it left open became **L-3**.
+
+**(b) The §16.6 open question — settled by mutation, and the answer is sharper than either party
+had.** Three experiments:
+
+| # | Mutation | Result |
+| :--- | :--- | :--- |
+| **E1** | The orchestrator's prescribed lever — remove `unmount()`'s `currentState = INITIAL_STATE` | **1188 green — vacuous.** The implementer was right to say so |
+| **E2** | A *genuine* in-memory leak: E1 plus mount's `balanceText`/`symbolText` fallbacks sourced from `currentState` | **Only `IN-05` (`lotaje-view.spec.ts:1520`) went red.** Both §16.6 assertions stayed green |
+| **E3** | Remove the two intra-test `removeItem` scrubs | 2 failed, messages byte-identical to the C-2 report |
+
+**Verdict: ACCEPT the fix, RE-POINT the names.** The two assertions *can* fail (E3), so this is **not**
+the F-1 / C1-L1 "cannot fail" shape. But they cannot detect the cross-mount leak their names claim,
+because `loadLotajeContext` always returns four strings, making mount's `INITIAL_STATE` fallbacks
+unreachable on that path — they are weak **by construction, pre-dating C-2**. The claim itself remains
+covered, by `IN-05`. Coverage moved; only the naming lies. That is **L-1**.
+
+### 17.2 The six Lows — every one ruled **FIX**, with the reason written
+
+Recorded so they are not re-litigated at the final audit. The run's standing posture (§11.4.4) is that
+a Low which *defeats a purpose the artifact states outright* is not a convenience item; five of these
+six are exactly that shape, and the sixth is a production-path contract violation. Total cost is three
+test changes, one one-line production guard, one comment and one doc edit.
+
+| ID | Finding | Ruling and reason |
+| :--- | :--- | :--- |
+| **L-1** | `lotaje-view.spec.ts:255` / `:563` — two tests assert a cross-mount-leak claim they cannot detect (§17.1b) | **FIX — rename + cross-reference `IN-05`.** Identical in kind to C1-L1: a name that advertises a detector it does not provide is false reassurance, which §11.4.4 ruled worse than absence. The assertions themselves stay |
+| **L-2** | `lotaje-view.ts:287` — deleting the `copyAttemptGeneration === capturedAttemptGeneration` guard leaves **1188 green**. Uncovered: two copy clicks with no render between; attempt 2 fulfils (`Copiado` + timer), attempt 1 then rejects, and without the guard a false `No se pudo copiar` overwrites a real success | **FIX — add the test; the code is correct.** An unguarded correct guard is one "simplification" away from shipping a false failure message on the money path, with every gate green |
+| **L-3** | `calculadora-page.component.ts:43` — the P1/P2 restore path has **zero coverage at its only production call site**. Changing it to `mount(this.doc, win, undefined)` silently kills persistence with all five gates green | **FIX — add one host test that seeds the key.** The most consequential of the six: the feature C-2 just built has no end-to-end proof where it actually runs. The auditor names this the **RFC-019 Task 5 shape** — a false invariant that all four gates called green — which this repo has already paid for once |
+| **L-4** | `lotaje-view.ts:771` + `format.ts:12` — `balanceText='1e400'` → lots `Infinity` → hero renders `—` with an **enabled** copy button that copies an em dash; `minLotWarning` is also suppressed (`\|∞−∞\|/∞` = NaN) | **FIX — gate the hero branch on `Number.isFinite(derived.lots)`.** The auditor left this to the owner; the orchestrator rules it FIX because it is not a product question but a **conformance failure against D-3's own frozen contract** ("disabled — not hidden — during honest states"), on a production path, in a money tool. One condition in the expression that already decides disabled-ness. **Owner-visible and cheap to reverse** |
+| **L-5** | Product-design spec `:200` / `:239` still promises the unit selector that C3 / D.20.3 **ban**. D-4 correctly built none | **FIX — the drift is the hazard.** §12.2's named lesson is that prose outliving its code sends the next implementer to build the abolished thing; here it would have them build a control that is an *automatic audit finding*. Two lines |
+| **L-6** | `sizing-view-model.ts:56` — stale comment: the chip no longer "echoes what the user typed" (D-4 made it canonical uppercase) | **FIX.** Same class as C1-L2, ruled FIX there for the same reason: false statements do not get to live in the codebase |
+
+### 17.3 P-1 — the §15.5 planning breach is confirmed contained
+
+Verified from the tracked tree and commit contents only, without inspecting the four directories:
+**nothing under `.opencode/`, `.superpowers/calculadora/`, `.superpowers/rfc-018/` or
+`.superpowers/rfc-019/` is tracked, and no commit on this branch touches them.** Every occurrence of
+those names in the branch diff is the directory *name* appearing inside a prohibition clause. The
+breach changed nothing; it stays on the record as a process finding, separate from product code.
+
+### 17.4 The visual gap is now quantified, and it grew
+
+The auditor did not authenticate, start a dev server, or open a browser, and correctly refused to let
+structural coverage stand in for sight. **Ten items still need human eyes**, two of them newly named
+and more specific than §13.5.4's list:
+
+- **Hero centring** — `.lotaje-hero` spans columns 1/3 with `justify-self: center` while the shell
+  reserves an 8-18 ch feedback column, so the figure is plausibly **off-centre**.
+- **Layout stability when the 33-character copy-failure string wraps** — product design §7.5 forbids
+  the jump, and nothing structural can prove it does not happen.
+- Zone 1's `order` + `wrap` reflow, suffix collision in the 88 px fields, the 560 px breakpoint,
+  warning contrast, `.ui-input` applied to a native `<select>`, the touch steppers, the accent flash.
+- **The entire clipboard feature is verified only against test doubles.** No real clipboard write has
+  been observed in this run outside the S-1 spike.
+
+Non-blocking and owner-gated, per §16.7. An owner-provisioned identity exists but no agent may
+authenticate with it.
