@@ -5,32 +5,34 @@
  * item 6, grep-checked in task reports). May import `domain/sizing/*` — the
  * Shared Kernel exists for exactly this.
  *
- * `mount(doc, win)` / `unmount()` take their document and window as EXPLICIT
- * arguments and never reference the bare globals `document`/`window`. This is
- * not a style preference: Task D-6 mounts this same view into a Document
- * Picture-in-Picture window, a different realm (`win.navigator !==
- * window.navigator`, measured in the S-1 spike), and a single global
- * reference is what would break that.
+ * `mount(doc, win, initialState?)` / `unmount()` take their document and window
+ * as EXPLICIT arguments and never reference the bare globals
+ * `document`/`window`. The optional state is a validated C-2 seam, not a
+ * persistence path. This is not a style preference: Task D-6 mounts this same
+ * view into a Document Picture-in-Picture window, a different realm
+ * (`win.navigator !== window.navigator`, measured in the S-1 spike), and a
+ * single global reference is what would break that.
  *
  * Builds the three zones of product design §3 and the method-state switch of
  * §4.1/P4 (distance ⇄ prices; switching CONVERTS, never resets). The host
  * stylesheet supplies the completed context-strip, asset disclosure, hero
- * hierarchy and copy feedback states. Deliberately NOT built here: focus
- * management / select-on-focus / Esc / steppers / Alt-shortcuts (D-5), and
- * persistence (C-2).
+ * hierarchy, copy feedback and touch-stepper states. D-5 owns the root-scoped
+ * focus and keyboard listeners here. Deliberately excluded: persistence
+ * (C-2), the companion adapter (D-6), and companion-only Alt shortcuts (D-7).
  */
 import { resolveAsset } from '../domain/sizing/asset-registry';
 import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
 import { deriveLots, switchMethod, INITIAL_STATE, type LotajeDerived, type LotajeState, type Method } from './sizing-view-model';
 import { formatLots, formatMoney } from './format';
+import { parseDecimal } from './parse-decimal';
 
 /**
  * The Angular host (`pages/calculadora/calculadora-page.component.ts`)
  * creates a container element with this id in its own template. If `mount()`
  * doesn't find one in the given document, it creates one on `doc.body` — a
  * deliberate fallback so a bare companion document (Task D-6, which starts
- * with nothing but an empty body) can call `mount(doc, win)` without first
- * having to know about this id.
+ * with nothing but an empty body) can call `mount(doc, win, initialState?)`
+ * without first having to know about this id.
  */
 export const LOTAJE_MOUNT_ID = 'lotaje-mount';
 
@@ -107,7 +109,7 @@ function syncValue(input: HTMLInputElement, text: string): void {
   if (input.value !== text) input.value = text;
 }
 
-// ---- event handlers (module-level; always read/write the live module state) ----
+// ---- event handlers (stable module-level identities over live mount state) ----
 function setState(patch: Partial<LotajeState>): void {
   currentState = { ...currentState, ...patch };
   render();
@@ -149,6 +151,81 @@ function onSlInput(e: Event): void {
 function onMethodToggleClick(): void {
   currentState = switchMethod(currentState);
   render();
+}
+
+function stepDistance(direction: -1 | 1, multiplier: 1 | 10): void {
+  const parsed = parseDecimal(currentState.distanceText);
+  const baseline = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  const candidate = Math.max(0, baseline + direction * multiplier);
+  const rounded = Math.round(candidate * 1e8) / 1e8;
+  const displayed = Number.isFinite(rounded) ? rounded : candidate;
+  setState({ distanceText: String(displayed) });
+}
+
+function onRootFocusIn(event: FocusEvent): void {
+  if (currentRoot !== event.currentTarget || !refs) return;
+  const target = event.target;
+  const numericTarget =
+    target === refs.balanceInput ||
+    target === refs.riskPctInput ||
+    (refs.questionFields.method === 'distance'
+      ? target === refs.questionFields.input
+      : target === refs.questionFields.entry || target === refs.questionFields.sl);
+  if (numericTarget) (target as HTMLInputElement).select();
+}
+
+function onRootKeyDown(event: KeyboardEvent): void {
+  const root = currentRoot;
+  if (!root || root !== event.currentTarget || !refs || !currentDoc) return;
+  if (
+    event.isComposing ||
+    event.defaultPrevented ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey
+  ) {
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    if (currentState.method === 'distance') {
+      if (currentState.distanceText !== '') setState({ distanceText: '' });
+    } else if (currentState.slText !== '') {
+      setState({ slText: '' });
+    }
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    if (event.shiftKey || currentDoc.activeElement !== event.target) return;
+    const editableTarget =
+      event.target === refs.balanceInput ||
+      event.target === refs.riskPctInput ||
+      event.target === refs.symbolInput ||
+      (refs.questionFields.method === 'distance'
+        ? event.target === refs.questionFields.input
+        : event.target === refs.questionFields.entry || event.target === refs.questionFields.sl);
+    if (!editableTarget) return;
+
+    const copyAction = root.querySelector<HTMLButtonElement>('.lotaje-copy-action');
+    if (!copyAction || copyAction.disabled) return;
+    event.preventDefault();
+    copyAction.click();
+    return;
+  }
+
+  if (
+    (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') ||
+    currentState.method !== 'distance' ||
+    refs.questionFields.method !== 'distance' ||
+    event.target !== refs.questionFields.input ||
+    currentDoc.activeElement !== event.target
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  stepDistance(event.key === 'ArrowUp' ? 1 : -1, event.shiftKey ? 10 : 1);
 }
 
 // ---- copy feedback lifecycle -----------------------------------------------
@@ -522,6 +599,14 @@ function buildZoneQuestionFields(
 ): ZoneQuestionFields {
   container.innerHTML = '';
   if (state.method === 'distance') {
+    const distanceControl = doc.createElement('div');
+    distanceControl.className = 'lotaje-distance-control';
+    const decrement = doc.createElement('button');
+    decrement.type = 'button';
+    decrement.className = 'lotaje-stop-step';
+    decrement.setAttribute('aria-label', 'Disminuir distancia del stop');
+    decrement.textContent = '-';
+    decrement.addEventListener('click', () => stepDistance(-1, 1));
     const field = doc.createElement('div');
     field.className = 'lotaje-field lotaje-field-stop';
     const input = doc.createElement('input');
@@ -536,7 +621,14 @@ function buildZoneQuestionFields(
     unit.className = 'lotaje-field-suffix lotaje-stop-unit';
     unit.textContent = derived.unitLabel;
     field.append(input, unit);
-    container.append(field);
+    const increment = doc.createElement('button');
+    increment.type = 'button';
+    increment.className = 'lotaje-stop-step';
+    increment.setAttribute('aria-label', 'Aumentar distancia del stop');
+    increment.textContent = '+';
+    increment.addEventListener('click', () => stepDistance(1, 1));
+    distanceControl.append(decrement, field, increment);
+    container.append(distanceControl);
     return { method: 'distance', input, unit };
   }
 
@@ -721,12 +813,17 @@ function render(): void {
 
 // ---- mount / unmount --------------------------------------------------------
 /**
- * Builds the Lotaje view into `doc` and starts it at the P2 cold-start state.
+ * Builds the Lotaje view into `doc` from a guarded optional initial state, or
+ * the P2 cold-start defaults when omitted. This seam does not read storage.
  * Idempotent: always tears down any previous mount first (see the module doc
- * above). Looks for an existing `#lotaje-mount` container in `doc`; creates
- * one on `doc.body` if none exists.
+ * above). Looks for an existing `#lotaje-mount` container in `doc`; creates one
+ * on `doc.body` if none exists.
  */
-export function mount(doc: Document, win: Window): void {
+export function mount(
+  doc: Document,
+  win: Window,
+  initialState: LotajeState = INITIAL_STATE,
+): void {
   unmount();
 
   let container = doc.getElementById(LOTAJE_MOUNT_ID);
@@ -739,8 +836,39 @@ export function mount(doc: Document, win: Window): void {
 
   currentDoc = doc;
   currentWindow = win;
-  currentState = INITIAL_STATE;
+  const supplied =
+    initialState !== null && typeof initialState === 'object'
+      ? (initialState as Partial<Record<keyof LotajeState, unknown>>)
+      : {};
+  currentState = {
+    balanceText:
+      typeof supplied.balanceText === 'string' ? supplied.balanceText : INITIAL_STATE.balanceText,
+    riskPctText:
+      typeof supplied.riskPctText === 'string' ? supplied.riskPctText : INITIAL_STATE.riskPctText,
+    symbolText:
+      typeof supplied.symbolText === 'string' ? supplied.symbolText : INITIAL_STATE.symbolText,
+    method:
+      supplied.method === 'distance' || supplied.method === 'prices'
+        ? supplied.method
+        : INITIAL_STATE.method,
+    distanceText:
+      typeof supplied.distanceText === 'string'
+        ? supplied.distanceText
+        : INITIAL_STATE.distanceText,
+    entryText:
+      typeof supplied.entryText === 'string' ? supplied.entryText : INITIAL_STATE.entryText,
+    slText: typeof supplied.slText === 'string' ? supplied.slText : INITIAL_STATE.slText,
+  };
   symbolDisclosureOpen = false;
+
+  const balance = parseDecimal(currentState.balanceText);
+  const riskPct = parseDecimal(currentState.riskPctText);
+  const restored =
+    Number.isFinite(balance) &&
+    balance > 0 &&
+    Number.isFinite(riskPct) &&
+    riskPct > 0 &&
+    currentState.symbolText.trim() !== '';
 
   const root = doc.createElement('div');
   root.className = 'lotaje-root';
@@ -773,20 +901,33 @@ export function mount(doc: Document, win: Window): void {
     methodToggle: zone2.methodToggle,
     answerContainer: zone3,
   };
+
+  root.addEventListener('focusin', onRootFocusIn);
+  root.addEventListener('keydown', onRootKeyDown);
+
+  const initialFocus = !restored
+    ? refs.balanceInput
+    : refs.questionFields.method === 'distance'
+      ? refs.questionFields.input
+      : refs.questionFields.sl;
+  initialFocus.focus();
+  if (doc.activeElement === initialFocus) initialFocus.select();
 }
 
 /**
  * Tears down the mounted view: invalidates pending clipboard settlements,
- * clears the realm-owned feedback timer, removes the root subtree and its
- * descendant listeners, drops every realm/DOM reference, and resets sizing
- * state. D-3 adds no document/window listener; D-5 and D-6 own those separate
- * lifecycles. Safe to call when nothing is mounted. D-6 calls this from
- * `pagehide`.
+ * clears the realm-owned feedback timer, explicitly removes D-5's stable root
+ * focus/key listeners, removes the root subtree and its descendant listeners,
+ * drops every realm/DOM reference, and resets sizing state. No document/window
+ * listener is owned here; D-6 separately owns the companion adapter lifecycle.
+ * Safe to call when nothing is mounted.
  */
 export function unmount(): void {
   mountGeneration += 1;
   copyAttemptGeneration += 1;
   clearCurrentCopyFeedback();
+  currentRoot?.removeEventListener('focusin', onRootFocusIn);
+  currentRoot?.removeEventListener('keydown', onRootKeyDown);
   if (currentRoot?.parentNode) {
     currentRoot.parentNode.removeChild(currentRoot);
   }

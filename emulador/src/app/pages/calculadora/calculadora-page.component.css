@@ -5,9 +5,10 @@
  * cannot scope. Every selector below is namespaced under `.lotaje-` to stay
  * safe as global CSS.
  *
- * The context strip, asset disclosure, hero typography and copy states follow
- * product design §5.2, §7.5 and §9.1-§9.2. Later work owns field focus /
- * steppers (D-5) and persistence (C-2).
+ * The context strip, asset disclosure, hero typography, copy states and D-5
+ * touch steppers follow product design §5.2, §7.5, §9.1-§9.2 and §10. Focus
+ * and keyboard behavior live in the framework-free view; persistence remains
+ * excluded here and belongs to C-2.
  */
 
 .lotaje-page {
@@ -239,6 +240,42 @@
   right: var(--space-2);
 }
 
+.lotaje-distance-control {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+.lotaje-distance-control .lotaje-field-stop {
+  flex: 1;
+  min-width: 0;
+}
+.lotaje-stop-step {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.lotaje-stop-step:active {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+.lotaje-stop-step:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 .lotaje-method-toggle {
   flex-shrink: 0;
   background: transparent;
@@ -371,6 +408,12 @@
   font-size: var(--text-xs);
   max-width: 36ch;
   text-align: left;
+}
+
+@media (hover: none) {
+  .lotaje-stop-step {
+    display: inline-flex;
+  }
 }
 
 @media (max-width: 560px) {

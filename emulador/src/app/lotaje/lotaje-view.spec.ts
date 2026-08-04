@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GENERATED_ASSETS, GENERATED_SOURCE } from '../domain/sizing/asset-registry.generated';
 import { getMountedWindow, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view';
+import type { LotajeState } from './sizing-view-model';
 
 /**
  * New specs for the framework-free view itself (as opposed to the ported/
@@ -15,6 +16,7 @@ import { getMountedWindow, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view
 describe('lotaje-view: mount/unmount', () => {
   let ambientClipboardDescriptor: PropertyDescriptor | undefined;
   let ambientClipboardInstrumented = false;
+  const focusFrames: HTMLIFrameElement[] = [];
 
   afterEach(() => {
     try {
@@ -31,6 +33,7 @@ describe('lotaje-view: mount/unmount', () => {
           ambientClipboardInstrumented = false;
         }
       } finally {
+        for (const frame of focusFrames.splice(0)) frame.remove();
         vi.useRealTimers();
         vi.restoreAllMocks();
       }
@@ -39,6 +42,54 @@ describe('lotaje-view: mount/unmount', () => {
 
   function freshDoc(): Document {
     return document.implementation.createHTMLDocument('lotaje-test');
+  }
+
+  function freshFocusableDoc(): Document {
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    focusFrames.push(frame);
+    return frame.contentDocument!;
+  }
+
+  function state(overrides: Partial<LotajeState> = {}): LotajeState {
+    return {
+      balanceText: '10000',
+      riskPctText: '1',
+      symbolText: 'US30',
+      method: 'distance',
+      distanceText: '45',
+      entryText: '',
+      slText: '',
+      ...overrides,
+    };
+  }
+
+  function dispatchKey(
+    target: Element,
+    key: string,
+    init: KeyboardEventInit = {},
+  ): KeyboardEvent {
+    const EventConstructor = target.ownerDocument.defaultView?.KeyboardEvent ?? KeyboardEvent;
+    const event = new EventConstructor('keydown', {
+      key,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  function dispatchPreventedKey(target: Element, key: string): KeyboardEvent {
+    const EventConstructor = target.ownerDocument.defaultView?.KeyboardEvent ?? KeyboardEvent;
+    const event = new EventConstructor('keydown', {
+      key,
+      bubbles: true,
+      cancelable: true,
+    });
+    event.preventDefault();
+    target.dispatchEvent(event);
+    return event;
   }
 
   function deferred<T>(): {
@@ -758,6 +809,558 @@ describe('lotaje-view: mount/unmount', () => {
 
     // Back to distance: the value survives the round trip (nothing typed is lost).
     expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('50');
+  });
+
+  it('cold two-argument mount focuses Cuenta and selects its complete default text', () => {
+    const doc = freshFocusableDoc();
+
+    mount(doc, window);
+
+    const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    expect(doc.activeElement).toBe(balance);
+    expect(balance.value).toBe('10000');
+    expect(balance.selectionStart).toBe(0);
+    expect(balance.selectionEnd).toBe(5);
+  });
+
+  it('restored Method B context focuses the distance question even when its stop is blank', () => {
+    const doc = freshFocusableDoc();
+
+    mount(doc, window, state({ distanceText: '' }));
+
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    expect(distance.value).toBe('');
+    expect(doc.activeElement).toBe(distance);
+  });
+
+  it('restored Method A context focuses the literal SL input rather than Entrada', () => {
+    const doc = freshFocusableDoc();
+
+    mount(
+      doc,
+      window,
+      state({ method: 'prices', entryText: '40000', slText: '39955' }),
+    );
+
+    const entry = doc.querySelector<HTMLInputElement>('input[name="entry"]')!;
+    const sl = doc.querySelector<HTMLInputElement>('input[name="sl"]')!;
+    expect(entry.value).toBe('40000');
+    expect(sl.value).toBe('39955');
+    expect(doc.activeElement).toBe(sl);
+    expect(doc.activeElement).not.toBe(entry);
+    expect(sl.selectionStart).toBe(0);
+    expect(sl.selectionEnd).toBe(5);
+  });
+
+  it('initial state is copied and guarded per field without retaining the caller object', () => {
+    const caller = {
+      balanceText: '25000',
+      riskPctText: 2,
+      symbolText: 'US30',
+      method: 'bogus',
+      distanceText: 45,
+      entryText: '40000',
+      slText: '39955',
+      unknown: 'discard me',
+    };
+    const doc = freshFocusableDoc();
+
+    mount(doc, window, caller as unknown as LotajeState);
+
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('25000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
+    expect(doc.querySelector('input[name="entry"]')).toBeNull();
+    caller.balanceText = '99999';
+    caller.symbolText = 'XAUUSD';
+    const liveRisk = doc.querySelector<HTMLInputElement>('input[name="riskPct"]')!;
+    liveRisk.dispatchEvent(new Event('input'));
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('25000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+
+    const whitespaceDoc = freshFocusableDoc();
+    mount(whitespaceDoc, window, state({ symbolText: '   ' }));
+    expect(whitespaceDoc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('   ');
+    expect(whitespaceDoc.activeElement).toBe(
+      whitespaceDoc.querySelector('input[name="balance"]'),
+    );
+
+    const infinityDoc = freshFocusableDoc();
+    mount(infinityDoc, window, state({ riskPctText: 'Infinity' }));
+    expect(infinityDoc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe(
+      'Infinity',
+    );
+    expect(infinityDoc.activeElement).toBe(infinityDoc.querySelector('input[name="balance"]'));
+  });
+
+  it('focus selects all five numeric fields but preserves the free-text symbol caret', () => {
+    const doc = freshFocusableDoc();
+    mount(
+      doc,
+      window,
+      state({ entryText: '40000', slText: '39955' }),
+    );
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+
+    const expectSelectedOnFocus = (input: HTMLInputElement): void => {
+      chip.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.focus();
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe(input.value.length);
+    };
+
+    expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="balance"]')!);
+    expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')!);
+    expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="distance"]')!);
+
+    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="entry"]')!);
+    expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="sl"]')!);
+
+    chip.click();
+    const symbol = doc.querySelector<HTMLInputElement>('input[name="symbol"]')!;
+    symbol.setSelectionRange(2, 2);
+    symbol.focus();
+    expect(symbol.selectionStart).toBe(2);
+    expect(symbol.selectionEnd).toBe(2);
+  });
+
+  it('Escape in Method B clears only distance and preserves all context and disclosure state', () => {
+    const doc = freshFocusableDoc();
+    mount(
+      doc,
+      window,
+      state({ entryText: '40000', slText: '39955' }),
+    );
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    const symbol = doc.querySelector<HTMLInputElement>('input[name="symbol"]')!;
+    symbol.focus();
+
+    const escape = dispatchKey(symbol, 'Escape');
+
+    expect(escape.defaultPrevented).toBe(false);
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')?.textContent).toBe(
+      '⇄ precios',
+    );
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(false);
+
+    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    expect(doc.querySelector<HTMLInputElement>('input[name="entry"]')?.value).toBe('40000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="sl"]')?.value).toBe('39955');
+  });
+
+  it('Escape in Method A clears only literal SL and preserves entry, distance memory, and disclosure', () => {
+    const doc = freshFocusableDoc();
+    mount(
+      doc,
+      window,
+      state({ method: 'prices', entryText: '40000', slText: '39955' }),
+    );
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    balance.focus();
+
+    const escape = dispatchKey(balance, 'Escape');
+
+    expect(escape.defaultPrevented).toBe(false);
+    expect(doc.querySelector<HTMLInputElement>('input[name="sl"]')?.value).toBe('');
+    expect(doc.querySelector<HTMLInputElement>('input[name="entry"]')?.value).toBe('40000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')?.textContent).toBe(
+      '⇄ distancia',
+    );
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(false);
+
+    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
+  });
+
+  it('Arrow keys step an FX distance in displayed pips by 1 or 10', () => {
+    const doc = freshFocusableDoc();
+    mount(doc, window, state({ symbolText: 'EURUSD' }));
+    const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    const expectDistance = (value: string): void => {
+      expect(doc.querySelector('.lotaje-stop-unit')?.textContent).toBe('pips');
+      expect(distance.value).toBe(value);
+      expect(doc.querySelector('input[name="distance"]')).toBe(distance);
+    };
+    const step = (key: 'ArrowUp' | 'ArrowDown', shiftKey = false): void => {
+      distance.focus();
+      const event = dispatchKey(distance, key, { shiftKey });
+      expect(event.defaultPrevented).toBe(true);
+    };
+
+    expectDistance('45');
+    step('ArrowUp');
+    expectDistance('46');
+    step('ArrowUp', true);
+    expectDistance('56');
+    step('ArrowDown');
+    expectDistance('55');
+    step('ArrowDown', true);
+    expectDistance('45');
+  });
+
+  it('Arrow keys step a non-FX distance in displayed points by 1 or 10', () => {
+    const doc = freshFocusableDoc();
+    mount(doc, window, state({ symbolText: 'US30' }));
+    const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    const expectDistance = (value: string): void => {
+      expect(doc.querySelector('.lotaje-stop-unit')?.textContent).toBe('pts');
+      expect(distance.value).toBe(value);
+      expect(doc.querySelector('input[name="distance"]')).toBe(distance);
+    };
+    const step = (key: 'ArrowUp' | 'ArrowDown', shiftKey = false): void => {
+      distance.focus();
+      const event = dispatchKey(distance, key, { shiftKey });
+      expect(event.defaultPrevented).toBe(true);
+    };
+
+    expectDistance('45');
+    step('ArrowUp');
+    expectDistance('46');
+    step('ArrowUp', true);
+    expectDistance('56');
+    step('ArrowDown');
+    expectDistance('55');
+    step('ArrowDown', true);
+    expectDistance('45');
+  });
+
+  it('explicit stepping defines blank invalid comma negative and zero-floor behavior without rewriting ordinary typing', () => {
+    const doc = freshFocusableDoc();
+    mount(doc, window, state({ distanceText: '' }));
+    const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    const step = (
+      raw: string,
+      key: 'ArrowUp' | 'ArrowDown',
+      expected: string,
+      shiftKey = false,
+    ): void => {
+      setValue(doc, 'distance', raw);
+      distance.focus();
+      const event = dispatchKey(distance, key, { shiftKey });
+      expect(event.defaultPrevented).toBe(true);
+      expect(distance.value).toBe(expected);
+    };
+
+    step('', 'ArrowUp', '1');
+    step('abc', 'ArrowUp', '10', true);
+    step('abc', 'ArrowDown', '0');
+    step('-3', 'ArrowUp', '1');
+    step('0.5', 'ArrowDown', '0');
+    setValue(doc, 'distance', '1,5');
+    expect(distance.value).toBe('1,5');
+    distance.focus();
+    const commaStep = dispatchKey(distance, 'ArrowUp');
+    expect(commaStep.defaultPrevented).toBe(true);
+    expect(distance.value).toBe('2.5');
+  });
+
+  it('native touch steppers flank only Method B and share its single-step behavior', () => {
+    const doc = freshFocusableDoc();
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    mount(
+      doc,
+      targetWindow(writeText),
+      state({ entryText: '40000', slText: '39955' }),
+    );
+    const wrapper = doc.querySelector<HTMLElement>('.lotaje-distance-control')!;
+    const field = doc.querySelector<HTMLElement>('.lotaje-field-stop')!;
+    const decrement = doc.querySelector<HTMLButtonElement>(
+      '.lotaje-stop-step[aria-label="Disminuir distancia del stop"]',
+    )!;
+    const increment = doc.querySelector<HTMLButtonElement>(
+      '.lotaje-stop-step[aria-label="Aumentar distancia del stop"]',
+    )!;
+    expect(decrement.tagName).toBe('BUTTON');
+    expect(decrement.type).toBe('button');
+    expect(decrement.textContent).toBe('-');
+    expect(increment.tagName).toBe('BUTTON');
+    expect(increment.type).toBe('button');
+    expect(increment.textContent).toBe('+');
+    expect(Array.from(wrapper.children)).toEqual([decrement, field, increment]);
+
+    increment.click();
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('46');
+    decrement.click();
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
+    expect(writeText).not.toHaveBeenCalled();
+
+    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    expect(doc.querySelector('.lotaje-distance-control')).toBeNull();
+    expect(doc.querySelector('.lotaje-stop-step')).toBeNull();
+    const entry = doc.querySelector<HTMLInputElement>('input[name="entry"]')!;
+    const sl = doc.querySelector<HTMLInputElement>('input[name="sl"]')!;
+    const entryBefore = entry.value;
+    const slBefore = sl.value;
+    entry.focus();
+    const entryArrow = dispatchKey(entry, 'ArrowUp');
+    expect(entryArrow.defaultPrevented).toBe(false);
+    expect(entry.value).toBe(entryBefore);
+    sl.focus();
+    const slArrow = dispatchKey(sl, 'ArrowUp');
+    expect(slArrow.defaultPrevented).toBe(false);
+    expect(sl.value).toBe(slBefore);
+  });
+
+  it('Enter copies the exact current lot from every editable field through the target realm and never ambiently or automatically', () => {
+    const targetWriteText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const ambientWriteText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const distanceDoc = freshFocusableDoc();
+    const distanceWindow = targetWindow(targetWriteText);
+    const pricesDoc = freshFocusableDoc();
+    const pricesWindow = targetWindow(targetWriteText);
+    instrumentAmbientClipboard(ambientWriteText);
+
+    mount(distanceDoc, distanceWindow, state());
+    distanceDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
+    expect(targetWriteText).not.toHaveBeenCalled();
+    expect(ambientWriteText).not.toHaveBeenCalled();
+    for (const name of ['balance', 'riskPct', 'symbol', 'distance']) {
+      const input = distanceDoc.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+      input.focus();
+      const enter = dispatchKey(input, 'Enter');
+      expect(enter.defaultPrevented).toBe(true);
+    }
+
+    mount(
+      pricesDoc,
+      pricesWindow,
+      state({ method: 'prices', entryText: '40000', slText: '39955' }),
+    );
+    pricesDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
+    for (const name of ['balance', 'riskPct', 'symbol', 'entry', 'sl']) {
+      const input = pricesDoc.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+      input.focus();
+      const enter = dispatchKey(input, 'Enter');
+      expect(enter.defaultPrevented).toBe(true);
+    }
+
+    expect(distanceWindow).not.toBe(pricesWindow);
+    expect(targetWriteText).toHaveBeenCalledTimes(9);
+    expect(targetWriteText.mock.calls.map(([payload]) => payload)).toEqual(
+      Array<string>(9).fill('2.22'),
+    );
+    expect(ambientWriteText).not.toHaveBeenCalled();
+  });
+
+  it('Enter leaves native copy chip select and stepper activation to native semantics without double fire', () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const contrastDoc = freshFocusableDoc();
+    mount(contrastDoc, targetWindow(writeText), state());
+    const contrastDistance = contrastDoc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    contrastDistance.focus();
+    expect(dispatchKey(contrastDistance, 'Enter').defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledTimes(1);
+
+    writeText.mockClear();
+    const doc = freshFocusableDoc();
+    mount(doc, targetWindow(writeText), state());
+
+    const copy = doc.querySelector<HTMLButtonElement>('.lotaje-copy-action')!;
+    copy.focus();
+    const copyEnter = dispatchKey(copy, 'Enter');
+    copy.click();
+    expect(copyEnter.defaultPrevented).toBe(false);
+    expect(writeText).toHaveBeenCalledTimes(1);
+
+    writeText.mockClear();
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.focus();
+    const chipEnter = dispatchKey(chip, 'Enter');
+    chip.click();
+    expect(chipEnter.defaultPrevented).toBe(false);
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(writeText).not.toHaveBeenCalled();
+
+    const select = doc.querySelector<HTMLSelectElement>('select[name="symbolPreset"]')!;
+    const changeSpy = vi.fn();
+    select.addEventListener('change', changeSpy);
+    select.focus();
+    const selectEnter = dispatchKey(select, 'Enter');
+    select.value = 'XAUUSD';
+    select.dispatchEvent(new Event('change'));
+    expect(selectEnter.defaultPrevented).toBe(false);
+    expect(changeSpy).toHaveBeenCalledTimes(1);
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('XAUUSD');
+    expect(writeText).not.toHaveBeenCalled();
+
+    const increment = doc.querySelector<HTMLButtonElement>(
+      '.lotaje-stop-step[aria-label="Aumentar distancia del stop"]',
+    )!;
+    increment.focus();
+    const incrementEnter = dispatchKey(increment, 'Enter');
+    increment.click();
+    expect(incrementEnter.defaultPrevented).toBe(false);
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('46');
+    expect(writeText).not.toHaveBeenCalled();
+
+    const decrement = doc.querySelector<HTMLButtonElement>(
+      '.lotaje-stop-step[aria-label="Disminuir distancia del stop"]',
+    )!;
+    decrement.focus();
+    const decrementEnter = dispatchKey(decrement, 'Enter');
+    decrement.click();
+    expect(decrementEnter.defaultPrevented).toBe(false);
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('root key filtering prevents only consumed Arrow and editable Enter actions', () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const doc = freshFocusableDoc();
+    mount(doc, targetWindow(writeText), state());
+    const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    balance.focus();
+
+    const balanceArrow = dispatchKey(balance, 'ArrowUp');
+    expect(balanceArrow.defaultPrevented).toBe(false);
+    expect(balance.value).toBe('10000');
+    for (const init of [
+      { shiftKey: true },
+      { isComposing: true },
+      { altKey: true },
+      { ctrlKey: true },
+      { metaKey: true },
+    ]) {
+      const ignoredEnter = dispatchKey(balance, 'Enter', init);
+      expect(ignoredEnter.defaultPrevented).toBe(false);
+    }
+    const alreadyPrevented = dispatchPreventedKey(balance, 'Enter');
+    expect(alreadyPrevented.defaultPrevented).toBe(true);
+    expect(writeText).not.toHaveBeenCalled();
+
+    for (const key of ['m', 'a', 's']) {
+      const shortcut = dispatchKey(balance, key, { altKey: true });
+      expect(shortcut.defaultPrevented).toBe(false);
+    }
+    expect(doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')?.textContent).toBe(
+      '⇄ precios',
+    );
+    expect(doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')?.getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(doc.activeElement).toBe(balance);
+
+    const disabledDoc = freshFocusableDoc();
+    mount(disabledDoc, targetWindow(writeText), state({ distanceText: '' }));
+    const disabledBalance = disabledDoc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    disabledBalance.focus();
+    const disabledEnter = dispatchKey(disabledBalance, 'Enter');
+    expect(disabledEnter.defaultPrevented).toBe(false);
+    expect(writeText).not.toHaveBeenCalled();
+
+    const handledDoc = freshFocusableDoc();
+    mount(handledDoc, targetWindow(writeText), state());
+    const handledDistance = handledDoc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    handledDistance.focus();
+    const handledArrow = dispatchKey(handledDistance, 'ArrowUp');
+    expect(handledArrow.defaultPrevented).toBe(true);
+    expect(handledDistance.value).toBe('46');
+    const handledEnter = dispatchKey(handledDistance, 'Enter');
+    expect(handledEnter.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const handledEscape = dispatchKey(handledDistance, 'Escape');
+    expect(handledEscape.defaultPrevented).toBe(false);
+    expect(handledDistance.value).toBe('');
+  });
+
+  it('unmount removes root focus and key listeners and remount handles each event once', () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    const oldDoc = freshFocusableDoc();
+    mount(oldDoc, targetWindow(writeText), state());
+    const oldRoot = oldDoc.querySelector<HTMLElement>('.lotaje-root')!;
+    const oldBalance = oldDoc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    const oldDistance = oldDoc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    const removeListenerSpy = vi.spyOn(oldRoot, 'removeEventListener');
+
+    unmount();
+
+    const focusRemovals = removeListenerSpy.mock.calls.filter(([type]) => type === 'focusin');
+    const keyRemovals = removeListenerSpy.mock.calls.filter(([type]) => type === 'keydown');
+    expect(focusRemovals).toHaveLength(1);
+    expect(focusRemovals[0]?.[1]).toEqual(expect.any(Function));
+    expect(keyRemovals).toHaveLength(1);
+    expect(keyRemovals[0]?.[1]).toEqual(expect.any(Function));
+
+    const newDoc = freshFocusableDoc();
+    mount(newDoc, targetWindow(writeText), state());
+    oldBalance.setSelectionRange(oldBalance.value.length, oldBalance.value.length);
+    oldBalance.dispatchEvent(
+      new oldDoc.defaultView!.FocusEvent('focusin', { bubbles: true }),
+    );
+    dispatchKey(oldDistance, 'ArrowUp');
+    dispatchKey(oldDistance, 'Escape');
+    dispatchKey(oldDistance, 'Enter');
+    expect(oldBalance.selectionStart).toBe(oldBalance.value.length);
+    expect(oldDistance.value).toBe('45');
+    expect(newDoc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
+    expect(writeText).not.toHaveBeenCalled();
+
+    const newDistance = newDoc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    newDistance.focus();
+    dispatchKey(newDistance, 'ArrowUp');
+    expect(newDistance.value).toBe('46');
+    dispatchKey(newDistance, 'Enter');
+    expect(writeText).toHaveBeenCalledTimes(1);
+  });
+
+  it('D-5 state actions preserve D-4 disclosure and D-3 generation guards', async () => {
+    const pendingWrite = deferred<void>();
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockReturnValueOnce(pendingWrite.promise)
+      .mockResolvedValue(undefined);
+    const target = targetWindow(writeText);
+    const doc = freshFocusableDoc();
+    mount(doc, target, state());
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    distance.focus();
+
+    const firstEnter = dispatchKey(distance, 'Enter');
+    expect(firstEnter.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    dispatchKey(distance, 'ArrowUp');
+    pendingWrite.resolve(undefined);
+    await settleMicrotasks();
+
+    expect(doc.querySelector('.lotaje-copy-feedback')?.textContent).toBe('');
+    expect(doc.querySelector('.lotaje-copy-action--copied')).toBeNull();
+    expect(target.setTimeout).not.toHaveBeenCalled();
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    const escape = dispatchKey(distance, 'Escape');
+    expect(escape.defaultPrevented).toBe(false);
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+
+    setValue(doc, 'distance', '45');
+    distance.focus();
+    const currentEnter = dispatchKey(distance, 'Enter');
+    expect(currentEnter.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledTimes(2);
+    expect(writeText).toHaveBeenLastCalledWith('2.22');
+    await settleMicrotasks();
+    expect(doc.querySelector('.lotaje-copy-feedback')?.textContent).toBe('Copiado');
+    expect(target.setTimeout).toHaveBeenCalledTimes(1);
   });
 
   function setValue(doc: Document, name: string, text: string): void {
