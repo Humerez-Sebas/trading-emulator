@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { GENERATED_ASSETS, GENERATED_SOURCE } from '../domain/sizing/asset-registry.generated';
 import { getMountedWindow, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view';
 
 /**
@@ -206,13 +207,293 @@ describe('lotaje-view: mount/unmount', () => {
     expect(badge()?.hidden).toBe(false); // unrecognised -> heuristic
   });
 
-  it('clicking the symbol chip does nothing (Task D-4 wires the Ficha; D-1 renders it inert)', () => {
+  it('renders a collapsed native symbol chip instead of an always-visible text field', () => {
     const doc = freshDoc();
     mount(doc, window);
-    const before = doc.getElementById(LOTAJE_MOUNT_ID)?.innerHTML;
-    const chip = doc.querySelector<HTMLElement>('.lotaje-symbol-chip')!;
+
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip');
+    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
+    const symbolInput = doc.querySelector<HTMLInputElement>('input[name="symbol"]');
+    const badge = doc.querySelector<HTMLElement>('.lotaje-symbol-badge');
+
+    expect(chip?.tagName).toBe('BUTTON');
+    expect(chip?.type).toBe('button');
+    expect(chip?.querySelector('.lotaje-symbol-value')?.textContent).toBe('Símbolo');
+    expect(chip?.getAttribute('aria-expanded')).toBe('false');
+    expect(chip?.getAttribute('aria-controls')).toBe('lotaje-symbol-disclosure');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.hidden).toBe(true);
+    expect(doc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
+    expect(disclosure?.contains(symbolInput ?? null)).toBe(true);
+    expect(chip?.contains(symbolInput ?? null)).toBe(false);
+    expect(badge?.hidden).toBe(true);
+  });
+
+  it('opens selection, free text and the Ficha from the same chip and toggles closed', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+
     chip.click();
-    expect(doc.getElementById(LOTAJE_MOUNT_ID)?.innerHTML).toBe(before);
+
+    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
+    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
+    const symbolInput = doc.querySelector<HTMLInputElement>('#lotaje-symbol-input');
+    const sheet = doc.querySelector<HTMLElement>('.lotaje-asset-sheet');
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(disclosure?.hidden).toBe(false);
+    expect(doc.querySelector('label[for="lotaje-symbol-preset"]')?.textContent).toBe('Activos');
+    expect(select?.tagName).toBe('SELECT');
+    expect(select?.name).toBe('symbolPreset');
+    expect(doc.querySelector('label[for="lotaje-symbol-input"]')?.textContent).toBe('Otro símbolo');
+    expect(symbolInput?.type).toBe('text');
+    expect(symbolInput?.name).toBe('symbol');
+    expect(symbolInput?.classList.contains('ui-input')).toBe(true);
+    expect(sheet?.tagName).toBe('SECTION');
+    expect(sheet?.getAttribute('aria-labelledby')).toBe('lotaje-asset-sheet-title');
+    expect(sheet?.querySelector('#lotaje-asset-sheet-title')?.textContent).toBe('Ficha del activo');
+
+    chip.click();
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    expect(disclosure?.hidden).toBe(true);
+    expect(doc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
+  });
+
+  it('sources exactly four selectable symbols from GENERATED_ASSETS', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
+
+    const expectedKeys = Object.keys(GENERATED_ASSETS);
+    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
+    expect(select).not.toBeNull();
+    const prompt = select!.querySelector<HTMLOptionElement>('option[value=""]');
+    const generatedOptions = Array.from(select!.options).filter((option) => option.value !== '');
+    expect(prompt?.disabled).toBe(true);
+    expect(prompt?.textContent).toBe('Selecciona un activo');
+    expect(generatedOptions.map((option) => option.value)).toEqual(expectedKeys);
+    expect(generatedOptions.map((option) => option.textContent)).toEqual(expectedKeys);
+    expect(generatedOptions).toHaveLength(4);
+  });
+
+  it('choosing XAUUSD resizes through the live state, preserves context, and closes the disclosure', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+    setValue(doc, 'balance', '5000');
+    setValue(doc, 'riskPct', '1');
+    setValue(doc, 'distance', '50');
+    const balanceInput = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    const riskInput = doc.querySelector<HTMLInputElement>('input[name="riskPct"]')!;
+    const distanceInput = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+    const methodToggle = doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!;
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')!;
+    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
+    expect(select).not.toBeNull();
+
+    select!.value = 'XAUUSD';
+    select!.dispatchEvent(new Event('change'));
+
+    expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('0.01');
+    expect(chip.querySelector('.lotaje-symbol-value')?.textContent).toBe('XAUUSD');
+    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('XAUUSD');
+    expect(select!.value).toBe('XAUUSD');
+    expect(doc.querySelector<HTMLElement>('.lotaje-symbol-badge')?.hidden).toBe(true);
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    expect(disclosure.hidden).toBe(true);
+    expect(balanceInput.value).toBe('5000');
+    expect(riskInput.value).toBe('1');
+    expect(distanceInput.value).toBe('50');
+    expect(methodToggle.textContent).toBe('⇄ precios');
+    expect(doc.querySelector('input[name="balance"]')).toBe(balanceInput);
+    expect(doc.querySelector('input[name="riskPct"]')).toBe(riskInput);
+    expect(doc.querySelector('input[name="distance"]')).toBe(distanceInput);
+  });
+
+  it('typing free text updates the chip, sizing and heuristic badge while disclosure stays open', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+    setValue(doc, 'balance', '10000');
+    setValue(doc, 'riskPct', '1');
+    setValue(doc, 'distance', '45');
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
+    const symbolInput = doc.querySelector<HTMLInputElement>('input[name="symbol"]');
+    expect(disclosure).not.toBeNull();
+    expect(symbolInput).not.toBeNull();
+
+    symbolInput!.value = 'EURUSD';
+    symbolInput!.dispatchEvent(new Event('input'));
+
+    expect(chip.querySelector('.lotaje-symbol-value')?.textContent).toBe('EURUSD');
+    expect(doc.querySelector<HTMLElement>('.lotaje-symbol-badge')?.hidden).toBe(false);
+    expect(doc.querySelector('.lotaje-symbol-badge')?.textContent).toBe('heurística');
+    expect(doc.querySelector('.lotaje-stop-unit')?.textContent).toBe('pips');
+    expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('0.22');
+    expect(doc.querySelector('input[name="symbol"]')).toBe(symbolInput);
+    expect(symbolInput!.value).toBe('EURUSD');
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(disclosure!.hidden).toBe(false);
+  });
+
+  it('renders the full generated XAUUSD Ficha with derived point size and dated provenance', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
+    setValue(doc, 'symbol', 'XAUUSD');
+    const rows = Array.from(
+      doc.querySelectorAll<HTMLElement>('.lotaje-asset-sheet [data-asset-field]'),
+    );
+
+    expect(rows.map((row) => row.dataset['assetField'])).toEqual([
+      'contractSize',
+      'tickSize',
+      'pointSize',
+      'pipSize',
+      'volumeStep',
+      'volumeMin',
+      'currency',
+      'aliases',
+      'source',
+    ]);
+    expect(rows.map((row) => row.querySelector('dt')?.textContent)).toEqual([
+      'Contrato',
+      'Tick',
+      'Punto',
+      'Pip',
+      'Paso de volumen',
+      'Volumen mínimo',
+      'Divisa',
+      'Alias',
+      'Procedencia',
+    ]);
+    expect(rows.map((row) => row.querySelector('dd')?.textContent)).toEqual([
+      '100',
+      '0.01',
+      String(10 ** -GENERATED_ASSETS['XAUUSD'].digits),
+      'No aplica',
+      '0.01',
+      '0.01',
+      'USD',
+      'No disponible',
+      GENERATED_SOURCE,
+    ]);
+    const source = rows.at(-1)?.querySelector('dd')?.textContent;
+    expect(source).toBe(GENERATED_SOURCE);
+    expect(source).toContain('Five Percent Online Ltd');
+    expect(source).toContain('2026-08-03');
+  });
+
+  it('renders heuristic EURUSD metadata with honest unavailable rows', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
+    setValue(doc, 'symbol', 'EURUSD');
+    const rows = Array.from(
+      doc.querySelectorAll<HTMLElement>('.lotaje-asset-sheet [data-asset-field]'),
+    );
+    const values = rows.map((row) => row.querySelector('dd')?.textContent);
+
+    expect(values).toEqual([
+      '100000',
+      'No disponible',
+      'No disponible',
+      '0.0001',
+      'No disponible',
+      'No disponible',
+      'No disponible',
+      'No disponible',
+      'heurística',
+    ]);
+    expect(rows).toHaveLength(9);
+    expect(doc.querySelector('.lotaje-asset-sheet')?.textContent).not.toContain(
+      'Five Percent Online Ltd',
+    );
+    expect(doc.querySelector('.lotaje-asset-sheet')?.textContent).not.toContain('2026-08-03');
+  });
+
+  it('contains no unit control and keeps the stop unit as a derived label', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
+    setValue(doc, 'symbol', 'EURUSD');
+    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
+    expect(disclosure).not.toBeNull();
+    const controls = Array.from(
+      disclosure!.querySelectorAll<HTMLElement>('button, input, select, textarea'),
+    );
+    const select = disclosure!.querySelector<HTMLSelectElement>('select[name="symbolPreset"]');
+    const symbolInput = disclosure!.querySelector<HTMLInputElement>('input[name="symbol"]');
+
+    expect(controls).toEqual([select, symbolInput]);
+    expect(disclosure!.querySelector('[name*="unit" i]')).toBeNull();
+    expect(disclosure!.querySelector('input[type="checkbox"], input[type="radio"]')).toBeNull();
+    expect(disclosure!.querySelector('.lotaje-asset-sheet button')).toBeNull();
+    const stopUnit = doc.querySelector<HTMLElement>('.lotaje-stop-unit');
+    expect(stopUnit?.tagName).toBe('SPAN');
+    expect(stopUnit?.textContent).toBe('pips');
+    expect(stopUnit?.hasAttribute('role')).toBe(false);
+    expect(stopUnit?.hasAttribute('tabindex')).toBe(false);
+  });
+
+  it('preserves D-3 target-realm copy after symbol selection and disclosure renders', () => {
+    const doc = freshDoc();
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    mount(doc, targetWindow(writeText));
+    setValue(doc, 'balance', '10000');
+    setValue(doc, 'riskPct', '1');
+    setValue(doc, 'distance', '45');
+    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    chip.click();
+    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
+    expect(select).not.toBeNull();
+    select!.value = 'US30';
+    select!.dispatchEvent(new Event('change'));
+    chip.click();
+    chip.click();
+
+    doc.querySelector<HTMLButtonElement>('.lotaje-copy-action')!.click();
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith('2.22');
+  });
+
+  it('repeats open-close cycles and remounts closed without duplicate or leaked symbol state', () => {
+    const firstDoc = freshDoc();
+    mount(firstDoc, window);
+    const chip = firstDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      chip.click();
+      expect(chip.getAttribute('aria-expanded')).toBe('true');
+      expect(firstDoc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
+      expect(firstDoc.querySelectorAll('#lotaje-symbol-preset')).toHaveLength(1);
+      expect(firstDoc.querySelectorAll('input[name="symbol"]')).toHaveLength(1);
+      expect(firstDoc.querySelectorAll('.lotaje-asset-sheet')).toHaveLength(1);
+      chip.click();
+      expect(chip.getAttribute('aria-expanded')).toBe('false');
+      expect(firstDoc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(true);
+    }
+    chip.click();
+    setValue(firstDoc, 'symbol', 'EURUSD');
+    unmount();
+
+    const secondDoc = freshDoc();
+    mount(secondDoc, window);
+    const secondChip = secondDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip');
+    const secondDisclosure = secondDoc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
+    const secondSelect = secondDoc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
+    const secondSymbolInput = secondDoc.querySelector<HTMLInputElement>('input[name="symbol"]');
+    expect(secondDoc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
+    expect(secondDisclosure?.hidden).toBe(true);
+    expect(secondChip?.getAttribute('aria-expanded')).toBe('false');
+    expect(secondSelect).not.toBeNull();
+    expect(Array.from(secondSelect!.options).filter((option) => option.value !== '')).toHaveLength(4);
+    expect(secondSymbolInput?.value).toBe('');
+    expect(secondDisclosure?.contains(secondSymbolInput ?? null)).toBe(true);
+    expect(secondChip?.querySelector('.lotaje-symbol-value')?.textContent).toBe('Símbolo');
+    expect(secondDoc.querySelector<HTMLElement>('.lotaje-symbol-badge')?.hidden).toBe(true);
   });
 
   it('renders a real lot as a native named copy button with the lot label and discreet glyph', () => {

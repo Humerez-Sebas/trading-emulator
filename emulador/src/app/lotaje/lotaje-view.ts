@@ -14,11 +14,13 @@
  *
  * Builds the three zones of product design §3 and the method-state switch of
  * §4.1/P4 (distance ⇄ prices; switching CONVERTS, never resets). The host
- * stylesheet supplies the completed context-strip, hero hierarchy and copy
- * feedback states. Deliberately NOT built here: the Ficha del activo (D-4),
- * focus management / select-on-focus / Esc / steppers / Alt-shortcuts (D-5),
- * and persistence (C-2).
+ * stylesheet supplies the completed context-strip, asset disclosure, hero
+ * hierarchy and copy feedback states. Deliberately NOT built here: focus
+ * management / select-on-focus / Esc / steppers / Alt-shortcuts (D-5), and
+ * persistence (C-2).
  */
+import { resolveAsset } from '../domain/sizing/asset-registry';
+import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
 import { deriveLots, switchMethod, INITIAL_STATE, type LotajeDerived, type LotajeState, type Method } from './sizing-view-model';
 import { formatLots, formatMoney } from './format';
 
@@ -47,6 +49,7 @@ let refs: Refs | null = null;
 let mountGeneration = 0;
 let copyAttemptGeneration = 0;
 let activeFeedbackTimer: { window: Window; id: number } | null = null;
+let symbolDisclosureOpen = false;
 
 const COPY_FEEDBACK_DURATION_MS = 1200;
 const COPY_FAILURE = 'No se pudo copiar — selecciona y copia';
@@ -55,10 +58,27 @@ type ZoneQuestionFields =
   | { method: 'distance'; input: HTMLInputElement; unit: HTMLElement }
   | { method: 'prices'; entry: HTMLInputElement; sl: HTMLInputElement };
 
+interface AssetValueRefs {
+  contractSize: HTMLElement;
+  tickSize: HTMLElement;
+  pointSize: HTMLElement;
+  pipSize: HTMLElement;
+  volumeStep: HTMLElement;
+  volumeMin: HTMLElement;
+  currency: HTMLElement;
+  aliases: HTMLElement;
+  source: HTMLElement;
+}
+
 interface Refs {
   // Zone 1 — structure never changes; fields are synced in place.
+  symbolChip: HTMLButtonElement;
+  symbolValue: HTMLElement;
   symbolInput: HTMLInputElement;
+  symbolSelect: HTMLSelectElement;
   symbolBadge: HTMLElement;
+  symbolDisclosure: HTMLElement;
+  assetValues: AssetValueRefs;
   balanceInput: HTMLInputElement;
   riskPctInput: HTMLInputElement;
   riskUsd: HTMLElement;
@@ -101,6 +121,21 @@ function onRiskPctInput(e: Event): void {
 }
 function onSymbolInput(e: Event): void {
   setState({ symbolText: (e.target as HTMLInputElement).value });
+}
+function setSymbolDisclosureOpen(open: boolean): void {
+  symbolDisclosureOpen = open;
+  if (!refs) return;
+  refs.symbolChip.setAttribute('aria-expanded', String(open));
+  refs.symbolDisclosure.hidden = !open;
+}
+function onSymbolChipClick(): void {
+  setSymbolDisclosureOpen(!symbolDisclosureOpen);
+}
+function onSymbolPresetChange(e: Event): void {
+  const symbol = (e.target as HTMLSelectElement).value;
+  if (!Object.prototype.hasOwnProperty.call(GENERATED_ASSETS, symbol)) return;
+  setState({ symbolText: symbol });
+  setSymbolDisclosureOpen(false);
 }
 function onDistanceInput(e: Event): void {
   setState({ distanceText: (e.target as HTMLInputElement).value });
@@ -267,23 +302,105 @@ function onCopyActionClick(
 }
 
 // ---- Zone 1 · Contexto ----------------------------------------------------
+function appendAssetRow(
+  doc: Document,
+  list: HTMLDListElement,
+  field: keyof AssetValueRefs,
+  label: string,
+): HTMLElement {
+  const row = doc.createElement('div');
+  row.className = 'lotaje-asset-row';
+  row.setAttribute('data-asset-field', field);
+  const term = doc.createElement('dt');
+  term.textContent = label;
+  const value = doc.createElement('dd');
+  row.append(term, value);
+  list.append(row);
+  return value;
+}
+
+function buildAssetSheet(doc: Document): { root: HTMLElement; values: AssetValueRefs } {
+  const root = doc.createElement('section');
+  root.className = 'lotaje-asset-sheet';
+  root.setAttribute('aria-labelledby', 'lotaje-asset-sheet-title');
+  const title = doc.createElement('h2');
+  title.id = 'lotaje-asset-sheet-title';
+  title.textContent = 'Ficha del activo';
+  const list = doc.createElement('dl');
+  const values: AssetValueRefs = {
+    contractSize: appendAssetRow(doc, list, 'contractSize', 'Contrato'),
+    tickSize: appendAssetRow(doc, list, 'tickSize', 'Tick'),
+    pointSize: appendAssetRow(doc, list, 'pointSize', 'Punto'),
+    pipSize: appendAssetRow(doc, list, 'pipSize', 'Pip'),
+    volumeStep: appendAssetRow(doc, list, 'volumeStep', 'Paso de volumen'),
+    volumeMin: appendAssetRow(doc, list, 'volumeMin', 'Volumen mínimo'),
+    currency: appendAssetRow(doc, list, 'currency', 'Divisa'),
+    aliases: appendAssetRow(doc, list, 'aliases', 'Alias'),
+    source: appendAssetRow(doc, list, 'source', 'Procedencia'),
+  };
+  root.append(title, list);
+  return { root, values };
+}
+
+function syncAssetValue(target: HTMLElement, value: string): void {
+  target.textContent = value;
+  target.classList.toggle(
+    'lotaje-asset-value--unavailable',
+    value === 'No disponible' || value === 'No aplica',
+  );
+}
+
+function syncAssetSheet(values: AssetValueRefs, symbolText: string): void {
+  const resolved = resolveAsset(symbolText.trim());
+  const unavailable = 'No disponible';
+  syncAssetValue(values.contractSize, String(resolved.contractSize));
+  syncAssetValue(values.tickSize, resolved.tickSize === null ? unavailable : String(resolved.tickSize));
+  syncAssetValue(
+    values.pointSize,
+    resolved.digits === null ? unavailable : String(10 ** -resolved.digits),
+  );
+  syncAssetValue(values.pipSize, resolved.pipSize === null ? 'No aplica' : String(resolved.pipSize));
+  syncAssetValue(
+    values.volumeStep,
+    resolved.volumeStep === null ? unavailable : String(resolved.volumeStep),
+  );
+  syncAssetValue(
+    values.volumeMin,
+    resolved.volumeMin === null ? unavailable : String(resolved.volumeMin),
+  );
+  syncAssetValue(values.currency, resolved.currency || unavailable);
+  syncAssetValue(values.aliases, unavailable);
+  syncAssetValue(
+    values.source,
+    resolved.source === 'heuristic' ? 'heurística' : resolved.source,
+  );
+}
+
 function buildZoneContext(
   doc: Document,
   state: LotajeState,
   derived: LotajeDerived,
 ): { root: HTMLElement } & Pick<
   Refs,
-  'symbolInput' | 'symbolBadge' | 'balanceInput' | 'riskPctInput' | 'riskUsd'
+  | 'symbolChip'
+  | 'symbolValue'
+  | 'symbolInput'
+  | 'symbolSelect'
+  | 'symbolBadge'
+  | 'symbolDisclosure'
+  | 'assetValues'
+  | 'balanceInput'
+  | 'riskPctInput'
+  | 'riskUsd'
 > {
   const root = doc.createElement('section');
   root.className = 'lotaje-zone lotaje-zone--context';
   root.setAttribute('aria-label', 'Contexto');
 
-  // DOM order is balance -> risk -> symbol so the NATURAL tab order matches
-  // product design §7.1/§7.2 ("cuenta -> riesgo -> símbolo -> stop"). The
-  // visual order (symbol chip first) is achieved with CSS `order`, not DOM
-  // order — the two deliberately diverge (§7.1: "el orden del DOM sirve a la
-  // accesibilidad; el foco inicial sirve a la velocidad").
+  // DOM order is balance -> risk -> symbol chip/disclosure so the natural tab
+  // order reaches the context before the stop. The visual order (symbol chip
+  // first) is achieved with CSS `order`, not DOM order — the two deliberately
+  // diverge (product design §7.1).
   const balanceField = doc.createElement('div');
   balanceField.className = 'lotaje-field lotaje-field-balance';
   const balanceInput = doc.createElement('input');
@@ -318,27 +435,82 @@ function buildZoneContext(
   riskUsd.className = 'lotaje-risk-usd';
   riskUsd.textContent = `· ${formatMoney(derived.requestedRiskUsd)}`;
 
-  const chip = doc.createElement('div');
+  const chip = doc.createElement('button');
+  chip.type = 'button';
   chip.className = 'lotaje-symbol-chip';
-  const symbolInput = doc.createElement('input');
-  symbolInput.type = 'text';
-  symbolInput.name = 'symbol';
-  symbolInput.className = 'ui-input lotaje-symbol-input';
-  symbolInput.setAttribute('aria-label', 'Símbolo');
-  symbolInput.placeholder = 'Símbolo';
-  symbolInput.value = state.symbolText;
-  symbolInput.addEventListener('input', onSymbolInput);
+  chip.setAttribute('aria-expanded', 'false');
+  chip.setAttribute('aria-controls', 'lotaje-symbol-disclosure');
+  chip.addEventListener('click', onSymbolChipClick);
+  const symbolValue = doc.createElement('span');
+  symbolValue.className = 'lotaje-symbol-value';
+  const trimmedSymbol = state.symbolText.trim();
+  symbolValue.textContent = trimmedSymbol === '' ? 'Símbolo' : resolveAsset(trimmedSymbol).symbol;
   const symbolBadge = doc.createElement('span');
   symbolBadge.className = 'lotaje-symbol-badge';
   symbolBadge.textContent = 'heurística';
   symbolBadge.hidden = !derived.isHeuristic;
-  // No click handler: the chip opens the Ficha del activo (Task D-4). D-1
-  // renders it inert on purpose — see the task brief §7.
-  chip.append(symbolInput, symbolBadge);
+  chip.append(symbolValue, symbolBadge);
 
-  root.append(balanceField, riskField, riskUsd, chip);
+  const symbolDisclosure = doc.createElement('div');
+  symbolDisclosure.id = 'lotaje-symbol-disclosure';
+  symbolDisclosure.className = 'lotaje-symbol-disclosure';
+  symbolDisclosure.hidden = true;
+  const picker = doc.createElement('div');
+  picker.className = 'lotaje-symbol-picker';
+  const presetLabel = doc.createElement('label');
+  presetLabel.htmlFor = 'lotaje-symbol-preset';
+  presetLabel.textContent = 'Activos';
+  const symbolSelect = doc.createElement('select');
+  symbolSelect.id = 'lotaje-symbol-preset';
+  symbolSelect.name = 'symbolPreset';
+  symbolSelect.className = 'ui-input';
+  const prompt = doc.createElement('option');
+  prompt.value = '';
+  prompt.disabled = true;
+  prompt.textContent = 'Selecciona un activo';
+  symbolSelect.append(prompt);
+  for (const symbol of Object.keys(GENERATED_ASSETS)) {
+    const option = doc.createElement('option');
+    option.value = symbol;
+    option.textContent = symbol;
+    symbolSelect.append(option);
+  }
+  symbolSelect.value = Object.prototype.hasOwnProperty.call(GENERATED_ASSETS, trimmedSymbol.toUpperCase())
+    ? trimmedSymbol.toUpperCase()
+    : '';
+  symbolSelect.addEventListener('change', onSymbolPresetChange);
+  const symbolLabel = doc.createElement('label');
+  symbolLabel.htmlFor = 'lotaje-symbol-input';
+  symbolLabel.textContent = 'Otro símbolo';
+  const symbolInput = doc.createElement('input');
+  symbolInput.id = 'lotaje-symbol-input';
+  symbolInput.type = 'text';
+  symbolInput.name = 'symbol';
+  symbolInput.className = 'ui-input lotaje-symbol-input';
+  symbolInput.autocomplete = 'off';
+  symbolInput.value = state.symbolText;
+  symbolInput.addEventListener('input', onSymbolInput);
+  picker.append(presetLabel, symbolSelect, symbolLabel, symbolInput);
 
-  return { root, symbolInput, symbolBadge, balanceInput, riskPctInput, riskUsd };
+  const assetSheet = buildAssetSheet(doc);
+  syncAssetSheet(assetSheet.values, state.symbolText);
+  symbolDisclosure.append(picker, assetSheet.root);
+
+  root.append(balanceField, riskField, riskUsd, chip, symbolDisclosure);
+
+  return {
+    root,
+    symbolChip: chip,
+    symbolValue,
+    symbolInput,
+    symbolSelect,
+    symbolBadge,
+    symbolDisclosure,
+    assetValues: assetSheet.values,
+    balanceInput,
+    riskPctInput,
+    riskUsd,
+  };
 }
 
 // ---- Zone 2 · La pregunta --------------------------------------------------
@@ -514,8 +686,15 @@ function render(): void {
   syncValue(refs.balanceInput, currentState.balanceText);
   syncValue(refs.riskPctInput, currentState.riskPctText);
   syncValue(refs.symbolInput, currentState.symbolText);
+  const trimmedSymbol = currentState.symbolText.trim();
+  const canonicalSymbol = resolveAsset(trimmedSymbol).symbol;
+  refs.symbolValue.textContent = trimmedSymbol === '' ? 'Símbolo' : canonicalSymbol;
+  refs.symbolSelect.value = Object.prototype.hasOwnProperty.call(GENERATED_ASSETS, canonicalSymbol)
+    ? canonicalSymbol
+    : '';
   refs.riskUsd.textContent = `· ${formatMoney(derived.requestedRiskUsd)}`;
   refs.symbolBadge.hidden = !derived.isHeuristic;
+  syncAssetSheet(refs.assetValues, currentState.symbolText);
 
   // Zone 2 — rebuilt ONLY on an actual method change (a discrete click, never
   // an implicit side effect of typing a keystroke); otherwise synced in place
@@ -561,6 +740,7 @@ export function mount(doc: Document, win: Window): void {
   currentDoc = doc;
   currentWindow = win;
   currentState = INITIAL_STATE;
+  symbolDisclosureOpen = false;
 
   const root = doc.createElement('div');
   root.className = 'lotaje-root';
@@ -578,8 +758,13 @@ export function mount(doc: Document, win: Window): void {
   currentRoot = root;
 
   refs = {
+    symbolChip: zone1.symbolChip,
+    symbolValue: zone1.symbolValue,
     symbolInput: zone1.symbolInput,
+    symbolSelect: zone1.symbolSelect,
     symbolBadge: zone1.symbolBadge,
+    symbolDisclosure: zone1.symbolDisclosure,
+    assetValues: zone1.assetValues,
     balanceInput: zone1.balanceInput,
     riskPctInput: zone1.riskPctInput,
     riskUsd: zone1.riskUsd,
@@ -610,4 +795,5 @@ export function unmount(): void {
   currentDoc = null;
   currentWindow = null;
   currentState = INITIAL_STATE;
+  symbolDisclosureOpen = false;
 }
