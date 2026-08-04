@@ -290,13 +290,27 @@ Separator confirmed by S-1.c. Flash `--accent` for ~1.2 s via `--duration-fast`/
 Failure is **visible** (`'No se pudo copiar — selecciona y copia'`), never a silent false success.
 Disabled — not hidden — during honest states, so the layout does not jump.
 
-### Task D-4 — Ficha del activo
+### Task D-4 — Ficha del activo **+ the symbol chip's disclosure model**
 Discloses `contractSize`, `tickSize`, `pointSize`, `pipSize`, `volumeStep`, `volumeMin`, currency,
 aliases and **provenance with its date**. Opens from the symbol chip, unchanged by D-21.
 
 **D-21 (owner, 2026-08-03):** the companion's **contract line is removed** — with it the
 `$/point` guard-rail that this task used to add. The Ficha itself is untouched. Authority and
 scope: `.superpowers/rfc-020/dev-log.md` §8.6; product design §3.3.
+
+**Scope extension (orchestrator, after the D-1 audit — dev-log §13.3, §13.5).** D-1 shipped the
+symbol chip as an **always-visible free-text input with no press behaviour and no selection list**,
+because several ported regression claims are inexpressible through the DOM without some way to set a
+symbol. That was accepted as an **interim** state by the D-1 audit. It leaves product design **§3.1**
+— *«un chip pulsable, no un desplegable siempre abierto… Pulsarlo abre selección + texto libre»* —
+implemented by no task, so **D-4 now owns it**:
+
+- The chip becomes **pressable**; pressing it opens **selection + free text** (§3.1), alongside the
+  Ficha it already opens (§5.2).
+- **The selection list must not import from `components/*`** — `ui-dropdown` is Angular and the view
+  is framework-free and must mount into the PiP window (D-6). Source the options without it.
+- D-1's re-expressed L8 test proves the *claim* (a picked symbol re-sizes through the registry) but
+  no longer proves a rendered list exists; D-4 restores that coverage.
 
 ### Task D-5 — Focus, select-on-focus, `Esc`, steppers
 Initial focus → **stop field** when context is restored; → **Cuenta** on cold start (P2). All numeric

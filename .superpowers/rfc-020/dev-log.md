@@ -1335,3 +1335,101 @@ The auditor is asked to quantify the residual risk and to say what can be closed
 item:** a visual pass on `/calculadora` before the PR merges is the only thing that closes it, and it
 needs the owner's own logged-in session.
 
+### 13.5 D-1 audit — **NOT PASS** (0 Critical / **1 High** / 0 Medium / 3 Low)
+
+Report: `.superpowers/rfc-020/d1-audit-report.md`. Tree left as found.
+
+| Gate (auditor's own run) | Result |
+| :--- | :--- |
+| tsc app / tsc spec | exit 0 (both) |
+| lint | `All files pass linting.` exit 0 |
+| `ng test` | `Test Files 83 passed (83)` · `Tests 1125 passed (1125)`, exit 0 |
+| `npm run build` | `Initial total 612.58 kB`, exit 0 — **no new chunk types, no vitest sentinel, no circular-dependency warning** |
+
+Arithmetic re-derived: 1071 (79 files) → 1125 (83). `git diff --name-status … '*.spec.ts'` = exactly
+one `M`.
+
+**The decisive check passed — the ported regressions are load-bearing.** Four mutations:
+`parseDecimal` → `parseFloat` = **5 red** (including the XAUUSD `2650,50 → 2648,00` case);
+`type="number"` = **7 red**; a canonicalising write-back = **4 red**; removing the Method-B money-bug
+guard = **1 red**. The old file had 24 `.set()`/`componentInstance.` lines; the new one has **none**.
+**The re-expression argument holds** — asserting the rendered figure against a real kernel call
+retains full detection power. **All 26 surviving v1 claims were matched row by row against the diff**,
+and `risk-slider.component.{ts,spec.ts}` is byte-identical to `ad80b9f`.
+
+#### 13.5.1 **D1-H1 (HIGH)** — the «pips» suffix labels a field consumed as price units
+
+`sizing-view-model.ts:90` derives the unit label from `pipSize`; `:96`/`:109` pass the typed value
+**straight into `lotsForRiskDistance(riskUsd, distanceInPrice, contractSize)` with no conversion.**
+Measured by running the committed `deriveLots` (balance `10 000`, risk `1 %`):
+
+| Symbol | suffix | types | **rendered** | correct | warning |
+| :--- | :--- | ---: | ---: | ---: | :--- |
+| `EURUSD` | **pips** | `45` | **0.01** | **0.22** | `El mínimo de 0.01 lotes arriesga $45000.00…` |
+| `US30` | pts | `50` | 2.00 | 2.00 | none |
+
+**Two harms.** The lot is wrong by the pip factor — *under*-sized, the safe direction, which is why
+this is High and not Critical. But the **stated risk is wrong by 10 000× in the dangerous
+direction**: `$45 000` against a true `$4.50`, printed on the figure §3.1 calls *«el ancla honesta de
+toda la herramienta»*. It contradicts §4.2, §4.4, RFC §1.3, and §4.1's mitigation #2 — **one of only
+two left after D-21 removed the third.** It also reaches `switchMethod`, which writes `|entry − sl|`
+into the «pips» field.
+
+**Why no gate caught it:** `sizing-view-model.spec.ts:110` uses EURUSD with a **price-unit** distance
+while `:185` asserts `unitLabel === 'pips'` for GBPJPY — the two facts never meet in one test.
+
+**It was undeclared.** The report's §9.1 records only *"unit suffix abbreviated to pts/pips"*.
+
+**Ruling: fix by conversion, not by relabelling.** Product design §4.2 is frozen — the unit is derived
+per symbol, **pips** for FX. The design wants pip-denominated entry; the code never implemented it.
+Forcing `pts` everywhere would override a frozen decision. So: `pipSize !== null` → 1 typed unit =
+`pipSize` price units; `pipSize === null` → 1 price unit, **unchanged** (the `pts` path is pinned by
+the ported acceptance case). Three sites: the value into `lotsForRiskDistance`, **`actualRiskUsd` at
+`:120`** (the `$45 000` half — fixing the lot and leaving the risk is not a fix), and `switchMethod`
+in both directions. The helper goes in the view's derivation layer, **never** in `domain/sizing/*`
+(owner ruling Q1).
+
+**Status: dispatched, then stopped by the owner before it committed anything.** Verified: HEAD
+remained `ff4fa91`, tree clean. **This is the first item of the next session.**
+
+#### 13.5.2 Deviation rulings — all six accepted
+
+**The symbol chip: ACCEPTED as interim**, with a condition. The chip has **no** click handler (proven
+— clicking leaves `innerHTML` byte-identical), so "opens nothing yet" is honoured; v1 already had a
+free-text symbol field, so this **preserves capability rather than inventing it**. **L8 preserves its
+claim** — the dropdown was the *mechanism*, never the claim, and the re-expression now crosses the
+DOM where v1 called `onAssetPick()` directly. **The auditor's condition:** the chip is the *enabler*
+of D1-H1, so it is acceptable **once H1 closes, not alongside it**.
+
+`ViewEncapsulation.None`: **ACCEPTED, verified leak-proof** — every rule's subject is a `.lotaje-*`
+class, the only bare-element selectors are gated behind one, no `:root`/`*`/`html`/`body`, and
+`.lotaje-` appears nowhere else in `emulador/src`. Angular does **not** remove `None` styles on
+destroy, so the sheet persists once visited; residual risk nil today. **The `lotaje-` prefix is
+hereby reserved** — no other surface may adopt it. It also *fixed* a pre-existing P6 violation (v1
+used `--down` for the warning). Container fallback, fixed SL reconstruction, the money-bug guard and
+the DOM-vs-visual order: **all accepted**, tab order confirmed as §7.2's cuenta → riesgo → símbolo →
+stop.
+
+#### 13.5.3 The three Lows
+
+- **D1-L1 (owner-visible, no-fix here).** Cold start renders *«La cuenta, el riesgo y la entrada deben
+  ser valores positivos.»* while cuenta and riesgo **are** positive and **no «entrada» field exists**
+  in Method B. §8.2 arguably calls for a third message. **The §8 messages are frozen verbatim, so
+  inventing a third is a product decision, not an implementer's** — it goes to the owner.
+- **D1-L2 → assigned.** §3.1's press-to-open chip + selection list is now written into the plan's
+  **Task D-4** (Wave 4), with the auditor's condition that the list must be sourced **without
+  importing `components/*`** (the view is framework-free and must mount into the PiP window).
+- **D1-L3 → folded into the H1 fix.** No DOM assertion that the warning *accompanies* the figure;
+  exact location supplied (`calculadora-page.component.spec.ts:217-226`).
+
+#### 13.5.4 What the auditor closed on the visual gap, and what remains
+
+Two slices closed **structurally**: `.ui-input` is defined in `src/styles/ui-primitives.css` and
+loaded **globally** via `angular.json:33`, so the vanilla DOM really is themed; and **all 27
+`var(--token)` references resolve** against the global definitions (0 missing) — an undefined token
+collapses silently and **no test would see it**.
+
+**What still needs human eyes:** the CSS-`order` reflow in Zone 1, whether the figure reads as the
+hero at its placeholder size, suffix/value overlap at the fixed 88/96 px widths, the 560 px
+breakpoint, and contrast. *«None can break the arithmetic; all can make it unusable while green.»*
+
