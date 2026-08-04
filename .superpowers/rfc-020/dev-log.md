@@ -1433,3 +1433,113 @@ collapses silently and **no test would see it**.
 hero at its placeholder size, suffix/value overlap at the fixed 88/96 px widths, the 560 px
 breakpoint, and contrast. *«None can break the arithmetic; all can make it unusable while green.»*
 
+---
+
+## §14 — Session 6: resume, D1-H1 closure, and Wave 3 PASS
+
+**Append-only.** §1-§13 stand as written. The original D-1 NOT PASS remains the historical record;
+this section records its fix and independent re-audit.
+
+### 14.1 Resume state — measured, not inherited
+
+The resume prompt named `7ad0de6`, but the actual HEAD was **`be42ab3`**, its documentation-only
+child (`docs(rfc-020): resume prompt #2 for a fresh session, paused mid-Wave-3`). The branch was
+**25 commits ahead of `origin/main`**, not 24. Neither discrepancy touched `emulador/` or changed the
+D-1 code under audit.
+
+The tracked tree was clean. `git status --short --branch` showed only the four permanently off-limits
+untracked directories: `.opencode/`, `.superpowers/calculadora/`, `.superpowers/rfc-018/`, and
+`.superpowers/rfc-019/`. The spec invariant already had its post-D-1 shape: exactly one `M`,
+`calculadora-page.component.spec.ts`; all `lotaje/` specs were `A` relative to `ad80b9f`.
+
+Fresh gates ran sequentially, raw and unpiped, from `emulador/` before the fix dispatch:
+
+| Gate | Result |
+| :--- | :--- |
+| tsc app | exit **0**, no output |
+| tsc spec | exit **0**, no output |
+| lint | exit **0** — `All files pass linting.` |
+| tests | exit **0** — `Test Files 83 passed (83)` · `Tests 1125 passed (1125)` |
+
+**Whole chain exit 0.** This matches §13.5 exactly, so the interrupted fix dispatch left no partial
+state and **83 files / 1125 tests** is the attributable starting point.
+
+### 14.2 D1-H1 + D1-L3 fix — `ea06fb4`
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, orchestrator mechanical diff-scan passed |
+| Commit | `ea06fb4` — `fix(rfc-020): convert pip-denominated distance to price units before sizing (D1-H1)` |
+| Parent | `be42ab3` exactly — one task commit, no interleaving |
+| Diff | **3 files, +122/−22**: `lotaje/sizing-view-model.{ts,spec.ts}` and `pages/calculadora/calculadora-page.component.spec.ts` |
+| Tests | **1125 → 1131** (+5 view-model tests, +1 DOM test), files unchanged at 83 |
+| Gates | tsc app 0 · tsc spec 0 · lint 0 problems · `ng test` 83 files / 1131 tests · build 612.58 kB, accepted budget warning only |
+| Report | `.superpowers/rfc-020/task-d1fix-report.md` |
+
+**TDD evidence.** Before the production edit, the two focused spec files had **8 conversion-specific
+failures**: EURUSD lots and exact risk, GBPJPY parity, the converted rounding-warning dollars, both
+method-switch directions, and their DOM equivalents. The unchanged US30 acceptance case was run
+separately and stayed green before and after; the brief's stale request to make all five listed cases
+red was corrected rather than manufacturing a failure on the points path.
+
+**The fix is in the view derivation layer, where Q1 requires it.** One private named helper,
+`convertDistance`, maps display → price and price → display with `pipSize ?? 1`. The same normalized
+price distance now feeds `lotsForRiskDistance` and `actualRiskUsd`; both `switchMethod` directions use
+the inverse conversions. `domain/sizing/*` is byte-untouched by the task.
+
+**D1-L3 is closed in the same commit.** The existing minimum-lot DOM case now asserts that
+`.lotaje-hero` and the warning coexist, while the honest-state cases continue to assert replacement.
+
+**Mechanical scope scan:** the commit descends directly from the dispatch HEAD and contains exactly
+the three brief-scoped files. `lotaje-view.ts`, `domain/sizing/*`, package manifests, lockfile,
+pipeline, state, and all off-limits paths are absent. The framework-free grep is empty. The precise
+production `spec-util` import grep is empty. The branch-wide spec diff still has exactly one `M`, the
+declared Calculadora rewrite.
+
+**Deviations — all `inert`, none `requires-attention`:** stale brief HEAD corrected by the dispatch;
+affected EURUSD cases narrowly re-expressed from price-unit literals to pip-denominated literals;
+the RED count honestly reported as eight conversion failures with US30 separately green; the direct
+EURUSD lot/risk claim split into two tests; and the local report written after, and excluded from, the
+pathspec commit.
+
+### 14.3 D-1 re-audit — **PASS ("Ship it")**
+
+Report: `.superpowers/rfc-020/d1-audit-report.md`, **RE-AUDIT APPENDIX**. The original NOT PASS and
+its reproduction remain unchanged above the appendix. The previous auditor session identifier was
+not recoverable, so a fresh independent `branch-auditor` audited
+`be42ab3..ea06fb4`; it made no fix and left the tracked tree byte-identical.
+
+**Verdict: 0 Critical / 0 High / 0 Medium / 2 Low.** D1-H1 and D1-L3 are closed. The two surviving
+Lows retain their written dispositions: D1-L1 remains an owner copy decision/no-fix in D-1, and
+D1-L2 remains assigned to Task D-4's press-to-open selection + free-text scope.
+
+The auditor re-ran the original money-path cases independently:
+
+| Case | Independent result |
+| :--- | :--- |
+| EURUSD, 10 000 / 1 %, displayed 45 pips | normalized `0.0045` · **0.22 lots** · **$99.00 actual risk** |
+| EURUSD minimum-lot case, displayed 45 pips | **0.01 lots** · **$4.50 actual risk**, warning direction correct |
+| GBPJPY, displayed 30 pips | normalized `0.3` · **0.33 lots** · price/distance round trip returns `30` |
+| US30, displayed 50 pts | normalized `50` · **1.00 lots** · **$50.00**, unchanged |
+
+Two mutations proved the coverage is load-bearing: reinstating raw display-distance semantics made
+9/60 focused tests fail while US30 stayed green; breaking only `actualRiskUsd` made exactly the three
+risk-sensitive assertions fail. Both mutations were fully reverted before the gates and verdict.
+
+Fresh auditor gates, sequential and unpiped:
+
+| Gate | Auditor result |
+| :--- | :--- |
+| tsc app | exit **0**, no output |
+| tsc spec | exit **0**, no output |
+| lint | exit **0** — `All files pass linting.` |
+| tests | exit **0** — `Test Files 83 passed (83)` · `Tests 1131 passed (1131)`; no skipped/todo state |
+| build | exit **0** — initial total **612.58 kB**; no new chunk type, vitest sentinel, or circular-dependency warning; known budget warning only |
+
+Arithmetic was re-derived from committed blobs: **1125 + 5 + 1 = 1131**, files **83 + 0 = 83**.
+Dependencies, framework boundary, production `spec-util` imports, task scope, comment semantics, and
+the exact one-`M` spec invariant all passed independently.
+
+**Wave 3 is complete and audited PASS. Wave 4 is unblocked.** Its five implementations still run
+strictly sequentially because the Angular/Vite caches are shared, followed by the one permitted
+batched Wave 4 audit. The whole-branch final audit remains mandatory.
