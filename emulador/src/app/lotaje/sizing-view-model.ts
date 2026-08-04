@@ -53,7 +53,9 @@ export const MSG_NON_POSITIVE = 'La cuenta, el riesgo y la entrada deben ser val
 export interface LotajeDerived {
   readonly balance: number;
   readonly riskPct: number;
-  /** Trimmed, NOT uppercased — `resolveAsset` uppercases internally; the chip echoes what the user typed. */
+  /** Trimmed, NOT uppercased — `resolveAsset` uppercases internally. This field itself stays raw; the
+   *  chip does NOT echo it verbatim (since D-4 the chip renders `resolveAsset(trimmed).symbol`, the
+   *  canonical uppercase form — see `lotaje-view.ts`). */
   readonly symbol: string;
   readonly contractSize: number;
   readonly pipSize: number | null;

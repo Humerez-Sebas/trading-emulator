@@ -252,7 +252,13 @@ describe('lotaje-view: mount/unmount', () => {
     expect(roots.length).toBe(1);
   });
 
-  it('remounts cleanly into a second document after unmount (no cross-mount state leak)', () => {
+  // Wave 4 audit L-1: this pins the OMITTED-arity cold-start path only.
+  // `loadLotajeContext` always returns four strings, so `mount()`'s per-field
+  // `INITIAL_STATE` fallbacks are unreachable here — a genuine in-memory
+  // cross-mount leak would NOT be caught by this test (proved by mutation,
+  // wave4-audit-report.md E2). That claim belongs to IN-05 (explicit-arity
+  // precedence, below), which exercises the path where the fallbacks are live.
+  it('a clean remount renders P2 defaults from empty storage', () => {
     const docA = freshDoc();
     mount(docA, window);
     const balanceA = docA.querySelector<HTMLInputElement>('input[name="balance"]')!;
@@ -560,7 +566,12 @@ describe('lotaje-view: mount/unmount', () => {
     expect(writeText).toHaveBeenCalledWith('2.22');
   });
 
-  it('repeats open-close cycles and remounts closed without duplicate or leaked symbol state', () => {
+  // Wave 4 audit L-1: same disposition as the remount test above — this pins
+  // DOM hygiene (no duplicate disclosure/select/input nodes) across
+  // open/close cycles and an omitted-arity remount. It cannot detect a
+  // genuine in-memory cross-mount leak (that claim is IN-05's, below); see
+  // the comment on the earlier remount test for why.
+  it('open/close cycles leave no duplicate or leaked symbol DOM', () => {
     const firstDoc = freshDoc();
     mount(firstDoc, window);
     const chip = firstDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
@@ -771,6 +782,29 @@ describe('lotaje-view: mount/unmount', () => {
     expect(writeText).not.toHaveBeenCalled();
   });
 
+  // Wave 4 audit L-4: `balanceText='1e400'` overflows to Infinity, which
+  // passes every "positive" check (`Infinity > 0` is true) so `invalidReason`
+  // stays null, yet `lotsForRiskDistance` also returns Infinity. Before the
+  // `Number.isFinite(derived.lots)` gate, this rendered an ENABLED hero with
+  // `formatLots(Infinity) = '—'` as the copy payload — a false success state
+  // that copies a literal em dash.
+  it('a non-finite lot figure from an extreme balance is an honest state, not an enabled em dash', () => {
+    const doc = freshDoc();
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    mount(doc, targetWindow(writeText));
+    setValue(doc, 'balance', '1e400');
+    setValue(doc, 'riskPct', '1');
+    setValue(doc, 'symbol', 'US30');
+    setValue(doc, 'distance', '45');
+
+    expect(doc.querySelector('.lotaje-hero')).toBeNull();
+    expect(doc.querySelector('.lotaje-lots-value')).toBeNull();
+    const button = doc.querySelector<HTMLButtonElement>('.lotaje-copy-action');
+    expect(button?.disabled).toBe(true);
+    button?.click();
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
   it('keeps copy enabled when the minimum-lot warning accompanies a real 0.01 figure', () => {
     const doc = freshDoc();
     const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
@@ -820,6 +854,45 @@ describe('lotaje-view: mount/unmount', () => {
     expect(docD.querySelector('.lotaje-copy-feedback')?.textContent).toBe('');
     expect(docD.querySelector('.lotaje-copy-action--copied')).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  // Wave 4 audit L-2: `copyAttemptGeneration` (isCurrentCopyAttempt) is the
+  // ONLY one of the three stale-settlement guards this exercises — mount
+  // generation and `currentRoot.contains(button)` are unchanged here (same
+  // mount, same button, no render between the two clicks). Two copy
+  // activations on the SAME button with no intervening render: the second
+  // click fulfils first (`Copiado` + its timer), then the first click's
+  // write rejects. Without the generation guard, that stale rejection would
+  // overwrite the real success with `No se pudo copiar` and clear its timer.
+  it('a stale rejection from an earlier click on the same button does not override a later success', async () => {
+    vi.useFakeTimers();
+    const firstWrite = deferred<void>();
+    const secondWrite = deferred<void>();
+    const writeText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockReturnValueOnce(firstWrite.promise)
+      .mockReturnValueOnce(secondWrite.promise);
+    const target = targetWindow(writeText);
+    const doc = freshDoc();
+    mount(doc, target);
+    driveRealLot(doc);
+
+    const button = doc.querySelector<HTMLButtonElement>('.lotaje-copy-action')!;
+    button.click(); // attempt 1 (never settles until after attempt 2)
+    button.click(); // attempt 2, same button/feedback nodes, no render between
+
+    secondWrite.resolve(undefined);
+    await settleMicrotasks();
+    expect(doc.querySelector('.lotaje-copy-feedback')?.textContent).toBe('Copiado');
+    expect(button.classList.contains('lotaje-copy-action--copied')).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
+
+    firstWrite.reject(new Error('denied'));
+    await settleMicrotasks();
+
+    expect(doc.querySelector('.lotaje-copy-feedback')?.textContent).toBe('Copiado');
+    expect(button.classList.contains('lotaje-copy-action--copied')).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it('clears an active success timer on unmount and cannot clear or update a later mount', async () => {

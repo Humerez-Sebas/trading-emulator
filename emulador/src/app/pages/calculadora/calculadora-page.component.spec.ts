@@ -525,5 +525,31 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
       currentFixture = null; // already destroyed; afterEach must not double-destroy
       expect(container?.children.length).toBe(0);
     });
+
+    // Wave 4 audit L-3: `ngAfterViewInit`'s `mount(this.doc, win)` (line 43
+    // above) is the ONLY production call site of the P1/P2 restore path. This
+    // file's beforeEach/afterEach guarantee EMPTY storage for every other
+    // test (the C-2 scope amendment, dev-log §16.4) — nothing else here seeds
+    // real localStorage and asserts the host renders restored context. Seed
+    // AFTER beforeEach has already scrubbed the key, so this cooperates with
+    // that hygiene instead of racing it.
+    it('restores a persisted context from real localStorage at the mount() call site', () => {
+      window.localStorage.setItem(
+        LOTAJE_STORAGE_KEY,
+        JSON.stringify({
+          v: 1,
+          balanceText: '54321',
+          riskPctText: '2',
+          symbolText: 'EURUSD',
+          method: 'distance',
+        }),
+      );
+
+      const fixture = create();
+
+      expect(inputByName(fixture, 'balance').value).toBe('54321');
+      expect(inputByName(fixture, 'riskPct').value).toBe('2');
+      expect(inputByName(fixture, 'symbol').value).toBe('EURUSD');
+    });
   });
 });

@@ -197,8 +197,9 @@ recalcula. Nunca se pierde lo tecleado.
 ### 4.2 Unidad por símbolo, derivada, nunca preguntada
 
 La unidad predeterminada la decide el registro: **puntos** cuando el símbolo no tiene pip
-(índices, metales), **pips** cuando lo tiene (FX). El usuario puede cambiarla en la Ficha; nunca se
-le pregunta al abrir. Recordatorio de precisión: en FX de 5 dígitos **1 pip = 10 puntos MT5**;
+(índices, metales), **pips** cuando lo tiene (FX). Es una **etiqueta derivada, no un control**
+(D.20.3): no existe conmutador de unidad en la Ficha ni en ningún otro lugar; nunca se le pregunta
+al abrir. Recordatorio de precisión: en FX de 5 dígitos **1 pip = 10 puntos MT5**;
 confundirlos es un error de ×10, y por eso el sufijo del campo dice siempre cuál está activa.
 
 ### 4.3 Qué NO se pregunta nunca — y por qué
@@ -236,7 +237,8 @@ Símbolo · cuenta · riesgo % y su equivalente en $ · el campo de stop · el l
   `pointSize`, `pipSize`, `volumeStep`, `volumeMin`, divisa, alias, y **la procedencia con su
   fecha** (`mt5:FivePercentOnline@2026-08-02` / `manual` / `heurística`). Es la válvula de
   seguridad del registro: se confía sin preguntar, pero se puede verificar en un segundo.
-- **Conmutador de método** y **selector de unidad**.
+- **Conmutador de método** (`Alt+M`). La unidad NO tiene selector en ningún nivel de disclosure —
+  es una etiqueta derivada del símbolo, visible en el sufijo del campo (D.20.3, §4.2).
 
 ### 5.3 Aparece solo cuando es cierto (nivel 2)
 

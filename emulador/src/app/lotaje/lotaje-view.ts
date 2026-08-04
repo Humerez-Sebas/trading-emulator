@@ -730,9 +730,15 @@ function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: Lot
   feedback.setAttribute('aria-live', 'polite');
   feedback.setAttribute('aria-atomic', 'true');
 
-  if (derived.invalidReason !== null) {
+  if (derived.invalidReason !== null || !Number.isFinite(derived.lots)) {
     // Honest states REPLACE the lot figure — never sit beside it (product
-    // design §5.3, brief §6).
+    // design §5.3, brief §6). The `!Number.isFinite(derived.lots)` disjunct
+    // (Wave 4 audit L-4) catches an extreme-but-parseable balance (e.g.
+    // `1e400`, which overflows to Infinity) that passes every "positive"
+    // check yet produces a non-finite lot figure — without it, the hero
+    // rendered `formatLots(Infinity) = '—'` on an ENABLED copy button,
+    // violating D-3's frozen contract (disabled, not hidden, during honest
+    // states).
     const message = doc.createElement('p');
     message.id = 'lotaje-copy-unavailable-reason';
     message.className = 'lotaje-invalid-state';
