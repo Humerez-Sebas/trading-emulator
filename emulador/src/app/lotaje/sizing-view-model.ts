@@ -124,7 +124,10 @@ export function deriveLots(state: LotajeState): LotajeDerived {
     // wrapper directly; Method B calls the lower-level primitive because it
     // has a distance already, not an entry/SL pair, so the SAME guard is
     // reproduced here rather than silently lost.
-    lots = balance > 0 && riskPct > 0 ? lotsForRiskDistance(requestedRiskUsd, distance, contractSize) : 0;
+    lots =
+      balance > 0 && riskPct > 0
+        ? lotsForRiskDistance(requestedRiskUsd, distance, contractSize)
+        : 0;
   } else {
     lots = lotsForRisk(balance, riskPct, entry, sl, contractSize);
   }
@@ -220,11 +223,7 @@ export function switchMethod(state: LotajeState): LotajeState {
   const pipSize = resolveAsset(state.symbolText.trim()).pipSize;
   if (state.method === 'distance') {
     const entry = parseDecimal(state.entryText);
-    const distance = convertDistance(
-      parseDecimal(state.distanceText),
-      pipSize,
-      'display-to-price',
-    );
+    const distance = convertDistance(parseDecimal(state.distanceText), pipSize, 'display-to-price');
     const canDerive = Number.isFinite(entry) && Number.isFinite(distance);
     return {
       ...state,
@@ -238,6 +237,8 @@ export function switchMethod(state: LotajeState): LotajeState {
   return {
     ...state,
     method: 'distance',
-    distanceText: Number.isFinite(distance) ? String(roundForDisplay(distance)) : state.distanceText,
+    distanceText: Number.isFinite(distance)
+      ? String(roundForDisplay(distance))
+      : state.distanceText,
   };
 }

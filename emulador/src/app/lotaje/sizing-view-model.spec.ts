@@ -88,11 +88,7 @@ describe('deriveLots — Method B (distance), the default', () => {
     const d = deriveLots(
       state({ balanceText: '100', riskPctText: '0.1', symbolText: 'US30', distanceText: '50' }),
     );
-    const expected = lotsForRiskDistance(
-      riskUsdFor(100, 0.1),
-      50,
-      contractSizeFor('US30'),
-    );
+    const expected = lotsForRiskDistance(riskUsdFor(100, 0.1), 50, contractSizeFor('US30'));
     expect(d.lots).toBe(expected);
   });
 
@@ -160,7 +156,13 @@ describe('deriveLots — Method A (prices)', () => {
 
   it('parity: lots equals lotsForRisk(...) called directly, never a hand-derived figure', () => {
     const d = deriveLots(
-      prices({ balanceText: '5000', riskPctText: '1', symbolText: 'US30', entryText: '40000', slText: '39950' }),
+      prices({
+        balanceText: '5000',
+        riskPctText: '1',
+        symbolText: 'US30',
+        entryText: '40000',
+        slText: '39950',
+      }),
     );
     const expected = lotsForRisk(5000, 1, 40000, 39950, contractSizeFor('US30'));
     expect(d.lots).toBe(expected);
@@ -169,28 +171,52 @@ describe('deriveLots — Method A (prices)', () => {
 
   it('entry equal to SL is the SL-equals-entry honest state', () => {
     const d = deriveLots(
-      prices({ balanceText: '5000', riskPctText: '1', symbolText: 'US30', entryText: '40000', slText: '40000' }),
+      prices({
+        balanceText: '5000',
+        riskPctText: '1',
+        symbolText: 'US30',
+        entryText: '40000',
+        slText: '40000',
+      }),
     );
     expect(d.invalidReason).toBe(MSG_SL_EQUALS_ENTRY);
   });
 
   it('a cleared entry is the non-positive honest state, never a 0.00 figure', () => {
     const d = deriveLots(
-      prices({ balanceText: '5000', riskPctText: '1', symbolText: 'US30', entryText: '', slText: '39950' }),
+      prices({
+        balanceText: '5000',
+        riskPctText: '1',
+        symbolText: 'US30',
+        entryText: '',
+        slText: '39950',
+      }),
     );
     expect(d.invalidReason).toBe(MSG_NON_POSITIVE);
   });
 
   it('a cleared SL is the non-positive honest state, never a 0.00 figure', () => {
     const d = deriveLots(
-      prices({ balanceText: '5000', riskPctText: '1', symbolText: 'US30', entryText: '40000', slText: '' }),
+      prices({
+        balanceText: '5000',
+        riskPctText: '1',
+        symbolText: 'US30',
+        entryText: '40000',
+        slText: '',
+      }),
     );
     expect(d.invalidReason).toBe(MSG_NON_POSITIVE);
   });
 
   it('a finite negative SL still parses to a real lot figure (L6 no-fix)', () => {
     const d = deriveLots(
-      prices({ balanceText: '5000', riskPctText: '1', symbolText: 'US30', entryText: '1.1', slText: '-1' }),
+      prices({
+        balanceText: '5000',
+        riskPctText: '1',
+        symbolText: 'US30',
+        entryText: '1.1',
+        slText: '-1',
+      }),
     );
     expect(d.invalidReason).toBeNull();
     expect(d.lots).toBeGreaterThan(0);
@@ -198,10 +224,22 @@ describe('deriveLots — Method A (prices)', () => {
 
   it('comma-typed prices parse identically to dot-typed prices (F3)', () => {
     const comma = deriveLots(
-      prices({ balanceText: '5000', riskPctText: '1', symbolText: 'XAUUSD', entryText: '2650,50', slText: '2648,00' }),
+      prices({
+        balanceText: '5000',
+        riskPctText: '1',
+        symbolText: 'XAUUSD',
+        entryText: '2650,50',
+        slText: '2648,00',
+      }),
     );
     const dot = deriveLots(
-      prices({ balanceText: '5000', riskPctText: '1', symbolText: 'XAUUSD', entryText: '2650.50', slText: '2648.00' }),
+      prices({
+        balanceText: '5000',
+        riskPctText: '1',
+        symbolText: 'XAUUSD',
+        entryText: '2650.50',
+        slText: '2648.00',
+      }),
     );
     expect(comma.lots).toBe(dot.lots);
     expect(comma.lots).toBe(0.2);

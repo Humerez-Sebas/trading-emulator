@@ -36,12 +36,7 @@ export function riskUsdFor(balance: number, riskPct: number): number {
 }
 
 /** Inverse of lotsForRisk: real risk in currency when trading `lots`. */
-export function riskForLots(
-  lots: number,
-  entry: number,
-  sl: number,
-  contractSize: number,
-): number {
+export function riskForLots(lots: number, entry: number, sl: number, contractSize: number): number {
   return priceDistance(entry, sl) * lots * contractSize;
 }
 

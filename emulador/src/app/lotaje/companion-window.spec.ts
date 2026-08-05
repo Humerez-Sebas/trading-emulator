@@ -105,10 +105,12 @@ describe('companion-window: openCompanionWindow', () => {
   /** A host realm double: a fresh document shaped like the real
    *  `calculadora-page.component.html` (a bare `#lotaje-mount` div), plus
    *  whichever companion-opening mechanism(s) a given test wants present. */
-  function fakeHostWindow(overrides: {
-    pip?: Mock;
-    open?: Mock;
-  } = {}): { doc: Document; win: FakeWindow } {
+  function fakeHostWindow(
+    overrides: {
+      pip?: Mock;
+      open?: Mock;
+    } = {},
+  ): { doc: Document; win: FakeWindow } {
     const doc = document.implementation.createHTMLDocument('host');
     const container = doc.createElement('div');
     container.id = LOTAJE_MOUNT_ID;
@@ -191,7 +193,11 @@ describe('companion-window: openCompanionWindow', () => {
     openCompanionWindow(doc, win as unknown as Window);
 
     expect(openPopup).toHaveBeenCalledTimes(1);
-    expect(openPopup).toHaveBeenCalledWith('', '', `width=${COMPANION_WIDTH},height=${COMPANION_HEIGHT}`);
+    expect(openPopup).toHaveBeenCalledWith(
+      '',
+      '',
+      `width=${COMPANION_WIDTH},height=${COMPANION_HEIGHT}`,
+    );
   });
 
   it('falls back to window.open when requestWindow rejects', async () => {
@@ -263,18 +269,18 @@ describe('companion-window: openCompanionWindow', () => {
 
     openCompanionWindow(doc, win as unknown as Window);
 
-    expect(companion.document.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe(
-      '77',
-    );
+    expect(
+      companion.document.querySelector<HTMLInputElement>('input[name="distance"]')?.value,
+    ).toBe('77');
     expect(
       companion.document.querySelector('.lotaje-asset-trigger .lotaje-symbol-value')?.textContent,
     ).toBe('XAUUSD');
     // Not the module's INITIAL_STATE defaults (which this carried state
     // deliberately differs from) — proves the carried state actually moved,
     // rather than the companion just cold-starting on its own.
-    expect(companion.document.querySelector<HTMLInputElement>('input[name="distance"]')?.value).not.toBe(
-      INITIAL_STATE.distanceText,
-    );
+    expect(
+      companion.document.querySelector<HTMLInputElement>('input[name="distance"]')?.value,
+    ).not.toBe(INITIAL_STATE.distanceText);
   });
 
   it('the page shows a placeholder with a return affordance while the companion owns the view', () => {
@@ -523,8 +529,10 @@ describe('companion-window: openCompanionWindow', () => {
     expect(firstCompanion.focus).not.toHaveBeenCalled();
   });
 
-  it('clipboard after the move is still read off the companion\'s own navigator (D-3 must not regress)', async () => {
-    const companionWriteText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+  it("clipboard after the move is still read off the companion's own navigator (D-3 must not regress)", async () => {
+    const companionWriteText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
     const companion = fakeCompanionWindow(companionWriteText);
     const openPopup = vi.fn().mockReturnValue(companion);
     const { doc, win } = fakeHostWindow({ open: openPopup });

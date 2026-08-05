@@ -65,12 +65,9 @@ export function loadLotajeContext(win: Window): LotajeContext {
         typeof root.balanceText === 'string' ? root.balanceText : INITIAL_STATE.balanceText,
       riskPctText:
         typeof root.riskPctText === 'string' ? root.riskPctText : INITIAL_STATE.riskPctText,
-      symbolText:
-        typeof root.symbolText === 'string' ? root.symbolText : INITIAL_STATE.symbolText,
+      symbolText: typeof root.symbolText === 'string' ? root.symbolText : INITIAL_STATE.symbolText,
       method:
-        root.method === 'distance' || root.method === 'prices'
-          ? root.method
-          : INITIAL_STATE.method,
+        root.method === 'distance' || root.method === 'prices' ? root.method : INITIAL_STATE.method,
     };
   } catch {
     return freshContext();

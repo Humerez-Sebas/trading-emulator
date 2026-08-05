@@ -44,7 +44,14 @@ import { resolveAsset } from '../domain/sizing/asset-registry';
 import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
 import { assetDisplay } from './asset-catalog';
 import { openCompanionWindow } from './companion-window';
-import { deriveLots, switchMethod, INITIAL_STATE, type LotajeDerived, type LotajeState, type Method } from './sizing-view-model';
+import {
+  deriveLots,
+  switchMethod,
+  INITIAL_STATE,
+  type LotajeDerived,
+  type LotajeState,
+  type Method,
+} from './sizing-view-model';
 import { formatLots, formatMoney } from './format';
 import { parseDecimal } from './parse-decimal';
 import { loadLotajeContext, saveLotajeContext } from './persistence';
@@ -203,7 +210,9 @@ const ICONS: Readonly<Record<IconName, readonly IconShape[]>> = {
     { tag: 'line', attrs: { x1: '12', y1: '3', x2: '12', y2: '21' } },
     {
       tag: 'path',
-      attrs: { d: 'M16.5 7.2C16.5 5.4 14.5 4 12 4S7.5 5.4 7.5 7.2s2 2.7 4.5 3.4 4.5 1.6 4.5 3.4-2 3.2-4.5 3.2-4.5-1.4-4.5-3.2' },
+      attrs: {
+        d: 'M16.5 7.2C16.5 5.4 14.5 4 12 4S7.5 5.4 7.5 7.2s2 2.7 4.5 3.4 4.5 1.6 4.5 3.4-2 3.2-4.5 3.2-4.5-1.4-4.5-3.2',
+      },
     },
   ],
 };
@@ -868,12 +877,18 @@ function syncAssetSheet(values: AssetValueRefs, symbolText: string): void {
   const resolved = resolveAsset(symbolText.trim());
   const unavailable = 'No disponible';
   syncAssetValue(values.contractSize, String(resolved.contractSize));
-  syncAssetValue(values.tickSize, resolved.tickSize === null ? unavailable : String(resolved.tickSize));
+  syncAssetValue(
+    values.tickSize,
+    resolved.tickSize === null ? unavailable : String(resolved.tickSize),
+  );
   syncAssetValue(
     values.pointSize,
     resolved.digits === null ? unavailable : String(10 ** -resolved.digits),
   );
-  syncAssetValue(values.pipSize, resolved.pipSize === null ? 'No aplica' : String(resolved.pipSize));
+  syncAssetValue(
+    values.pipSize,
+    resolved.pipSize === null ? 'No aplica' : String(resolved.pipSize),
+  );
   syncAssetValue(
     values.volumeStep,
     resolved.volumeStep === null ? unavailable : String(resolved.volumeStep),
@@ -884,10 +899,7 @@ function syncAssetSheet(values: AssetValueRefs, symbolText: string): void {
   );
   syncAssetValue(values.currency, resolved.currency || unavailable);
   syncAssetValue(values.aliases, unavailable);
-  syncAssetValue(
-    values.source,
-    resolved.source === 'heuristic' ? 'heurística' : resolved.source,
-  );
+  syncAssetValue(values.source, resolved.source === 'heuristic' ? 'heurística' : resolved.source);
 }
 
 function buildAssetSelect(
@@ -965,10 +977,23 @@ function buildAssetSelect(
   root.addEventListener('keydown', onAssetSelectKeyDown);
   root.append(trigger, menu);
 
-  return { root, assetTrigger: trigger, assetMenu: menu, assetOptions, symbolValue, symbolMark, symbolBadge };
+  return {
+    root,
+    assetTrigger: trigger,
+    assetMenu: menu,
+    assetOptions,
+    symbolValue,
+    symbolMark,
+    symbolBadge,
+  };
 }
 
-function buildSummaryCell(doc: Document, modifier: string, label: HTMLElement, control: Node): HTMLElement {
+function buildSummaryCell(
+  doc: Document,
+  modifier: string,
+  label: HTMLElement,
+  control: Node,
+): HTMLElement {
   const cell = doc.createElement('div');
   cell.className = `lotaje-summary-cell lotaje-summary-cell--${modifier}`;
   cell.append(label, control);
@@ -1025,7 +1050,12 @@ function buildZoneContext(
   balanceSuffix.textContent = 'USD';
   balanceField.append(balanceInput, balanceSuffix);
   summary.append(
-    buildSummaryCell(doc, 'balance', buildLabel(doc, 'Tamaño de cuenta', 'lotaje-balance'), balanceField),
+    buildSummaryCell(
+      doc,
+      'balance',
+      buildLabel(doc, 'Tamaño de cuenta', 'lotaje-balance'),
+      balanceField,
+    ),
   );
 
   const riskField = doc.createElement('div');
@@ -1043,7 +1073,12 @@ function buildZoneContext(
   riskSuffix.textContent = '%';
   riskField.append(riskPctInput, riskSuffix);
   summary.append(
-    buildSummaryCell(doc, 'risk', buildLabel(doc, 'Riesgo por operación', 'lotaje-risk'), riskField),
+    buildSummaryCell(
+      doc,
+      'risk',
+      buildLabel(doc, 'Riesgo por operación', 'lotaje-risk'),
+      riskField,
+    ),
   );
 
   // Derived, not editable: no field chrome, accent colour, and its own cell so
@@ -1099,7 +1134,12 @@ function buildZoneContext(
 }
 
 // ---- Zone 2 · La pregunta --------------------------------------------------
-function buildFieldGroup(doc: Document, modifier: string, label: HTMLElement, control: Node): HTMLElement {
+function buildFieldGroup(
+  doc: Document,
+  modifier: string,
+  label: HTMLElement,
+  control: Node,
+): HTMLElement {
   const group = doc.createElement('div');
   group.className = `lotaje-field-group lotaje-field-group--${modifier}`;
   group.append(label, control);
@@ -1147,7 +1187,12 @@ function buildZoneQuestionFields(
     increment.addEventListener('click', () => stepDistance(1, 1));
     distanceControl.append(decrement, field, increment);
     container.append(
-      buildFieldGroup(doc, 'distance', buildLabel(doc, 'Distancia', 'lotaje-distance'), distanceControl),
+      buildFieldGroup(
+        doc,
+        'distance',
+        buildLabel(doc, 'Distancia', 'lotaje-distance'),
+        distanceControl,
+      ),
     );
     return { method: 'distance', input, unit };
   }
@@ -1351,7 +1396,10 @@ function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: Lot
   }
 }
 
-function buildZoneAnswer(doc: Document, derived: LotajeDerived): { root: HTMLElement; body: HTMLElement } {
+function buildZoneAnswer(
+  doc: Document,
+  derived: LotajeDerived,
+): { root: HTMLElement; body: HTMLElement } {
   const root = doc.createElement('section');
   root.className = 'lotaje-zone lotaje-zone--answer';
   root.setAttribute('aria-label', 'La respuesta');

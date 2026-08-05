@@ -130,10 +130,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
   }
 
   /** Picks a Zone 2 mode from the segmented control. Real click, not a state write. */
-  function pickMethod(
-    fixture: ReturnType<typeof create>,
-    method: 'distance' | 'prices',
-  ): void {
+  function pickMethod(fixture: ReturnType<typeof create>, method: 'distance' | 'prices'): void {
     const option = el(fixture).querySelector<HTMLButtonElement>(
       `.lotaje-method-option[data-method="${method}"]`,
     );

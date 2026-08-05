@@ -90,11 +90,7 @@ describe('lotaje-view: mount/unmount', () => {
     };
   }
 
-  function dispatchKey(
-    target: Element,
-    key: string,
-    init: KeyboardEventInit = {},
-  ): KeyboardEvent {
+  function dispatchKey(target: Element, key: string, init: KeyboardEventInit = {}): KeyboardEvent {
     const EventConstructor = target.ownerDocument.defaultView?.KeyboardEvent ?? KeyboardEvent;
     const event = new EventConstructor('keydown', {
       key,
@@ -1187,11 +1183,7 @@ describe('lotaje-view: mount/unmount', () => {
   it('restored Method A context focuses the literal SL input rather than Entrada', () => {
     const doc = freshFocusableDoc();
 
-    mount(
-      doc,
-      window,
-      state({ method: 'prices', entryText: '40000', slText: '39955' }),
-    );
+    mount(doc, window, state({ method: 'prices', entryText: '40000', slText: '39955' }));
 
     const entry = doc.querySelector<HTMLInputElement>('input[name="entry"]')!;
     const sl = doc.querySelector<HTMLInputElement>('input[name="sl"]')!;
@@ -1236,9 +1228,7 @@ describe('lotaje-view: mount/unmount', () => {
     // the raw text is kept verbatim in state (what persistence round-trips).
     expect(shownSymbol(whitespaceDoc)).toBe('Símbolo');
     expect(getMountedState().symbolText).toBe('   ');
-    expect(whitespaceDoc.activeElement).toBe(
-      whitespaceDoc.querySelector('input[name="balance"]'),
-    );
+    expect(whitespaceDoc.activeElement).toBe(whitespaceDoc.querySelector('input[name="balance"]'));
 
     const infinityDoc = freshFocusableDoc();
     mount(infinityDoc, window, state({ riskPctText: 'Infinity' }));
@@ -1250,11 +1240,7 @@ describe('lotaje-view: mount/unmount', () => {
 
   it('focus selects the content of every numeric field, in both methods', () => {
     const doc = freshFocusableDoc();
-    mount(
-      doc,
-      window,
-      state({ entryText: '40000', slText: '39955' }),
-    );
+    mount(doc, window, state({ entryText: '40000', slText: '39955' }));
     const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
 
     const expectSelectedOnFocus = (input: HTMLInputElement): void => {
@@ -1276,11 +1262,7 @@ describe('lotaje-view: mount/unmount', () => {
 
   it('Escape in Method B clears only distance and preserves all context and disclosure state', () => {
     const doc = freshFocusableDoc();
-    mount(
-      doc,
-      window,
-      state({ entryText: '40000', slText: '39955' }),
-    );
+    mount(doc, window, state({ entryText: '40000', slText: '39955' }));
     const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
     specTrigger.click();
     const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
@@ -1304,11 +1286,7 @@ describe('lotaje-view: mount/unmount', () => {
 
   it('Escape in Method A clears only literal SL and preserves entry, distance memory, and disclosure', () => {
     const doc = freshFocusableDoc();
-    mount(
-      doc,
-      window,
-      state({ method: 'prices', entryText: '40000', slText: '39955' }),
-    );
+    mount(doc, window, state({ method: 'prices', entryText: '40000', slText: '39955' }));
     const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
     specTrigger.click();
     const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
@@ -1415,11 +1393,7 @@ describe('lotaje-view: mount/unmount', () => {
   it('native touch steppers flank only Method B and share its single-step behavior', () => {
     const doc = freshFocusableDoc();
     const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
-    mount(
-      doc,
-      targetWindow(writeText),
-      state({ entryText: '40000', slText: '39955' }),
-    );
+    mount(doc, targetWindow(writeText), state({ entryText: '40000', slText: '39955' }));
     const wrapper = doc.querySelector<HTMLElement>('.lotaje-distance-control')!;
     const field = doc.querySelector<HTMLElement>('.lotaje-field-stop')!;
     const decrement = doc.querySelector<HTMLButtonElement>(
@@ -1786,9 +1760,7 @@ describe('lotaje-view: mount/unmount', () => {
     const newDoc = freshFocusableDoc();
     mount(newDoc, targetWindow(writeText), state());
     oldBalance.setSelectionRange(oldBalance.value.length, oldBalance.value.length);
-    oldBalance.dispatchEvent(
-      new oldDoc.defaultView!.FocusEvent('focusin', { bubbles: true }),
-    );
+    oldBalance.dispatchEvent(new oldDoc.defaultView!.FocusEvent('focusin', { bubbles: true }));
     dispatchKey(oldDistance, 'ArrowUp');
     dispatchKey(oldDistance, 'Escape');
     dispatchKey(oldDistance, 'Enter');
@@ -2209,9 +2181,7 @@ describe('lotaje-view: mount/unmount', () => {
     const reopened = freshDoc();
     mount(reopened, win);
 
-    expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
-      '77777',
-    );
+    expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('77777');
     expect(reopened.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('9');
     expect(shownSymbol(reopened)).toBe('SP500');
     expect(storage.setItem).not.toHaveBeenCalled();
@@ -2262,9 +2232,7 @@ describe('lotaje-view: mount/unmount', () => {
 
     const reopened = freshFocusableDoc();
     expect(() => mount(reopened, win, state())).not.toThrow();
-    expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
-      '10000',
-    );
+    expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
   });
 
   // ---- Task D-6 / F21-4: the «Abrir mini calculadora» launcher --------------

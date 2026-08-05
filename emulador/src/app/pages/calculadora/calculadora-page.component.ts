@@ -1,4 +1,11 @@
-import { AfterViewInit, ChangeDetectionStrategy, Component, OnDestroy, ViewEncapsulation, inject } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  OnDestroy,
+  ViewEncapsulation,
+  inject,
+} from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { mount, unmount } from '../../lotaje/lotaje-view';
 import { isCompanionActive, reattachHost } from '../../lotaje/companion-window';

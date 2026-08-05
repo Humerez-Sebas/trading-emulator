@@ -691,8 +691,16 @@ html[data-lotaje-companion] #lotaje-mount {
   z-index: 0;
   width: 220px;
   background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--text) 12%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--text) 12%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--text) 12%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--text) 12%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 26px 26px;
   -webkit-mask-image: radial-gradient(115% 105% at 100% 50%, #000 0%, transparent 70%);
   mask-image: radial-gradient(115% 105% at 100% 50%, #000 0%, transparent 70%);

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LOTAJE_STORAGE_KEY, loadLotajeContext, saveLotajeContext, type LotajeContext } from './persistence';
+import {
+  LOTAJE_STORAGE_KEY,
+  loadLotajeContext,
+  saveLotajeContext,
+  type LotajeContext,
+} from './persistence';
 
 /**
  * RFC-020 Task C-2. Pure specs for the framework-free persistence module:
@@ -105,10 +110,16 @@ describe('lotaje persistence', () => {
     };
 
     storage.setItem(LOTAJE_STORAGE_KEY, JSON.stringify({ ...validSiblings, balanceText: 12345 }));
-    expect(loadLotajeContext(win)).toEqual({ ...validSiblings, balanceText: defaults().balanceText });
+    expect(loadLotajeContext(win)).toEqual({
+      ...validSiblings,
+      balanceText: defaults().balanceText,
+    });
 
     storage.setItem(LOTAJE_STORAGE_KEY, JSON.stringify({ ...validSiblings, riskPctText: null }));
-    expect(loadLotajeContext(win)).toEqual({ ...validSiblings, riskPctText: defaults().riskPctText });
+    expect(loadLotajeContext(win)).toEqual({
+      ...validSiblings,
+      riskPctText: defaults().riskPctText,
+    });
 
     storage.setItem(LOTAJE_STORAGE_KEY, JSON.stringify({ ...validSiblings, symbolText: false }));
     expect(loadLotajeContext(win)).toEqual({ ...validSiblings, symbolText: defaults().symbolText });

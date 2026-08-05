@@ -39,9 +39,7 @@ const CATALOG: Readonly<Record<string, AssetDisplay>> = {
  * gets its first two characters as the mark and no descriptive name.
  */
 export function assetDisplay(symbol: string): AssetDisplay {
-  const known = Object.prototype.hasOwnProperty.call(CATALOG, symbol)
-    ? CATALOG[symbol]
-    : undefined;
+  const known = Object.prototype.hasOwnProperty.call(CATALOG, symbol) ? CATALOG[symbol] : undefined;
   if (known) return known;
   return { name: '', mark: symbol.slice(0, 2) || '?', tone: 'muted' };
 }
