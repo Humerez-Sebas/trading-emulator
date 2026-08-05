@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Method B size XAU/XAG stops in MT5 points while preserving index-point and FX-pip behaviour.
+**Goal:** Preserve `1.00` price units for all non-FX Method B stops while exporting raw MT5 point metadata for the registry and Ficha.
 
 **Architecture:** MT5 `symbol_info().point` becomes generated registry data. The view-model owns one pure display-distance conversion at the boundary to the sizing kernel; the kernel continues to receive price units only. Its conversion is shared by derivation and Method A/B round trips, preventing a correct lot beside a false risk value.
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Owner decision D.20.5 is binding: FX uses `pipSize`; XAU/XAG uses MT5 `pointSize`; indices and other non-FX use `1` price unit per displayed `pts`.
+- Owner decision D.20.6 is binding and revokes D.20.5: FX uses `pipSize`; every non-FX symbol, including XAU/XAG, uses `1` price unit per displayed `pts`. `pointSize` remains registry/Ficha metadata only.
 - `pointSize` comes from `symbol_info().point`; never infer it from `digits` or equate it to `tickSize`.
 - Do not modify `position-sizing.ts`, add a unit selector, add dependencies, or duplicate sizing arithmetic.
 - Do not access `.opencode/`, `.superpowers/calculadora/`, `.superpowers/rfc-018/`, or `.superpowers/rfc-019/`.
@@ -29,7 +29,7 @@
 - Local-only: `.superpowers/rfc-020/task-f21-2-brief.md`
 - Local-only: `.superpowers/rfc-020/task-f21-2-implementation-prompt.md`
 
-**Consumes:** the owner-approved D.20.5 artifacts already present in the shared worktree.
+**Consumes:** the owner-approved D.20.6 revision artifacts already present in the shared worktree.
 
 **Produces:** a measured clean baseline and a tracked durable design/plan before code changes.
 
@@ -142,17 +142,17 @@ git add pipeline/export_symbols.py pipeline/tests/test_export_symbols.py emulado
 git commit -m "feat(sizing): export MT5 point size"
 ```
 
-### Task 2: Apply D.20.5 at the view-model boundary
+### Task 2: Apply D.20.6 at the view-model boundary
 
 **Files:**
 - Modify: `emulador/src/app/lotaje/sizing-view-model.ts:76-86,103-114,219-242`
 - Modify: `emulador/src/app/lotaje/sizing-view-model.spec.ts:37-97,232-301`
 
-**Consumes:** `AssetSpec.pipSize`, `AssetSpec.pointSize`, `AssetSpec.symbol`, and the unchanged sizing kernel.
+**Consumes:** `AssetSpec.pipSize` and the unchanged sizing kernel; `pointSize` remains metadata.
 
 **Produces:** a single conversion used by `deriveLots` and `switchMethod` in both directions.
 
-- [ ] **Step 1: Write failing D.20.5 tests**
+- [ ] **Step 1: Write failing D.20.6 tests**
 
 Keep the existing US30 acceptance case unchanged. Add XAUUSD examples that prove the unit, normalized distance, lot and actual risk together:
 
@@ -185,9 +185,6 @@ Resolve once from the already-resolved asset and pass its multiplier to both con
 ```ts
 function priceUnitsPerDisplayUnit(asset: AssetSpec): number {
   if (asset.pipSize !== null) return asset.pipSize;
-  if ((asset.symbol.startsWith('XAU') || asset.symbol.startsWith('XAG')) && asset.pointSize !== null) {
-    return asset.pointSize;
-  }
   return 1;
 }
 ```
@@ -238,7 +235,7 @@ The calculator test must assert XAUUSD distance `10` produces displayed `pts`, t
 
 Run: `npx ng test --watch=false`
 
-Expected: Ficha still derives `10 ** -digits` or DOM pins preserve the pre-D.20.5 XAUUSD interpretation.
+Expected: Ficha still derives `10 ** -digits` or DOM pins preserve the revoked D.20.5 XAUUSD interpretation.
 
 - [ ] **Step 3: Read the Ficha from the registry**
 
@@ -270,7 +267,7 @@ git commit -m "fix(lotaje): show MT5 point size in asset details"
 **Files:**
 - Modify: `.superpowers/rfc-020/dev-log.md`
 
-**Consumes:** green evidence from Tasks 1-3 and the owner-approved D.20.5 design.
+**Consumes:** green evidence from Tasks 1-3 and the owner-approved D.20.6 design.
 
 **Produces:** an auditable close-out that makes the PR update and renewed audit possible.
 

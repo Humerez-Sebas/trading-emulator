@@ -1,7 +1,7 @@
 # RFC-020 — Finalization resume prompt (paste into a cold session)
 
 > **Historic status:** RFC-020 passed its whole-branch audit at `d2838fd`. The owner subsequently
-> approved F21-2 (gold/points) for the existing branch and PR. That work is now dispatchable but the
+> revoked D.20.5 and approved D.20.6 (gold/non-FX price-unit points) for the existing branch and PR. That work is now dispatchable but the
 > historic PASS does not cover it; a new independent whole-branch audit is required after its commits.
 >
 > **This document assumes you remember nothing.** Trust nothing in it that you can measure.
@@ -21,7 +21,7 @@ unit.
 | 3 | `docs/engineering/git-workflow.md` | **Required before the PR.** RFC-020 is a declared product-track exception: it targets **`main`**, not `develop` |
 | 4 | `.superpowers/rfc-020/dev-log.md` **§§21-23** | The end of the run: D-6, D-7, the audit's NOT PASS, W5-FIX, and the PASS |
 | 5 | `.superpowers/rfc-020/final-audit-report.md` | The verdict itself. §9 is the re-verification; everything above it is the round-1 record, preserved |
-| 6 | `docs/superpowers/specs/2026-08-05-distance-unit-semantics-design.md` | Owner-approved D.20.5 |
+| 6 | `docs/superpowers/specs/2026-08-05-distance-unit-semantics-design.md` | Owner-approved D.20.6; D.20.5 revoked |
 | 7 | `docs/superpowers/plans/2026-08-05-distance-unit-semantics-implementation-plan.md` | TDD implementation sequence |
 | 8 | `.superpowers/rfc-020/task-f21-2-implementation-prompt.md` | Dispatch handoff |
 | 9 | `docs/architecture/rfcs/020-lotaje-position-sizer.md` | Only if you need the RFC rationale |
@@ -128,7 +128,7 @@ If the PR actor needs to create or revise the PR after the renewed audit:
 
 | ID | Item | Status |
 | :--- | :--- | :--- |
-| **F21-2** | Non-FX distance uses `pipSize ?? 1`; XAUUSD therefore treats MT5 points as raw price units and sizes gold 100x wrong | **Owner-approved D.20.5.** Forex uses `pipSize`; XAU/XAG uses generated MT5 `pointSize`; indices retain `1.00`. Dispatch only through the approved design, plan and handoff |
+| **F21-2** | Non-FX distance uses `pipSize ?? 1`; XAUUSD treats entered points as raw price units | **Owner-approved D.20.6.** Forex uses `pipSize`; all non-FX symbols, including XAU/XAG, retain `1.00`. Generated MT5 `pointSize` is Ficha metadata only. Dispatch only through the approved design, plan and handoff |
 | **L-2** | The non-finite-lot honest state renders an **empty** `<p role="alert">`. Reachable only when balance/riskPct overflows to `Infinity` (parses fine, and `Infinity > 0` is `true`, so neither guard catches it) | **Owner-escalated: needs one new §8 string.** Reusing `MSG_NON_POSITIVE` would be *false* (for `balance = 1e400` the balance is positive) — the auditor confirmed this independently. **Never invent frozen product copy** |
 | **L-4** | «Puntos» label vs the `pips` suffix for FX | Folded into F21-2 |
 | **L-1** | `lotaje-view.ts` ⇄ `companion-window.ts` import cycle | Ruled **no-fix** — inert; every cross-reference is in a hoisted `function`, neither module reads the other at module scope. Standing constraint |
@@ -181,7 +181,7 @@ is not part of this run and must not dispatch RFC-020 tasks or edit `.superpower
 
 Pathspec commits only (`git commit <files> -m …`); never `git add -A`; never `--amend`; **never push
 without being asked**. Conventional messages (`feat(rfc-020):`, `fix(rfc-020):`, `chore(sdd):`).
-Pre-existing specs are authority. D.20.5 is the explicit owner authorization to replace only the
+Pre-existing specs are authority. D.20.6 is the explicit owner authorization to replace only the
 contradictory XAUUSD distance assertions with named successor assertions; every other pre-existing
 assertion remains a **STOP**. Any file outside a brief's scope table is a **STOP**. Every deviation is classified `inert` or
 `requires-attention`; **a silent deviation is the one unrecoverable failure mode.** Only `dev-log.md`
