@@ -1,8 +1,8 @@
 # RFC-020 — Finalization resume prompt (paste into a cold session)
 
-> **RFC-020 is code-complete and has PASSED its whole-branch final audit.** Nothing is half-finished
-> and no task is outstanding. What remains is **the pull request, which is the owner's call**, plus a
-> short list of owner-facing items that were deliberately carried past it.
+> **Historic status:** RFC-020 passed its whole-branch audit at `d2838fd`. The owner subsequently
+> approved F21-2 (gold/points) for the existing branch and PR. That work is now dispatchable but the
+> historic PASS does not cover it; a new independent whole-branch audit is required after its commits.
 >
 > **This document assumes you remember nothing.** Trust nothing in it that you can measure.
 
@@ -10,8 +10,9 @@
 
 ## §0 — Boot
 
-Read in this order. Stop when you can state, without re-reading, why the companion cannot be a route
-and why `pipSize ?? 1` makes gold wrong by 100×.
+Read in this order. Stop when you can state, without re-reading, why the companion cannot be a route,
+why `pipSize ?? 1` makes gold wrong by 100x, and why US30 must nevertheless retain its 1.00 index-point
+unit.
 
 | # | Document | Why |
 | :-- | :--- | :--- |
@@ -20,7 +21,10 @@ and why `pipSize ?? 1` makes gold wrong by 100×.
 | 3 | `docs/engineering/git-workflow.md` | **Required before the PR.** RFC-020 is a declared product-track exception: it targets **`main`**, not `develop` |
 | 4 | `.superpowers/rfc-020/dev-log.md` **§§21-23** | The end of the run: D-6, D-7, the audit's NOT PASS, W5-FIX, and the PASS |
 | 5 | `.superpowers/rfc-020/final-audit-report.md` | The verdict itself. §9 is the re-verification; everything above it is the round-1 record, preserved |
-| 6 | `docs/architecture/rfcs/020-lotaje-position-sizer.md` | Only if you need the spec's rationale |
+| 6 | `docs/superpowers/specs/2026-08-05-distance-unit-semantics-design.md` | Owner-approved D.20.5 |
+| 7 | `docs/superpowers/plans/2026-08-05-distance-unit-semantics-implementation-plan.md` | TDD implementation sequence |
+| 8 | `.superpowers/rfc-020/task-f21-2-implementation-prompt.md` | Dispatch handoff |
+| 9 | `docs/architecture/rfcs/020-lotaje-position-sizer.md` | Only if you need the RFC rationale |
 
 ---
 
@@ -34,8 +38,10 @@ git status --short --branch
 git diff --name-status ad80b9f -- ":(glob)emulador/src/**/*.spec.ts"
 ```
 
-Expected: branch `claude/lotaje-v2-core`; **51 commits** ahead of `origin/main`, **none pushed**;
-tracked tree clean with exactly these four untracked directories:
+The historical close-out was 52 commits ahead of `origin/main`, but this is now an active shared branch
+with a PR actor and F21-2 documentation/implementation work. Treat the measured SHA, distance, PR and
+tracked status as the authority; reconcile unexpected tracked files before acting. The following four
+untracked directories remain off-limits:
 
 ```
 .opencode/
@@ -50,8 +56,9 @@ tracked tree clean with exactly these four untracked directories:
 The spec diff must show **exactly one `M`** (`calculadora-page.component.spec.ts`), one `D`
 (`risk-calculator.spec.ts`, C-1's cutover, audited in Wave 2), and the rest `A`.
 
-Then the gates, from `emulador/`, sequential, raw, **no pipes** — a pipe swallows the exit code and a
-real failure reads as a pass:
+Before an F21-2 implementation is dispatched, wait for the PR actor to finish. After the implementation,
+the gates run from `emulador/`, sequential, raw, **no pipes** — a pipe swallows the exit code and a real
+failure reads as a pass:
 
 ```
 npx tsc -p tsconfig.app.json --noEmit
@@ -87,7 +94,7 @@ and `node_modules/.vite` are shared, and that race is the documented PR #23 flak
 | Owner redesign | `a9fcadd` — authored outside the SDD chain, **accepted** by the final audit as branch content |
 | Whole-branch final audit | **PASS ("Ship it")** — 0 Critical / 0 High / 0 Medium / 4 Low, all ruled |
 | Tests | 1046 at `ad80b9f` → **1229** |
-| Push / PR | **none. The owner's call.** |
+| Push / PR | PR creation is owned by a parallel agent; F21-2 commits update it only after fresh gates |
 
 Test progression, re-derived commit-by-commit by the auditor: 1046 → 1053 → 1064 → 1064 → 1072 →
 **1071** → 1125 → 1131 → 1131 → 1140 → 1149 → 1165 → 1188 → 1191 → 1191 → 1210 → 1219 → 1226 →
@@ -95,14 +102,20 @@ Test progression, re-derived commit-by-commit by the auditor: 1046 → 1053 → 
 
 ---
 
-## §3 — The only remaining step: the PR, if the owner asks for it
+## §3 — PR coordination and renewed audit
 
-**Do not open it unprompted.** When asked:
+The PR actor owns opening and editing the PR. The F21-2 implementer must not alter it. Once F21-2 has
+fresh gates and explicit-path commits, the owner-authorized push updates the existing PR automatically.
+Then dispatch an independent whole-branch audit; the PASS at `d2838fd` is historic evidence, not a
+verdict on the new SHA.
+
+If the PR actor needs to create or revise the PR after the renewed audit:
 
 - Target **`main`**, not `develop` — RFC-020 is a declared product-track exception, recorded in the
   ledger. Never PR an individual RFC to `develop`'s block-release flow.
 - Use the **GitHub MCP**, not `gh`/`git`, for the PR and any repo settings.
-- Push the branch first (it has never been pushed — 51 commits).
+- Measure whether the branch is already pushed. The F21-2 implementer pushes only its fresh,
+  owner-authorized verified commits; do not assume a commit count or push state.
 - Look for a PR template under `.github/` before writing the body.
 - The body should carry: the audit verdict, the test progression, and the four ruled Lows plus the
   owner-facing carry-overs in §4, so none of it is re-litigated in review.
@@ -115,7 +128,7 @@ Test progression, re-derived commit-by-commit by the auditor: 1046 → 1053 → 
 
 | ID | Item | Status |
 | :--- | :--- | :--- |
-| **F21-2** | **`sizing-view-model.ts:82` does `pipSize ?? 1`**, so every non-FX symbol sizes against raw price units. `XAUUSD` has no `pipSize` (`contractSize: 100, tickSize: 0.01, digits: 2`), so a typed `50` is treated as a **$50** gold move when the trader means **$0.50** — **100× wrong**. US30 only looks right because an index "point" happens to equal 1.0 price unit. The points-side twin of D1-H1 | **Owner-deferred by explicit instruction** until after the RFC ships. Fixing it is a **product decision** about what `pts` denotes, and may require adding `pointSize` to the registry **and its `pipeline/` generator** — product design §221 lists the field, but the generated registry has none |
+| **F21-2** | Non-FX distance uses `pipSize ?? 1`; XAUUSD therefore treats MT5 points as raw price units and sizes gold 100x wrong | **Owner-approved D.20.5.** Forex uses `pipSize`; XAU/XAG uses generated MT5 `pointSize`; indices retain `1.00`. Dispatch only through the approved design, plan and handoff |
 | **L-2** | The non-finite-lot honest state renders an **empty** `<p role="alert">`. Reachable only when balance/riskPct overflows to `Infinity` (parses fine, and `Infinity > 0` is `true`, so neither guard catches it) | **Owner-escalated: needs one new §8 string.** Reusing `MSG_NON_POSITIVE` would be *false* (for `balance = 1e400` the balance is positive) — the auditor confirmed this independently. **Never invent frozen product copy** |
 | **L-4** | «Puntos» label vs the `pips` suffix for FX | Folded into F21-2 |
 | **L-1** | `lotaje-view.ts` ⇄ `companion-window.ts` import cycle | Ruled **no-fix** — inert; every cross-reference is in a hoisted `function`, neither module reads the other at module scope. Standing constraint |
@@ -123,12 +136,12 @@ Test progression, re-derived commit-by-commit by the auditor: 1046 → 1053 → 
 | — | D1-L1 cold-start copy; `BTCUSD` heuristic `100000` by design (§8.4.2); a registry regeneration re-values open **and realised** P&L (§11.4.3) | Recorded, not scheduled |
 | — | `develop` ↔ `main` reunification | A **separate run with its own ledger**. No RFC-020 work touches `develop` |
 
-**F21-2 already has a brief:** `.superpowers/rfc-020/task-f21-2-brief.md` (local-only, like every
-brief in this run). It is deliberately **not** ready to dispatch — it opens with a product decision
-only the owner can make, because the sources conflict on whether `pts` means MT5 points or price
-units, and the two readings produce different software. Read its §2 before any implementation, and
-note its §6: the fix should **not** be folded into the audited RFC-020 branch, since that would
-re-open a passed audit.
+**F21-2 is now dispatchable:** `.superpowers/rfc-020/task-f21-2-brief.md` records the owner ruling;
+`docs/superpowers/specs/2026-08-05-distance-unit-semantics-design.md` and
+`docs/superpowers/plans/2026-08-05-distance-unit-semantics-implementation-plan.md` are its durable
+design and plan; `.superpowers/rfc-020/task-f21-2-implementation-prompt.md` is the local dispatch
+handoff. The owner explicitly authorized the existing branch/PR exception, which must be recorded as
+`requires-attention` and followed by a renewed whole-branch audit.
 
 A separate **owner-led design/polish track** covers the calculadora page and the companion toolbar. It
 is not part of this run and must not dispatch RFC-020 tasks or edit `.superpowers/rfc-020/dev-log.md`.
@@ -168,11 +181,12 @@ is not part of this run and must not dispatch RFC-020 tasks or edit `.superpower
 
 Pathspec commits only (`git commit <files> -m …`); never `git add -A`; never `--amend`; **never push
 without being asked**. Conventional messages (`feat(rfc-020):`, `fix(rfc-020):`, `chore(sdd):`).
-Pre-existing specs are authority — needing to edit an assertion is a **STOP**, not a fix. Any file
-outside a brief's scope table is a **STOP**. Every deviation is classified `inert` or
+Pre-existing specs are authority. D.20.5 is the explicit owner authorization to replace only the
+contradictory XAUUSD distance assertions with named successor assertions; every other pre-existing
+assertion remains a **STOP**. Any file outside a brief's scope table is a **STOP**. Every deviation is classified `inert` or
 `requires-attention`; **a silent deviation is the one unrecoverable failure mode.** Only `dev-log.md`
 is tracked under `.superpowers/rfc-020/` — briefs and reports are local-only by that directory's own
 `.gitignore`.
 
-**Stop state:** the branch is green, audited PASS, and unpushed. The next action is the owner's
-decision on the PR.
+**Stop state:** wait for the PR actor, then dispatch F21-2 from its approved handoff. Do not merge from
+the historic PASS; require fresh evidence and an independent audit after the fix.
