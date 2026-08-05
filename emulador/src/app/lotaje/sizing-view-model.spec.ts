@@ -51,7 +51,12 @@ describe('deriveLots — Method B (distance), the default', () => {
     const d = deriveLots(
       state({ balanceText: '5000', riskPctText: '1', symbolText: 'US30', distanceText: '50' }),
     );
-    expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: Number(d.actualRiskUsd.toFixed(2)) }).toEqual({
+    expect({
+      unit: d.unitLabel,
+      distance: d.distance,
+      lots: d.lots,
+      risk: Number(d.actualRiskUsd.toFixed(2)),
+    }).toEqual({
       unit: 'pts',
       distance: 50,
       lots: 1,
@@ -63,7 +68,12 @@ describe('deriveLots — Method B (distance), the default', () => {
     const d = deriveLots(
       state({ balanceText: '10000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '5' }),
     );
-    expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: Number(d.actualRiskUsd.toFixed(2)) }).toEqual({
+    expect({
+      unit: d.unitLabel,
+      distance: d.distance,
+      lots: d.lots,
+      risk: Number(d.actualRiskUsd.toFixed(2)),
+    }).toEqual({
       unit: 'pts',
       distance: 5,
       lots: 0.2,
@@ -75,7 +85,12 @@ describe('deriveLots — Method B (distance), the default', () => {
     const d = deriveLots(
       state({ balanceText: '10000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '10' }),
     );
-    expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: Number(d.actualRiskUsd.toFixed(2)) }).toEqual({
+    expect({
+      unit: d.unitLabel,
+      distance: d.distance,
+      lots: d.lots,
+      risk: Number(d.actualRiskUsd.toFixed(2)),
+    }).toEqual({
       unit: 'pts',
       distance: 10,
       lots: 0.1,
@@ -87,7 +102,12 @@ describe('deriveLots — Method B (distance), the default', () => {
     const d = deriveLots(
       state({ balanceText: '10000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '20' }),
     );
-    expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: Number(d.actualRiskUsd.toFixed(2)) }).toEqual({
+    expect({
+      unit: d.unitLabel,
+      distance: d.distance,
+      lots: d.lots,
+      risk: Number(d.actualRiskUsd.toFixed(2)),
+    }).toEqual({
       unit: 'pts',
       distance: 20,
       lots: 0.05,
