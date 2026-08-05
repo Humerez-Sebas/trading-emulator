@@ -2370,3 +2370,88 @@ Paused for a usage-limit reset, at a clean boundary.
 already exist in both hosts from D-5 and must not be duplicated), then the whole-branch final audit
 including the `pipeline/` gates, because B-1 changed `pipeline/`. A separate design/polish track for
 the calculadora page and the companion toolbar is owner-led and is **not** part of this run.
+
+---
+
+## §22 — The owner's redesign, then Task D-7. **Wave 5 implementation is complete.**
+
+### 22.1 The redesign (`a9fcadd`) — owner-authored, outside the SDD dispatch chain
+
+The owner rebuilt `/calculadora` and the companion against their own mockup in a separate session:
+**8 files, +2141/−683**. It is on the branch and therefore in scope for the final audit, but it was
+not dispatched or briefed by this run. Orchestrator checks on it, run first-hand:
+
+| Check | Result |
+| :--- | :--- |
+| Gates | tsc app 0 · tsc spec 0 · lint 0 problems · `ng test` **85 / 1219** · build 0, 612.60 kB |
+| Framework-free boundary | **zero** `@angular` / `@ngrx` / `state` / `components` / `domain/chart` imports under `lotaje/` |
+| Spec invariant | still **exactly one `M`** |
+| `angular.json` | the one non-source change: `anyComponentStyle` budget 10/14 kB → **20/24 kB**, with a stated rationale (the stylesheet is `ViewEncapsulation.None`, hence global in fact, at 19.33 kB; relocating it would move the weight into the initial bundle) |
+
+It closes **F21-1** (the method toggle is now a `minmax(0, 1fr)` group in a narrow-first,
+`@container` layout keyed off `#lotaje-mount`, so a container-query failure degrades to stacked
+rather than clipped), **F21-3** (free text replaced by a keyboard-operable listbox over the four
+catalogue instruments; the heuristic badge survives for contexts persisted by older builds), and
+**F21-4** («Abrir mini calculadora» in the header; the companion titles itself «Calculadora flotante»
+and swaps the launcher for a real close action).
+
+It also introduced `data-lotaje-companion` on the companion document root — which turned out to be
+exactly the seam D-7 needed. **Its own declared gap:** real-browser verification at 1280 / 320×300 /
+240 px had not been done, because the app requires login.
+
+### 22.2 Task D-7 — companion-only `Alt` shortcuts
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE**, orchestrator mechanical scan passed |
+| Commit | `8b5ec2c` — `feat(rfc-020): add companion-only Alt shortcuts (D-7)` |
+| Parent | `a9fcadd` exactly |
+| Diff | **2 files, +206/−9** — exactly the brief's scope table |
+| Tests | **85 / 1219 → 85 / 1226** (+7) |
+| Gates | tsc app 0 · tsc spec 0 · lint 0 problems · `ng test` 85/1226 · build 0, **612.60 kB, byte-identical to baseline**, no new chunk types |
+| Brief / report | `.superpowers/rfc-020/task-d7-brief.md` · `task-d7-report.md` |
+
+**The trap the brief predicted, and the implementer avoided.** The redesigned method control is a
+segmented control that **picks** rather than flips, and its click path early-returns on the
+already-active method. Calling it with `currentState.method` would have been a silent no-op. `Alt+M`
+computes the *other* method first, so `switchMethod` runs exactly once per press and P4's
+convert-never-reset semantics hold.
+
+**Eight mutation cycles, all closing properly** — removing the companion gate, hardcoding the `Alt+M`
+target, dropping each `preventDefault`/action call, widening the `Ctrl`/`Meta` and bare-`m` gates, and
+duplicating the `Enter` copy action each produced exactly the expected red, were reverted, and left
+`git diff --exit-code` clean. No mutation was staged or committed. Several pre-existing specs
+double-guard the same invariants — a cross-check, not a gap.
+
+**Real-browser validation** reused D-6's CDP methodology (per-target WebSocket, avoiding the
+`Target.setAutoAttach` deadlock) on the same Edge `151.0.4129.59`, against the committed module tree
+bundled with esbuild, driving **trusted** `Input.dispatchKeyEvent`. All three shortcuts fire in a real
+companion opened through the real trigger (`defaultPrevented: true`, method alternates twice,
+disclosure toggles both ways, focus moves without opening the listbox); all three are **inert in the
+page host** with a byte-identical state snapshot before and after; a bare `m` still types a real
+character in both hosts.
+
+**Carry-over closed as a bonus:** the redesign's unmeasured 1280 / 320×300 / 240 px breakpoints show
+**zero horizontal overflow**, which appears to resolve D-6's F21-1 `requires-attention` finding. The
+implementer correctly **flagged this for the auditor rather than self-closing it**.
+
+**Orchestrator verification, first-hand:** direct parent `a9fcadd`; exactly the two scoped files;
+`calculadora-page.component.spec.ts`, CSS, `companion-window.*` and `angular.json` all absent from
+the diff; `ng test` re-run personally → **85 files / 1226 tests**, exit 0; spec invariant still
+exactly one `M`; package/lockfile diff empty; tree clean.
+
+### 22.3 State entering the final audit
+
+| Field | Value |
+| :--- | :--- |
+| HEAD | `8b5ec2c` (plus the ledger commit carrying this section) |
+| Ahead of `origin/main` | 48 commits before this ledger commit; **none pushed** |
+| Tests | **85 files / 1226 tests**; 1046 at the `ad80b9f` base |
+| Waves | 0-4 audited PASS · **5 complete: V-1, D-6, D-7** |
+| Remaining | the **mandatory whole-branch final audit**, then the PR (owner's call) |
+
+The final audit must additionally run the `pipeline/` gates — `python -m pytest -q`, `ruff check .`,
+`ruff format --check .` — because **B-1 changed `pipeline/`**. It must also judge the owner's
+redesign (`a9fcadd`), which never passed through a task audit, and rule on F21-1's apparent closure.
+**F21-2 (the 100× non-FX sizing error) is explicitly deferred by the owner** until the RFC is
+finished, and is not a blocker for this audit.
