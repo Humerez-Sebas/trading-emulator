@@ -123,6 +123,13 @@ Test progression, re-derived commit-by-commit by the auditor: 1046 → 1053 → 
 | — | D1-L1 cold-start copy; `BTCUSD` heuristic `100000` by design (§8.4.2); a registry regeneration re-values open **and realised** P&L (§11.4.3) | Recorded, not scheduled |
 | — | `develop` ↔ `main` reunification | A **separate run with its own ledger**. No RFC-020 work touches `develop` |
 
+**F21-2 already has a brief:** `.superpowers/rfc-020/task-f21-2-brief.md` (local-only, like every
+brief in this run). It is deliberately **not** ready to dispatch — it opens with a product decision
+only the owner can make, because the sources conflict on whether `pts` means MT5 points or price
+units, and the two readings produce different software. Read its §2 before any implementation, and
+note its §6: the fix should **not** be folded into the audited RFC-020 branch, since that would
+re-open a passed audit.
+
 A separate **owner-led design/polish track** covers the calculadora page and the companion toolbar. It
 is not part of this run and must not dispatch RFC-020 tasks or edit `.superpowers/rfc-020/dev-log.md`.
 
