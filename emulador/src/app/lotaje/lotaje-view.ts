@@ -17,21 +17,30 @@
  * value-detected.
  *
  * Builds the three zones of product design §3 and the method-state switch of
- * §4.1/P4 (distance ⇄ prices; switching CONVERTS, never resets). The host
- * stylesheet supplies the completed context-strip, asset disclosure, hero
- * hierarchy, copy feedback and touch-stepper states. D-5 owns the root-scoped
- * focus and keyboard listeners here. C-2 owns the one centralized
- * post-transition persistence side effect (`transitionState`, below). D-6
- * wires the «Abrir ventana» trigger to `./companion-window`, which MOVES
- * this same mounted view into a companion realm and back — there is exactly
- * one active mount module-wide (see `mount`/`unmount` below), so opening the
- * companion is a relocation, never a second copy. `./companion-window`
- * itself imports nothing from Angular/NgRx/`state/*`/`components/*`/
- * `domain/chart/*` either. Deliberately excluded here: companion-only Alt
- * shortcuts (D-7).
+ * §4.1/P4 (distance ⇄ prices; switching CONVERTS, never resets), inside the
+ * header + summary + result composition the owner's polish brief made the
+ * visual authority. The host stylesheet supplies every surface, the
+ * page-vs-companion responsive arrangement, and the focus/hover states. D-5
+ * owns the root-scoped focus and keyboard listeners here. C-2 owns the one
+ * centralized post-transition persistence side effect (`transitionState`,
+ * below). The «Abrir mini calculadora» trigger hands off to
+ * `./companion-window`, which MOVES this same mounted view into a companion
+ * realm and back — there is exactly one active mount module-wide (see
+ * `mount`/`unmount` below), so opening the companion is a relocation, never a
+ * second copy. `./companion-window` itself imports nothing from Angular/NgRx/
+ * `state/*`/`components/*`/`domain/chart/*` either. Deliberately excluded
+ * here: companion-only Alt shortcuts (D-7).
+ *
+ * The one thing this module reads about its own host is
+ * `data-lotaje-companion` on the mounted document's root element — the
+ * attribute `./companion-window` already stamps on the companion document
+ * before calling `mount()`. It decides the title and whether the header
+ * offers «Abrir mini calculadora» (page) or a real close action (companion).
+ * No second mount, no second state, no host-injected configuration.
  */
 import { resolveAsset } from '../domain/sizing/asset-registry';
 import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
+import { assetDisplay } from './asset-catalog';
 import { openCompanionWindow } from './companion-window';
 import { deriveLots, switchMethod, INITIAL_STATE, type LotajeDerived, type LotajeState, type Method } from './sizing-view-model';
 import { formatLots, formatMoney } from './format';
@@ -63,10 +72,16 @@ let refs: Refs | null = null;
 let mountGeneration = 0;
 let copyAttemptGeneration = 0;
 let activeFeedbackTimer: { window: Window; id: number } | null = null;
+let assetMenuOpen = false;
+let assetDismissHandler: ((event: Event) => void) | null = null;
 let symbolDisclosureOpen = false;
 
 const COPY_FEEDBACK_DURATION_MS = 1200;
 const COPY_FAILURE = 'No se pudo copiar — selecciona y copia';
+const RESULT_NOTE = 'Valor aproximado. Verifica siempre antes de operar.';
+const RESULT_HINT = 'Con los parámetros actuales, puedes operar el siguiente tamaño.';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
 type ZoneQuestionFields =
   | { method: 'distance'; input: HTMLInputElement; unit: HTMLElement }
@@ -86,11 +101,13 @@ interface AssetValueRefs {
 
 interface Refs {
   // Zone 1 — structure never changes; fields are synced in place.
-  symbolChip: HTMLButtonElement;
+  assetTrigger: HTMLButtonElement;
+  assetMenu: HTMLElement;
+  assetOptions: readonly HTMLButtonElement[];
   symbolValue: HTMLElement;
-  symbolInput: HTMLInputElement;
-  symbolSelect: HTMLSelectElement;
+  symbolMark: HTMLElement;
   symbolBadge: HTMLElement;
+  specTrigger: HTMLButtonElement;
   symbolDisclosure: HTMLElement;
   assetValues: AssetValueRefs;
   balanceInput: HTMLInputElement;
@@ -99,7 +116,7 @@ interface Refs {
   // Zone 2 — rebuilt only when the method actually changes.
   questionFieldsContainer: HTMLElement;
   questionFields: ZoneQuestionFields;
-  methodToggle: HTMLButtonElement;
+  methodOptions: Readonly<Record<Method, HTMLButtonElement>>;
   // Zone 3 — no input lives here; render invalidates its async copy lifecycle before rebuilding.
   answerContainer: HTMLElement;
 }
@@ -122,6 +139,113 @@ export function getMountedWindow(): Window | null {
  */
 export function getMountedState(): LotajeState {
   return currentState;
+}
+
+// ---- icons -----------------------------------------------------------------
+/**
+ * Inline SVG built through `doc.createElementNS`, never innerHTML and never an
+ * Angular template: this module has no framework and no asset pipeline of its
+ * own, and the companion realm receives only the stylesheets the adapter
+ * copies — an `<img src>` or an icon-font would be a second thing to keep
+ * alive across two documents. Every icon is decorative: its meaning is always
+ * carried by adjacent text or by the control's accessible name, so all of them
+ * are `aria-hidden`.
+ */
+interface IconShape {
+  readonly tag: 'path' | 'circle' | 'line' | 'rect';
+  readonly attrs: Readonly<Record<string, string>>;
+}
+
+type IconName =
+  | 'calculator'
+  | 'popout'
+  | 'close'
+  | 'chevron'
+  | 'check'
+  | 'info'
+  | 'target'
+  | 'points'
+  | 'prices';
+
+const ICONS: Readonly<Record<IconName, readonly IconShape[]>> = {
+  calculator: [
+    { tag: 'rect', attrs: { x: '3', y: '3', width: '18', height: '18', rx: '2.5' } },
+    { tag: 'line', attrs: { x1: '3', y1: '9', x2: '21', y2: '9' } },
+    { tag: 'line', attrs: { x1: '9', y1: '9', x2: '9', y2: '21' } },
+    { tag: 'line', attrs: { x1: '15', y1: '9', x2: '15', y2: '21' } },
+    { tag: 'line', attrs: { x1: '3', y1: '15', x2: '21', y2: '15' } },
+  ],
+  popout: [
+    { tag: 'path', attrs: { d: 'M10 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4' } },
+    { tag: 'path', attrs: { d: 'M14 4h6v6' } },
+    { tag: 'line', attrs: { x1: '20', y1: '4', x2: '11', y2: '13' } },
+  ],
+  close: [
+    { tag: 'line', attrs: { x1: '6', y1: '6', x2: '18', y2: '18' } },
+    { tag: 'line', attrs: { x1: '18', y1: '6', x2: '6', y2: '18' } },
+  ],
+  chevron: [{ tag: 'path', attrs: { d: 'M6 9.5 12 15.5 18 9.5' } }],
+  check: [{ tag: 'path', attrs: { d: 'M4.5 12.5 9.5 17.5 19.5 7' } }],
+  info: [
+    { tag: 'circle', attrs: { cx: '12', cy: '12', r: '9' } },
+    { tag: 'line', attrs: { x1: '12', y1: '11', x2: '12', y2: '16.5' } },
+    { tag: 'path', attrs: { d: 'M12 7.5h.01' } },
+  ],
+  target: [
+    { tag: 'circle', attrs: { cx: '12', cy: '12', r: '8.5' } },
+    { tag: 'circle', attrs: { cx: '12', cy: '12', r: '4' } },
+    { tag: 'path', attrs: { d: 'M12 11.9h.01' } },
+  ],
+  points: [{ tag: 'path', attrs: { d: 'M3 12h3.5L9 5l4 14 2.5-7H21' } }],
+  prices: [
+    { tag: 'line', attrs: { x1: '12', y1: '3', x2: '12', y2: '21' } },
+    {
+      tag: 'path',
+      attrs: { d: 'M16.5 7.2C16.5 5.4 14.5 4 12 4S7.5 5.4 7.5 7.2s2 2.7 4.5 3.4 4.5 1.6 4.5 3.4-2 3.2-4.5 3.2-4.5-1.4-4.5-3.2' },
+    },
+  ],
+};
+
+function buildIcon(doc: Document, name: IconName, className: string): SVGSVGElement {
+  const svg = doc.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', className);
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.75');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  for (const shape of ICONS[name]) {
+    const node = doc.createElementNS(SVG_NS, shape.tag);
+    for (const [attr, value] of Object.entries(shape.attrs)) node.setAttribute(attr, value);
+    svg.appendChild(node);
+  }
+  return svg;
+}
+
+/** The square identity mark beside a ticker: two glyphs of text, tinted per instrument. */
+function buildAssetMark(doc: Document, symbol: string): HTMLElement {
+  const mark = doc.createElement('span');
+  mark.className = 'lotaje-asset-mark';
+  mark.setAttribute('aria-hidden', 'true');
+  syncAssetMark(mark, symbol);
+  return mark;
+}
+
+function syncAssetMark(mark: HTMLElement, symbol: string): void {
+  const display = assetDisplay(symbol);
+  mark.textContent = symbol === '' ? '—' : display.mark;
+  mark.dataset['tone'] = symbol === '' ? 'muted' : display.tone;
+}
+
+function buildLabel(doc: Document, text: string, htmlFor?: string): HTMLElement {
+  const label = doc.createElement(htmlFor === undefined ? 'span' : 'label');
+  label.className = 'lotaje-label';
+  label.textContent = text;
+  if (htmlFor !== undefined) (label as HTMLLabelElement).htmlFor = htmlFor;
+  return label;
 }
 
 // ---- value sync (never clobber a field mid-edit) -------------------------
@@ -169,24 +293,147 @@ function onBalanceInput(e: Event): void {
 function onRiskPctInput(e: Event): void {
   setState({ riskPctText: (e.target as HTMLInputElement).value });
 }
-function onSymbolInput(e: Event): void {
-  setState({ symbolText: (e.target as HTMLInputElement).value });
+
+// ---- asset selector (F21-3: a curated listbox, never free text) ------------
+/**
+ * F21-3: the free-text «Otro símbolo» field is gone. It could name an
+ * instrument the registry has no specification for, and the tool then sized it
+ * from a name-shape guess — an unfinished behaviour with no way to finish it
+ * honestly (the calculation specs come from MT5, not from a text box). The
+ * picker now offers exactly the instruments the application owns specs for.
+ * The heuristic badge below survives on purpose: a context persisted by an
+ * older build can still carry a symbol outside the catalogue, and when it does
+ * the provenance must still be declared rather than silently dropped.
+ */
+function setAssetMenuOpen(open: boolean): void {
+  assetMenuOpen = open;
+  if (refs) {
+    refs.assetTrigger.setAttribute('aria-expanded', String(open));
+    refs.assetMenu.hidden = !open;
+  }
+  syncAssetDismissListener();
 }
-function setSymbolDisclosureOpen(open: boolean): void {
-  symbolDisclosureOpen = open;
-  if (!refs) return;
-  refs.symbolChip.setAttribute('aria-expanded', String(open));
-  refs.symbolDisclosure.hidden = !open;
+
+/**
+ * Dismissal on an outside press. A capture-phase `pointerdown` on the mounted
+ * DOCUMENT — not a `focusout` on the wrapper — because a press on
+ * non-focusable page area produces no focus event at all, and because this is
+ * deterministic: `.click()` never synthesises `pointerdown`, so the unit suite
+ * exercises the keyboard/selection paths without this listener firing
+ * incidentally. Registered only while the menu is open, removed the moment it
+ * closes, and again on `unmount()` before the realm reference is dropped.
+ */
+function syncAssetDismissListener(): void {
+  if (assetMenuOpen && currentDoc && !assetDismissHandler) {
+    const handler = (event: Event): void => {
+      const wrapper = refs?.assetMenu.parentElement;
+      const target = event.target as Node | null;
+      if (wrapper && target && typeof target.nodeType === 'number' && wrapper.contains(target)) {
+        return;
+      }
+      setAssetMenuOpen(false);
+    };
+    assetDismissHandler = handler;
+    currentDoc.addEventListener('pointerdown', handler, true);
+    return;
+  }
+  if (!assetMenuOpen) removeAssetDismissListener();
 }
-function onSymbolChipClick(): void {
-  setSymbolDisclosureOpen(!symbolDisclosureOpen);
+
+function removeAssetDismissListener(): void {
+  if (!assetDismissHandler) return;
+  currentDoc?.removeEventListener('pointerdown', assetDismissHandler, true);
+  assetDismissHandler = null;
 }
-function onSymbolPresetChange(e: Event): void {
-  const symbol = (e.target as HTMLSelectElement).value;
+
+function focusAssetOption(index: number): void {
+  const options = refs?.assetOptions;
+  if (!options || options.length === 0) return;
+  const wrapped = ((index % options.length) + options.length) % options.length;
+  options[wrapped].focus();
+}
+
+function activeAssetOptionIndex(): number {
+  const options = refs?.assetOptions ?? [];
+  const selected = options.findIndex((option) => option.getAttribute('aria-selected') === 'true');
+  return selected === -1 ? 0 : selected;
+}
+
+function openAssetMenu(index = activeAssetOptionIndex()): void {
+  setAssetMenuOpen(true);
+  focusAssetOption(index);
+}
+
+function closeAssetMenu(returnFocus: boolean): void {
+  if (!assetMenuOpen) return;
+  setAssetMenuOpen(false);
+  if (returnFocus) refs?.assetTrigger.focus();
+}
+
+function onAssetTriggerClick(): void {
+  if (assetMenuOpen) closeAssetMenu(false);
+  else openAssetMenu();
+}
+
+function onAssetOptionClick(symbol: string): void {
   if (!Object.prototype.hasOwnProperty.call(GENERATED_ASSETS, symbol)) return;
   setState({ symbolText: symbol });
-  setSymbolDisclosureOpen(false);
+  closeAssetMenu(true);
 }
+
+/**
+ * One keydown listener on the wrapper that holds both the trigger and the
+ * menu, so trigger-opens-menu and menu-navigation share a single handler and a
+ * single removal. `Escape` stops propagating: the root handler (D-5) reads a
+ * bare `Escape` as "clear the stop field", which must not also happen when the
+ * key's only job was dismissing this menu.
+ */
+function onAssetSelectKeyDown(event: KeyboardEvent): void {
+  if (!refs || event.altKey || event.ctrlKey || event.metaKey) return;
+  const onTrigger = event.target === refs.assetTrigger;
+
+  if (event.key === 'Escape') {
+    if (!assetMenuOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeAssetMenu(true);
+    return;
+  }
+
+  if (event.key === 'Tab') {
+    closeAssetMenu(false);
+    return;
+  }
+
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    if (!assetMenuOpen) {
+      openAssetMenu();
+      return;
+    }
+    if (onTrigger) {
+      focusAssetOption(event.key === 'ArrowDown' ? 0 : refs.assetOptions.length - 1);
+      return;
+    }
+    const current = refs.assetOptions.indexOf(event.target as HTMLButtonElement);
+    if (current === -1) return;
+    focusAssetOption(current + (event.key === 'ArrowDown' ? 1 : -1));
+    return;
+  }
+
+  if ((event.key === 'Home' || event.key === 'End') && assetMenuOpen && !onTrigger) {
+    event.preventDefault();
+    focusAssetOption(event.key === 'Home' ? 0 : refs.assetOptions.length - 1);
+  }
+}
+
+function onSpecTriggerClick(): void {
+  symbolDisclosureOpen = !symbolDisclosureOpen;
+  if (!refs) return;
+  refs.specTrigger.setAttribute('aria-expanded', String(symbolDisclosureOpen));
+  refs.symbolDisclosure.hidden = !symbolDisclosureOpen;
+}
+
 function onDistanceInput(e: Event): void {
   setState({ distanceText: (e.target as HTMLInputElement).value });
 }
@@ -196,21 +443,63 @@ function onEntryInput(e: Event): void {
 function onSlInput(e: Event): void {
   setState({ slText: (e.target as HTMLInputElement).value });
 }
-function onMethodToggleClick(): void {
+
+/**
+ * The segmented control picks a method rather than flipping one; choosing the
+ * already-active mode is a no-op, so P4's "switching CONVERTS, never resets"
+ * still runs exactly once per real change.
+ */
+function onMethodOptionClick(method: Method): void {
+  if (currentState.method === method) return;
   transitionState(switchMethod(currentState));
 }
 
 /**
- * Wired to the «Abrir ventana» trigger. `currentDoc`/`currentWindow` are
- * read at CLICK time (the stable-identity pattern this module already uses
+ * Radio-group arrow semantics: the group is a single tab stop (roving
+ * `tabindex`, see `syncMethodOptions`), and an arrow key moves to the other
+ * mode AND selects it, which is what `role="radio"` promises. Without this the
+ * roving tabindex would make the unselected mode unreachable from a keyboard.
+ */
+function onMethodToggleKeyDown(event: KeyboardEvent): void {
+  if (!refs || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (
+    event.key !== 'ArrowLeft' &&
+    event.key !== 'ArrowRight' &&
+    event.key !== 'ArrowUp' &&
+    event.key !== 'ArrowDown'
+  ) {
+    return;
+  }
+  event.preventDefault();
+  const next: Method = currentState.method === 'distance' ? 'prices' : 'distance';
+  onMethodOptionClick(next);
+  refs.methodOptions[next].focus();
+}
+
+/**
+ * Wired to the «Abrir mini calculadora» trigger. `currentDoc`/`currentWindow`
+ * are read at CLICK time (the stable-identity pattern this module already uses
  * for every other handler), never captured at build time — the trigger is
  * rebuilt on every fresh `mount()`, but reading module state here rather
  * than closing over the `doc`/`win` mount() was called with keeps this
- * handler's shape identical to the rest of the file.
+ * handler's shape identical to the rest of the file. The trigger stays a real
+ * button: Document Picture-in-Picture only opens from a trusted gesture, so
+ * there is no route, effect or synthetic click that could replace it.
  */
 function onCompanionTriggerClick(): void {
   if (!currentDoc || !currentWindow) return;
   openCompanionWindow(currentDoc, currentWindow);
+}
+
+/**
+ * Companion-only. Closes the realm this view is currently mounted in, which
+ * fires its `pagehide` and drives `./companion-window`'s single teardown path
+ * — the same one the window-manager's own close button drives. It is a real
+ * window action, not a painted-on control; there is deliberately no minimise
+ * button beside it, because no browser API backs one.
+ */
+function onCompanionCloseClick(): void {
+  currentWindow?.close();
 }
 
 function stepDistance(direction: -1 | 1, multiplier: 1 | 10): void {
@@ -261,7 +550,6 @@ function onRootKeyDown(event: KeyboardEvent): void {
     const editableTarget =
       event.target === refs.balanceInput ||
       event.target === refs.riskPctInput ||
-      event.target === refs.symbolInput ||
       (refs.questionFields.method === 'distance'
         ? event.target === refs.questionFields.input
         : event.target === refs.questionFields.entry || event.target === refs.questionFields.sl);
@@ -438,6 +726,61 @@ function onCopyActionClick(
   );
 }
 
+// ---- header ----------------------------------------------------------------
+/**
+ * `data-lotaje-companion` is stamped by `./companion-window` on the companion
+ * document only, so this is the one honest way for a single mounted view to
+ * know which surface is currently showing it.
+ */
+function isCompanionDocument(doc: Document): boolean {
+  return doc.documentElement.hasAttribute('data-lotaje-companion');
+}
+
+function buildHeader(doc: Document, companion: boolean): HTMLElement {
+  const header = doc.createElement('header');
+  header.className = 'lotaje-header';
+
+  const identity = doc.createElement('div');
+  identity.className = 'lotaje-header-identity';
+  const mark = doc.createElement('span');
+  mark.className = 'lotaje-header-mark';
+  mark.append(buildIcon(doc, 'calculator', 'lotaje-icon'));
+  const title = doc.createElement('h1');
+  title.className = 'lotaje-title';
+  title.id = 'lotaje-title';
+  title.textContent = companion ? 'Calculadora flotante' : 'Calculadora de lotes';
+  identity.append(mark, title);
+
+  const actions = doc.createElement('div');
+  actions.className = 'lotaje-header-actions';
+  if (companion) {
+    // Exactly one control, and only because `window.close()` genuinely closes
+    // this realm. No minimise button: nothing in the platform implements it,
+    // and an inert control that looks live is worse than no control.
+    const close = doc.createElement('button');
+    close.type = 'button';
+    close.className = 'lotaje-companion-close';
+    close.setAttribute('aria-label', 'Cerrar la calculadora flotante');
+    close.title = 'Cerrar';
+    close.append(buildIcon(doc, 'close', 'lotaje-icon'));
+    close.addEventListener('click', onCompanionCloseClick);
+    actions.append(close);
+  } else {
+    const trigger = doc.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'lotaje-companion-trigger';
+    trigger.append(buildIcon(doc, 'popout', 'lotaje-icon'));
+    const label = doc.createElement('span');
+    label.textContent = 'Abrir mini calculadora';
+    trigger.append(label);
+    trigger.addEventListener('click', onCompanionTriggerClick);
+    actions.append(trigger);
+  }
+
+  header.append(identity, actions);
+  return header;
+}
+
 // ---- Zone 1 · Contexto ----------------------------------------------------
 function appendAssetRow(
   doc: Document,
@@ -513,17 +856,104 @@ function syncAssetSheet(values: AssetValueRefs, symbolText: string): void {
   );
 }
 
+function buildAssetSelect(
+  doc: Document,
+  state: LotajeState,
+  derived: LotajeDerived,
+): { root: HTMLElement } & Pick<
+  Refs,
+  'assetTrigger' | 'assetMenu' | 'assetOptions' | 'symbolValue' | 'symbolMark' | 'symbolBadge'
+> {
+  const root = doc.createElement('div');
+  root.className = 'lotaje-asset-select';
+
+  const trimmedSymbol = state.symbolText.trim();
+  const canonicalSymbol = trimmedSymbol === '' ? '' : resolveAsset(trimmedSymbol).symbol;
+
+  const trigger = doc.createElement('button');
+  trigger.type = 'button';
+  trigger.id = 'lotaje-asset-trigger';
+  trigger.className = 'lotaje-asset-trigger';
+  trigger.setAttribute('role', 'combobox');
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.setAttribute('aria-controls', 'lotaje-asset-menu');
+  trigger.setAttribute('aria-labelledby', 'lotaje-asset-label lotaje-asset-trigger');
+  trigger.addEventListener('click', onAssetTriggerClick);
+
+  const symbolMark = buildAssetMark(doc, canonicalSymbol);
+  const symbolValue = doc.createElement('span');
+  symbolValue.className = 'lotaje-symbol-value';
+  symbolValue.textContent = canonicalSymbol === '' ? 'Símbolo' : canonicalSymbol;
+  const symbolBadge = doc.createElement('span');
+  symbolBadge.className = 'lotaje-symbol-badge';
+  symbolBadge.textContent = 'heurística';
+  symbolBadge.hidden = !derived.isHeuristic;
+  trigger.append(symbolMark, symbolValue, symbolBadge, buildIcon(doc, 'chevron', 'lotaje-caret'));
+
+  const menu = doc.createElement('div');
+  menu.id = 'lotaje-asset-menu';
+  menu.className = 'lotaje-asset-menu';
+  menu.setAttribute('role', 'listbox');
+  menu.setAttribute('aria-label', 'Selecciona un activo');
+  menu.hidden = true;
+  const menuTitle = doc.createElement('p');
+  menuTitle.className = 'lotaje-asset-menu-title';
+  menuTitle.setAttribute('aria-hidden', 'true');
+  menuTitle.textContent = 'Selecciona un activo';
+  menu.append(menuTitle);
+
+  const assetOptions: HTMLButtonElement[] = [];
+  for (const symbol of Object.keys(GENERATED_ASSETS)) {
+    const option = doc.createElement('button');
+    option.type = 'button';
+    option.className = 'lotaje-asset-option';
+    option.setAttribute('role', 'option');
+    option.setAttribute('data-symbol', symbol);
+    option.setAttribute('aria-selected', String(symbol === canonicalSymbol));
+    const optionSymbol = doc.createElement('span');
+    optionSymbol.className = 'lotaje-asset-option-symbol';
+    optionSymbol.textContent = symbol;
+    const optionName = doc.createElement('span');
+    optionName.className = 'lotaje-asset-option-name';
+    optionName.textContent = assetDisplay(symbol).name;
+    option.append(
+      buildAssetMark(doc, symbol),
+      optionSymbol,
+      optionName,
+      buildIcon(doc, 'check', 'lotaje-asset-option-check'),
+    );
+    option.addEventListener('click', () => onAssetOptionClick(symbol));
+    menu.append(option);
+    assetOptions.push(option);
+  }
+
+  root.addEventListener('keydown', onAssetSelectKeyDown);
+  root.append(trigger, menu);
+
+  return { root, assetTrigger: trigger, assetMenu: menu, assetOptions, symbolValue, symbolMark, symbolBadge };
+}
+
+function buildSummaryCell(doc: Document, modifier: string, label: HTMLElement, control: Node): HTMLElement {
+  const cell = doc.createElement('div');
+  cell.className = `lotaje-summary-cell lotaje-summary-cell--${modifier}`;
+  cell.append(label, control);
+  return cell;
+}
+
 function buildZoneContext(
   doc: Document,
   state: LotajeState,
   derived: LotajeDerived,
 ): { root: HTMLElement } & Pick<
   Refs,
-  | 'symbolChip'
+  | 'assetTrigger'
+  | 'assetMenu'
+  | 'assetOptions'
   | 'symbolValue'
-  | 'symbolInput'
-  | 'symbolSelect'
+  | 'symbolMark'
   | 'symbolBadge'
+  | 'specTrigger'
   | 'symbolDisclosure'
   | 'assetValues'
   | 'balanceInput'
@@ -534,114 +964,98 @@ function buildZoneContext(
   root.className = 'lotaje-zone lotaje-zone--context';
   root.setAttribute('aria-label', 'Contexto');
 
-  // DOM order is balance -> risk -> symbol chip/disclosure so the natural tab
-  // order reaches the context before the stop. The visual order (symbol chip
-  // first) is achieved with CSS `order`, not DOM order — the two deliberately
-  // diverge (product design §7.1).
+  const summary = doc.createElement('div');
+  summary.className = 'lotaje-summary';
+
+  // DOM order is the visual order (activo → cuenta → riesgo → riesgo derivado),
+  // which is also the tab order product design §7.2 specifies. The `order`
+  // divergence the first pass needed is gone: the reference composition puts
+  // the instrument first on the page too.
+  const assetLabel = buildLabel(doc, 'Activo');
+  assetLabel.id = 'lotaje-asset-label';
+  const asset = buildAssetSelect(doc, state, derived);
+  summary.append(buildSummaryCell(doc, 'asset', assetLabel, asset.root));
+
   const balanceField = doc.createElement('div');
   balanceField.className = 'lotaje-field lotaje-field-balance';
   const balanceInput = doc.createElement('input');
+  balanceInput.id = 'lotaje-balance';
   balanceInput.type = 'text';
   balanceInput.inputMode = 'decimal';
   balanceInput.name = 'balance';
   balanceInput.className = 'ui-input';
-  balanceInput.setAttribute('aria-label', 'Cuenta (USD)');
   balanceInput.value = state.balanceText;
   balanceInput.addEventListener('input', onBalanceInput);
   const balanceSuffix = doc.createElement('span');
   balanceSuffix.className = 'lotaje-field-suffix';
   balanceSuffix.textContent = 'USD';
   balanceField.append(balanceInput, balanceSuffix);
+  summary.append(
+    buildSummaryCell(doc, 'balance', buildLabel(doc, 'Tamaño de cuenta', 'lotaje-balance'), balanceField),
+  );
 
   const riskField = doc.createElement('div');
   riskField.className = 'lotaje-field lotaje-field-risk';
   const riskPctInput = doc.createElement('input');
+  riskPctInput.id = 'lotaje-risk';
   riskPctInput.type = 'text';
   riskPctInput.inputMode = 'decimal';
   riskPctInput.name = 'riskPct';
   riskPctInput.className = 'ui-input';
-  riskPctInput.setAttribute('aria-label', 'Riesgo %');
   riskPctInput.value = state.riskPctText;
   riskPctInput.addEventListener('input', onRiskPctInput);
   const riskSuffix = doc.createElement('span');
   riskSuffix.className = 'lotaje-field-suffix';
   riskSuffix.textContent = '%';
   riskField.append(riskPctInput, riskSuffix);
+  summary.append(
+    buildSummaryCell(doc, 'risk', buildLabel(doc, 'Riesgo por operación', 'lotaje-risk'), riskField),
+  );
 
+  // Derived, not editable: no field chrome, accent colour, and its own cell so
+  // it stays the honest anchor beside the risk it was computed from (§3.1).
   const riskUsd = doc.createElement('span');
   riskUsd.className = 'lotaje-risk-usd';
-  riskUsd.textContent = `· ${formatMoney(derived.requestedRiskUsd)}`;
+  riskUsd.textContent = formatMoney(derived.requestedRiskUsd);
+  summary.append(buildSummaryCell(doc, 'risk-usd', buildLabel(doc, 'Riesgo en USD'), riskUsd));
 
-  const chip = doc.createElement('button');
-  chip.type = 'button';
-  chip.className = 'lotaje-symbol-chip';
-  chip.setAttribute('aria-expanded', 'false');
-  chip.setAttribute('aria-controls', 'lotaje-symbol-disclosure');
-  chip.addEventListener('click', onSymbolChipClick);
-  const symbolValue = doc.createElement('span');
-  symbolValue.className = 'lotaje-symbol-value';
-  const trimmedSymbol = state.symbolText.trim();
-  symbolValue.textContent = trimmedSymbol === '' ? 'Símbolo' : resolveAsset(trimmedSymbol).symbol;
-  const symbolBadge = doc.createElement('span');
-  symbolBadge.className = 'lotaje-symbol-badge';
-  symbolBadge.textContent = 'heurística';
-  symbolBadge.hidden = !derived.isHeuristic;
-  chip.append(symbolValue, symbolBadge);
+  // Ficha del activo — still progressive disclosure (§5.2), now on its own
+  // full-width row instead of hanging off the instrument chip, so opening it
+  // never displaces the summary above it.
+  const specs = doc.createElement('div');
+  specs.className = 'lotaje-specs';
+  const specTrigger = doc.createElement('button');
+  specTrigger.type = 'button';
+  specTrigger.className = 'lotaje-spec-trigger';
+  specTrigger.setAttribute('aria-expanded', 'false');
+  specTrigger.setAttribute('aria-controls', 'lotaje-symbol-disclosure');
+  specTrigger.append(buildIcon(doc, 'info', 'lotaje-icon'));
+  const specLabel = doc.createElement('span');
+  specLabel.className = 'lotaje-spec-trigger-label';
+  specLabel.textContent = 'Especificaciones del activo';
+  specTrigger.append(specLabel, buildIcon(doc, 'chevron', 'lotaje-caret'));
+  specTrigger.addEventListener('click', onSpecTriggerClick);
 
   const symbolDisclosure = doc.createElement('div');
   symbolDisclosure.id = 'lotaje-symbol-disclosure';
   symbolDisclosure.className = 'lotaje-symbol-disclosure';
   symbolDisclosure.hidden = true;
-  const picker = doc.createElement('div');
-  picker.className = 'lotaje-symbol-picker';
-  const presetLabel = doc.createElement('label');
-  presetLabel.htmlFor = 'lotaje-symbol-preset';
-  presetLabel.textContent = 'Activos';
-  const symbolSelect = doc.createElement('select');
-  symbolSelect.id = 'lotaje-symbol-preset';
-  symbolSelect.name = 'symbolPreset';
-  symbolSelect.className = 'ui-input';
-  const prompt = doc.createElement('option');
-  prompt.value = '';
-  prompt.disabled = true;
-  prompt.textContent = 'Selecciona un activo';
-  symbolSelect.append(prompt);
-  for (const symbol of Object.keys(GENERATED_ASSETS)) {
-    const option = doc.createElement('option');
-    option.value = symbol;
-    option.textContent = symbol;
-    symbolSelect.append(option);
-  }
-  symbolSelect.value = Object.prototype.hasOwnProperty.call(GENERATED_ASSETS, trimmedSymbol.toUpperCase())
-    ? trimmedSymbol.toUpperCase()
-    : '';
-  symbolSelect.addEventListener('change', onSymbolPresetChange);
-  const symbolLabel = doc.createElement('label');
-  symbolLabel.htmlFor = 'lotaje-symbol-input';
-  symbolLabel.textContent = 'Otro símbolo';
-  const symbolInput = doc.createElement('input');
-  symbolInput.id = 'lotaje-symbol-input';
-  symbolInput.type = 'text';
-  symbolInput.name = 'symbol';
-  symbolInput.className = 'ui-input lotaje-symbol-input';
-  symbolInput.autocomplete = 'off';
-  symbolInput.value = state.symbolText;
-  symbolInput.addEventListener('input', onSymbolInput);
-  picker.append(presetLabel, symbolSelect, symbolLabel, symbolInput);
-
   const assetSheet = buildAssetSheet(doc);
   syncAssetSheet(assetSheet.values, state.symbolText);
-  symbolDisclosure.append(picker, assetSheet.root);
+  symbolDisclosure.append(assetSheet.root);
+  specs.append(specTrigger, symbolDisclosure);
 
-  root.append(balanceField, riskField, riskUsd, chip, symbolDisclosure);
+  root.append(summary, specs);
 
   return {
     root,
-    symbolChip: chip,
-    symbolValue,
-    symbolInput,
-    symbolSelect,
-    symbolBadge,
+    assetTrigger: asset.assetTrigger,
+    assetMenu: asset.assetMenu,
+    assetOptions: asset.assetOptions,
+    symbolValue: asset.symbolValue,
+    symbolMark: asset.symbolMark,
+    symbolBadge: asset.symbolBadge,
+    specTrigger,
     symbolDisclosure,
     assetValues: assetSheet.values,
     balanceInput,
@@ -651,6 +1065,13 @@ function buildZoneContext(
 }
 
 // ---- Zone 2 · La pregunta --------------------------------------------------
+function buildFieldGroup(doc: Document, modifier: string, label: HTMLElement, control: Node): HTMLElement {
+  const group = doc.createElement('div');
+  group.className = `lotaje-field-group lotaje-field-group--${modifier}`;
+  group.append(label, control);
+  return group;
+}
+
 function buildZoneQuestionFields(
   doc: Document,
   container: HTMLElement,
@@ -659,6 +1080,9 @@ function buildZoneQuestionFields(
 ): ZoneQuestionFields {
   container.innerHTML = '';
   if (state.method === 'distance') {
+    // Points mode renders ONE field. There is no reserved Entrada/SL row
+    // waiting empty beside it — the grid tracks come from the children that
+    // actually exist.
     const distanceControl = doc.createElement('div');
     distanceControl.className = 'lotaje-distance-control';
     const decrement = doc.createElement('button');
@@ -670,11 +1094,11 @@ function buildZoneQuestionFields(
     const field = doc.createElement('div');
     field.className = 'lotaje-field lotaje-field-stop';
     const input = doc.createElement('input');
+    input.id = 'lotaje-distance';
     input.type = 'text';
     input.inputMode = 'decimal';
     input.name = 'distance';
     input.className = 'ui-input';
-    input.setAttribute('aria-label', 'Stop (distancia)');
     input.value = state.distanceText;
     input.addEventListener('input', onDistanceInput);
     const unit = doc.createElement('span');
@@ -688,70 +1112,140 @@ function buildZoneQuestionFields(
     increment.textContent = '+';
     increment.addEventListener('click', () => stepDistance(1, 1));
     distanceControl.append(decrement, field, increment);
-    container.append(distanceControl);
+    container.append(
+      buildFieldGroup(doc, 'distance', buildLabel(doc, 'Distancia', 'lotaje-distance'), distanceControl),
+    );
     return { method: 'distance', input, unit };
   }
 
   const entryField = doc.createElement('div');
   entryField.className = 'lotaje-field lotaje-field-entry';
   const entry = doc.createElement('input');
+  entry.id = 'lotaje-entry';
   entry.type = 'text';
   entry.inputMode = 'decimal';
   entry.name = 'entry';
   entry.className = 'ui-input';
-  entry.setAttribute('aria-label', 'Entrada');
   entry.value = state.entryText;
   entry.addEventListener('input', onEntryInput);
-  entryField.append(entry);
+  const entrySuffix = doc.createElement('span');
+  entrySuffix.className = 'lotaje-field-suffix';
+  entrySuffix.textContent = '$';
+  entryField.append(entry, entrySuffix);
 
   const slField = doc.createElement('div');
   slField.className = 'lotaje-field lotaje-field-sl';
   const sl = doc.createElement('input');
+  sl.id = 'lotaje-sl';
   sl.type = 'text';
   sl.inputMode = 'decimal';
   sl.name = 'sl';
   sl.className = 'ui-input';
-  sl.setAttribute('aria-label', 'Stop Loss');
   sl.value = state.slText;
   sl.addEventListener('input', onSlInput);
-  slField.append(sl);
+  const slSuffix = doc.createElement('span');
+  slSuffix.className = 'lotaje-field-suffix';
+  slSuffix.textContent = '$';
+  slField.append(sl, slSuffix);
 
-  container.append(entryField, slField);
+  container.append(
+    buildFieldGroup(doc, 'entry', buildLabel(doc, 'Entrada', 'lotaje-entry'), entryField),
+    buildFieldGroup(doc, 'sl', buildLabel(doc, 'SL', 'lotaje-sl'), slField),
+  );
   return { method: 'prices', entry, sl };
 }
+
+const METHOD_LABELS: Readonly<Record<Method, string>> = {
+  distance: 'Puntos',
+  prices: 'Precios',
+};
+
+const METHOD_ICONS: Readonly<Record<Method, IconName>> = {
+  distance: 'points',
+  prices: 'prices',
+};
 
 function buildZoneQuestion(
   doc: Document,
   state: LotajeState,
   derived: LotajeDerived,
-): { root: HTMLElement } & Pick<Refs, 'questionFieldsContainer' | 'questionFields' | 'methodToggle'> {
+): { root: HTMLElement } & Pick<
+  Refs,
+  'questionFieldsContainer' | 'questionFields' | 'methodOptions'
+> {
   const root = doc.createElement('section');
   root.className = 'lotaje-zone lotaje-zone--question';
   root.setAttribute('aria-label', 'La pregunta');
+
+  // F21-1: the old single toggle button was a fixed-width control in a row
+  // that could not shrink, and it overflowed the companion at its 240 CSS px
+  // floor. This is a two-option group whose tracks are `minmax(0, 1fr)` and
+  // which restacks with the rest of the calculation area.
+  const method = doc.createElement('div');
+  method.className = 'lotaje-method';
+  const methodLabel = buildLabel(doc, 'Modo');
+  methodLabel.id = 'lotaje-method-label';
+  const methodToggle = doc.createElement('div');
+  methodToggle.className = 'lotaje-method-toggle';
+  methodToggle.setAttribute('role', 'radiogroup');
+  methodToggle.setAttribute('aria-labelledby', 'lotaje-method-label');
+  methodToggle.addEventListener('keydown', onMethodToggleKeyDown);
+
+  const methodOptions = {} as Record<Method, HTMLButtonElement>;
+  for (const candidate of ['distance', 'prices'] as const) {
+    const option = doc.createElement('button');
+    option.type = 'button';
+    option.className = 'lotaje-method-option';
+    option.setAttribute('role', 'radio');
+    option.setAttribute('data-method', candidate);
+    option.append(buildIcon(doc, METHOD_ICONS[candidate], 'lotaje-icon'));
+    const label = doc.createElement('span');
+    label.textContent = METHOD_LABELS[candidate];
+    option.append(label);
+    option.addEventListener('click', () => onMethodOptionClick(candidate));
+    methodToggle.append(option);
+    methodOptions[candidate] = option;
+  }
+  syncMethodOptions(methodOptions, state.method);
+  method.append(methodLabel, methodToggle);
 
   const questionFieldsContainer = doc.createElement('div');
   questionFieldsContainer.className = 'lotaje-question-fields';
   const questionFields = buildZoneQuestionFields(doc, questionFieldsContainer, state, derived);
 
-  const methodToggle = doc.createElement('button');
-  methodToggle.type = 'button';
-  methodToggle.className = 'lotaje-method-toggle';
-  methodToggle.textContent = methodToggleLabel(state.method);
-  methodToggle.addEventListener('click', onMethodToggleClick);
+  root.append(method, questionFieldsContainer);
 
-  root.append(questionFieldsContainer, methodToggle);
-
-  return { root, questionFieldsContainer, questionFields, methodToggle };
+  return { root, questionFieldsContainer, questionFields, methodOptions };
 }
 
-function methodToggleLabel(method: Method): string {
-  return method === 'distance' ? '⇄ precios' : '⇄ distancia';
+/**
+ * Selection is carried by `aria-checked` for assistive technology and by a
+ * filled surface plus a heavier label weight visually — never by the accent
+ * colour alone (brief §7).
+ */
+function syncMethodOptions(
+  options: Readonly<Record<Method, HTMLButtonElement>>,
+  method: Method,
+): void {
+  for (const candidate of ['distance', 'prices'] as const) {
+    const selected = candidate === method;
+    const option = options[candidate];
+    option.setAttribute('aria-checked', String(selected));
+    // Roving tabindex: the group is one tab stop, arrows move within it.
+    option.tabIndex = selected ? 0 : -1;
+    option.classList.toggle('lotaje-method-option--selected', selected);
+  }
 }
 
 // ---- Zone 3 · La respuesta --------------------------------------------------
 /**
  * No input lives in Zone 3, so unlike Zones 1-2 it is safe to fully rebuild
  * on every render — there is no focus/caret to preserve.
+ *
+ * The copy glyph is gone (brief §2.4): the figure itself is the control, so
+ * there is no icon-only action left to depend on. The behaviour behind it is
+ * untouched — click or `Enter` from any editable field still copies the bare
+ * two-decimal payload through the mounted realm's clipboard (§7.5).
  */
 function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: LotajeDerived): void {
   container.innerHTML = '';
@@ -770,29 +1264,20 @@ function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: Lot
     // (Wave 4 audit L-4) catches an extreme-but-parseable balance (e.g.
     // `1e400`, which overflows to Infinity) that passes every "positive"
     // check yet produces a non-finite lot figure — without it, the hero
-    // rendered `formatLots(Infinity) = '—'` on an ENABLED copy button,
-    // violating D-3's frozen contract (disabled, not hidden, during honest
-    // states).
+    // rendered `formatLots(Infinity) = '—'` on an ENABLED copy button.
+    //
+    // D-3 disabled-not-hidden: with the glyph removed there is no separate
+    // affordance left to disable, and the honest message now occupies the
+    // figure's own slot. The no-jump guarantee it protected is unchanged and
+    // still comes from `.lotaje-copy-shell`'s `min-height`, not from keeping a
+    // dead control on screen.
     const message = doc.createElement('p');
     message.id = 'lotaje-copy-unavailable-reason';
     message.className = 'lotaje-invalid-state';
     message.setAttribute('role', 'alert');
     message.textContent = derived.invalidReason;
 
-    const copyAction = doc.createElement('button');
-    copyAction.type = 'button';
-    copyAction.className = 'lotaje-copy-action lotaje-copy-action--unavailable';
-    copyAction.setAttribute('aria-label', 'Copiar lotaje');
-    copyAction.setAttribute('aria-describedby', 'lotaje-copy-unavailable-reason');
-    copyAction.title = 'Copiar lotaje';
-    copyAction.disabled = true;
-    const copyAffordance = doc.createElement('span');
-    copyAffordance.className = 'lotaje-copy-affordance';
-    copyAffordance.setAttribute('aria-hidden', 'true');
-    copyAffordance.textContent = '⧉';
-    copyAction.append(copyAffordance);
-
-    shell.append(message, copyAction, feedback);
+    shell.append(message, feedback);
     container.append(shell);
     return;
   }
@@ -802,23 +1287,21 @@ function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: Lot
   const copyAction = doc.createElement('button');
   copyAction.type = 'button';
   copyAction.className = 'lotaje-copy-action';
-  copyAction.setAttribute('aria-label', 'Copiar lotaje');
+  const payload = formatLots(derived.lots);
+  // The accessible name carries the FIGURE as well as the action: with a bare
+  // «Copiar lotaje» the number itself never reached the accessibility tree.
+  copyAction.setAttribute('aria-label', `Copiar ${payload} lotes`);
   copyAction.title = 'Copiar lotaje';
   const copyContent = doc.createElement('span');
   copyContent.className = 'lotaje-copy-content';
   const lotsValue = doc.createElement('span');
   lotsValue.className = 'lotaje-lots-value';
-  const payload = formatLots(derived.lots);
   lotsValue.textContent = payload;
   const lotsLabel = doc.createElement('span');
   lotsLabel.className = 'lotaje-lots-label';
   lotsLabel.textContent = 'lotes';
   copyContent.append(lotsValue, lotsLabel);
-  const copyAffordance = doc.createElement('span');
-  copyAffordance.className = 'lotaje-copy-affordance';
-  copyAffordance.setAttribute('aria-hidden', 'true');
-  copyAffordance.textContent = '⧉';
-  copyAction.append(copyContent, copyAffordance);
+  copyAction.append(copyContent);
   copyAction.addEventListener('click', () => onCopyActionClick(copyAction, feedback, payload));
   hero.append(copyAction);
   shell.append(hero, feedback);
@@ -834,6 +1317,41 @@ function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: Lot
   }
 }
 
+function buildZoneAnswer(doc: Document, derived: LotajeDerived): { root: HTMLElement; body: HTMLElement } {
+  const root = doc.createElement('section');
+  root.className = 'lotaje-zone lotaje-zone--answer';
+  root.setAttribute('aria-label', 'La respuesta');
+
+  const result = doc.createElement('div');
+  result.className = 'lotaje-result';
+
+  const mark = doc.createElement('span');
+  mark.className = 'lotaje-result-mark';
+  mark.append(buildIcon(doc, 'target', 'lotaje-icon'));
+
+  const lede = doc.createElement('div');
+  lede.className = 'lotaje-result-lede';
+  const title = doc.createElement('h2');
+  title.className = 'lotaje-result-title';
+  title.textContent = 'Tamaño de posición';
+  const hint = doc.createElement('p');
+  hint.className = 'lotaje-result-hint';
+  hint.textContent = RESULT_HINT;
+  lede.append(title, hint);
+
+  const body = doc.createElement('div');
+  body.className = 'lotaje-result-body';
+  buildZoneAnswerBody(doc, body, derived);
+
+  const note = doc.createElement('p');
+  note.className = 'lotaje-result-note';
+  note.textContent = RESULT_NOTE;
+
+  result.append(mark, lede, body, note);
+  root.append(result);
+  return { root, body };
+}
+
 // ---- render ----------------------------------------------------------------
 function render(): void {
   if (!refs || !currentDoc) return;
@@ -843,14 +1361,17 @@ function render(): void {
   // Zone 1 — sync in place, never recreated.
   syncValue(refs.balanceInput, currentState.balanceText);
   syncValue(refs.riskPctInput, currentState.riskPctText);
-  syncValue(refs.symbolInput, currentState.symbolText);
   const trimmedSymbol = currentState.symbolText.trim();
-  const canonicalSymbol = resolveAsset(trimmedSymbol).symbol;
-  refs.symbolValue.textContent = trimmedSymbol === '' ? 'Símbolo' : canonicalSymbol;
-  refs.symbolSelect.value = Object.prototype.hasOwnProperty.call(GENERATED_ASSETS, canonicalSymbol)
-    ? canonicalSymbol
-    : '';
-  refs.riskUsd.textContent = `· ${formatMoney(derived.requestedRiskUsd)}`;
+  const canonicalSymbol = trimmedSymbol === '' ? '' : resolveAsset(trimmedSymbol).symbol;
+  refs.symbolValue.textContent = canonicalSymbol === '' ? 'Símbolo' : canonicalSymbol;
+  syncAssetMark(refs.symbolMark, canonicalSymbol);
+  for (const option of refs.assetOptions) {
+    option.setAttribute(
+      'aria-selected',
+      String(option.getAttribute('data-symbol') === canonicalSymbol),
+    );
+  }
+  refs.riskUsd.textContent = formatMoney(derived.requestedRiskUsd);
   refs.symbolBadge.hidden = !derived.isHeuristic;
   syncAssetSheet(refs.assetValues, currentState.symbolText);
 
@@ -864,7 +1385,6 @@ function render(): void {
       currentState,
       derived,
     );
-    refs.methodToggle.textContent = methodToggleLabel(currentState.method);
   } else if (refs.questionFields.method === 'distance') {
     syncValue(refs.questionFields.input, currentState.distanceText);
     refs.questionFields.unit.textContent = derived.unitLabel;
@@ -872,6 +1392,7 @@ function render(): void {
     syncValue(refs.questionFields.entry, currentState.entryText);
     syncValue(refs.questionFields.sl, currentState.slText);
   }
+  syncMethodOptions(refs.methodOptions, currentState.method);
 
   // Zone 3 — pending copy work is invalidated above, then the subtree is rebuilt.
   buildZoneAnswerBody(currentDoc, refs.answerContainer, derived);
@@ -932,6 +1453,7 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
       typeof supplied.entryText === 'string' ? supplied.entryText : INITIAL_STATE.entryText,
     slText: typeof supplied.slText === 'string' ? supplied.slText : INITIAL_STATE.slText,
   };
+  assetMenuOpen = false;
   symbolDisclosureOpen = false;
 
   const balance = parseDecimal(currentState.balanceText);
@@ -946,33 +1468,24 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
   const root = doc.createElement('div');
   root.className = 'lotaje-root';
 
-  const companionTriggerRow = doc.createElement('div');
-  companionTriggerRow.className = 'lotaje-companion-trigger-row';
-  const companionTrigger = doc.createElement('button');
-  companionTrigger.type = 'button';
-  companionTrigger.className = 'lotaje-companion-trigger';
-  companionTrigger.textContent = 'Abrir ventana';
-  companionTrigger.addEventListener('click', onCompanionTriggerClick);
-  companionTriggerRow.append(companionTrigger);
-
   const derived = deriveLots(currentState);
+  const header = buildHeader(doc, isCompanionDocument(doc));
   const zone1 = buildZoneContext(doc, currentState, derived);
   const zone2 = buildZoneQuestion(doc, currentState, derived);
-  const zone3 = doc.createElement('section');
-  zone3.className = 'lotaje-zone lotaje-zone--answer';
-  zone3.setAttribute('aria-label', 'La respuesta');
-  buildZoneAnswerBody(doc, zone3, derived);
+  const zone3 = buildZoneAnswer(doc, derived);
 
-  root.append(companionTriggerRow, zone1.root, zone2.root, zone3);
+  root.append(header, zone1.root, zone2.root, zone3.root);
   container.append(root);
   currentRoot = root;
 
   refs = {
-    symbolChip: zone1.symbolChip,
+    assetTrigger: zone1.assetTrigger,
+    assetMenu: zone1.assetMenu,
+    assetOptions: zone1.assetOptions,
     symbolValue: zone1.symbolValue,
-    symbolInput: zone1.symbolInput,
-    symbolSelect: zone1.symbolSelect,
+    symbolMark: zone1.symbolMark,
     symbolBadge: zone1.symbolBadge,
+    specTrigger: zone1.specTrigger,
     symbolDisclosure: zone1.symbolDisclosure,
     assetValues: zone1.assetValues,
     balanceInput: zone1.balanceInput,
@@ -980,8 +1493,8 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
     riskUsd: zone1.riskUsd,
     questionFieldsContainer: zone2.questionFieldsContainer,
     questionFields: zone2.questionFields,
-    methodToggle: zone2.methodToggle,
-    answerContainer: zone3,
+    methodOptions: zone2.methodOptions,
+    answerContainer: zone3.body,
   };
 
   root.addEventListener('focusin', onRootFocusIn);
@@ -1008,6 +1521,8 @@ export function unmount(): void {
   mountGeneration += 1;
   copyAttemptGeneration += 1;
   clearCurrentCopyFeedback();
+  // Before `currentDoc` is dropped below — it is the realm the listener is on.
+  removeAssetDismissListener();
   currentRoot?.removeEventListener('focusin', onRootFocusIn);
   currentRoot?.removeEventListener('keydown', onRootKeyDown);
   if (currentRoot?.parentNode) {
@@ -1018,5 +1533,6 @@ export function unmount(): void {
   currentDoc = null;
   currentWindow = null;
   currentState = INITIAL_STATE;
+  assetMenuOpen = false;
   symbolDisclosureOpen = false;
 }

@@ -168,10 +168,50 @@ describe('lotaje-view: mount/unmount', () => {
     } as unknown as Window;
   }
 
+  /**
+   * F21-3: the free-text «Otro símbolo» field is gone, so the ONLY way a user
+   * names an instrument is the curated listbox. Every spec that used to type a
+   * symbol picks one here instead; the handful that need a symbol OUTSIDE the
+   * catalogue (a context persisted by an older build) supply it as explicit
+   * mount state, which is the only way it can still arrive.
+   */
+  function selectSymbol(doc: Document, symbol: string): void {
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger');
+    if (!trigger) throw new Error('no .lotaje-asset-trigger found');
+    if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+    const option = doc.querySelector<HTMLButtonElement>(
+      `.lotaje-asset-option[data-symbol="${symbol}"]`,
+    );
+    if (!option) throw new Error(`no catalogue option for "${symbol}"`);
+    option.click();
+  }
+
+  /** What the collapsed asset trigger currently displays. */
+  function shownSymbol(doc: Document): string | null {
+    return doc.querySelector('.lotaje-asset-trigger .lotaje-symbol-value')?.textContent ?? null;
+  }
+
+  function methodOption(doc: Document, method: 'distance' | 'prices'): HTMLButtonElement {
+    const option = doc.querySelector<HTMLButtonElement>(
+      `.lotaje-method-option[data-method="${method}"]`,
+    );
+    if (!option) throw new Error(`no .lotaje-method-option[data-method="${method}"] found`);
+    return option;
+  }
+
+  /** The mode the segmented control reports as chosen, via ARIA — never via colour. */
+  function checkedMethod(doc: Document): string | null {
+    return (
+      doc
+        .querySelector('.lotaje-method-option[aria-checked="true"]')
+        ?.getAttribute('data-method') ?? null
+    );
+  }
+
   function driveRealLot(doc: Document, distance = '45'): void {
     setValue(doc, 'balance', '10000');
     setValue(doc, 'riskPct', '1');
-    setValue(doc, 'symbol', 'US30');
+    selectSymbol(doc, 'US30');
     setValue(doc, 'distance', distance);
   }
 
@@ -296,94 +336,175 @@ describe('lotaje-view: mount/unmount', () => {
     mount(doc, window);
     setValue(doc, 'balance', '5000');
     setValue(doc, 'riskPct', '1');
-    setValue(doc, 'symbol', 'US30');
+    selectSymbol(doc, 'US30');
     setValue(doc, 'distance', '50');
     expect(doc.querySelector('.lotaje-lots-value')?.textContent?.trim()).toBe('1.00');
     expect(doc.querySelector('.lotaje-invalid-state')).toBeNull();
   });
 
+  // F21-3 removed the free-text entry that used to produce a non-curated
+  // symbol, but NOT the provenance badge: a context persisted by an older
+  // build can still carry one, and when it does the heuristic origin must
+  // still be declared rather than silently dropped.
   it('the heuristic badge shows only for a non-empty, non-curated symbol', () => {
-    const doc = freshDoc();
-    mount(doc, window);
-    const badge = () => doc.querySelector<HTMLElement>('.lotaje-symbol-badge');
+    const badge = (doc: Document) => doc.querySelector<HTMLElement>('.lotaje-symbol-badge');
 
-    expect(badge()?.hidden).toBe(true); // blank symbol at cold start
-    setValue(doc, 'symbol', 'US30');
-    expect(badge()?.hidden).toBe(true); // curated symbol
-    setValue(doc, 'symbol', 'GBPJPY');
-    expect(badge()?.hidden).toBe(false); // unrecognised -> heuristic
+    const coldDoc = freshDoc();
+    mount(coldDoc, window);
+    expect(badge(coldDoc)?.hidden).toBe(true); // blank symbol at cold start
+    selectSymbol(coldDoc, 'US30');
+    expect(badge(coldDoc)?.hidden).toBe(true); // curated symbol
+
+    const legacyDoc = freshDoc();
+    mount(legacyDoc, window, state({ symbolText: 'GBPJPY' }));
+    expect(badge(legacyDoc)?.hidden).toBe(false); // unrecognised -> heuristic
+    expect(shownSymbol(legacyDoc)).toBe('GBPJPY');
   });
 
-  it('renders a collapsed native symbol chip instead of an always-visible text field', () => {
+  it('renders a collapsed combobox and no free-text symbol entry anywhere (F21-3)', () => {
     const doc = freshDoc();
     mount(doc, window);
 
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip');
-    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
-    const symbolInput = doc.querySelector<HTMLInputElement>('input[name="symbol"]');
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger');
+    const menu = doc.querySelector<HTMLElement>('#lotaje-asset-menu');
     const badge = doc.querySelector<HTMLElement>('.lotaje-symbol-badge');
 
-    expect(chip?.tagName).toBe('BUTTON');
-    expect(chip?.type).toBe('button');
-    expect(chip?.querySelector('.lotaje-symbol-value')?.textContent).toBe('Símbolo');
-    expect(chip?.getAttribute('aria-expanded')).toBe('false');
-    expect(chip?.getAttribute('aria-controls')).toBe('lotaje-symbol-disclosure');
-    expect(disclosure).not.toBeNull();
-    expect(disclosure?.hidden).toBe(true);
-    expect(doc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
-    expect(disclosure?.contains(symbolInput ?? null)).toBe(true);
-    expect(chip?.contains(symbolInput ?? null)).toBe(false);
+    expect(trigger?.tagName).toBe('BUTTON');
+    expect(trigger?.type).toBe('button');
+    expect(trigger?.getAttribute('role')).toBe('combobox');
+    expect(trigger?.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(trigger?.querySelector('.lotaje-symbol-value')?.textContent).toBe('Símbolo');
+    expect(trigger?.getAttribute('aria-expanded')).toBe('false');
+    expect(trigger?.getAttribute('aria-controls')).toBe('lotaje-asset-menu');
+    expect(menu?.getAttribute('role')).toBe('listbox');
+    expect(menu?.hidden).toBe(true);
     expect(badge?.hidden).toBe(true);
+
+    // The whole point of F21-3: nothing anywhere accepts an arbitrary symbol.
+    expect(doc.querySelector('input[name="symbol"]')).toBeNull();
+    expect(doc.querySelector('#lotaje-symbol-input')).toBeNull();
+    expect(doc.querySelector('#lotaje-symbol-preset')).toBeNull();
+    expect(doc.body.textContent).not.toContain('Otro símbolo');
   });
 
-  it('opens selection, free text and the Ficha from the same chip and toggles closed', () => {
+  it('opens the listbox from the trigger and toggles it closed without disturbing the layout around it', () => {
     const doc = freshDoc();
     mount(doc, window);
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+    const menu = doc.querySelector<HTMLElement>('#lotaje-asset-menu')!;
 
-    chip.click();
+    trigger.click();
 
-    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
-    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
-    const symbolInput = doc.querySelector<HTMLInputElement>('#lotaje-symbol-input');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(menu.hidden).toBe(false);
+    expect(menu.getAttribute('aria-label')).toBe('Selecciona un activo');
+    expect(doc.querySelector('.lotaje-asset-menu-title')?.textContent).toBe('Selecciona un activo');
+    // The menu is a sibling of the trigger inside the same positioned wrapper,
+    // never injected into the summary row — that is what keeps opening it from
+    // reflowing the cells beside it.
+    expect(menu.parentElement).toBe(trigger.parentElement);
+    expect(menu.parentElement?.classList.contains('lotaje-asset-select')).toBe(true);
+
+    trigger.click();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(menu.hidden).toBe(true);
+    expect(doc.querySelectorAll('#lotaje-asset-menu')).toHaveLength(1);
+  });
+
+  it('opens the Ficha from its own full-width disclosure row, independent of the instrument menu', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')!;
+
+    expect(specTrigger.tagName).toBe('BUTTON');
+    expect(specTrigger.type).toBe('button');
+    expect(specTrigger.textContent).toBe('Especificaciones del activo');
+    expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
+    expect(specTrigger.getAttribute('aria-controls')).toBe('lotaje-symbol-disclosure');
+    expect(disclosure.hidden).toBe(true);
+
+    specTrigger.click();
+
     const sheet = doc.querySelector<HTMLElement>('.lotaje-asset-sheet');
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
-    expect(disclosure?.hidden).toBe(false);
-    expect(doc.querySelector('label[for="lotaje-symbol-preset"]')?.textContent).toBe('Activos');
-    expect(select?.tagName).toBe('SELECT');
-    expect(select?.name).toBe('symbolPreset');
-    expect(doc.querySelector('label[for="lotaje-symbol-input"]')?.textContent).toBe('Otro símbolo');
-    expect(symbolInput?.type).toBe('text');
-    expect(symbolInput?.name).toBe('symbol');
-    expect(symbolInput?.classList.contains('ui-input')).toBe(true);
+    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(disclosure.hidden).toBe(false);
     expect(sheet?.tagName).toBe('SECTION');
     expect(sheet?.getAttribute('aria-labelledby')).toBe('lotaje-asset-sheet-title');
     expect(sheet?.querySelector('#lotaje-asset-sheet-title')?.textContent).toBe('Ficha del activo');
+    // Opening the Ficha never opens the instrument menu, and vice versa.
+    expect(doc.querySelector('.lotaje-asset-trigger')?.getAttribute('aria-expanded')).toBe('false');
 
-    chip.click();
-    expect(chip.getAttribute('aria-expanded')).toBe('false');
-    expect(disclosure?.hidden).toBe(true);
+    specTrigger.click();
+    expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
+    expect(disclosure.hidden).toBe(true);
     expect(doc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
   });
 
-  it('sources exactly four selectable symbols from GENERATED_ASSETS', () => {
+  it('sources exactly four selectable symbols from GENERATED_ASSETS, each with its ticker and name', () => {
     const doc = freshDoc();
     mount(doc, window);
-    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
+    doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!.click();
 
     const expectedKeys = Object.keys(GENERATED_ASSETS);
-    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
-    expect(select).not.toBeNull();
-    const prompt = select!.querySelector<HTMLOptionElement>('option[value=""]');
-    const generatedOptions = Array.from(select!.options).filter((option) => option.value !== '');
-    expect(prompt?.disabled).toBe(true);
-    expect(prompt?.textContent).toBe('Selecciona un activo');
-    expect(generatedOptions.map((option) => option.value)).toEqual(expectedKeys);
-    expect(generatedOptions.map((option) => option.textContent)).toEqual(expectedKeys);
-    expect(generatedOptions).toHaveLength(4);
+    const options = Array.from(doc.querySelectorAll<HTMLButtonElement>('.lotaje-asset-option'));
+    expect(options).toHaveLength(4);
+    expect(options.map((option) => option.getAttribute('data-symbol'))).toEqual(expectedKeys);
+    expect(options.map((option) => option.getAttribute('role'))).toEqual(
+      Array<string>(4).fill('option'),
+    );
+    expect(
+      options.map((option) => option.querySelector('.lotaje-asset-option-symbol')?.textContent),
+    ).toEqual(expectedKeys);
+    expect(
+      options.map((option) => option.querySelector('.lotaje-asset-option-name')?.textContent),
+    ).toEqual(['US Tech 100', 'S&P 500', 'US Wall Street 30', 'Oro / Dólar']);
+    // Nothing is selected yet at cold start — the trigger still reads «Símbolo».
+    expect(options.map((option) => option.getAttribute('aria-selected'))).toEqual(
+      Array<string>(4).fill('false'),
+    );
   });
 
-  it('choosing XAUUSD resizes through the live state, preserves context, and closes the disclosure', () => {
+  it('the listbox is keyboard operable: arrows move, Enter selects, Escape closes without clearing the stop', () => {
+    const doc = freshFocusableDoc();
+    mount(doc, window, state());
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+    const options = Array.from(doc.querySelectorAll<HTMLButtonElement>('.lotaje-asset-option'));
+    trigger.focus();
+
+    // ArrowDown from the collapsed trigger opens and lands on the selected row.
+    dispatchKey(trigger, 'ArrowDown');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(doc.activeElement).toBe(options[2]); // US30 is the mounted symbol
+    dispatchKey(options[2], 'ArrowDown');
+    expect(doc.activeElement).toBe(options[3]);
+    dispatchKey(options[3], 'ArrowDown'); // wraps
+    expect(doc.activeElement).toBe(options[0]);
+    dispatchKey(options[0], 'End');
+    expect(doc.activeElement).toBe(options[3]);
+    dispatchKey(options[3], 'Home');
+    expect(doc.activeElement).toBe(options[0]);
+
+    // Escape dismisses the menu and returns focus — and must NOT reach the root
+    // handler, whose bare-Escape meaning is "clear the stop field".
+    const escape = dispatchKey(options[0], 'Escape');
+    expect(escape.defaultPrevented).toBe(true);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(doc.activeElement).toBe(trigger);
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
+
+    // Reopen and commit with a real activation.
+    dispatchKey(trigger, 'ArrowUp');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(doc.activeElement).toBe(options[2]); // reopens on the current symbol
+    dispatchKey(options[2], 'ArrowDown');
+    options[3].click();
+    expect(shownSymbol(doc)).toBe('XAUUSD');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(doc.activeElement).toBe(trigger);
+  });
+
+  it('choosing XAUUSD resizes through the live state, preserves context, and closes the menu', () => {
     const doc = freshDoc();
     mount(doc, window);
     setValue(doc, 'balance', '5000');
@@ -392,64 +513,55 @@ describe('lotaje-view: mount/unmount', () => {
     const balanceInput = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
     const riskInput = doc.querySelector<HTMLInputElement>('input[name="riskPct"]')!;
     const distanceInput = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
-    const methodToggle = doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!;
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
-    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')!;
-    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
-    expect(select).not.toBeNull();
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+    const menu = doc.querySelector<HTMLElement>('#lotaje-asset-menu')!;
 
-    select!.value = 'XAUUSD';
-    select!.dispatchEvent(new Event('change'));
+    selectSymbol(doc, 'XAUUSD');
 
     expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('0.01');
-    expect(chip.querySelector('.lotaje-symbol-value')?.textContent).toBe('XAUUSD');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('XAUUSD');
-    expect(select!.value).toBe('XAUUSD');
+    expect(shownSymbol(doc)).toBe('XAUUSD');
+    expect(
+      doc
+        .querySelector('.lotaje-asset-option[data-symbol="XAUUSD"]')
+        ?.getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      doc.querySelector('.lotaje-asset-option[data-symbol="US30"]')?.getAttribute('aria-selected'),
+    ).toBe('false');
     expect(doc.querySelector<HTMLElement>('.lotaje-symbol-badge')?.hidden).toBe(true);
-    expect(chip.getAttribute('aria-expanded')).toBe('false');
-    expect(disclosure.hidden).toBe(true);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(menu.hidden).toBe(true);
     expect(balanceInput.value).toBe('5000');
     expect(riskInput.value).toBe('1');
     expect(distanceInput.value).toBe('50');
-    expect(methodToggle.textContent).toBe('⇄ precios');
+    expect(checkedMethod(doc)).toBe('distance');
     expect(doc.querySelector('input[name="balance"]')).toBe(balanceInput);
     expect(doc.querySelector('input[name="riskPct"]')).toBe(riskInput);
     expect(doc.querySelector('input[name="distance"]')).toBe(distanceInput);
   });
 
-  it('typing free text updates the chip, sizing and heuristic badge while disclosure stays open', () => {
+  // The FX path (pip-derived unit label and pip-scaled distance) is no longer
+  // reachable by typing, because the catalogue is index/metal only — it is
+  // still reachable, and still asserted, through a context carried in from
+  // persistence or from the companion move.
+  it('a non-catalogue symbol carried in as state still sizes, labels its unit and declares its provenance', () => {
     const doc = freshDoc();
-    mount(doc, window);
-    setValue(doc, 'balance', '10000');
-    setValue(doc, 'riskPct', '1');
-    setValue(doc, 'distance', '45');
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
-    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
-    const symbolInput = doc.querySelector<HTMLInputElement>('input[name="symbol"]');
-    expect(disclosure).not.toBeNull();
-    expect(symbolInput).not.toBeNull();
+    mount(doc, window, state({ symbolText: 'EURUSD', distanceText: '45' }));
 
-    symbolInput!.value = 'EURUSD';
-    symbolInput!.dispatchEvent(new Event('input'));
-
-    expect(chip.querySelector('.lotaje-symbol-value')?.textContent).toBe('EURUSD');
+    expect(shownSymbol(doc)).toBe('EURUSD');
     expect(doc.querySelector<HTMLElement>('.lotaje-symbol-badge')?.hidden).toBe(false);
     expect(doc.querySelector('.lotaje-symbol-badge')?.textContent).toBe('heurística');
     expect(doc.querySelector('.lotaje-stop-unit')?.textContent).toBe('pips');
     expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('0.22');
-    expect(doc.querySelector('input[name="symbol"]')).toBe(symbolInput);
-    expect(symbolInput!.value).toBe('EURUSD');
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
-    expect(disclosure!.hidden).toBe(false);
+    // It is not in the catalogue, so no option claims to be it.
+    expect(doc.querySelectorAll('.lotaje-asset-option[aria-selected="true"]')).toHaveLength(0);
   });
 
   it('renders the full generated XAUUSD Ficha with derived point size and dated provenance', () => {
     const doc = freshDoc();
     mount(doc, window);
-    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
-    setValue(doc, 'symbol', 'XAUUSD');
+    doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!.click();
+    selectSymbol(doc, 'XAUUSD');
     const rows = Array.from(
       doc.querySelectorAll<HTMLElement>('.lotaje-asset-sheet [data-asset-field]'),
     );
@@ -495,9 +607,8 @@ describe('lotaje-view: mount/unmount', () => {
 
   it('renders heuristic EURUSD metadata with honest unavailable rows', () => {
     const doc = freshDoc();
-    mount(doc, window);
-    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
-    setValue(doc, 'symbol', 'EURUSD');
+    mount(doc, window, state({ symbolText: 'EURUSD' }));
+    doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!.click();
     const rows = Array.from(
       doc.querySelectorAll<HTMLElement>('.lotaje-asset-sheet [data-asset-field]'),
     );
@@ -523,18 +634,17 @@ describe('lotaje-view: mount/unmount', () => {
 
   it('contains no unit control and keeps the stop unit as a derived label', () => {
     const doc = freshDoc();
-    mount(doc, window);
-    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
-    setValue(doc, 'symbol', 'EURUSD');
+    mount(doc, window, state({ symbolText: 'EURUSD' }));
+    doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!.click();
     const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
     expect(disclosure).not.toBeNull();
     const controls = Array.from(
       disclosure!.querySelectorAll<HTMLElement>('button, input, select, textarea'),
     );
-    const select = disclosure!.querySelector<HTMLSelectElement>('select[name="symbolPreset"]');
-    const symbolInput = disclosure!.querySelector<HTMLInputElement>('input[name="symbol"]');
 
-    expect(controls).toEqual([select, symbolInput]);
+    // The Ficha is pure reference material: it holds no control at all now
+    // that the free-text field is gone (F21-3).
+    expect(controls).toEqual([]);
     expect(disclosure!.querySelector('[name*="unit" i]')).toBeNull();
     expect(disclosure!.querySelector('input[type="checkbox"], input[type="radio"]')).toBeNull();
     expect(disclosure!.querySelector('.lotaje-asset-sheet button')).toBeNull();
@@ -552,14 +662,10 @@ describe('lotaje-view: mount/unmount', () => {
     setValue(doc, 'balance', '10000');
     setValue(doc, 'riskPct', '1');
     setValue(doc, 'distance', '45');
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
-    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
-    expect(select).not.toBeNull();
-    select!.value = 'US30';
-    select!.dispatchEvent(new Event('change'));
-    chip.click();
-    chip.click();
+    selectSymbol(doc, 'US30');
+    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+    specTrigger.click();
+    specTrigger.click();
 
     doc.querySelector<HTMLButtonElement>('.lotaje-copy-action')!.click();
 
@@ -575,20 +681,25 @@ describe('lotaje-view: mount/unmount', () => {
   it('open/close cycles leave no duplicate or leaked symbol DOM', () => {
     const firstDoc = freshDoc();
     mount(firstDoc, window);
-    const chip = firstDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    const trigger = firstDoc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+    const specTrigger = firstDoc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
     for (let cycle = 0; cycle < 3; cycle += 1) {
-      chip.click();
-      expect(chip.getAttribute('aria-expanded')).toBe('true');
+      trigger.click();
+      specTrigger.click();
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
       expect(firstDoc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
-      expect(firstDoc.querySelectorAll('#lotaje-symbol-preset')).toHaveLength(1);
-      expect(firstDoc.querySelectorAll('input[name="symbol"]')).toHaveLength(1);
+      expect(firstDoc.querySelectorAll('#lotaje-asset-menu')).toHaveLength(1);
+      expect(firstDoc.querySelectorAll('.lotaje-asset-option')).toHaveLength(4);
       expect(firstDoc.querySelectorAll('.lotaje-asset-sheet')).toHaveLength(1);
-      chip.click();
-      expect(chip.getAttribute('aria-expanded')).toBe('false');
+      trigger.click();
+      specTrigger.click();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
       expect(firstDoc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(true);
+      expect(firstDoc.querySelector<HTMLElement>('#lotaje-asset-menu')?.hidden).toBe(true);
     }
-    chip.click();
-    setValue(firstDoc, 'symbol', 'EURUSD');
+    selectSymbol(firstDoc, 'XAUUSD');
     unmount();
     // Task C-2: as above — scrub the key so this test still isolates the
     // in-memory symbol-disclosure leak it names, not a storage round trip.
@@ -596,22 +707,25 @@ describe('lotaje-view: mount/unmount', () => {
 
     const secondDoc = freshDoc();
     mount(secondDoc, window);
-    const secondChip = secondDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip');
+    const secondTrigger = secondDoc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger');
+    const secondSpecTrigger = secondDoc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger');
     const secondDisclosure = secondDoc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
-    const secondSelect = secondDoc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset');
-    const secondSymbolInput = secondDoc.querySelector<HTMLInputElement>('input[name="symbol"]');
+    const secondMenu = secondDoc.querySelector<HTMLElement>('#lotaje-asset-menu');
     expect(secondDoc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
     expect(secondDisclosure?.hidden).toBe(true);
-    expect(secondChip?.getAttribute('aria-expanded')).toBe('false');
-    expect(secondSelect).not.toBeNull();
-    expect(Array.from(secondSelect!.options).filter((option) => option.value !== '')).toHaveLength(4);
-    expect(secondSymbolInput?.value).toBe('');
-    expect(secondDisclosure?.contains(secondSymbolInput ?? null)).toBe(true);
-    expect(secondChip?.querySelector('.lotaje-symbol-value')?.textContent).toBe('Símbolo');
+    expect(secondMenu?.hidden).toBe(true);
+    expect(secondTrigger?.getAttribute('aria-expanded')).toBe('false');
+    expect(secondSpecTrigger?.getAttribute('aria-expanded')).toBe('false');
+    expect(secondDoc.querySelectorAll('.lotaje-asset-option')).toHaveLength(4);
+    expect(shownSymbol(secondDoc)).toBe('Símbolo');
     expect(secondDoc.querySelector<HTMLElement>('.lotaje-symbol-badge')?.hidden).toBe(true);
   });
 
-  it('renders a real lot as a native named copy button with the lot label and discreet glyph', () => {
+  // Brief §2.4/§3.7: the ⧉ glyph is gone from both result surfaces. The figure
+  // itself remains the control, so the copy behaviour (click here, `Enter`
+  // below) is unchanged — what disappeared is an icon-only affordance, and the
+  // accessible name grew to carry the figure it copies.
+  it('renders a real lot as a named copy control carrying the figure, with no copy icon', () => {
     const doc = freshDoc();
     mount(doc, targetWindow(vi.fn().mockResolvedValue(undefined)));
     driveRealLot(doc);
@@ -622,25 +736,48 @@ describe('lotaje-view: mount/unmount', () => {
     const content = button?.querySelector<HTMLElement>('.lotaje-copy-content');
     const value = content?.querySelector<HTMLElement>('.lotaje-lots-value');
     const label = content?.querySelector<HTMLElement>('.lotaje-lots-label');
-    const glyph = button?.querySelector<HTMLElement>('.lotaje-copy-affordance');
     const feedback = shell?.querySelector<HTMLElement>('.lotaje-copy-feedback');
 
     expect(button?.tagName).toBe('BUTTON');
     expect(button?.type).toBe('button');
     expect(button?.disabled).toBe(false);
-    expect(button?.getAttribute('aria-label')).toBe('Copiar lotaje');
+    expect(button?.getAttribute('aria-label')).toBe('Copiar 2.22 lotes');
     expect(button?.title).toBe('Copiar lotaje');
     expect(value?.textContent).toBe('2.22');
     expect(label?.textContent).toBe('lotes');
     expect(Array.from(content?.children ?? [])).toEqual([value, label]);
-    expect(glyph?.getAttribute('aria-hidden')).toBe('true');
-    expect(button?.lastElementChild).toBe(glyph);
+    expect(button?.querySelector('.lotaje-copy-affordance')).toBeNull();
+    expect(button?.querySelector('svg')).toBeNull();
+    expect(button?.textContent).toBe('2.22lotes');
     expect(hero?.contains(button ?? null)).toBe(true);
     expect(shell?.contains(hero ?? null)).toBe(true);
     expect(feedback?.getAttribute('role')).toBe('status');
     expect(feedback?.getAttribute('aria-live')).toBe('polite');
     expect(feedback?.getAttribute('aria-atomic')).toBe('true');
     expect(feedback?.textContent).toBe('');
+  });
+
+  it('surrounds the figure with the result surface: target mark, heading, explanation and disclaimer', () => {
+    const doc = freshDoc();
+    mount(doc, targetWindow(vi.fn().mockResolvedValue(undefined)));
+    driveRealLot(doc);
+
+    const result = doc.querySelector<HTMLElement>('.lotaje-zone--answer .lotaje-result');
+    expect(result).not.toBeNull();
+    expect(result?.querySelector('.lotaje-result-mark svg')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
+    expect(result?.querySelector('.lotaje-result-title')?.textContent).toBe('Tamaño de posición');
+    expect(result?.querySelector('.lotaje-result-hint')?.textContent).toBe(
+      'Con los parámetros actuales, puedes operar el siguiente tamaño.',
+    );
+    expect(result?.querySelector('.lotaje-result-note')?.textContent).toBe(
+      'Valor aproximado. Verifica siempre antes de operar.',
+    );
+    // The figure lives in the rebuilt slot; the chrome around it does not move.
+    expect(result?.querySelector('.lotaje-result-body .lotaje-lots-value')?.textContent).toBe(
+      '2.22',
+    );
   });
 
   it('copies exactly the bare dot-decimal two-place payload 2.22 from a user click', () => {
@@ -679,13 +816,14 @@ describe('lotaje-view: mount/unmount', () => {
     for (const [name, text] of [
       ['balance', '10000'],
       ['riskPct', '1'],
-      ['symbol', 'US30'],
       ['distance', '4'],
       ['distance', '45'],
     ] as const) {
       setValue(doc, name, text);
       expect(writeText).not.toHaveBeenCalled();
     }
+    selectSymbol(doc, 'US30');
+    expect(writeText).not.toHaveBeenCalled();
 
     const button = doc.querySelector<HTMLButtonElement>('.lotaje-copy-action')!;
     const displayedValue = button.querySelector('.lotaje-lots-value')?.textContent;
@@ -758,28 +896,32 @@ describe('lotaje-view: mount/unmount', () => {
     expect(thrownDoc.querySelector('.lotaje-lots-value')?.textContent).toBe('2.22');
   });
 
-  it('replaces an honest-state figure but keeps a visible natively disabled copy affordance', () => {
+  // The honest state REPLACES the figure (§5.3) and, with the glyph gone
+  // (brief §2.4), there is no copy control left to disable — the message
+  // occupies the figure's own slot. The no-jump guarantee that
+  // "disabled, not hidden" protected now comes from `.lotaje-copy-shell`'s
+  // `min-height` alone, and there is no reachable copy path here at all.
+  it('replaces an honest-state figure with its message and offers no copy path', () => {
     const doc = freshDoc();
     const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
     mount(doc, targetWindow(writeText));
 
     const shell = doc.querySelector<HTMLElement>('.lotaje-copy-shell');
     const message = shell?.querySelector<HTMLElement>('.lotaje-invalid-state');
-    const button = shell?.querySelector<HTMLButtonElement>('.lotaje-copy-action');
-    const glyph = button?.querySelector<HTMLElement>('.lotaje-copy-affordance');
     expect(message?.textContent).toBe(
       'La cuenta, el riesgo y la entrada deben ser valores positivos.',
     );
     expect(message?.id).toBe('lotaje-copy-unavailable-reason');
+    expect(message?.getAttribute('role')).toBe('alert');
     expect(doc.querySelector('.lotaje-lots-value')).toBeNull();
     expect(doc.querySelector('.lotaje-lots-label')).toBeNull();
     expect(doc.querySelector('.lotaje-hero')).toBeNull();
     expect(shell).not.toBeNull();
-    expect(glyph).not.toBeNull();
-    expect(button).not.toBeNull();
-    expect(button?.disabled).toBe(true);
-    expect(button?.getAttribute('aria-describedby')).toBe('lotaje-copy-unavailable-reason');
-    button?.click();
+    expect(doc.querySelector('.lotaje-copy-action')).toBeNull();
+    expect(doc.querySelector('.lotaje-copy-affordance')).toBeNull();
+    // The surrounding result surface is unchanged — only the slot's contents.
+    expect(doc.querySelector('.lotaje-result-title')?.textContent).toBe('Tamaño de posición');
+    expect(doc.querySelector('.lotaje-copy-feedback')).not.toBeNull();
     expect(writeText).not.toHaveBeenCalled();
   });
 
@@ -795,14 +937,12 @@ describe('lotaje-view: mount/unmount', () => {
     mount(doc, targetWindow(writeText));
     setValue(doc, 'balance', '1e400');
     setValue(doc, 'riskPct', '1');
-    setValue(doc, 'symbol', 'US30');
+    selectSymbol(doc, 'US30');
     setValue(doc, 'distance', '45');
 
     expect(doc.querySelector('.lotaje-hero')).toBeNull();
     expect(doc.querySelector('.lotaje-lots-value')).toBeNull();
-    const button = doc.querySelector<HTMLButtonElement>('.lotaje-copy-action');
-    expect(button?.disabled).toBe(true);
-    button?.click();
+    expect(doc.querySelector('.lotaje-copy-action')).toBeNull();
     expect(writeText).not.toHaveBeenCalled();
   });
 
@@ -812,7 +952,7 @@ describe('lotaje-view: mount/unmount', () => {
     mount(doc, targetWindow(writeText));
     setValue(doc, 'balance', '100');
     setValue(doc, 'riskPct', '0.1');
-    setValue(doc, 'symbol', 'US30');
+    selectSymbol(doc, 'US30');
     setValue(doc, 'distance', '50');
 
     expect(doc.querySelector('.lotaje-floor-warning')?.textContent).toBe(
@@ -925,15 +1065,84 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector('input[name="distance"]')).not.toBeNull();
     expect(doc.querySelector('input[name="entry"]')).toBeNull();
 
-    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    methodOption(doc, 'prices').click();
 
     expect(doc.querySelector('input[name="distance"]')).toBeNull();
     expect(doc.querySelector('input[name="entry"]')).not.toBeNull();
     expect(doc.querySelector('input[name="sl"]')).not.toBeNull();
 
-    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    methodOption(doc, 'distance').click();
 
     // Back to distance: the value survives the round trip (nothing typed is lost).
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('50');
+  });
+
+  it('the mode control is a two-option radio group that shows only the active mode fields (F21-1)', () => {
+    const doc = freshDoc();
+    mount(doc, window);
+
+    const group = doc.querySelector<HTMLElement>('.lotaje-method-toggle')!;
+    const points = methodOption(doc, 'distance');
+    const prices = methodOption(doc, 'prices');
+    expect(group.getAttribute('role')).toBe('radiogroup');
+    expect(group.getAttribute('aria-labelledby')).toBe('lotaje-method-label');
+    expect(doc.querySelector('#lotaje-method-label')?.textContent).toBe('Modo');
+    expect([points.textContent, prices.textContent]).toEqual(['Puntos', 'Precios']);
+    expect([points.getAttribute('role'), prices.getAttribute('role')]).toEqual(['radio', 'radio']);
+
+    // Puntos: exactly one field, named «Distancia» — no reserved Entrada/SL row.
+    expect(checkedMethod(doc)).toBe('distance');
+    expect(points.classList.contains('lotaje-method-option--selected')).toBe(true);
+    expect(prices.getAttribute('aria-checked')).toBe('false');
+    expect(doc.querySelector('label[for="lotaje-distance"]')?.textContent).toBe('Distancia');
+    expect(doc.querySelectorAll('.lotaje-question-fields .lotaje-field-group')).toHaveLength(1);
+    expect(doc.querySelector('.lotaje-field-entry')).toBeNull();
+    expect(doc.querySelector('.lotaje-field-sl')).toBeNull();
+
+    prices.click();
+
+    // Precios: Entrada above SL, and the distance field is gone entirely.
+    expect(checkedMethod(doc)).toBe('prices');
+    expect(prices.classList.contains('lotaje-method-option--selected')).toBe(true);
+    expect(points.classList.contains('lotaje-method-option--selected')).toBe(false);
+    const groups = Array.from(
+      doc.querySelectorAll<HTMLElement>('.lotaje-question-fields .lotaje-field-group'),
+    );
+    expect(groups).toHaveLength(2);
+    expect(groups.map((field) => field.querySelector('label')?.textContent)).toEqual([
+      'Entrada',
+      'SL',
+    ]);
+    expect(doc.querySelector('.lotaje-field-stop')).toBeNull();
+
+    // Re-picking the already-active mode is a no-op, not a second conversion.
+    setValue(doc, 'entry', '40000');
+    setValue(doc, 'sl', '39950');
+    prices.click();
+    expect(checkedMethod(doc)).toBe('prices');
+    expect(doc.querySelector<HTMLInputElement>('input[name="entry"]')?.value).toBe('40000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="sl"]')?.value).toBe('39950');
+  });
+
+  it('the mode group is one tab stop and an arrow key both moves and switches', () => {
+    const doc = freshFocusableDoc();
+    mount(doc, window, state({ distanceText: '50' }));
+    const points = methodOption(doc, 'distance');
+    const prices = methodOption(doc, 'prices');
+
+    // Roving tabindex: only the checked option is in the tab order.
+    expect([points.tabIndex, prices.tabIndex]).toEqual([0, -1]);
+
+    points.focus();
+    const arrow = dispatchKey(points, 'ArrowRight');
+    expect(arrow.defaultPrevented).toBe(true);
+    expect(checkedMethod(doc)).toBe('prices');
+    expect(doc.activeElement).toBe(prices);
+    expect([points.tabIndex, prices.tabIndex]).toEqual([-1, 0]);
+
+    dispatchKey(prices, 'ArrowLeft');
+    expect(checkedMethod(doc)).toBe('distance');
+    expect(doc.activeElement).toBe(points);
     expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('50');
   });
 
@@ -956,7 +1165,7 @@ describe('lotaje-view: mount/unmount', () => {
 
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(shownSymbol(doc)).toBe('US30');
     const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
     expect(distance.value).toBe('');
     expect(doc.activeElement).toBe(distance);
@@ -998,7 +1207,7 @@ describe('lotaje-view: mount/unmount', () => {
 
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('25000');
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(shownSymbol(doc)).toBe('US30');
     expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
     expect(doc.querySelector('input[name="entry"]')).toBeNull();
     caller.balanceText = '99999';
@@ -1006,11 +1215,14 @@ describe('lotaje-view: mount/unmount', () => {
     const liveRisk = doc.querySelector<HTMLInputElement>('input[name="riskPct"]')!;
     liveRisk.dispatchEvent(new Event('input'));
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('25000');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(shownSymbol(doc)).toBe('US30');
 
     const whitespaceDoc = freshFocusableDoc();
     mount(whitespaceDoc, window, state({ symbolText: '   ' }));
-    expect(whitespaceDoc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('   ');
+    // Whitespace-only is not a symbol: the trigger shows its empty label while
+    // the raw text is kept verbatim in state (what persistence round-trips).
+    expect(shownSymbol(whitespaceDoc)).toBe('Símbolo');
+    expect(getMountedState().symbolText).toBe('   ');
     expect(whitespaceDoc.activeElement).toBe(
       whitespaceDoc.querySelector('input[name="balance"]'),
     );
@@ -1023,17 +1235,17 @@ describe('lotaje-view: mount/unmount', () => {
     expect(infinityDoc.activeElement).toBe(infinityDoc.querySelector('input[name="balance"]'));
   });
 
-  it('focus selects all five numeric fields but preserves the free-text symbol caret', () => {
+  it('focus selects the content of every numeric field, in both methods', () => {
     const doc = freshFocusableDoc();
     mount(
       doc,
       window,
       state({ entryText: '40000', slText: '39955' }),
     );
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
 
     const expectSelectedOnFocus = (input: HTMLInputElement): void => {
-      chip.focus();
+      trigger.focus();
       input.setSelectionRange(input.value.length, input.value.length);
       input.focus();
       expect(input.selectionStart).toBe(0);
@@ -1044,16 +1256,9 @@ describe('lotaje-view: mount/unmount', () => {
     expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')!);
     expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="distance"]')!);
 
-    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    methodOption(doc, 'prices').click();
     expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="entry"]')!);
     expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="sl"]')!);
-
-    chip.click();
-    const symbol = doc.querySelector<HTMLInputElement>('input[name="symbol"]')!;
-    symbol.setSelectionRange(2, 2);
-    symbol.focus();
-    expect(symbol.selectionStart).toBe(2);
-    expect(symbol.selectionEnd).toBe(2);
   });
 
   it('Escape in Method B clears only distance and preserves all context and disclosure state', () => {
@@ -1063,25 +1268,23 @@ describe('lotaje-view: mount/unmount', () => {
       window,
       state({ entryText: '40000', slText: '39955' }),
     );
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
-    const symbol = doc.querySelector<HTMLInputElement>('input[name="symbol"]')!;
-    symbol.focus();
+    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+    specTrigger.click();
+    const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+    balance.focus();
 
-    const escape = dispatchKey(symbol, 'Escape');
+    const escape = dispatchKey(balance, 'Escape');
 
     expect(escape.defaultPrevented).toBe(false);
     expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
-    expect(doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')?.textContent).toBe(
-      '⇄ precios',
-    );
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(shownSymbol(doc)).toBe('US30');
+    expect(checkedMethod(doc)).toBe('distance');
+    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
     expect(doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(false);
 
-    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    methodOption(doc, 'prices').click();
     expect(doc.querySelector<HTMLInputElement>('input[name="entry"]')?.value).toBe('40000');
     expect(doc.querySelector<HTMLInputElement>('input[name="sl"]')?.value).toBe('39955');
   });
@@ -1093,8 +1296,8 @@ describe('lotaje-view: mount/unmount', () => {
       window,
       state({ method: 'prices', entryText: '40000', slText: '39955' }),
     );
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
+    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+    specTrigger.click();
     const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
     balance.focus();
 
@@ -1105,14 +1308,12 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector<HTMLInputElement>('input[name="entry"]')?.value).toBe('40000');
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('10000');
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
-    expect(doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')?.textContent).toBe(
-      '⇄ distancia',
-    );
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(shownSymbol(doc)).toBe('US30');
+    expect(checkedMethod(doc)).toBe('prices');
+    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
     expect(doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(false);
 
-    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    methodOption(doc, 'distance').click();
     expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
   });
 
@@ -1228,7 +1429,7 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
     expect(writeText).not.toHaveBeenCalled();
 
-    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    methodOption(doc, 'prices').click();
     expect(doc.querySelector('.lotaje-distance-control')).toBeNull();
     expect(doc.querySelector('.lotaje-stop-step')).toBeNull();
     const entry = doc.querySelector<HTMLInputElement>('input[name="entry"]')!;
@@ -1255,10 +1456,9 @@ describe('lotaje-view: mount/unmount', () => {
     instrumentAmbientClipboard(ambientWriteText);
 
     mount(distanceDoc, distanceWindow, state());
-    distanceDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
     expect(targetWriteText).not.toHaveBeenCalled();
     expect(ambientWriteText).not.toHaveBeenCalled();
-    for (const name of ['balance', 'riskPct', 'symbol', 'distance']) {
+    for (const name of ['balance', 'riskPct', 'distance']) {
       const input = distanceDoc.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
       input.focus();
       const enter = dispatchKey(input, 'Enter');
@@ -1270,8 +1470,7 @@ describe('lotaje-view: mount/unmount', () => {
       pricesWindow,
       state({ method: 'prices', entryText: '40000', slText: '39955' }),
     );
-    pricesDoc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
-    for (const name of ['balance', 'riskPct', 'symbol', 'entry', 'sl']) {
+    for (const name of ['balance', 'riskPct', 'entry', 'sl']) {
       const input = pricesDoc.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
       input.focus();
       const enter = dispatchKey(input, 'Enter');
@@ -1279,14 +1478,14 @@ describe('lotaje-view: mount/unmount', () => {
     }
 
     expect(distanceWindow).not.toBe(pricesWindow);
-    expect(targetWriteText).toHaveBeenCalledTimes(9);
+    expect(targetWriteText).toHaveBeenCalledTimes(7);
     expect(targetWriteText.mock.calls.map(([payload]) => payload)).toEqual(
-      Array<string>(9).fill('2.22'),
+      Array<string>(7).fill('2.22'),
     );
     expect(ambientWriteText).not.toHaveBeenCalled();
   });
 
-  it('Enter leaves native copy chip select and stepper activation to native semantics without double fire', () => {
+  it('Enter leaves copy, combobox, listbox and stepper activation to native semantics without double fire', () => {
     const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
     const contrastDoc = freshFocusableDoc();
     mount(contrastDoc, targetWindow(writeText), state());
@@ -1307,24 +1506,22 @@ describe('lotaje-view: mount/unmount', () => {
     expect(writeText).toHaveBeenCalledTimes(1);
 
     writeText.mockClear();
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.focus();
-    const chipEnter = dispatchKey(chip, 'Enter');
-    chip.click();
-    expect(chipEnter.defaultPrevented).toBe(false);
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+    trigger.focus();
+    const triggerEnter = dispatchKey(trigger, 'Enter');
+    trigger.click();
+    expect(triggerEnter.defaultPrevented).toBe(false);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(writeText).not.toHaveBeenCalled();
 
-    const select = doc.querySelector<HTMLSelectElement>('select[name="symbolPreset"]')!;
-    const changeSpy = vi.fn();
-    select.addEventListener('change', changeSpy);
-    select.focus();
-    const selectEnter = dispatchKey(select, 'Enter');
-    select.value = 'XAUUSD';
-    select.dispatchEvent(new Event('change'));
-    expect(selectEnter.defaultPrevented).toBe(false);
-    expect(changeSpy).toHaveBeenCalledTimes(1);
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('XAUUSD');
+    const option = doc.querySelector<HTMLButtonElement>(
+      '.lotaje-asset-option[data-symbol="XAUUSD"]',
+    )!;
+    option.focus();
+    const optionEnter = dispatchKey(option, 'Enter');
+    option.click();
+    expect(optionEnter.defaultPrevented).toBe(false);
+    expect(shownSymbol(doc)).toBe('XAUUSD');
     expect(writeText).not.toHaveBeenCalled();
 
     const increment = doc.querySelector<HTMLButtonElement>(
@@ -1376,12 +1573,10 @@ describe('lotaje-view: mount/unmount', () => {
       const shortcut = dispatchKey(balance, key, { altKey: true });
       expect(shortcut.defaultPrevented).toBe(false);
     }
-    expect(doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')?.textContent).toBe(
-      '⇄ precios',
-    );
-    expect(doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')?.getAttribute('aria-expanded')).toBe(
-      'false',
-    );
+    expect(checkedMethod(doc)).toBe('distance');
+    expect(
+      doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')?.getAttribute('aria-expanded'),
+    ).toBe('false');
     expect(doc.activeElement).toBe(balance);
 
     const disabledDoc = freshFocusableDoc();
@@ -1456,8 +1651,8 @@ describe('lotaje-view: mount/unmount', () => {
     const target = targetWindow(writeText);
     const doc = freshFocusableDoc();
     mount(doc, target, state());
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
+    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+    specTrigger.click();
     const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
     distance.focus();
 
@@ -1471,12 +1666,12 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector('.lotaje-copy-feedback')?.textContent).toBe('');
     expect(doc.querySelector('.lotaje-copy-action--copied')).toBeNull();
     expect(target.setTimeout).not.toHaveBeenCalled();
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(shownSymbol(doc)).toBe('US30');
     const escape = dispatchKey(distance, 'Escape');
     expect(escape.defaultPrevented).toBe(false);
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(shownSymbol(doc)).toBe('US30');
 
     setValue(doc, 'distance', '45');
     distance.focus();
@@ -1502,7 +1697,7 @@ describe('lotaje-view: mount/unmount', () => {
     const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
     expect(balance.value).toBe('10000');
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('');
+    expect(shownSymbol(doc)).toBe('Símbolo');
     expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
     expect(doc.activeElement).toBe(balance);
     expect(balance.selectionStart).toBe(0);
@@ -1546,7 +1741,7 @@ describe('lotaje-view: mount/unmount', () => {
 
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('25000');
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('2');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(shownSymbol(doc)).toBe('US30');
     const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
     expect(distance.value).toBe('');
     expect(doc.activeElement).toBe(distance);
@@ -1579,14 +1774,17 @@ describe('lotaje-view: mount/unmount', () => {
 
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('40000');
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1.5');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('XAUUSD');
+    expect(shownSymbol(doc)).toBe('XAUUSD');
     const entry = doc.querySelector<HTMLInputElement>('input[name="entry"]')!;
     const sl = doc.querySelector<HTMLInputElement>('input[name="sl"]')!;
     expect(entry.value).toBe('');
     expect(sl.value).toBe('');
     expect(doc.activeElement).toBe(sl);
     expect(
-      doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')?.getAttribute('aria-expanded'),
+      doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')?.getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(
+      doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')?.getAttribute('aria-expanded'),
     ).toBe('false');
     expect(storage.setItem).not.toHaveBeenCalled();
   });
@@ -1614,7 +1812,7 @@ describe('lotaje-view: mount/unmount', () => {
     expect(storage.setItem).not.toHaveBeenCalled();
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('12345');
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('2');
-    expect(doc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('US30');
+    expect(shownSymbol(doc)).toBe('US30');
 
     setValue(doc, 'balance', '54321');
     expect(storage.getItem).not.toHaveBeenCalled();
@@ -1644,7 +1842,7 @@ describe('lotaje-view: mount/unmount', () => {
       '10000',
     );
     expect(undefinedDoc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
-    expect(undefinedDoc.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe('');
+    expect(shownSymbol(undefinedDoc)).toBe('Símbolo');
   });
 
   it('IN-06 raw round trip: comma/whitespace/leading-zero context survives unmount + omitted remount byte-for-byte while question fields reopen blank', () => {
@@ -1655,8 +1853,7 @@ describe('lotaje-view: mount/unmount', () => {
 
     setValue(doc, 'balance', '012,345.00');
     setValue(doc, 'riskPct', ' 1.5 ');
-    doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!.click();
-    setValue(doc, 'symbol', '  US30  ');
+    selectSymbol(doc, 'US30');
     setValue(doc, 'distance', '45');
 
     unmount();
@@ -1664,17 +1861,19 @@ describe('lotaje-view: mount/unmount', () => {
     const reopened = freshDoc();
     mount(reopened, win);
 
+    // Balance/risk are still stored and restored as RAW text, byte for byte.
+    // The symbol is no longer free text (F21-3), so its round trip is the
+    // curated value the picker committed.
     expect(reopened.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
       '012,345.00',
     );
     expect(reopened.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe(' 1.5 ');
-    expect(reopened.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe(
-      '  US30  ',
-    );
+    expect(shownSymbol(reopened)).toBe('US30');
+    expect(getMountedState().symbolText).toBe('US30');
     expect(reopened.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
   });
 
-  it('IN-07 positive trigger matrix: balance, risk, free-symbol, curated-symbol, and method changes each write exactly once with the exact latest JSON', () => {
+  it('IN-07 positive trigger matrix: balance, risk, curated-symbol, and method changes each write exactly once with the exact latest JSON', () => {
     const storage = fakeStorage();
     const win = persistedWindow(storage);
     const doc = freshDoc();
@@ -1695,28 +1894,25 @@ describe('lotaje-view: mount/unmount', () => {
       '{"v":1,"balanceText":"20000","riskPctText":"2","symbolText":"","method":"distance"}',
     );
 
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
-    setValue(doc, 'symbol', 'EURUSD');
+    const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+    selectSymbol(doc, 'SP500');
     expect(storage.setItem).toHaveBeenCalledTimes(3);
     expect(storage.setItem).toHaveBeenLastCalledWith(
       LOTAJE_STORAGE_KEY,
-      '{"v":1,"balanceText":"20000","riskPctText":"2","symbolText":"EURUSD","method":"distance"}',
+      '{"v":1,"balanceText":"20000","riskPctText":"2","symbolText":"SP500","method":"distance"}',
     );
 
-    const select = doc.querySelector<HTMLSelectElement>('#lotaje-symbol-preset')!;
-    select.value = 'XAUUSD';
-    select.dispatchEvent(new Event('change'));
+    selectSymbol(doc, 'XAUUSD');
     expect(storage.setItem).toHaveBeenCalledTimes(4);
     expect(storage.setItem).toHaveBeenLastCalledWith(
       LOTAJE_STORAGE_KEY,
       '{"v":1,"balanceText":"20000","riskPctText":"2","symbolText":"XAUUSD","method":"distance"}',
     );
-    // Curated selection also closes the disclosure — no duplicate write from that.
-    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    // Selecting also closes the menu — no duplicate write from that.
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(storage.setItem).toHaveBeenCalledTimes(4);
 
-    doc.querySelector<HTMLButtonElement>('.lotaje-method-toggle')!.click();
+    methodOption(doc, 'prices').click();
     expect(storage.setItem).toHaveBeenCalledTimes(5);
     expect(storage.setItem).toHaveBeenLastCalledWith(
       LOTAJE_STORAGE_KEY,
@@ -1744,9 +1940,12 @@ describe('lotaje-view: mount/unmount', () => {
     )!;
     increment.click();
 
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
-    chip.click();
+    const assetTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+    assetTrigger.click();
+    assetTrigger.click();
+    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+    specTrigger.click();
+    specTrigger.click();
 
     distance.focus();
     const enter = dispatchKey(distance, 'Enter');
@@ -1851,9 +2050,7 @@ describe('lotaje-view: mount/unmount', () => {
       '77777',
     );
     expect(reopened.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('9');
-    expect(reopened.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe(
-      'SP500',
-    );
+    expect(shownSymbol(reopened)).toBe('SP500');
     expect(storage.setItem).not.toHaveBeenCalled();
   });
 
@@ -1878,9 +2075,9 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('31000');
     expect(throwingStorage.setItem).toHaveBeenCalled();
 
-    const chip = doc.querySelector<HTMLButtonElement>('.lotaje-symbol-chip')!;
-    chip.click();
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+    specTrigger.click();
+    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
 
     const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
     distance.focus();
@@ -1907,18 +2104,26 @@ describe('lotaje-view: mount/unmount', () => {
     );
   });
 
-  // ---- Task D-6: the «Abrir ventana» trigger --------------------------------
-  it('renders the "Abrir ventana" trigger as a native button, not part of any zone', () => {
+  // ---- Task D-6 / F21-4: the «Abrir mini calculadora» launcher --------------
+  it('renders the "Abrir mini calculadora" launcher as a real button in the header, not in any zone', () => {
     const doc = freshDoc();
     mount(doc, window);
 
     const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-companion-trigger');
     expect(trigger?.tagName).toBe('BUTTON');
     expect(trigger?.type).toBe('button');
-    expect(trigger?.textContent).toBe('Abrir ventana');
+    // F21-4: named for what it opens, and placed in the header beside the
+    // title — never the placeholder «Abrir ventana».
+    expect(trigger?.textContent).toBe('Abrir mini calculadora');
+    expect(doc.body.textContent).not.toContain('Abrir ventana');
+    expect(trigger?.closest('.lotaje-header')).not.toBeNull();
+    expect(trigger?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(trigger?.closest('[aria-label="Contexto"]')).toBeNull();
     expect(trigger?.closest('[aria-label="La pregunta"]')).toBeNull();
     expect(trigger?.closest('[aria-label="La respuesta"]')).toBeNull();
+    // The page titles itself, and carries no close action of its own.
+    expect(doc.querySelector('.lotaje-title')?.textContent).toBe('Calculadora de lotes');
+    expect(doc.querySelector('.lotaje-companion-close')).toBeNull();
   });
 
   // `vi.mock` cannot substitute a sibling relative import under this

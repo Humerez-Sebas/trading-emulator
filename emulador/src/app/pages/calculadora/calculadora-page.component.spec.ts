@@ -128,12 +128,66 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     }
   }
 
-  /** Clicks the Zone 2 method toggle (distance ⇄ prices). Real click, not a state write. */
-  function switchMethod(fixture: ReturnType<typeof create>): void {
-    const toggle = el(fixture).querySelector<HTMLButtonElement>('.lotaje-method-toggle');
-    if (!toggle) throw new Error('no .lotaje-method-toggle button found');
-    toggle.click();
+  /** Picks a Zone 2 mode from the segmented control. Real click, not a state write. */
+  function pickMethod(
+    fixture: ReturnType<typeof create>,
+    method: 'distance' | 'prices',
+  ): void {
+    const option = el(fixture).querySelector<HTMLButtonElement>(
+      `.lotaje-method-option[data-method="${method}"]`,
+    );
+    if (!option) throw new Error(`no .lotaje-method-option[data-method="${method}"] found`);
+    option.click();
     fixture.detectChanges();
+  }
+
+  /** Switches to Method A (Precios). Kept as its own helper — most F1/F3 specs need exactly this. */
+  function switchToPrices(fixture: ReturnType<typeof create>): void {
+    pickMethod(fixture, 'prices');
+  }
+
+  /**
+   * F21-3: the free-text symbol field is gone, so a symbol is chosen from the
+   * curated listbox. Only the four instruments the application owns
+   * specifications for are selectable — see `seedContext` for the specs that
+   * need a symbol outside that catalogue.
+   */
+  function selectSymbol(fixture: ReturnType<typeof create>, symbol: string): void {
+    const trigger = el(fixture).querySelector<HTMLButtonElement>('.lotaje-asset-trigger');
+    if (!trigger) throw new Error('no .lotaje-asset-trigger found');
+    if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+    const option = el(fixture).querySelector<HTMLButtonElement>(
+      `.lotaje-asset-option[data-symbol="${symbol}"]`,
+    );
+    if (!option) throw new Error(`no catalogue option for "${symbol}"`);
+    option.click();
+    fixture.detectChanges();
+  }
+
+  /**
+   * Seeds persisted context BEFORE `create()`. This is the only remaining way a
+   * symbol outside the curated catalogue (EURUSD, in the pip-unit specs below)
+   * can reach the view — which is exactly the production path too: the host's
+   * `mount(this.doc, win)` restores whatever a previous build persisted.
+   * Called after `beforeEach` has already scrubbed the key, cooperating with
+   * that hygiene instead of racing it.
+   */
+  function seedContext(context: {
+    balanceText?: string;
+    riskPctText?: string;
+    symbolText: string;
+    method?: 'distance' | 'prices';
+  }): void {
+    window.localStorage.setItem(
+      LOTAJE_STORAGE_KEY,
+      JSON.stringify({
+        v: 1,
+        balanceText: '10000',
+        riskPctText: '1',
+        method: 'distance',
+        ...context,
+      }),
+    );
   }
 
   /** Zone 1 (context) is DOM-driven for every test that needs a non-default balance/riskPct/symbol. */
@@ -143,7 +197,14 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
   ): void {
     if (v.balance !== undefined) setViaDom(fixture, 'balance', String(v.balance));
     if (v.riskPct !== undefined) setViaDom(fixture, 'riskPct', String(v.riskPct));
-    if (v.symbol !== undefined) setViaDom(fixture, 'symbol', v.symbol);
+    if (v.symbol !== undefined) selectSymbol(fixture, v.symbol);
+  }
+
+  /** What the collapsed asset trigger currently displays. */
+  function shownSymbol(fixture: ReturnType<typeof create>): string | null {
+    return (
+      el(fixture).querySelector('.lotaje-asset-trigger .lotaje-symbol-value')?.textContent ?? null
+    );
   }
 
   function lotsValueText(fixture: ReturnType<typeof create>): string | null {
@@ -165,9 +226,14 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     expect(el(fixture).querySelector('.lotaje-stop-unit')?.textContent?.trim()).toBe('pts');
   });
 
+  // RE-EXPRESSED setup (F21-3): EURUSD is not in the curated catalogue, so it
+  // now arrives the only way it still can — as persisted context restored at
+  // the host's own `mount(this.doc, win)` call site. The claim (pip-derived
+  // unit label, pip-scaled distance, 0.22 lots) is unchanged.
   it('renders 0.22 lots for EURUSD when the labelled stop field contains 45 pips', () => {
+    seedContext({ balanceText: '10000', riskPctText: '1', symbolText: 'EURUSD' });
     const fixture = create();
-    setContext(fixture, { balance: 10000, riskPct: 1, symbol: 'EURUSD' });
+    expect(shownSymbol(fixture)).toBe('EURUSD');
     setViaDom(fixture, 'distance', '45');
     expect(el(fixture).querySelector('.lotaje-stop-unit')?.textContent?.trim()).toBe('pips');
     expect(lotsValueText(fixture)).toBe('0.22');
@@ -179,8 +245,9 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
   function assertLotParityDistance(
     fixture: ReturnType<typeof create>,
     c: { balance: number; riskPct: number; symbol: string; distance: number },
+    contextIsSeeded = false,
   ) {
-    setContext(fixture, c);
+    setContext(fixture, contextIsSeeded ? {} : c);
     setViaDom(fixture, 'distance', String(c.distance));
     const pipSize = pipSizeFor(c.symbol);
     const distanceInPrice = pipSize === null ? c.distance : c.distance * pipSize;
@@ -201,12 +268,12 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
   });
 
   it('parity: the rendered lot figure equals lotsForRiskDistance(...) for a rounding case', () => {
-    assertLotParityDistance(create(), {
-      balance: 5000,
-      riskPct: 1,
-      symbol: 'EURUSD',
-      distance: 60,
-    });
+    seedContext({ balanceText: '5000', riskPctText: '1', symbolText: 'EURUSD' });
+    assertLotParityDistance(
+      create(),
+      { balance: 5000, riskPct: 1, symbol: 'EURUSD', distance: 60 },
+      true,
+    );
   });
 
   // (b) SL = entry (distance 0) — RE-EXPRESSED via the distance field directly.
@@ -253,8 +320,8 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
   // (d2) the rounding case (no floor involved) — literal pin preserved.
   it('warns about plain rounding (not the floor) and the correct "below" direction for an ordinary trade (5000 / 1% / EURUSD, distance 60 pips)', () => {
+    seedContext({ balanceText: '5000', riskPctText: '1', symbolText: 'EURUSD' });
     const fixture = create();
-    setContext(fixture, { balance: 5000, riskPct: 1, symbol: 'EURUSD' });
     setViaDom(fixture, 'distance', '60');
     const text = el(fixture).textContent ?? '';
     expect(text).toContain('redondeo');
@@ -294,7 +361,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
   describe('F1 — decimal entry survives keystroke-by-keystroke typing (DOM-driven, Method A)', () => {
     it('an EURUSD-style entry (1.10952) typed left to right into Entrada never snaps to 0', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       const entry = inputByName(fixture, 'entry');
       typeKeystrokes(fixture, entry, '1.10952');
       setViaDom(fixture, 'sl', '1');
@@ -309,7 +376,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('a trailing-zero price (2650.50) typed into Stop Loss never snaps to 0', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '2700');
       const sl = inputByName(fixture, 'sl');
       typeKeystrokes(fixture, sl, '2650.50');
@@ -319,7 +386,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('clearing Entrada leaves it visibly empty (no 0 snap-back) and lands in an honest state', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       const entry = inputByName(fixture, 'entry');
       entry.value = '';
       entry.dispatchEvent(new Event('input'));
@@ -332,7 +399,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('clearing Stop Loss leaves it visibly empty and does not render a confident wrong lot figure', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '2700');
       const sl = inputByName(fixture, 'sl');
       sl.value = '';
@@ -385,7 +452,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
       }
     }
     assertAllNamed(); // Method B (default): symbol, balance, riskPct, distance
-    switchMethod(fixture);
+    switchToPrices(fixture);
     assertAllNamed(); // Method A: symbol, balance, riskPct, entry, sl
   });
 
@@ -400,7 +467,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     it('renders 0.20 lots for comma-typed 2650,50 -> 2648,00 on XAUUSD (not the truncated 0.25)', () => {
       const fixture = create();
       setContext(fixture, { balance: 5000, riskPct: 1, symbol: 'XAUUSD' });
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '2650,50');
       setViaDom(fixture, 'sl', '2648,00');
       expect(lotsValueText(fixture)).toBe('0.20');
@@ -410,7 +477,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     it('renders the identical 0.20 lots for dot-typed 2650.50 -> 2648.00 on XAUUSD (parity with the comma case)', () => {
       const fixture = create();
       setContext(fixture, { balance: 5000, riskPct: 1, symbol: 'XAUUSD' });
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '2650.50');
       setViaDom(fixture, 'sl', '2648.00');
       expect(lotsValueText(fixture)).toBe('0.20');
@@ -418,7 +485,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('1.5abc typed into Entrada lands in the honest state, not a truncated 1.5', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '1.5abc');
       const text = el(fixture).textContent ?? '';
       expect(text.toLowerCase()).toContain('positivos');
@@ -427,7 +494,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('1,234,56 (ambiguous multi-comma) typed into Entrada lands in the honest state', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '1,234,56');
       expect(el(fixture).querySelector('.lotaje-hero')).toBeNull();
       expect((el(fixture).textContent ?? '').toLowerCase()).toContain('positivos');
@@ -435,7 +502,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('a lone "-" typed into Entrada lands in the honest state', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '-');
       expect(el(fixture).querySelector('.lotaje-hero')).toBeNull();
       expect((el(fixture).textContent ?? '').toLowerCase()).toContain('positivos');
@@ -446,7 +513,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
     // provable without reading an internal signal.
     it('a lone "1." typed into Entrada parses to 1 (mid-typing, do not break F1)', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '1.');
       setViaDom(fixture, 'sl', '0');
       const expected = lotsForRisk(10000, 1, 1, 0, contractSizeFor(''));
@@ -455,7 +522,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('a lone "1," typed into Entrada parses to 1 (comma variant of mid-typing)', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '1,');
       setViaDom(fixture, 'sl', '0');
       const expected = lotsForRisk(10000, 1, 1, 0, contractSizeFor(''));
@@ -464,7 +531,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('1e5 typed into Entrada still parses to 100000', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '1e5');
       setViaDom(fixture, 'sl', '99900');
       const expected = lotsForRisk(10000, 1, 100000, 99900, contractSizeFor(''));
@@ -473,7 +540,7 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
     it('-1 typed into Stop Loss still parses to a finite -1 (L6 depends on this)', () => {
       const fixture = create();
-      switchMethod(fixture);
+      switchToPrices(fixture);
       setViaDom(fixture, 'entry', '1.1');
       setViaDom(fixture, 'sl', '-1');
       const expected = lotsForRisk(10000, 1, 1.1, -1, contractSizeFor(''));
@@ -486,17 +553,18 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
   // (`components/ui/dropdown.component`) and the framework-free view cannot
   // import `components/*` (RFC §7.1 item 6, grep-checked). The claim under
   // test — picking a different symbol re-sizes through the registry — is
-  // preserved by typing the symbol into the plain-text symbol field instead
-  // of picking it from a dropdown.
+  // preserved by picking it from the view's own curated listbox (F21-3
+  // replaced the free-text field this spec previously typed into).
   // ---------------------------------------------------------------------
-  it('L8 — typing a different symbol into the symbol field re-sizes through the registry', () => {
+  it('L8 — picking a different symbol from the catalogue re-sizes through the registry', () => {
     const fixture = create();
     setContext(fixture, { balance: 5000, riskPct: 1 });
     setViaDom(fixture, 'distance', '50');
     expect(contractSizeFor('')).toBe(1); // blank symbol falls to the point-based heuristic default
     expect(lotsValueText(fixture)).toBe('1.00');
 
-    setViaDom(fixture, 'symbol', 'XAUUSD');
+    selectSymbol(fixture, 'XAUUSD');
+    expect(shownSymbol(fixture)).toBe('XAUUSD');
     expect(contractSizeFor('XAUUSD')).toBe(100);
     const expected = lotsForRiskDistance(riskUsdFor(5000, 1), 50, 100);
     expect(lotsValueText(fixture)).toBe(expected.toFixed(2));
@@ -549,7 +617,28 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
 
       expect(inputByName(fixture, 'balance').value).toBe('54321');
       expect(inputByName(fixture, 'riskPct').value).toBe('2');
-      expect(inputByName(fixture, 'symbol').value).toBe('EURUSD');
+      expect(shownSymbol(fixture)).toBe('EURUSD');
+    });
+
+    // F21-4: the launcher's name and its placement are part of the contract —
+    // it must be a real button (Document Picture-in-Picture only opens from a
+    // trusted gesture), never a route or an effect.
+    it('offers the «Abrir mini calculadora» launcher as a real header button', () => {
+      const fixture = create();
+      const trigger = el(fixture).querySelector<HTMLButtonElement>('.lotaje-companion-trigger');
+      expect(trigger?.tagName).toBe('BUTTON');
+      expect(trigger?.type).toBe('button');
+      expect(trigger?.textContent).toBe('Abrir mini calculadora');
+      expect(trigger?.closest('.lotaje-header')).not.toBeNull();
+      expect(el(fixture).querySelector('.lotaje-title')?.textContent).toBe('Calculadora de lotes');
+    });
+
+    // F21-3: nothing in the page accepts an arbitrary symbol any more.
+    it('exposes no free-text symbol entry anywhere on the page', () => {
+      const fixture = create();
+      expect(el(fixture).querySelector('input[name="symbol"]')).toBeNull();
+      expect(el(fixture).textContent).not.toContain('Otro símbolo');
+      expect(el(fixture).querySelectorAll('.lotaje-asset-option')).toHaveLength(4);
     });
   });
 });

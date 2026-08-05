@@ -2,96 +2,330 @@
  * RFC-020 Lotaje view. This component uses ViewEncapsulation.None (see the
  * .ts class doc) because the view's DOM is built with
  * `document.createElement`, which Angular's default emulated encapsulation
- * cannot scope. Every selector below is namespaced under `.lotaje-` to stay
- * safe as global CSS.
+ * cannot scope. This stylesheet therefore ships GLOBALLY: every selector below
+ * is namespaced under `.lotaje-`/`#lotaje-` (or nested beneath one) so it can
+ * never reach the rest of the app. The single exception is the
+ * `app-calculadora-page` host element itself, which is this page's own unique
+ * custom-element name.
  *
- * The context strip, asset disclosure, hero typography, copy states and D-5
- * touch steppers follow product design §5.2, §7.5, §9.1-§9.2 and §10. Focus
- * and keyboard behavior live in the framework-free view; persistence remains
- * excluded here and belongs to C-2.
+ * Layout strategy — narrow-first, container-driven:
+ *   base            everything stacks (the ~240 CSS px companion floor)
+ *   @container 300  the companion's preferred 320x300 composition
+ *   @container 560  the full page
+ * The queries hang off `#lotaje-mount`, the ONE element `mount()` guarantees
+ * in both realms (the Angular page div and the bare companion document), so
+ * the same stylesheet drives both surfaces with no host-specific plumbing.
+ * Narrow-first also means a container-query failure degrades to the stacked
+ * layout rather than to a clipped one.
  */
+
+/* Fills the router outlet so `.lotaje-page` can own its own scrolling. */
+app-calculadora-page {
+  display: block;
+  height: 100%;
+}
+
+#lotaje-mount {
+  container-type: inline-size;
+  container-name: lotaje;
+}
 
 .lotaje-page {
   height: 100%;
   overflow-y: auto;
-  padding: var(--space-6) var(--space-8) var(--space-10);
-  max-width: 480px;
+  max-width: 920px;
   margin: 0 auto;
+  padding: var(--space-6) var(--space-6) var(--space-10);
+}
+
+/* Deliberately NO `overflow-x: hidden` here: hiding an overflow would mask the
+   very defect (F21-1) this pass exists to remove, and would make the 240 px
+   measurement dishonest. The narrow arrangement has to actually fit. */
+html[data-lotaje-companion] #lotaje-mount {
+  padding: var(--space-2);
 }
 
 .lotaje-root {
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  display: flex;
-  flex-direction: column;
 }
 
-/* A single 1px divider between zones — NOT three bordered cards (product design §6.2). */
-.lotaje-zone {
-  padding: var(--space-4);
-}
-.lotaje-zone + .lotaje-zone {
-  border-top: 1px solid var(--border);
-}
-
-/* ---- Zone 1 · Contexto — reads as a status header, not a form ---- */
-.lotaje-zone--context {
+/* ---- header ---- */
+.lotaje-header {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.lotaje-header-identity {
+  display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-size: var(--text-sm);
+  min-width: 0;
+}
+.lotaje-header-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   color: var(--text-muted);
 }
-/* Visual order (symbol, cuenta, riesgo, riesgo derivado) deliberately diverges
-   from DOM order (cuenta, riesgo, riesgo derivado, symbol). The derived value
-   is not focusable, so natural tab order remains cuenta, riesgo, symbol, stop. */
-.lotaje-symbol-chip {
-  order: 0;
+.lotaje-title {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.lotaje-field-balance {
-  order: 1;
+.lotaje-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
 }
-.lotaje-field-risk {
-  order: 2;
+.lotaje-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
-.lotaje-risk-usd {
-  order: 3;
+.lotaje-caret {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-out);
 }
 
-.lotaje-symbol-chip {
+.lotaje-companion-trigger {
   appearance: none;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  color: var(--text);
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: var(--radius-sm);
+  color: var(--accent);
   font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
   cursor: pointer;
   transition:
     background var(--duration-fast) var(--ease-out),
     border-color var(--duration-fast) var(--ease-out);
 }
-.lotaje-symbol-chip:hover {
-  background: var(--surface-3);
-  border-color: var(--border-strong);
+.lotaje-companion-trigger:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
 }
-.lotaje-symbol-chip:focus-visible {
+.lotaje-companion-trigger:active {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.lotaje-companion-trigger:focus-visible {
   outline: none;
   box-shadow: var(--ring);
 }
-.lotaje-symbol-value {
+.lotaje-companion-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lotaje-companion-close {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.lotaje-companion-close:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.lotaje-companion-close:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* ---- zones: a single padded column, no competing card borders (§6.2) ---- */
+.lotaje-zone {
+  padding: var(--space-3) var(--space-3) 0;
+}
+.lotaje-zone--answer {
+  padding-bottom: var(--space-3);
+}
+
+/* ---- Zone 1 · Contexto — reads as a status header, not a form ---- */
+.lotaje-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.lotaje-summary-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.lotaje-summary-cell--risk-usd {
+  justify-content: center;
+}
+
+.lotaje-label {
+  display: block;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Derived, never editable: no field chrome, accent colour, mono figures. */
+.lotaje-risk-usd {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  text-transform: uppercase;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  line-height: var(--leading-tight);
+}
+
+/* ---- fields: the border lives on the wrapper, the suffix is a flex sibling.
+   This replaces V-1a's `width: calc(8ch + …)` balance measurement — the field
+   now takes its cell's width and the suffix can never overlap the value, at
+   any width, in any of the three arrangements. ---- */
+.lotaje-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.lotaje-field:hover {
+  border-color: var(--border-strong);
+}
+.lotaje-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+.lotaje-field .ui-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+}
+.lotaje-field .ui-input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+.lotaje-field-suffix {
+  flex: none;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* ---- asset selector (F21-3): a curated listbox, no free-text entry ---- */
+.lotaje-asset-select {
+  position: relative;
+  min-width: 0;
+}
+.lotaje-asset-trigger {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 38px;
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.lotaje-asset-trigger:hover {
+  border-color: var(--border-strong);
+}
+.lotaje-asset-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+.lotaje-asset-trigger[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+.lotaje-asset-trigger[aria-expanded='true'] .lotaje-caret {
+  transform: rotate(180deg);
+}
+.lotaje-symbol-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lotaje-symbol-badge {
   display: inline-flex;
   align-items: center;
+  flex: none;
   padding: 1px var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--warning-subtle);
@@ -103,54 +337,177 @@
 .lotaje-symbol-badge[hidden] {
   display: none;
 }
-.lotaje-symbol-disclosure {
-  order: 4;
-  flex: 1 0 100%;
+
+.lotaje-asset-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--lotaje-tone) 18%, transparent);
+  color: var(--lotaje-tone);
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.lotaje-asset-mark[data-tone='accent'] {
+  --lotaje-tone: var(--accent);
+}
+.lotaje-asset-mark[data-tone='warning'] {
+  --lotaje-tone: var(--warning);
+}
+.lotaje-asset-mark[data-tone='down'] {
+  --lotaje-tone: var(--down);
+}
+.lotaje-asset-mark[data-tone='muted'] {
+  --lotaje-tone: var(--text-muted);
+}
+
+/* Absolutely positioned so opening it never displaces the summary row, and
+   pinned to the trigger's own box so it can never leave the viewport. */
+.lotaje-asset-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 2px;
+  max-height: 232px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
+}
+.lotaje-asset-menu[hidden] {
+  display: none;
+}
+.lotaje-asset-menu-title {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+.lotaje-asset-option {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.lotaje-asset-option:hover {
+  background: var(--surface-2);
+}
+.lotaje-asset-option:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.lotaje-asset-option[aria-selected='true'] {
+  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.lotaje-asset-option-symbol {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+}
+.lotaje-asset-option-name {
+  justify-self: end;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lotaje-asset-option-check {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--accent);
+  opacity: 0;
+}
+.lotaje-asset-option[aria-selected='true'] .lotaje-asset-option-check {
+  opacity: 1;
+}
+
+/* ---- Ficha del activo — full-width disclosure below the summary (§5.2) ---- */
+.lotaje-specs {
+  margin-top: var(--space-3);
+}
+.lotaje-spec-trigger {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.lotaje-spec-trigger:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lotaje-spec-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.lotaje-spec-trigger[aria-expanded='true'] {
+  color: var(--text);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.lotaje-spec-trigger[aria-expanded='true'] .lotaje-caret {
+  transform: rotate(180deg);
+}
+.lotaje-spec-trigger-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lotaje-symbol-disclosure {
   min-width: 0;
   padding: var(--space-3);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
   color: var(--text);
 }
 .lotaje-symbol-disclosure[hidden] {
   display: none;
-}
-
-.lotaje-symbol-picker {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-1) var(--space-3);
-}
-.lotaje-symbol-picker > label {
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-medium);
-}
-.lotaje-symbol-picker > label:first-of-type,
-.lotaje-symbol-picker > select {
-  grid-column: 1;
-}
-.lotaje-symbol-picker > label:last-of-type,
-.lotaje-symbol-input {
-  grid-column: 2;
-}
-.lotaje-symbol-picker > select,
-.lotaje-symbol-input {
-  grid-row: 2;
-  width: 100%;
-  min-width: 0;
-}
-.lotaje-symbol-input {
-  text-transform: uppercase;
-}
-.lotaje-symbol-picker > select:focus-visible,
-.lotaje-symbol-input:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
 }
 
 .lotaje-asset-sheet h2 {
@@ -161,7 +518,7 @@
 }
 .lotaje-asset-sheet dl {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0 var(--space-4);
   margin: 0;
 }
@@ -192,87 +549,97 @@
   font-family: inherit;
 }
 
-.lotaje-field {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-.lotaje-field-balance input,
-.lotaje-field-risk input {
-  padding-right: calc(var(--space-3) + 28px);
-}
-.lotaje-field-balance input {
-  /* Content-aware width (V-1a): the shared 88px fixed width clipped a
-     5-digit balance. `ch` scales with the field's own font instead of a
-     second magic pixel constant; 8ch covers the required 7-digit balance
-     with a 1-char buffer. Measured in-browser: the required 7-digit value
-     needs >=113px to stay unclipped, and the context row (chip + balance +
-     risk + `· $…` readout) wraps once the balance field passes ~123px at
-     the component's max page width — 8ch (~118px) sits inside that window.
-     A plain `width` (not `min-width` on an `auto`-width input) is required
-     — `<input>` without a `size` attribute has a ~20-character UA intrinsic
-     width, so `width: auto` would fall back to that (measured ~223px) and
-     wrap the context zone unconditionally. */
-  width: calc(8ch + (var(--space-3) * 2) + 28px);
-  text-overflow: ellipsis;
-}
-.lotaje-field-risk input {
-  width: 88px;
-}
-.lotaje-field-suffix {
-  position: absolute;
-  right: var(--space-2);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.lotaje-risk-usd {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-md);
-  color: var(--text);
-}
-
 /* ---- Zone 2 · La pregunta — where the focus lives ---- */
 .lotaje-zone--question {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
+  align-items: start;
 }
-.lotaje-question-fields {
+.lotaje-method {
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  flex: 1;
+  min-width: 0;
 }
-.lotaje-field-stop,
-.lotaje-field-entry,
-.lotaje-field-sl {
-  flex: 1;
+
+/* F21-1: two `minmax(0, 1fr)` tracks that restack with the rest of the
+   calculation area. The old single fixed-width toggle could not shrink and
+   overflowed the companion at its ~240 CSS px floor. */
+.lotaje-method-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  min-width: 0;
 }
-.lotaje-field-stop input {
-  padding-right: calc(var(--space-3) + 34px);
+.lotaje-method-option {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 48px;
+  padding: var(--space-2) var(--space-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
-.lotaje-stop-unit {
-  right: var(--space-2);
+.lotaje-method-option:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lotaje-method-option:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+/* Selection is never colour alone: filled surface + heavier label + the
+   `aria-checked` state the radio role exposes. */
+.lotaje-method-option--selected {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.lotaje-question-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+.lotaje-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .lotaje-distance-control {
   display: flex;
   align-items: stretch;
   gap: var(--space-1);
-  flex: 1;
   min-width: 0;
 }
 .lotaje-distance-control .lotaje-field-stop {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
 .lotaje-stop-step {
   display: none;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
+  flex: none;
+  min-width: 36px;
   padding: var(--space-1) var(--space-2);
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -293,62 +660,120 @@
   box-shadow: var(--ring);
 }
 
-.lotaje-method-toggle {
-  flex-shrink: 0;
-  background: transparent;
+/* ---- Zone 3 · La respuesta — the hero ---- */
+.lotaje-result {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3);
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  padding: var(--space-1) var(--space-2);
-  cursor: pointer;
-  transition: border-color var(--duration-fast) var(--ease-out);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  text-align: center;
+  /* §9.2: one dominant figure, 44 px at full width, never below 32 px. */
+  --text-hero: clamp(32px, 13cqi, 44px);
 }
-.lotaje-method-toggle:hover {
-  border-color: var(--border-strong);
-  color: var(--text);
+.lotaje-result > * {
+  position: relative;
+  z-index: 1;
 }
-.lotaje-method-toggle:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
+/* Subtle technical grid behind the figure. Decoration only: it is a
+   pseudo-element (never in the accessibility tree), it is masked away before
+   it reaches the text, and it disappears entirely at companion widths. */
+.lotaje-result::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 0;
+  width: 220px;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--text) 12%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--text) 12%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(115% 105% at 100% 50%, #000 0%, transparent 70%);
+  mask-image: radial-gradient(115% 105% at 100% 50%, #000 0%, transparent 70%);
+  opacity: 0.45;
+  pointer-events: none;
 }
 
-/* ---- Zone 3 · La respuesta — stable copy/result geometry ---- */
-.lotaje-zone--answer {
+.lotaje-result-mark,
+.lotaje-result-lede {
+  display: none;
+}
+.lotaje-result-mark {
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+.lotaje-result-mark .lotaje-icon {
+  width: 22px;
+  height: 22px;
+}
+.lotaje-result-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--text);
+}
+.lotaje-result-hint {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+  max-width: 30ch;
+}
+.lotaje-result-body {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
-  text-align: center;
-  padding-top: var(--space-6);
-  padding-bottom: var(--space-6);
+  width: 100%;
+  min-width: 0;
+}
+.lotaje-result-note {
+  margin: 0;
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
 }
 
 .lotaje-copy-shell {
-  /* Variant B (owner decision, V-1b): a single centred column instead of a
-     reserved third track for the feedback string. The reserved column never
-     bought the no-jump guarantee — that comes from `min-height` below, which
-     already has enough spare vertical space to absorb the stacked feedback
-     row without growing. */
+  /* A single centred column; `min-height` (not a reserved track) is what
+     keeps the honest state from shifting the surrounding layout. */
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   align-content: center;
   row-gap: var(--space-1);
   width: 100%;
-  min-height: calc(var(--text-hero) + var(--space-10));
+  min-height: calc(var(--text-hero) + var(--space-6));
 }
 
 .lotaje-invalid-state {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
+  line-height: var(--leading-normal);
   max-width: 32ch;
 }
 
 .lotaje-hero {
   justify-self: center;
+  min-width: 0;
 }
+/* The figure IS the copy control — there is no separate icon-only action
+   (brief §2.4). The affordance is the hover/focus surface plus the title. */
 .lotaje-copy-action {
   appearance: none;
   display: flex;
@@ -356,30 +781,30 @@
   gap: var(--space-2);
   min-width: 0;
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) var(--space-2);
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
   color: inherit;
   font: inherit;
   text-align: inherit;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .lotaje-copy-action:not(:disabled) {
   cursor: pointer;
+}
+.lotaje-copy-action:not(:disabled):hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 .lotaje-copy-action:focus-visible {
   outline: none;
   box-shadow: var(--ring);
 }
-.lotaje-copy-action--unavailable {
-  justify-self: center;
-  opacity: 0.45;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
 .lotaje-copy-content {
   display: inline-flex;
   align-items: baseline;
   gap: var(--space-2);
+  min-width: 0;
 }
 .lotaje-lots-value {
   /* The screen's sole dominant figure (product design §6.1 and §9.2). */
@@ -389,24 +814,21 @@
   font-weight: var(--weight-semibold);
   line-height: var(--leading-none);
   color: var(--text);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   user-select: text;
   transition: color var(--duration-fast) var(--ease-out);
 }
 .lotaje-copy-action--copied .lotaje-lots-value {
   color: var(--accent);
 }
-.lotaje-copy-affordance {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  transition: color var(--duration-fast) var(--ease-out);
-}
 .lotaje-lots-label {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--accent);
 }
 .lotaje-copy-feedback {
-  color: var(--text-muted);
+  min-height: 1.2em;
+  color: var(--accent);
   font-size: var(--text-xs);
   line-height: var(--leading-normal);
   overflow-wrap: anywhere;
@@ -424,38 +846,11 @@
   border-radius: var(--radius-sm);
   color: var(--warning);
   font-size: var(--text-xs);
-  max-width: 36ch;
+  max-width: 44ch;
   text-align: left;
 }
 
-/* ---- D-6 companion window: trigger, host placeholder, companion elevation ---- */
-.lotaje-companion-trigger-row {
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--space-2) var(--space-3) 0;
-}
-.lotaje-companion-trigger {
-  appearance: none;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  padding: var(--space-1) var(--space-2);
-  cursor: pointer;
-  transition:
-    border-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-.lotaje-companion-trigger:hover {
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-.lotaje-companion-trigger:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-}
-
+/* ---- companion: host placeholder + companion elevation ---- */
 /* §4.1: shown in the host page's #lotaje-mount container while the
    companion window owns the view — a trivial placeholder, not a second
    surface. */
@@ -468,6 +863,9 @@
   text-align: center;
   color: var(--text-muted);
   font-size: var(--text-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
 }
 .lotaje-companion-return {
   appearance: none;
@@ -504,27 +902,178 @@ html[data-lotaje-companion] .lotaje-root {
   }
 }
 
-@media (max-width: 560px) {
-  .lotaje-root {
-    --text-hero: 36px;
+/* ============================================================
+   Narrowest arrangement (~240 CSS px): the labels the in-field
+   suffixes already carry are clipped — visually only, the accessible
+   name stays intact — so the whole tool still fits without a
+   horizontal scrollbar or a shrunken font.
+   ============================================================ */
+@container lotaje (max-width: 299px) {
+  .lotaje-summary-cell--balance > .lotaje-label,
+  .lotaje-summary-cell--risk > .lotaje-label,
+  .lotaje-summary-cell--risk-usd > .lotaje-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
-  .lotaje-page {
-    padding: var(--space-5) var(--space-4) var(--space-8);
-  }
-  .lotaje-zone--context {
+  .lotaje-summary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: var(--space-2);
   }
-  .lotaje-symbol-picker,
-  .lotaje-asset-sheet dl {
+  .lotaje-summary-cell--asset {
+    grid-column: span 2;
+  }
+  .lotaje-summary-cell--risk-usd {
+    grid-column: span 2;
+    align-items: flex-end;
+  }
+  .lotaje-header {
+    padding: var(--space-2) var(--space-3);
+  }
+  .lotaje-zone {
+    padding: var(--space-2) var(--space-2) 0;
+  }
+  .lotaje-zone--answer {
+    padding-bottom: var(--space-2);
+  }
+  .lotaje-title {
+    font-size: var(--text-sm);
+  }
+  .lotaje-method-option {
+    min-height: 42px;
+  }
+}
+
+/* ============================================================
+   Companion, preferred composition (~320 x 300): asset selector
+   full width, then a two-column calculation area with the mode
+   control on the left and the mode's own fields on the right.
+   ============================================================ */
+@container lotaje (min-width: 300px) {
+  .lotaje-summary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .lotaje-summary-cell--asset {
+    grid-column: span 2;
+  }
+  .lotaje-zone--question {
+    grid-template-columns: minmax(88px, 0.62fr) minmax(0, 1fr);
+  }
+  .lotaje-method-toggle {
     grid-template-columns: minmax(0, 1fr);
   }
-  .lotaje-symbol-picker > label:last-of-type {
-    grid-column: 1;
-    grid-row: 3;
-    margin-top: var(--space-2);
+}
+
+/* ============================================================
+   Full page: the reference composition — a four-cell summary row,
+   a horizontal segmented mode control, Entrada/SL side by side and
+   the complete result surface.
+   ============================================================ */
+@container lotaje (min-width: 560px) {
+  .lotaje-header {
+    padding: var(--space-4) var(--space-5);
   }
-  .lotaje-symbol-input {
-    grid-column: 1;
-    grid-row: 4;
+  .lotaje-header-mark {
+    width: 34px;
+    height: 34px;
+  }
+  .lotaje-title {
+    font-size: var(--text-lg);
+  }
+  .lotaje-zone {
+    padding: var(--space-4) var(--space-5) 0;
+  }
+  .lotaje-zone--answer {
+    padding-bottom: var(--space-5);
+  }
+
+  .lotaje-summary {
+    grid-template-columns:
+      minmax(0, 1.15fr) minmax(0, 1fr)
+      minmax(0, 1fr) minmax(0, 0.9fr);
+    gap: 0;
+    padding: var(--space-3) 0;
+  }
+  .lotaje-summary-cell {
+    padding: var(--space-1) var(--space-4);
+  }
+  .lotaje-summary-cell + .lotaje-summary-cell {
+    border-left: 1px solid var(--border);
+  }
+  .lotaje-summary-cell--asset {
+    grid-column: auto;
+  }
+  .lotaje-summary-cell--risk-usd {
+    grid-column: auto;
+    align-items: flex-start;
+  }
+  .lotaje-risk-usd {
+    font-size: var(--text-lg);
+  }
+  .lotaje-asset-menu {
+    right: auto;
+    min-width: 290px;
+  }
+  .lotaje-specs {
+    margin-top: var(--space-4);
+  }
+  .lotaje-asset-sheet dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lotaje-zone--question {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+  .lotaje-method-toggle {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 320px;
+  }
+  .lotaje-method-option {
+    min-height: 56px;
+    font-size: var(--text-sm);
+  }
+  .lotaje-question-fields {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+  .lotaje-field-group--distance {
+    max-width: 360px;
+  }
+
+  .lotaje-result {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'mark lede figure'
+      '.    .    note';
+    align-items: center;
+    justify-items: start;
+    gap: var(--space-2) var(--space-5);
+    padding: var(--space-5) var(--space-6);
+    text-align: left;
+  }
+  .lotaje-result-mark {
+    grid-area: mark;
+    display: inline-flex;
+  }
+  .lotaje-result-lede {
+    grid-area: lede;
+    display: block;
+  }
+  .lotaje-result-body {
+    grid-area: figure;
+    justify-self: end;
+  }
+  .lotaje-result-note {
+    grid-area: note;
+    justify-self: center;
+    text-align: center;
   }
 }

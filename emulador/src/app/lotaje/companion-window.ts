@@ -27,12 +27,15 @@ import { getMountedState, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view'
 import type { LotajeState } from './sizing-view-model';
 
 /**
- * S-1.e: 380x520 was granted EXACTLY by `documentPictureInPicture` in both
- * measured browsers — comfortably above its measured 240 CSS px width floor
- * (narrower requests are silently widened, never rejected).
+ * The preferred composition of the polish brief (§2.2): 320x300, comfortably
+ * above `documentPictureInPicture`'s measured ~240 CSS px width floor
+ * (S-1.e — narrower requests are silently widened, never rejected). It is the
+ * PREFERRED size, not the only supported one: the view's own stylesheet
+ * restacks down to that floor and up to the full page, so a trader who
+ * resizes the companion by hand keeps a usable layout either way.
  */
-export const COMPANION_WIDTH = 380;
-export const COMPANION_HEIGHT = 520;
+export const COMPANION_WIDTH = 320;
+export const COMPANION_HEIGHT = 300;
 
 interface DocumentPictureInPictureRequestOptions {
   readonly width?: number;

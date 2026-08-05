@@ -161,7 +161,7 @@ describe('companion-window: openCompanionWindow', () => {
     input.dispatchEvent(new Event('input'));
   }
 
-  it('prefers documentPictureInPicture, requesting the S-1-safe 380x520 size', async () => {
+  it('prefers documentPictureInPicture, requesting the preferred 320x300 composition', async () => {
     const openPopup = vi.fn();
     const requestWindow = vi.fn().mockResolvedValue(fakeCompanionWindow());
     const { doc, win } = fakeHostWindow({ pip: requestWindow, open: openPopup });
@@ -176,8 +176,11 @@ describe('companion-window: openCompanionWindow', () => {
       height: COMPANION_HEIGHT,
     });
     expect(openPopup).not.toHaveBeenCalled();
-    expect(COMPANION_WIDTH).toBe(380);
-    expect(COMPANION_HEIGHT).toBe(520);
+    // The preferred size of the polish brief §2.2 — still above the ~240 CSS
+    // px floor the S-1 spike measured, so the request is granted exactly.
+    expect(COMPANION_WIDTH).toBe(320);
+    expect(COMPANION_HEIGHT).toBe(300);
+    expect(COMPANION_WIDTH).toBeGreaterThanOrEqual(240);
   });
 
   it('falls back to window.open when documentPictureInPicture is absent', () => {
@@ -228,9 +231,9 @@ describe('companion-window: openCompanionWindow', () => {
     expect(companion.document.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe(
       '77',
     );
-    expect(companion.document.querySelector<HTMLInputElement>('input[name="symbol"]')?.value).toBe(
-      'XAUUSD',
-    );
+    expect(
+      companion.document.querySelector('.lotaje-asset-trigger .lotaje-symbol-value')?.textContent,
+    ).toBe('XAUUSD');
     // Not the module's INITIAL_STATE defaults (which this carried state
     // deliberately differs from) — proves the carried state actually moved,
     // rather than the companion just cold-starting on its own.
@@ -337,6 +340,52 @@ describe('companion-window: openCompanionWindow', () => {
 
     expect(companion.document.documentElement.getAttribute('data-lotaje-companion')).toBe('true');
     expect(doc.documentElement.hasAttribute('data-lotaje-companion')).toBe(false);
+  });
+
+  it('titles the moved-in view «Calculadora flotante» and swaps the launcher for a real close action', () => {
+    const companion = fakeCompanionWindow();
+    const openPopup = vi.fn().mockReturnValue(companion);
+    const { doc, win } = fakeHostWindow({ open: openPopup });
+    mount(doc, win as unknown as Window, state());
+
+    // The host titles itself, and offers the launcher — never a close.
+    expect(doc.querySelector('.lotaje-title')?.textContent).toBe('Calculadora de lotes');
+    expect(doc.querySelector('.lotaje-companion-trigger')?.textContent).toBe(
+      'Abrir mini calculadora',
+    );
+    expect(doc.querySelector('.lotaje-companion-close')).toBeNull();
+
+    openCompanionWindow(doc, win as unknown as Window);
+
+    const companionDoc = companion.document;
+    expect(companionDoc.querySelector('.lotaje-title')?.textContent).toBe('Calculadora flotante');
+    // No launcher inside the companion (it would only re-focus itself) and no
+    // minimise button beside the close: nothing in the platform implements one,
+    // so painting one would be an inert control.
+    expect(companionDoc.querySelector('.lotaje-companion-trigger')).toBeNull();
+    expect(companionDoc.querySelectorAll('.lotaje-header-actions button')).toHaveLength(1);
+    const close = companionDoc.querySelector<HTMLButtonElement>('.lotaje-companion-close');
+    expect(close?.tagName).toBe('BUTTON');
+    expect(close?.type).toBe('button');
+    expect(close?.getAttribute('aria-label')).toBe('Cerrar la calculadora flotante');
+  });
+
+  it('the companion close button really closes the realm and drives the same single teardown', () => {
+    const companion = fakeCompanionWindow();
+    const openPopup = vi.fn().mockReturnValue(companion);
+    const { doc, win } = fakeHostWindow({ open: openPopup });
+    mount(doc, win as unknown as Window, state({ distanceText: '77' }));
+
+    openCompanionWindow(doc, win as unknown as Window);
+    setValue(companion.document, 'distance', '88');
+    companion.document.querySelector<HTMLButtonElement>('.lotaje-companion-close')!.click();
+
+    // `close()` fires pagehide, which is the adapter's ONE teardown path —
+    // the same one the window manager's own close button drives.
+    expect(companion.close).toHaveBeenCalledTimes(1);
+    expect(companion.closed).toBe(true);
+    expect(doc.querySelector('.lotaje-companion-placeholder')).toBeNull();
+    expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('88');
   });
 
   it('registers pagehide on open and removes exactly that listener on teardown', () => {
