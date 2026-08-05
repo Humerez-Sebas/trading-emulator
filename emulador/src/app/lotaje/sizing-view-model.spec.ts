@@ -59,51 +59,39 @@ describe('deriveLots — Method B (distance), the default', () => {
     });
   });
 
-  it('XAUUSD: 10 MT5 pts normalizes to 0.10 for lot sizing and real risk', () => {
+  it('XAUUSD: 5 pts remain 5.00 price units for lot sizing and real risk', () => {
     const d = deriveLots(
-      state({ balanceText: '5000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '10' }),
+      state({ balanceText: '10000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '5' }),
     );
     expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: Number(d.actualRiskUsd.toFixed(2)) }).toEqual({
       unit: 'pts',
-      distance: 0.1,
-      lots: 5,
-      risk: 50,
+      distance: 5,
+      lots: 0.2,
+      risk: 100,
     });
   });
 
-  it('XAUUSD: 14 MT5 pts normalizes to 0.14 for lot sizing and real risk', () => {
+  it('XAUUSD: 10 pts remain 10.00 price units for lot sizing and real risk', () => {
     const d = deriveLots(
-      state({ balanceText: '5000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '14' }),
+      state({ balanceText: '10000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '10' }),
     );
     expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: Number(d.actualRiskUsd.toFixed(2)) }).toEqual({
       unit: 'pts',
-      distance: 0.14,
-      lots: 3.57,
-      risk: 49.98,
+      distance: 10,
+      lots: 0.1,
+      risk: 100,
     });
   });
 
-  it('XAUUSD: 7 MT5 pts normalizes to 0.07 for lot sizing and real risk', () => {
+  it('XAUUSD: 20 pts remain 20.00 price units for lot sizing and real risk', () => {
     const d = deriveLots(
-      state({ balanceText: '5000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '7' }),
+      state({ balanceText: '10000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '20' }),
     );
     expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: Number(d.actualRiskUsd.toFixed(2)) }).toEqual({
       unit: 'pts',
-      distance: 0.07,
-      lots: 7.14,
-      risk: 49.98,
-    });
-  });
-
-  it('XAUUSD: 8 MT5 pts normalizes to 0.08 for lot sizing and real risk', () => {
-    const d = deriveLots(
-      state({ balanceText: '5000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '8' }),
-    );
-    expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: Number(d.actualRiskUsd.toFixed(2)) }).toEqual({
-      unit: 'pts',
-      distance: 0.08,
-      lots: 6.25,
-      risk: 50,
+      distance: 20,
+      lots: 0.05,
+      risk: 100,
     });
   });
 
@@ -378,11 +366,11 @@ describe('switchMethod — P4, converts, never resets', () => {
     expect(roundTrip.slText).toBe('1.0955');
   });
 
-  it('XAUUSD distance/prices round trip converts MT5 pts in both directions', () => {
+  it('XAUUSD distance/prices round trip preserves price-unit pts in both directions', () => {
     const fromDistance = switchMethod(
       state({ symbolText: 'XAUUSD', method: 'distance', entryText: '2650', distanceText: '10' }),
     );
-    expect(fromDistance.slText).toBe('2649.9');
+    expect(fromDistance.slText).toBe('2640');
     expect(switchMethod(fromDistance).distanceText).toBe('10');
   });
 

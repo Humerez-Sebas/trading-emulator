@@ -513,12 +513,12 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.activeElement).toBe(trigger);
   });
 
-  it('choosing XAUUSD applies its MT5 point size to the distance stop and preserves context', () => {
+  it('choosing XAUUSD retains price-unit pts and preserves context', () => {
     const doc = freshDoc();
     mount(doc, window);
-    setValue(doc, 'balance', '5000');
+    setValue(doc, 'balance', '10000');
     setValue(doc, 'riskPct', '1');
-    setValue(doc, 'distance', '50');
+    setValue(doc, 'distance', '10');
     const balanceInput = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
     const riskInput = doc.querySelector<HTMLInputElement>('input[name="riskPct"]')!;
     const distanceInput = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
@@ -528,8 +528,8 @@ describe('lotaje-view: mount/unmount', () => {
     selectSymbol(doc, 'XAUUSD');
 
     expect(doc.querySelector('.lotaje-stop-unit')?.textContent).toBe('pts');
-    expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('1.00');
-    expect(doc.querySelector('.lotaje-risk-usd')?.textContent).toContain('50.00');
+    expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('0.10');
+    expect(doc.querySelector('.lotaje-risk-usd')?.textContent).toContain('100.00');
     expect(shownSymbol(doc)).toBe('XAUUSD');
     expect(
       doc
@@ -542,9 +542,9 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector<HTMLElement>('.lotaje-symbol-badge')?.hidden).toBe(true);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(menu.hidden).toBe(true);
-    expect(balanceInput.value).toBe('5000');
+    expect(balanceInput.value).toBe('10000');
     expect(riskInput.value).toBe('1');
-    expect(distanceInput.value).toBe('50');
+    expect(distanceInput.value).toBe('10');
     expect(checkedMethod(doc)).toBe('distance');
     expect(doc.querySelector('input[name="balance"]')).toBe(balanceInput);
     expect(doc.querySelector('input[name="riskPct"]')).toBe(riskInput);

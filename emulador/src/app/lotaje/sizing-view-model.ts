@@ -75,9 +75,6 @@ export interface LotajeDerived {
 
 function priceUnitsPerDisplayUnit(asset: AssetSpec): number {
   if (asset.pipSize !== null) return asset.pipSize;
-  if ((asset.symbol.startsWith('XAU') || asset.symbol.startsWith('XAG')) && asset.pointSize !== null) {
-    return asset.pointSize;
-  }
   return 1;
 }
 
