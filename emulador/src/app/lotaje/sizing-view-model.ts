@@ -18,7 +18,7 @@ import {
   riskForLots,
   riskUsdFor,
 } from '../domain/sizing/position-sizing';
-import { resolveAsset, type AssetSource } from '../domain/sizing/asset-registry';
+import { resolveAsset, type AssetSource, type AssetSpec } from '../domain/sizing/asset-registry';
 import { parseDecimal } from './parse-decimal';
 
 export type Method = 'distance' | 'prices';
@@ -73,13 +73,20 @@ export interface LotajeDerived {
   readonly minLotWarning: string | null;
 }
 
+function priceUnitsPerDisplayUnit(asset: AssetSpec): number {
+  if (asset.pipSize !== null) return asset.pipSize;
+  if ((asset.symbol.startsWith('XAU') || asset.symbol.startsWith('XAG')) && asset.pointSize !== null) {
+    return asset.pointSize;
+  }
+  return 1;
+}
+
 /** Converts between the displayed stop unit and the kernel's price units. */
 function convertDistance(
   distance: number,
-  pipSize: number | null,
+  priceUnitsPerDisplayUnit: number,
   direction: 'display-to-price' | 'price-to-display',
 ): number {
-  const priceUnitsPerDisplayUnit = pipSize ?? 1;
   return direction === 'display-to-price'
     ? distance * priceUnitsPerDisplayUnit
     : distance / priceUnitsPerDisplayUnit;
@@ -103,6 +110,7 @@ export function deriveLots(state: LotajeState): LotajeDerived {
   const resolved = resolveAsset(symbol);
   const contractSize = resolved.contractSize;
   const pipSize = resolved.pipSize;
+  const displayUnitSize = priceUnitsPerDisplayUnit(resolved);
   const unitLabel: 'pts' | 'pips' = pipSize !== null ? 'pips' : 'pts';
   const isHeuristic = symbol !== '' && resolved.source === 'heuristic';
 
@@ -110,7 +118,7 @@ export function deriveLots(state: LotajeState): LotajeDerived {
   const sl = parseDecimal(state.slText);
   const distance =
     state.method === 'distance'
-      ? convertDistance(parseDecimal(state.distanceText), pipSize, 'display-to-price')
+      ? convertDistance(parseDecimal(state.distanceText), displayUnitSize, 'display-to-price')
       : priceDistance(entry, sl);
 
   const requestedRiskUsd = riskUsdFor(balance, riskPct);
@@ -220,10 +228,14 @@ function roundForDisplay(n: number): number {
  * "never lose what's there" rule).
  */
 export function switchMethod(state: LotajeState): LotajeState {
-  const pipSize = resolveAsset(state.symbolText.trim()).pipSize;
+  const displayUnitSize = priceUnitsPerDisplayUnit(resolveAsset(state.symbolText.trim()));
   if (state.method === 'distance') {
     const entry = parseDecimal(state.entryText);
-    const distance = convertDistance(parseDecimal(state.distanceText), pipSize, 'display-to-price');
+    const distance = convertDistance(
+      parseDecimal(state.distanceText),
+      displayUnitSize,
+      'display-to-price',
+    );
     const canDerive = Number.isFinite(entry) && Number.isFinite(distance);
     return {
       ...state,
@@ -233,7 +245,7 @@ export function switchMethod(state: LotajeState): LotajeState {
   }
   const entry = parseDecimal(state.entryText);
   const sl = parseDecimal(state.slText);
-  const distance = convertDistance(priceDistance(entry, sl), pipSize, 'price-to-display');
+  const distance = convertDistance(priceDistance(entry, sl), displayUnitSize, 'price-to-display');
   return {
     ...state,
     method: 'distance',
