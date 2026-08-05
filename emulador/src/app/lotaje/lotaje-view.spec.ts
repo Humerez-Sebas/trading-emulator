@@ -64,6 +64,19 @@ describe('lotaje-view: mount/unmount', () => {
     return frame.contentDocument!;
   }
 
+  /**
+   * D-7: a focusable document stamped the same way `./companion-window`
+   * stamps the real companion document (`companion-window.ts:135`) BEFORE
+   * `mount()` is ever called on it — the only honest way `isCompanionDocument`
+   * has to tell the two hosts apart. Focusable (not `freshDoc()`) because the
+   * `Alt+S` specs below assert a real `document.activeElement` change.
+   */
+  function freshCompanionDoc(): Document {
+    const doc = freshFocusableDoc();
+    doc.documentElement.setAttribute('data-lotaje-companion', 'true');
+    return doc;
+  }
+
   function state(overrides: Partial<LotajeState> = {}): LotajeState {
     return {
       balanceText: '10000',
@@ -1600,6 +1613,156 @@ describe('lotaje-view: mount/unmount', () => {
     const handledEscape = dispatchKey(handledDistance, 'Escape');
     expect(handledEscape.defaultPrevented).toBe(false);
     expect(handledDistance.value).toBe('');
+  });
+
+  // ---- D-7: companion-only Alt+M / Alt+A / Alt+S shortcuts -----------------
+  describe('D-7 companion-only Alt shortcuts', () => {
+    it('stay inert in the page host — no preventDefault, and no method/disclosure/focus effect either', () => {
+      const doc = freshFocusableDoc(); // the page host: never stamped `data-lotaje-companion`.
+      mount(doc, window, state({ distanceText: '45' }));
+      const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+      const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')!;
+      const assetTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+      const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+      distance.focus();
+
+      for (const key of ['m', 'a', 's']) {
+        const event = dispatchKey(distance, key, { altKey: true });
+        expect(event.defaultPrevented).toBe(false);
+      }
+
+      // Pin the EFFECT, not just the flag: a handler that acts but forgets
+      // `preventDefault` would still pass the loop above.
+      expect(checkedMethod(doc)).toBe('distance');
+      expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
+      expect(disclosure.hidden).toBe(true);
+      expect(assetTrigger.getAttribute('aria-expanded')).toBe('false');
+      expect(doc.activeElement).toBe(distance);
+      expect(distance.value).toBe('45');
+    });
+
+    it('Alt+M converts distance to prices in the companion, keeping entry and deriving SL (P4)', () => {
+      const doc = freshCompanionDoc();
+      // Blank symbol resolves to `pipSize: null` (asset-registry.ts), so the
+      // display unit and the price unit are the same magnitude — the
+      // conversion arithmetic below does not also have to reproduce a
+      // specific instrument's pip size.
+      mount(doc, window, state({ symbolText: '', distanceText: '50', entryText: '40000' }));
+      const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+      distance.focus();
+
+      const event = dispatchKey(distance, 'm', { altKey: true });
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(checkedMethod(doc)).toBe('prices');
+      expect(doc.querySelector<HTMLInputElement>('input[name="entry"]')?.value).toBe('40000');
+      expect(doc.querySelector<HTMLInputElement>('input[name="sl"]')?.value).toBe('39950');
+    });
+
+    it('Alt+M alternates even when the already-active mode is Prices — the pick-not-flip regression', () => {
+      // Starting in `prices` (not the P2 default `distance`) is the point:
+      // the segmented control's own click path (`onMethodOptionClick`)
+      // early-returns when asked to select the CURRENTLY active method, so a
+      // handler that mistakenly "clicks the active option" would silently
+      // no-op here forever, on both presses.
+      const doc = freshCompanionDoc();
+      mount(
+        doc,
+        window,
+        state({ symbolText: '', method: 'prices', entryText: '40000', slText: '39950' }),
+      );
+      const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+      balance.focus();
+
+      const toDistance = dispatchKey(balance, 'm', { altKey: true });
+      expect(toDistance.defaultPrevented).toBe(true);
+      expect(checkedMethod(doc)).toBe('distance');
+      expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('50');
+
+      const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+      const toPrices = dispatchKey(distance, 'm', { altKey: true });
+      expect(toPrices.defaultPrevented).toBe(true);
+      expect(checkedMethod(doc)).toBe('prices');
+      // Exact round trip: the SAME conversion path ran a second time rather
+      // than being stuck (a "no-op forever" bug would leave this at `distance`).
+      expect(doc.querySelector<HTMLInputElement>('input[name="entry"]')?.value).toBe('40000');
+      expect(doc.querySelector<HTMLInputElement>('input[name="sl"]')?.value).toBe('39950');
+    });
+
+    it('Alt+A toggles the asset-spec disclosure open and closed in the companion, aria-expanded truthful', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state());
+      const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
+      const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')!;
+      const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+      balance.focus(); // rule: works from ANY focused element inside the companion.
+      expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
+      expect(disclosure.hidden).toBe(true);
+
+      const open = dispatchKey(balance, 'a', { altKey: true });
+      expect(open.defaultPrevented).toBe(true);
+      expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
+      expect(disclosure.hidden).toBe(false);
+
+      const close = dispatchKey(balance, 'a', { altKey: true });
+      expect(close.defaultPrevented).toBe(true);
+      expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
+      expect(disclosure.hidden).toBe(true);
+    });
+
+    it('Alt+S moves focus to the asset trigger from anywhere in the companion, without opening its menu', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state());
+      const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+      distance.focus();
+      const assetTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+      expect(doc.activeElement).not.toBe(assetTrigger);
+
+      const event = dispatchKey(distance, 's', { altKey: true });
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(doc.activeElement).toBe(assetTrigger);
+      expect(assetTrigger.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('ignores Ctrl/Meta-carrying combos and a bare "m", leaving the method untouched and the key unhandled', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state());
+      const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+      distance.focus();
+
+      for (const init of [
+        { ctrlKey: true },
+        { metaKey: true },
+        { altKey: true, ctrlKey: true },
+        { altKey: true, metaKey: true },
+        {},
+      ]) {
+        const event = dispatchKey(distance, 'm', init);
+        expect(event.defaultPrevented).toBe(false);
+        expect(checkedMethod(doc)).toBe('distance');
+      }
+    });
+
+    it('leaves Enter, Escape, and Arrow behaviour unchanged in the companion (guards against duplicating D-5)', () => {
+      const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+      const doc = freshCompanionDoc();
+      mount(doc, targetWindow(writeText), state());
+      const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+      distance.focus();
+
+      const arrow = dispatchKey(distance, 'ArrowUp');
+      expect(arrow.defaultPrevented).toBe(true);
+      expect(distance.value).toBe('46');
+
+      const enter = dispatchKey(distance, 'Enter');
+      expect(enter.defaultPrevented).toBe(true);
+      expect(writeText).toHaveBeenCalledTimes(1);
+
+      const escape = dispatchKey(distance, 'Escape');
+      expect(escape.defaultPrevented).toBe(false);
+      expect(distance.value).toBe('');
+    });
   });
 
   it('unmount removes root focus and key listeners and remount handles each event once', () => {

@@ -28,8 +28,10 @@
  * realm and back — there is exactly one active mount module-wide (see
  * `mount`/`unmount` below), so opening the companion is a relocation, never a
  * second copy. `./companion-window` itself imports nothing from Angular/NgRx/
- * `state/*`/`components/*`/`domain/chart/*` either. Deliberately excluded
- * here: companion-only Alt shortcuts (D-7).
+ * `state/*`/`components/*`/`domain/chart/*` either. D-7 adds companion-only
+ * `Alt+M`/`Alt+A`/`Alt+S` shortcuts as one more branch of the same root
+ * keydown handler (`onRootKeyDown`), gated on `isCompanionDocument` — the
+ * page host stays exactly as inert to them as before.
  *
  * The one thing this module reads about its own host is
  * `data-lotaje-companion` on the mounted document's root element — the
@@ -526,13 +528,45 @@ function onRootFocusIn(event: FocusEvent): void {
 function onRootKeyDown(event: KeyboardEvent): void {
   const root = currentRoot;
   if (!root || root !== event.currentTarget || !refs || !currentDoc) return;
-  if (
-    event.isComposing ||
-    event.defaultPrevented ||
-    event.altKey ||
-    event.ctrlKey ||
-    event.metaKey
-  ) {
+  if (event.isComposing || event.defaultPrevented || event.ctrlKey || event.metaKey) {
+    return;
+  }
+
+  if (event.altKey) {
+    // D-7: companion-only shortcuts (product design §§317-319, 322, 501,
+    // 546). The page host stays exactly as inert as it was before this task
+    // — every combo below is gated on `isCompanionDocument`, never reached
+    // otherwise. Deliberately no visual affordance (§546: "atajos por encima
+    // de descubribilidad").
+    if (!isCompanionDocument(currentDoc)) return;
+    const key = event.key.toLowerCase();
+
+    if (key === 'm') {
+      // The segmented control PICKS a method and its click handler
+      // (`onMethodOptionClick`) early-returns when asked to select the
+      // already-active one — Alt+M must ALTERNATE, so the target is always
+      // computed as the OTHER of the two methods, never the current one.
+      // `switchMethod` runs through that same path, so P4's
+      // convert-never-reset semantics fire exactly once.
+      event.preventDefault();
+      const next: Method = currentState.method === 'distance' ? 'prices' : 'distance';
+      onMethodOptionClick(next);
+      return;
+    }
+
+    if (key === 'a') {
+      event.preventDefault();
+      onSpecTriggerClick();
+      return;
+    }
+
+    if (key === 's') {
+      event.preventDefault();
+      refs.assetTrigger.focus();
+      return;
+    }
+
+    // Any other Alt combo (browser/OS shortcuts) is left completely alone.
     return;
   }
 
