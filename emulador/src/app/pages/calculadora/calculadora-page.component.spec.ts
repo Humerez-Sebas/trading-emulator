@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CalculadoraPageComponent } from './calculadora-page.component';
 import {
   contractSizeFor,
@@ -9,6 +9,7 @@ import {
   riskUsdFor,
 } from '../../domain/sizing/position-sizing';
 import { LOTAJE_STORAGE_KEY } from '../../lotaje/persistence';
+import { unmount } from '../../lotaje/lotaje-view';
 
 /**
  * RFC-020 Task D-1 — rewritten for the framework-free Lotaje view.
@@ -639,6 +640,185 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
       expect(el(fixture).querySelector('input[name="symbol"]')).toBeNull();
       expect(el(fixture).textContent).not.toContain('Otro símbolo');
       expect(el(fixture).querySelectorAll('.lotaje-asset-option')).toHaveLength(4);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Wave 5 audit M-1 — CROSSES `calculadora-page.component` (this file) and
+  // the real `../../lotaje/companion-window` adapter. `companion-window.spec.ts`
+  // exercises the adapter alone; every other spec above exercises the host
+  // alone; neither ever drove the host's OWN Angular lifecycle
+  // (`ngOnDestroy`, re-`ngAfterViewInit`) against a companion the adapter
+  // still owns — which is exactly the coverage hole the audit found. An SPA
+  // route change is not a document navigation: the floating companion
+  // (a real OS-level window/PiP surface) survives it, but the host's own
+  // `#lotaje-mount` template does not.
+  // ---------------------------------------------------------------------
+  describe('M-1 — host lifecycle stays reconciled with the companion adapter across an SPA route change', () => {
+    interface FakeCompanionWindow {
+      readonly document: Document;
+      readonly navigator: Navigator;
+      closed: boolean;
+      focus: () => void;
+      close: () => void;
+      setTimeout: typeof window.setTimeout;
+      clearTimeout: typeof window.clearTimeout;
+      addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+      removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+    }
+
+    let openSpy: ReturnType<typeof vi.spyOn> | null = null;
+    // Mirrors companion-window.spec.ts's own `activeFakeCompanions` pattern:
+    // a test that asserts on scenario A's pre-fix damage necessarily leaves
+    // it mid-reproduction if it fails before reaching its own `.close()` —
+    // the module-level `companionWindow` singleton in companion-window.ts
+    // would otherwise stay non-null into the NEXT test (this file's `create()`
+    // never clears it, only a real close/teardown does), making that next
+    // test's own `openCompanionWindow()` call silently `.focus()` a stale,
+    // already-torn-down companion instead of opening a fresh one.
+    const activeFakeCompanions: FakeCompanionWindow[] = [];
+
+    // These specs deliberately reproduce M-1's pre-fix damage (a container
+    // glued directly to `document.body`, outside any tracked fixture) inside
+    // scenario A, so the shared `currentFixture`/`TestBed` cleanup above
+    // cannot see it. Left behind, it would poison every later test in this
+    // isolate:false file — so it is swept here, unconditionally, whether the
+    // fix is in place (nothing to sweep) or not. `unmount()` also resets
+    // lotaje-view.ts's own module-level singleton regardless of which
+    // document it currently points at.
+    afterEach(() => {
+      openSpy?.mockRestore();
+      openSpy = null;
+      for (const win of activeFakeCompanions.splice(0)) {
+        if (!win.closed) win.close();
+      }
+      unmount();
+      for (const stray of Array.from(document.body.children)) {
+        if (stray.id === 'lotaje-mount') stray.remove();
+      }
+    });
+
+    /**
+     * jsdom has no `documentPictureInPicture`, so `openCompanionWindow` always
+     * takes the synchronous `window.open` fallback here — spied to return a
+     * fake window-shaped double (real detached HTML document; a real
+     * `EventTarget` behind add/removeEventListener so `pagehide` really
+     * fires; `close()` flips `closed` and dispatches it), the same double
+     * shape `companion-window.spec.ts` already proved against the real
+     * adapter. This spec drives the REAL global `document`/`window` on the
+     * host side — the same objects `ngAfterViewInit` actually mounts into —
+     * which is the entire point of a crossing test: proof against the one
+     * real adapter singleton, not a second pair of doubles standing in for it.
+     */
+    function fakeCompanionWindow(): FakeCompanionWindow {
+      const doc = document.implementation.createHTMLDocument('companion');
+      const bus = new EventTarget();
+      const win: FakeCompanionWindow = {
+        document: doc,
+        navigator: { clipboard: { writeText: () => Promise.resolve() } } as unknown as Navigator,
+        closed: false,
+        focus: () => {},
+        close: () => {
+          if (win.closed) return;
+          win.closed = true;
+          bus.dispatchEvent(new Event('pagehide'));
+        },
+        setTimeout: window.setTimeout.bind(window),
+        clearTimeout: window.clearTimeout.bind(window),
+        addEventListener: (type, listener) => bus.addEventListener(type, listener),
+        removeEventListener: (type, listener) => bus.removeEventListener(type, listener),
+      };
+      activeFakeCompanions.push(win);
+      return win;
+    }
+
+    /**
+     * Simulates the real `RouterOutlet` behaviour a bare `fixture.destroy()`
+     * does NOT reproduce: destroying the component here leaves its native
+     * element (and `#lotaje-mount` inside it) attached to `document.body`, and
+     * `document.getElementById('lotaje-mount')` keeps finding it — verified
+     * directly against this suite before writing these specs. A real route
+     * change also removes the routed view's DOM, which is the exact fact
+     * `teardownCompanion()`'s reconciliation depends on (`M-1` §2). Skipping
+     * the explicit `.remove()` here would leave the stale fixture's own
+     * container behind and the test would pass for the wrong reason — the
+     * vacuous-assertion class this whole task exists to close.
+     */
+    function simulateNavigatingAway(fixture: ReturnType<typeof create>): void {
+      const nativeEl = fixture.nativeElement;
+      fixture.destroy();
+      currentFixture = null;
+      nativeEl.remove();
+      TestBed.resetTestingModule();
+    }
+
+    function openCompanionFromTrigger(fixture: ReturnType<typeof create>): FakeCompanionWindow {
+      const companion = fakeCompanionWindow();
+      openSpy = vi.spyOn(window, 'open').mockReturnValue(companion as unknown as Window);
+      const trigger = el(fixture).querySelector<HTMLButtonElement>('.lotaje-companion-trigger');
+      if (!trigger) throw new Error('no .lotaje-companion-trigger found');
+      trigger.click(); // no documentPictureInPicture in jsdom -> synchronous popup path
+      return companion;
+    }
+
+    it('scenario A: closing the companion after the host route changed away never glues an orphan .lotaje-root onto document.body', () => {
+      const fixture = create();
+      const companion = openCompanionFromTrigger(fixture);
+      // Sanity: the companion really owns the view before the route change.
+      expect(companion.document.querySelector('.lotaje-root')).not.toBeNull();
+      expect(el(fixture).querySelector('.lotaje-companion-placeholder')).not.toBeNull();
+
+      simulateNavigatingAway(fixture);
+
+      // The companion is a real OS-level window; it survives the SPA
+      // navigation untouched, still showing the moved-in view.
+      expect(companion.closed).toBe(false);
+      expect(companion.document.querySelector('.lotaje-root')).not.toBeNull();
+
+      companion.close(); // the user closes it -> fires pagehide -> teardownCompanion()
+
+      // M-1 scenario A's damage: mount()'s own `doc.body` fallback would glue
+      // a full `.lotaje-root` card after `<app-root>` on this unrelated route.
+      expect(document.getElementById('lotaje-mount')).toBeNull();
+      expect(document.body.querySelectorAll('.lotaje-root')).toHaveLength(0);
+    });
+
+    it('scenario B: returning to /calculadora while the companion is still open re-adopts it instead of leaving a dead, blank launcher', () => {
+      const firstFixture = create();
+      const companion = openCompanionFromTrigger(firstFixture);
+      expect(
+        companion.document.querySelector<HTMLInputElement>('input[name="distance"]'),
+      ).not.toBeNull();
+
+      simulateNavigatingAway(firstFixture);
+
+      // Route back to /calculadora before the companion is ever closed — a
+      // brand new component instance, exactly like a real router re-entry.
+      const secondFixture = create();
+
+      // M-1 scenario B's damage: the old code called `mount()` unconditionally
+      // here, which tears down any previous mount first — stealing the view
+      // back out of the companion and leaving it open but blank.
+      expect(companion.closed).toBe(false);
+      expect(companion.document.querySelector('.lotaje-root')).not.toBeNull();
+      expect(
+        companion.document.querySelector<HTMLInputElement>('input[name="distance"]'),
+      ).not.toBeNull();
+
+      // The host must not show a second, independent copy of the live view —
+      // it shows the same "companion owns it" placeholder it showed before
+      // the route change, not a stolen mount and not a blank container.
+      expect(el(secondFixture).querySelector('input[name="distance"]')).toBeNull();
+      expect(el(secondFixture).querySelector('.lotaje-companion-placeholder')).not.toBeNull();
+
+      // The placeholder's own return affordance still really works: it closes
+      // the SAME companion, driving the one real teardown path, and the view
+      // lands back in the (new) host container.
+      el(secondFixture).querySelector<HTMLButtonElement>('.lotaje-companion-return')!.click();
+      expect(companion.closed).toBe(true);
+      expect(
+        el(secondFixture).querySelector<HTMLInputElement>('input[name="distance"]'),
+      ).not.toBeNull();
     });
   });
 });

@@ -95,14 +95,37 @@ export function openCompanionWindow(hostDoc: Document, hostWin: Window): void {
 
   const pip = pictureInPictureApi(hostWin);
   if (!pip) {
-    openPopup(hostDoc, hostWin);
+    // Fully synchronous: whatever `openPopup` does (attach or bail on a
+    // blocked popup), it has already happened by the time this returns. The
+    // `finally` still guards it (Wave 5 audit L-3) so a future throw inside
+    // `openPopup`/`attachCompanion` can never strand the latch either.
+    try {
+      openPopup(hostDoc, hostWin);
+    } finally {
+      opening = false;
+    }
     return;
   }
 
+  // L-3 (Wave 5 audit): `opening` used to be cleared piecemeal, inside
+  // `attachCompanion()` and inside `openPopup()`'s blocked-popup branch —
+  // fine for every path that actually reached one of those two lines, but it
+  // meant the guarantee lived in two unrelated places rather than in one that
+  // structurally cannot be skipped. `.finally()` runs on EITHER settlement of
+  // this promise — resolve, reject, or a handler that itself throws (e.g.
+  // `openPopup` throwing inside the `.catch()` below) — so the latch is now
+  // released on every terminal outcome of the request this method actually
+  // started. The one outcome no `.finally()` can help with is `requestWindow()`
+  // never settling at all; that is a genuine hang no promise combinator can
+  // observe without a timer, and browsers do settle it in practice (S-1) — an
+  // unbounded wait is not worth an unjustified timer-based workaround.
   pip
     .requestWindow({ width: COMPANION_WIDTH, height: COMPANION_HEIGHT })
     .then((pipWindow) => attachCompanion(pipWindow, hostDoc, hostWin))
-    .catch(() => openPopup(hostDoc, hostWin));
+    .catch(() => openPopup(hostDoc, hostWin))
+    .finally(() => {
+      opening = false;
+    });
 }
 
 function openPopup(hostDoc: Document, hostWin: Window): void {
@@ -110,8 +133,8 @@ function openPopup(hostDoc: Document, hostWin: Window): void {
   if (!popup) {
     // Blocked or unsupported (e.g. the in-app Electron pane — S-1 §3). Never
     // surfaced as an error: the host view was never torn down, so the trader
-    // is exactly where they started.
-    opening = false;
+    // is exactly where they started. Clearing `opening` is now the caller's
+    // job (both callers guarantee it structurally — see L-3 above).
     return;
   }
   attachCompanion(popup, hostDoc, hostWin);
@@ -119,8 +142,6 @@ function openPopup(hostDoc: Document, hostWin: Window): void {
 
 /** Runs once a companion realm (either mechanism) is actually available. */
 function attachCompanion(companionWin: Window, hostDoc: Document, hostWin: Window): void {
-  opening = false;
-
   // Read BEFORE the move: `mount()` below calls `unmount()` first, which
   // resets the host's in-memory state to INITIAL_STATE (§4.2).
   const carriedState: LotajeState = getMountedState();
@@ -153,6 +174,18 @@ function attachCompanion(companionWin: Window, hostDoc: Document, hostWin: Windo
  * Removes the listener this module owns, then moves the view back into the
  * host document carrying whatever was typed in the companion — the same
  * read-before-move discipline as the outward trip.
+ *
+ * Wave 5 audit M-1: an SPA route change is not a document navigation, so
+ * this can fire long after the Angular host that originally opened the
+ * companion was destroyed and routed away from — `hostDocRef` still points
+ * at the one live `document`, but that document's `#lotaje-mount` (owned by
+ * the routed template, not by this module) may no longer exist. Moving the
+ * view back in that state is exactly what used to make `mount()` fall back
+ * to creating a container on `doc.body` — a `.lotaje-root` orphan glued to
+ * whatever unrelated route is now showing. `getMountedState()`'s value is
+ * already best-effort-persisted on every keystroke (`transitionState` /
+ * `./persistence`, Task C-2), so falling back to a plain `unmount()` here
+ * loses nothing beyond what closing the tab outright would already lose.
  */
 function teardownCompanion(): void {
   const closingWindow = companionWindow;
@@ -167,12 +200,48 @@ function teardownCompanion(): void {
   hostDocRef = null;
   hostWinRef = null;
 
-  if (!returningDoc || !returningWin) {
+  if (!returningDoc || !returningWin || !returningDoc.getElementById(LOTAJE_MOUNT_ID)) {
     unmount();
     return;
   }
   const returningState: LotajeState = getMountedState();
   mount(returningDoc, returningWin, returningState);
+}
+
+/**
+ * True while a companion realm is open AND currently owns the mounted view —
+ * i.e. `attachCompanion()` has run and `teardownCompanion()` has not yet.
+ * Wave 5 audit M-1: the Angular host (`calculadora-page.component.ts`)
+ * queries this at both ends of its own lifecycle, because an SPA route
+ * change is not a document navigation — the companion (a real OS-level
+ * window/PiP surface) survives it, but the host's own `#lotaje-mount`
+ * container does not.
+ */
+export function isCompanionActive(): boolean {
+  return companionWindow !== null && !companionWindow.closed;
+}
+
+/**
+ * Re-adopts a live host after an SPA route change and back to `/calculadora`
+ * while the companion is still open (Wave 5 audit M-1, scenario B). The
+ * Angular component instance that originally called `openCompanionWindow`
+ * was destroyed by the navigation away, and a NEW instance just rebuilt
+ * `#lotaje-mount` in the same document — refreshing `hostDocRef`/`hostWinRef`
+ * here keeps this module's contract independent of "the SPA never actually
+ * replaces `document`" rather than relying on it, and repainting the
+ * placeholder into the freshly (re)built container is what stops the host
+ * from showing an empty box (or, if it called `mount()` instead, stealing
+ * the view back out from under the companion and leaving it blank — the
+ * original bug). Never calls `mount()`/`unmount()`: the view itself stays
+ * exactly where it is, so the single-mount invariant holds. A no-op if the
+ * companion isn't actually active — callers are expected to guard with
+ * `isCompanionActive()` first, but this stays safe either way.
+ */
+export function reattachHost(hostDoc: Document, hostWin: Window): void {
+  if (!companionWindow || companionWindow.closed) return;
+  hostDocRef = hostDoc;
+  hostWinRef = hostWin;
+  renderHostPlaceholder(hostDoc, companionWindow);
 }
 
 /**

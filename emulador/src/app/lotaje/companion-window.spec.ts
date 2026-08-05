@@ -207,6 +207,41 @@ describe('companion-window: openCompanionWindow', () => {
     expect(openPopup).toHaveBeenCalledTimes(1);
   });
 
+  // Wave 5 audit L-3: `opening` used to be cleared piecemeal inside
+  // `attachCompanion()`/`openPopup()`'s blocked branch — a guarantee spread
+  // across two unrelated call sites instead of centralized in one that
+  // structurally cannot be skipped. A rejecting `requestWindow()` whose own
+  // `.then()`/`.catch()` chain never reaches either of those two lines (or
+  // did in a future refactor that forgot one) would leave the latch stuck at
+  // `true` forever — every later click on the trigger silently doing nothing,
+  // with no way back for the rest of the session (the actual reported bug).
+  it('L-3: a rejecting requestWindow() does not strand the "opening" latch — a later click still opens a fresh companion', async () => {
+    const firstCompanion = fakeCompanionWindow();
+    const firstRequestWindow = vi.fn().mockRejectedValue(new Error('denied'));
+    const firstOpenPopup = vi.fn().mockReturnValue(firstCompanion);
+    const { doc, win } = fakeHostWindow({ pip: firstRequestWindow, open: firstOpenPopup });
+    mount(doc, win as unknown as Window, state());
+
+    openCompanionWindow(doc, win as unknown as Window);
+    await settleMicrotasks();
+    expect(firstOpenPopup).toHaveBeenCalledTimes(1);
+
+    // Close the first companion so the singleton guard
+    // (`companionWindow && !companionWindow.closed`) is out of the way too —
+    // this test is specifically about the `opening` latch, not that guard.
+    firstCompanion.close();
+
+    const secondRequestWindow = vi.fn().mockResolvedValue(fakeCompanionWindow());
+    win.documentPictureInPicture = { requestWindow: secondRequestWindow };
+
+    openCompanionWindow(doc, win as unknown as Window);
+    await settleMicrotasks();
+
+    // If the first attempt's rejection had left `opening` stuck at `true`,
+    // this second, completely independent request would never even start.
+    expect(secondRequestWindow).toHaveBeenCalledTimes(1);
+  });
+
   it('a blocked popup (open returns null) leaves the host mount untouched', () => {
     const openPopup = vi.fn().mockReturnValue(null);
     const { doc, win } = fakeHostWindow({ open: openPopup });
