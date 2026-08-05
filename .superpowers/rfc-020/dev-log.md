@@ -2619,3 +2619,12 @@ requires-attention: F21-2 landed on the existing RFC-020 PR branch by explicit o
 requires-attention: the owner revoked D.20.5 before push and approved D.20.6; the auditor must review the final price-unit conversion, the retained generated `pointSize` provenance, and the authorized successor specs rather than the superseded D.20.5 commits.
 
 No final audit PASS is claimed here. A fresh independent whole-branch audit is required before merge.
+
+### 24.5 Post-format CI evidence
+
+Commit `ab40f7a` applies only the Prettier formatting required by the first PR CI run
+to `sizing-view-model.spec.ts`. Before push, `emulador/` checks passed: format check,
+both TypeScript configurations, **85 files / 1235 tests**, and lint. GitHub Actions run
+`31053292344` then passed Pipeline (`29s`) and Frontend (`51s`); Vercel preview deployment
+completed. This replaces the earlier format-check-only CI failure. Browser validation and
+the fresh independent whole-branch audit remain required before merge.
