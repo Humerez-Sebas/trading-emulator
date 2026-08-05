@@ -79,6 +79,7 @@ class AssetRecord:
     symbol: str
     contract_size: float
     tick_size: float
+    point_size: float
     volume_step: float
     volume_min: float
     digits: int
@@ -126,6 +127,7 @@ def fetch_asset_records(symbols: list[str]) -> list[AssetRecord]:
                 symbol=symbol.upper(),
                 contract_size=float(info.trade_contract_size),
                 tick_size=float(info.trade_tick_size),
+                point_size=float(info.point),
                 volume_step=float(info.volume_step),
                 volume_min=float(info.volume_min),
                 digits=int(info.digits),
@@ -185,6 +187,7 @@ def render_ts(records: list[AssetRecord], provenance: str) -> str:
         "export interface GeneratedAssetRecord {",
         "  readonly contractSize: number;",
         "  readonly tickSize: number;",
+        "  readonly pointSize: number;",
         "  readonly volumeStep: number;",
         "  readonly volumeMin: number;",
         "  readonly digits: number;",
@@ -205,6 +208,7 @@ def render_ts(records: list[AssetRecord], provenance: str) -> str:
         lineas.append(f"  {r.symbol}: {{")
         lineas.append(f"    contractSize: {_num_ts(r.contract_size)},")
         lineas.append(f"    tickSize: {_num_ts(r.tick_size)},")
+        lineas.append(f"    pointSize: {_num_ts(r.point_size)},")
         lineas.append(f"    volumeStep: {_num_ts(r.volume_step)},")
         lineas.append(f"    volumeMin: {_num_ts(r.volume_min)},")
         lineas.append(f"    digits: {r.digits},")

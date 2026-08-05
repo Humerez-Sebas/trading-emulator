@@ -11,12 +11,13 @@ describe('resolveAsset — los cuatro símbolos curados resuelven al registro ge
     }
   });
 
-  it('contractSize/tickSize/volumeStep/volumeMin/digits/currency vienen del registro generado', () => {
+  it('contractSize/tickSize/pointSize/volumeStep/volumeMin/digits/currency vienen del registro generado', () => {
     for (const symbol of CURADOS) {
       const spec = resolveAsset(symbol);
       const generated = GENERATED_ASSETS[symbol];
       expect(spec.contractSize).toBe(generated.contractSize);
       expect(spec.tickSize).toBe(generated.tickSize);
+      expect(spec.pointSize).toBe(generated.pointSize);
       expect(spec.volumeStep).toBe(generated.volumeStep);
       expect(spec.volumeMin).toBe(generated.volumeMin);
       expect(spec.digits).toBe(generated.digits);
@@ -55,6 +56,7 @@ describe('resolveAsset — símbolo fuera del registro cae a la heurística', ()
     const spec = resolveAsset('EURUSD');
     expect(spec.source).toBe('heuristic');
     expect(spec.tickSize).toBeNull();
+    expect(spec.pointSize).toBeNull();
     expect(spec.volumeStep).toBeNull();
     expect(spec.volumeMin).toBeNull();
     expect(spec.digits).toBeNull();
@@ -79,6 +81,10 @@ describe('resolveAsset — símbolo fuera del registro cae a la heurística', ()
     expect(spec.pipSize).toBeNull();
     expect(spec.contractSize).toBe(5000);
     expect(spec.source).toBe('heuristic');
+  });
+
+  it('XAUEUR: heurística de metal sin pointSize MT5', () => {
+    expect(resolveAsset('XAUEUR').pointSize).toBeNull();
   });
 });
 

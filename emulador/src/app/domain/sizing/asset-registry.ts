@@ -47,6 +47,8 @@ export interface AssetSpec {
   /** `null` when the source is `'heuristic'` — a bare name gives no MT5 data
    * beyond contract size / pip convention. */
   readonly tickSize: number | null;
+  /** Raw MT5 price point, or `null` when no registry record exists. */
+  readonly pointSize: number | null;
   readonly volumeStep: number | null;
   readonly volumeMin: number | null;
   readonly digits: number | null;
@@ -129,6 +131,7 @@ export function resolveAsset(symbol: string): AssetSpec {
     pipSize,
     contractSize: heuristicContractSize(upper),
     tickSize: null,
+    pointSize: null,
     volumeStep: null,
     volumeMin: null,
     digits: null,

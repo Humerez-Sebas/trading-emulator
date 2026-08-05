@@ -26,6 +26,7 @@ SymbolInfoStub = namedtuple(
     [
         "trade_contract_size",
         "trade_tick_size",
+        "point",
         "volume_step",
         "volume_min",
         "digits",
@@ -38,10 +39,10 @@ TerminalInfoStub = namedtuple("TerminalInfoStub", ["company"])
 
 # Valores reales leidos de la terminal en vivo (FivePercentOnline) el 2026-08-03,
 # usados como fixtures realistas en vez de numeros inventados.
-US30_INFO = SymbolInfoStub(1.0, 0.01, 0.01, 0.01, 2, "USD")
-NAS100_INFO = SymbolInfoStub(1.0, 0.01, 0.01, 0.01, 2, "USD")
-SP500_INFO = SymbolInfoStub(1.0, 0.01, 0.01, 0.01, 2, "USD")
-XAUUSD_INFO = SymbolInfoStub(100.0, 0.01, 0.01, 0.01, 2, "USD")
+US30_INFO = SymbolInfoStub(1.0, 0.01, 0.01, 0.01, 0.01, 2, "USD")
+NAS100_INFO = SymbolInfoStub(1.0, 0.01, 0.01, 0.01, 0.01, 2, "USD")
+SP500_INFO = SymbolInfoStub(1.0, 0.01, 0.01, 0.01, 0.01, 2, "USD")
+XAUUSD_INFO = SymbolInfoStub(100.0, 0.01, 0.01, 0.01, 0.01, 2, "USD")
 
 CATALOGO = {
     "US30": US30_INFO,
@@ -104,11 +105,13 @@ class TestFetchAssetRecords:
         por_simbolo = {r.symbol: r for r in registros}
         assert por_simbolo["US30"].contract_size == 1.0
         assert por_simbolo["US30"].tick_size == 0.01
+        assert por_simbolo["US30"].point_size == 0.01
         assert por_simbolo["US30"].volume_step == 0.01
         assert por_simbolo["US30"].volume_min == 0.01
         assert por_simbolo["US30"].digits == 2
         assert por_simbolo["US30"].currency == "USD"
         assert por_simbolo["XAUUSD"].contract_size == 100.0
+        assert por_simbolo["XAUUSD"].point_size == 0.01
 
     def test_normaliza_el_simbolo_a_mayusculas(self, mt5_con_catalogo):
         registros = export_symbols.fetch_asset_records(["US30"])
@@ -157,14 +160,14 @@ class TestRenderTs:
         # test_simbolos_ordenados_alfabeticamente fallaria.
         AssetRecord = export_symbols.AssetRecord
         return [
-            AssetRecord(symbol="XAUUSD", contract_size=100.0, tick_size=0.01, volume_step=0.01,
-                        volume_min=0.01, digits=2, currency="USD"),
-            AssetRecord(symbol="US30", contract_size=1.0, tick_size=0.01, volume_step=0.01,
-                        volume_min=0.01, digits=2, currency="USD"),
-            AssetRecord(symbol="SP500", contract_size=1.0, tick_size=0.01, volume_step=0.01,
-                        volume_min=0.01, digits=2, currency="USD"),
-            AssetRecord(symbol="NAS100", contract_size=1.0, tick_size=0.01, volume_step=0.01,
-                        volume_min=0.01, digits=2, currency="USD"),
+            AssetRecord(symbol="XAUUSD", contract_size=100.0, tick_size=0.01, point_size=0.01, volume_step=0.01,
+                         volume_min=0.01, digits=2, currency="USD"),
+            AssetRecord(symbol="US30", contract_size=1.0, tick_size=0.01, point_size=0.01, volume_step=0.01,
+                         volume_min=0.01, digits=2, currency="USD"),
+            AssetRecord(symbol="SP500", contract_size=1.0, tick_size=0.01, point_size=0.01, volume_step=0.01,
+                         volume_min=0.01, digits=2, currency="USD"),
+            AssetRecord(symbol="NAS100", contract_size=1.0, tick_size=0.01, point_size=0.01, volume_step=0.01,
+                         volume_min=0.01, digits=2, currency="USD"),
         ]  # fmt: skip
 
     def test_simbolos_ordenados_alfabeticamente(self):
@@ -183,6 +186,7 @@ class TestRenderTs:
         contenido = export_symbols.render_ts(self._registros(), "mt5:X@2026-08-03")
         assert "contractSize: 100," in contenido
         assert "tickSize: 0.01," in contenido
+        assert "pointSize: 0.01," in contenido
         assert "volumeStep: 0.01," in contenido
         assert "volumeMin: 0.01," in contenido
         assert "digits: 2," in contenido
