@@ -2554,3 +2554,68 @@ and realised P&L, `develop` ↔ `main` reunification as its own run, and branch 
 a human dashboard task.
 
 **Resume prompt:** `docs/superpowers/plans/2026-08-05-rfc-020-finalization-resume-prompt.md`.
+
+---
+
+## §24 — F21-2 registry provenance and distance-unit decision revision
+
+### 24.1 Decision and scope
+
+The owner first approved D.20.5 on 2026-08-05, then explicitly revoked it before
+push and approved D.20.6: Forex display `pips` use `pipSize`; every non-FX
+display `pts`, including XAU/XAG, uses `1.00` price unit. MT5 `pointSize` remains
+raw generated registry data and Ficha provenance only. The final owner pins are
+XAUUSD / `$10,000` / `1%`: `5 pts -> 5.00` price units, `0.20` lots, `$100.00`;
+`10 pts -> 10.00`, `0.10`, `$100.00`; `20 pts -> 20.00`, `0.05`, `$100.00`.
+
+Live MT5 regeneration through `py -3 export_symbols.py` reported and generated
+`pointSize: 0.01` for both US30 and XAUUSD, with
+`mt5:Five Percent Online Ltd@2026-08-05` provenance. `python` is a Windows Store
+stub in this environment, so the installed CPython 3.13 launcher was used for
+pipeline tests; this is inert and does not change the pipeline command semantics.
+
+### 24.2 Commits and successor specs
+
+| Commit | Scope |
+| :--- | :--- |
+| `e25fe94` | Durable original F21-2 design, plan and resume handoff |
+| `7e21d49` | Export `symbol_info().point` as generated `pointSize`; expose `AssetSpec.pointSize` with heuristic `null` |
+| `d528bc8` | Initial D.20.5 metal-point conversion, later superseded before push |
+| `fd68a28` | Registry-backed Ficha point value and neutral `Distancia` method label |
+| `f850d9c` | D.20.5 revocation and D.20.6 decision artifacts |
+| `264e900` | D.20.6 price-unit conversion and owner `$10,000` XAUUSD pins |
+| `a5d9de8` | D.20.6 plan validation alignment |
+
+Authorized pre-existing assertion successors:
+
+- `lotaje-view.spec.ts`: `choosing XAUUSD resizes through the live state, preserves context, and closes the menu` -> `choosing XAUUSD retains price-unit pts and preserves context`.
+- `calculadora-page.component.spec.ts`: `L8 — picking a different symbol from the catalogue re-sizes through the registry` -> `L8 — selecting XAUUSD retains price-unit pts for a distance stop`.
+- `lotaje-view.spec.ts`: `renders the full generated XAUUSD Ficha with derived point size and dated provenance` -> `renders the full generated XAUUSD Ficha with registry point size and dated provenance`.
+- `lotaje-view.spec.ts`: the mode-label pin `Puntos` -> `Distancia`, resolving L-4 while the actual field suffix remains asset-derived (`pips` for FX, `pts` otherwise).
+
+`position-sizing.ts` is unchanged by F21-2.
+
+### 24.3 Fresh automated evidence
+
+Executed sequentially after `a5d9de8`:
+
+- `pipeline/`: `py -3 -m pytest -q` -> `121 passed in 1.08s`; `ruff check .` -> all checks passed; `ruff format --check .` -> 14 files already formatted.
+- `emulador/`: `npx tsc -p tsconfig.app.json --noEmit` -> exit 0; `npx tsc -p tsconfig.spec.json --noEmit` -> exit 0; `npx ng test --watch=false` -> **85 files / 1235 tests passed**; `npm run lint` -> all files pass linting; `npm run build` -> exit 0, accepted initial-budget warning `612.67 kB` vs `500.00 kB`.
+
+Test progression: `1229 -> 1230` after registry coverage; temporary D.20.5
+coverage reached `1236`; D.20.6 replaces four metal-point cases with three
+owner cases, yielding the final `1235` tests.
+
+### 24.4 Browser and audit handoff
+
+The owner will validate the Vercel preview after this push. Required observation:
+XAUUSD / `$10,000` / `1%` / `10 pts` shows `pts`, price distance `10.00`, lot
+`0.10`, real risk `$100.00`; Method A entry `2650` yields SL `2640`, then returns
+to `10`. Browser evidence is pending owner validation and must be appended before
+merge.
+
+requires-attention: F21-2 landed on the existing RFC-020 PR branch by explicit owner instruction; final PASS at d2838fd predates these commits and requires a new whole-branch audit.
+
+requires-attention: the owner revoked D.20.5 before push and approved D.20.6; the auditor must review the final price-unit conversion, the retained generated `pointSize` provenance, and the authorized successor specs rather than the superseded D.20.5 commits.
+
+No final audit PASS is claimed here. A fresh independent whole-branch audit is required before merge.
