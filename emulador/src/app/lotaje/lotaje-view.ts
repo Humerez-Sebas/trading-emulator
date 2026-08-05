@@ -883,7 +883,7 @@ function syncAssetSheet(values: AssetValueRefs, symbolText: string): void {
   );
   syncAssetValue(
     values.pointSize,
-    resolved.digits === null ? unavailable : String(10 ** -resolved.digits),
+    resolved.pointSize === null ? unavailable : String(resolved.pointSize),
   );
   syncAssetValue(
     values.pipSize,
@@ -1235,7 +1235,7 @@ function buildZoneQuestionFields(
 }
 
 const METHOD_LABELS: Readonly<Record<Method, string>> = {
-  distance: 'Puntos',
+  distance: 'Distancia',
   prices: 'Precios',
 };
 

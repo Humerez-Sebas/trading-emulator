@@ -554,19 +554,17 @@ describe('CalculadoraPageComponent (Lotaje host)', () => {
   // preserved by picking it from the view's own curated listbox (F21-3
   // replaced the free-text field this spec previously typed into).
   // ---------------------------------------------------------------------
-  it('L8 — picking a different symbol from the catalogue re-sizes through the registry', () => {
+  it('L8 — selecting XAUUSD applies its MT5 point size to a distance stop', () => {
     const fixture = create();
     setContext(fixture, { balance: 5000, riskPct: 1 });
-    setViaDom(fixture, 'distance', '50');
-    expect(contractSizeFor('')).toBe(1); // blank symbol falls to the point-based heuristic default
-    expect(lotsValueText(fixture)).toBe('1.00');
+    setViaDom(fixture, 'distance', '10');
 
     selectSymbol(fixture, 'XAUUSD');
     expect(shownSymbol(fixture)).toBe('XAUUSD');
     expect(contractSizeFor('XAUUSD')).toBe(100);
-    const expected = lotsForRiskDistance(riskUsdFor(5000, 1), 50, 100);
-    expect(lotsValueText(fixture)).toBe(expected.toFixed(2));
-    expect(lotsValueText(fixture)).toBe('0.01'); // hits the 0.01 floor, matching the v1 claim
+    expect(el(fixture).querySelector('.lotaje-stop-unit')?.textContent?.trim()).toBe('pts');
+    expect(lotsValueText(fixture)).toBe('5.00');
+    expect(el(fixture).querySelector('.lotaje-risk-usd')?.textContent).toContain('50.00');
   });
 
   // ---------------------------------------------------------------------

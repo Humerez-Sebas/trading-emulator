@@ -513,7 +513,7 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.activeElement).toBe(trigger);
   });
 
-  it('choosing XAUUSD resizes through the live state, preserves context, and closes the menu', () => {
+  it('choosing XAUUSD applies its MT5 point size to the distance stop and preserves context', () => {
     const doc = freshDoc();
     mount(doc, window);
     setValue(doc, 'balance', '5000');
@@ -527,7 +527,9 @@ describe('lotaje-view: mount/unmount', () => {
 
     selectSymbol(doc, 'XAUUSD');
 
-    expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('0.01');
+    expect(doc.querySelector('.lotaje-stop-unit')?.textContent).toBe('pts');
+    expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('1.00');
+    expect(doc.querySelector('.lotaje-risk-usd')?.textContent).toContain('50.00');
     expect(shownSymbol(doc)).toBe('XAUUSD');
     expect(
       doc
@@ -566,52 +568,59 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelectorAll('.lotaje-asset-option[aria-selected="true"]')).toHaveLength(0);
   });
 
-  it('renders the full generated XAUUSD Ficha with derived point size and dated provenance', () => {
+  it('renders the full generated XAUUSD Ficha with registry point size and dated provenance', () => {
     const doc = freshDoc();
-    mount(doc, window);
-    doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!.click();
-    selectSymbol(doc, 'XAUUSD');
-    const rows = Array.from(
-      doc.querySelectorAll<HTMLElement>('.lotaje-asset-sheet [data-asset-field]'),
-    );
+    const asset = GENERATED_ASSETS['XAUUSD'] as { pointSize: number };
+    const pointSize = asset.pointSize;
+    asset.pointSize = 0.02;
+    try {
+      mount(doc, window);
+      doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!.click();
+      selectSymbol(doc, 'XAUUSD');
+      const rows = Array.from(
+        doc.querySelectorAll<HTMLElement>('.lotaje-asset-sheet [data-asset-field]'),
+      );
 
-    expect(rows.map((row) => row.dataset['assetField'])).toEqual([
-      'contractSize',
-      'tickSize',
-      'pointSize',
-      'pipSize',
-      'volumeStep',
-      'volumeMin',
-      'currency',
-      'aliases',
-      'source',
-    ]);
-    expect(rows.map((row) => row.querySelector('dt')?.textContent)).toEqual([
-      'Contrato',
-      'Tick',
-      'Punto',
-      'Pip',
-      'Paso de volumen',
-      'Volumen mínimo',
-      'Divisa',
-      'Alias',
-      'Procedencia',
-    ]);
-    expect(rows.map((row) => row.querySelector('dd')?.textContent)).toEqual([
-      '100',
-      '0.01',
-      String(10 ** -GENERATED_ASSETS['XAUUSD'].digits),
-      'No aplica',
-      '0.01',
-      '0.01',
-      'USD',
-      'No disponible',
-      GENERATED_SOURCE,
-    ]);
-    const source = rows.at(-1)?.querySelector('dd')?.textContent;
-    expect(source).toBe(GENERATED_SOURCE);
-    expect(source).toContain('Five Percent Online Ltd');
-    expect(source).toContain('2026-08-03');
+      expect(rows.map((row) => row.dataset['assetField'])).toEqual([
+        'contractSize',
+        'tickSize',
+        'pointSize',
+        'pipSize',
+        'volumeStep',
+        'volumeMin',
+        'currency',
+        'aliases',
+        'source',
+      ]);
+      expect(rows.map((row) => row.querySelector('dt')?.textContent)).toEqual([
+        'Contrato',
+        'Tick',
+        'Punto',
+        'Pip',
+        'Paso de volumen',
+        'Volumen mínimo',
+        'Divisa',
+        'Alias',
+        'Procedencia',
+      ]);
+      expect(rows.map((row) => row.querySelector('dd')?.textContent)).toEqual([
+        '100',
+        '0.01',
+        String(GENERATED_ASSETS['XAUUSD'].pointSize),
+        'No aplica',
+        '0.01',
+        '0.01',
+        'USD',
+        'No disponible',
+        GENERATED_SOURCE,
+      ]);
+      const source = rows.at(-1)?.querySelector('dd')?.textContent;
+      expect(source).toBe(GENERATED_SOURCE);
+      expect(source).toContain('Five Percent Online Ltd');
+      expect(source).toMatch(/@\d{4}-\d{2}-\d{2}$/);
+    } finally {
+      asset.pointSize = pointSize;
+    }
   });
 
   it('renders heuristic EURUSD metadata with honest unavailable rows', () => {
@@ -1096,10 +1105,10 @@ describe('lotaje-view: mount/unmount', () => {
     expect(group.getAttribute('role')).toBe('radiogroup');
     expect(group.getAttribute('aria-labelledby')).toBe('lotaje-method-label');
     expect(doc.querySelector('#lotaje-method-label')?.textContent).toBe('Modo');
-    expect([points.textContent, prices.textContent]).toEqual(['Puntos', 'Precios']);
+    expect([points.textContent, prices.textContent]).toEqual(['Distancia', 'Precios']);
     expect([points.getAttribute('role'), prices.getAttribute('role')]).toEqual(['radio', 'radio']);
 
-    // Puntos: exactly one field, named «Distancia» — no reserved Entrada/SL row.
+    // Distancia: exactly one field, named «Distancia» — no reserved Entrada/SL row.
     expect(checkedMethod(doc)).toBe('distance');
     expect(points.classList.contains('lotaje-method-option--selected')).toBe(true);
     expect(prices.getAttribute('aria-checked')).toBe('false');
