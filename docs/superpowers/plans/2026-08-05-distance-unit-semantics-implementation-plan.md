@@ -157,18 +157,18 @@ git commit -m "feat(sizing): export MT5 point size"
 Keep the existing US30 acceptance case unchanged. Add XAUUSD examples that prove the unit, normalized distance, lot and actual risk together:
 
 ```ts
-const d = deriveLots(state({ balanceText: '5000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '10' }));
+const d = deriveLots(state({ balanceText: '10000', riskPctText: '1', symbolText: 'XAUUSD', distanceText: '5' }));
 expect({ unit: d.unitLabel, distance: d.distance, lots: d.lots, risk: d.actualRiskUsd })
-  .toEqual({ unit: 'pts', distance: 0.1, lots: 5, risk: 50 });
+  .toEqual({ unit: 'pts', distance: 5, lots: 0.2, risk: 100 });
 ```
 
-Add the equivalent cases for 14 (`0.14`, `3.57`, `49.98`), 7 (`0.07`, `7.14`, `49.98`) and 8 (`0.08`, `6.25`, `50`).
+Add the equivalent cases for 10 (`10`, `0.1`, `100`) and 20 (`20`, `0.05`, `100`).
 
 Add a round trip:
 
 ```ts
 const fromDistance = switchMethod(state({ symbolText: 'XAUUSD', method: 'distance', entryText: '2650', distanceText: '10' }));
-expect(fromDistance.slText).toBe('2649.9');
+expect(fromDistance.slText).toBe('2640');
 expect(switchMethod(fromDistance).distanceText).toBe('10');
 ```
 
@@ -176,7 +176,7 @@ expect(switchMethod(fromDistance).distanceText).toBe('10');
 
 Run: `npx ng test --watch=false`
 
-Expected: the new XAUUSD distance assertions fail under the existing `pipSize ?? 1` conversion.
+Expected: the new XAUUSD distance assertions fail under the revoked MT5 `pointSize` conversion.
 
 - [ ] **Step 3: Implement exactly one unit policy**
 
@@ -229,7 +229,7 @@ Replace only assertions that encode XAUUSD raw-price distance with named success
 expect(fichaPointText).toContain(String(GENERATED_ASSETS['XAUUSD'].pointSize));
 ```
 
-The calculator test must assert XAUUSD distance `10` produces displayed `pts`, the expected lot and `$50.00` risk, rather than merely checking one isolated value.
+The calculator test must assert XAUUSD distance `10` produces displayed `pts`, `0.10` lots and `$100.00` risk for `$10,000` / `1%`, rather than merely checking one isolated value.
 
 - [ ] **Step 2: Run the supported suite and confirm red**
 
@@ -273,7 +273,7 @@ git commit -m "fix(lotaje): show MT5 point size in asset details"
 
 - [ ] **Step 1: Record the decision and deviation**
 
-Add the owner ruling, affected pre-existing test successors, MT5 `point` values, commit SHAs, test-count progression, all eight gate outputs, and this classified deviation:
+Add the owner ruling revoking D.20.5 in favour of D.20.6, affected pre-existing test successors, MT5 `point` values, commit SHAs, test-count progression, all eight gate outputs, and this classified deviation:
 
 ```text
 requires-attention: F21-2 landed on the existing RFC-020 PR branch by explicit owner instruction; final PASS at d2838fd predates these commits and requires a new whole-branch audit.
@@ -281,16 +281,16 @@ requires-attention: F21-2 landed on the existing RFC-020 PR branch by explicit o
 
 - [ ] **Step 2: Validate the original gold symptom in a real browser**
 
-Use a real Chromium session only after the owner has authenticated personally; never request or enter credentials. Select XAUUSD, set account to `5000`, risk to `1`, Method B distance to `10`, and verify all of the following together:
+Use a real Chromium session only after the owner has authenticated personally; never request or enter credentials. Select XAUUSD, set account to `10000`, risk to `1`, Method B distance to `10`, and verify all of the following together:
 
 ```text
 suffix = pts
-price distance = 0.10
-lot = 5.00
-actual risk = $50.00
+price distance = 10.00
+lot = 0.10
+actual risk = $100.00
 ```
 
-Switch to Method A with entry `2650`; the derived SL must be `2649.9`. Switch back and confirm distance `10`. Record the browser, observed values and result in the ledger. This is the original failure condition; unit tests alone are not its final evidence.
+Switch to Method A with entry `2650`; the derived SL must be `2640`. Switch back and confirm distance `10`. Record the browser, observed values and result in the ledger. This is the owner-approved condition; unit tests alone are not its final evidence.
 
 - [ ] **Step 3: Verify the complete pipeline and frontend evidence fresh**
 
