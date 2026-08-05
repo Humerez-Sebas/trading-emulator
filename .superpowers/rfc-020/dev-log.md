@@ -2455,3 +2455,102 @@ The final audit must additionally run the `pipeline/` gates — `python -m pytes
 redesign (`a9fcadd`), which never passed through a task audit, and rule on F21-1's apparent closure.
 **F21-2 (the 100× non-FX sizing error) is explicitly deferred by the owner** until the RFC is
 finished, and is not a blocker for this audit.
+
+---
+
+## §23 — W5-FIX, and the final audit: **PASS ("Ship it"). RFC-020 is complete.**
+
+### 23.1 The first final audit — **NOT PASS**, and it earned it
+
+Verdict at `2887ca1`: **0 Critical · 0 High · 1 Medium · 5 Low**. All eight gates (five Angular plus
+the three `pipeline/` gates, because B-1 changed `pipeline/`) were green on the auditor's own runs,
+and the whole 1046 → 1226 progression reconciled commit by commit, including both declared decreases
+and both declared zero-deltas.
+
+**M-1 (Medium) — the blocker.** An SPA route change is not a document navigation, so the companion
+window survives it, but `ngOnDestroy` called `unmount()` unconditionally while the adapter kept its
+singleton. Two reproduced failures: navigating away and then closing the window left an orphan
+`.lotaje-root` appended to `document.body` on an unrelated route (with `initialFocus.focus()`
+scrolling the user to it); navigating away and back left the companion **open but blank**, with the
+launcher only `.focus()`ing a dead window.
+
+**Why no gate caught it, and the lesson worth keeping:** `companion-window` and
+`calculadora-page.component` were each well tested — *independently*. **Nothing crossed them.** Wave 5
+had also reached the audit on orchestrator mechanical scans alone, with no per-wave audit. A test that
+does not cross the boundary the defect lives on cannot see it, however thorough it looks.
+
+### 23.2 Task W5-FIX
+
+| Field | Value |
+| :--- | :--- |
+| Status | **COMPLETE** |
+| Commit | `d2838fd` — `fix(rfc-020): reconcile the companion adapter with the host lifecycle (W5-FIX)` |
+| Parent | `2887ca1` exactly |
+| Diff | **4 files, +320/−8** |
+| Tests | **85 / 1226 → 85 / 1229** (+3) |
+| Brief / report | `.superpowers/rfc-020/task-w5fix-brief.md` · `task-w5fix-report.md` |
+
+**Reconciliation policy: the adapter is authoritative on who owns the mounted view.** Two new exports,
+`isCompanionActive()` and `reattachHost()`, let the Angular host defer to it instead of calling
+`mount()`/`unmount()` unconditionally — `ngOnDestroy` skips `unmount()` while the companion is active
+(otherwise it strips the view out of the *companion's* document, which was scenario A's true root
+cause); `ngAfterViewInit` calls `reattachHost()` rather than `mount()` when the companion is still
+live on re-entry; and `teardownCompanion()` checks for a real `#lotaje-mount` before moving the view
+back, calling `unmount()` instead of falling back to a `doc.body` orphan.
+
+**L-3** closed by centralising the `opening` latch release at the two call boundaries (`try/finally`
+for the synchronous popup path, `.finally()` for the PiP promise chain). No timer.
+
+**L-2 was deliberately NOT fixed — a correct STOP.** The implementer traced the empty
+`<p role="alert">` to `invalidReason === null && !Number.isFinite(lots)`, reachable only when
+balance/riskPct overflows to `Infinity` — it parses fine, and `Infinity > 0` is `true`, so neither
+existing guard catches it. Product design §8.2 supplies no verbatim string for that state, and the
+auditor independently confirmed that **reusing `MSG_NON_POSITIVE` would be worse**, because for
+`balance = 1e400` the balance *is* positive and the message would be false. Inventing frozen product
+copy is a product decision. **Owner-escalated: it needs one new §8 string.**
+
+### 23.3 Re-verification — **PASS ("Ship it")**
+
+Verdict at `d2838fd`: **0 Critical · 0 High · 0 Medium · 4 Low (all ruled)**.
+
+The auditor did **not** trust W5-FIX's own tests — the whole point of M-1 being that the new crossing
+tests were themselves the thing under suspicion. It re-ran its own PROBE A and PROBE B against the
+fixed code and mutation-tested the closures: reverting the M-1 change and separately removing the L-3
+`.finally()` each turned exactly the right tests red, and both were reverted with the tree verified
+clean. Final gates on a clean tree: tsc app 0 · tsc spec 0 · lint `All files pass linting.` ·
+**85 files / 1229 tests**, exit 0.
+
+**The four surviving Lows, ruled so they are not re-litigated:** **L-1** the
+`lotaje-view` ⇄ `companion-window` import cycle (inert — every cross-reference sits in a hoisted
+`function`, neither module reads the other at module scope); **L-2** above, owner-escalated;
+**L-4** «Puntos» vs the `pips` suffix, folded into owner-deferred **F21-2**; **L-5** the
+`angular.json` budget raise (load-bearing — the sheet is ~19.3 kB optimized, so the old 14 kB *error*
+would fail the build outright).
+
+**Judgement calls the auditor made explicit:** the owner's redesign `a9fcadd` is **accepted** as
+branch content, its spec rewrite being re-expression rather than weakening (13 `it()` removed, 22
+added, every removed claim with a named successor) — with one frozen contract changed by owner
+authority and put on the record: **D-3's "disabled — not hidden" copy affordance is gone**, while the
+W4-FIX `Number.isFinite` guard survived intact. **F21-1 is CONFIRMED closed.** The **V-1/D-6 zero test
+deltas are ruled sound** (jsdom has no layout engine, so the assertion would have passed on the
+unfixed code), with the note that the redesign retired V-1a's `calc(8ch…)` for a structurally stronger
+`flex: 1 1 auto; min-width: 0`, so **V-1's browser evidence no longer describes the shipped CSS**.
+
+### 23.4 Final state — the run is complete
+
+| Field | Value |
+| :--- | :--- |
+| HEAD | `d2838fd` (plus the ledger commit carrying this section) |
+| Ahead of `origin/main` | 50 commits before this ledger commit; **still nothing pushed** |
+| Tests | **85 files / 1229 tests** — from 1046 at `ad80b9f` |
+| Waves | 0-4 audited PASS · 5 complete (V-1, D-6, D-7, W5-FIX) |
+| Final audit | **PASS ("Ship it")** — 0 Critical / 0 High / 0 Medium / 4 Low |
+| Remaining | **the PR only, and it is the owner's call** |
+
+**Owner-facing items carried past the PR, none blocking it:** **F21-2** (the 100× non-FX sizing
+error — `pipSize ?? 1`, owner-deferred by explicit instruction), **L-2** (needs one new §8 string),
+D1-L1 (cold-start copy), `BTCUSD` heuristic `100000` by design, a registry regeneration re-values open
+and realised P&L, `develop` ↔ `main` reunification as its own run, and branch protection on `main` as
+a human dashboard task.
+
+**Resume prompt:** `docs/superpowers/plans/2026-08-05-rfc-020-finalization-resume-prompt.md`.
