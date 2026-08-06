@@ -97,6 +97,7 @@
   --text-md: 16px;
   --text-lg: 20px;
   --text-xl: 22px;
+  --text-hero: 44px; /* One dominant figure per screen only. */
   /* Monospace font stack for numerical readouts (PnL, prices, lots, hex codes).
      Falls back through Geist Mono → JetBrains Mono → system mono. */
   --font-mono:
