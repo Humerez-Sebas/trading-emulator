@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { COMPANION_HEIGHT, COMPANION_WIDTH, openCompanionWindow } from './companion-window';
 import { LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view';
+import { LOTAJE_STORAGE_KEY } from './persistence';
 import { INITIAL_STATE, type LotajeState } from './sizing-view-model';
 
 // `Mock` defaults its type param to vitest's own `Procedure` (`(...args: any[])
@@ -73,8 +74,16 @@ describe('companion-window: openCompanionWindow', () => {
    *  add/removeEventListener so `pagehide` really fires, and `close()`
    *  simulating what a real close does — flips `closed` and fires
    *  `pagehide`, exactly the sequence S-1 observed. */
+  /**
+   * `sharedStorage` models the one fact these two realms genuinely share in
+   * production: the companion is same-origin with its host, so
+   * `companionWin.localStorage` IS the page's storage. Tests that care about
+   * a context write landing where the page will read it pass the host's
+   * storage in; the rest get an isolated one, as before.
+   */
   function fakeCompanionWindow(
     writeText: (text: string) => Promise<void> = () => Promise.resolve(),
+    sharedStorage?: Storage,
   ): FakeWindow {
     const doc = document.implementation.createHTMLDocument('companion');
     const bus = new EventTarget();
@@ -99,7 +108,7 @@ describe('companion-window: openCompanionWindow', () => {
       removeEventListener: (type, listener) => bus.removeEventListener(type, listener),
     };
     activeFakeCompanions.push(win);
-    return win;
+    return Object.assign(win, { localStorage: sharedStorage ?? fakeStorage() });
   }
 
   /** A host realm double: a fresh document shaped like the real
@@ -163,7 +172,7 @@ describe('companion-window: openCompanionWindow', () => {
     input.dispatchEvent(new Event('input'));
   }
 
-  it('prefers documentPictureInPicture, requesting the preferred 320x300 composition', async () => {
+  it('prefers documentPictureInPicture, requesting the initial 320x340 composition', async () => {
     const openPopup = vi.fn();
     const requestWindow = vi.fn().mockResolvedValue(fakeCompanionWindow());
     const { doc, win } = fakeHostWindow({ pip: requestWindow, open: openPopup });
@@ -178,10 +187,12 @@ describe('companion-window: openCompanionWindow', () => {
       height: COMPANION_HEIGHT,
     });
     expect(openPopup).not.toHaveBeenCalled();
-    // The preferred size of the polish brief §2.2 — still above the ~240 CSS
-    // px floor the S-1 spike measured, so the request is granted exactly.
+    // The redesign's initial size — the composition
+    // `html[data-lotaje-companion]` builds is measured to fit inside it with
+    // no vertical scrollbar. Still above the ~240 CSS px floor the S-1 spike
+    // measured, so the request is granted exactly.
     expect(COMPANION_WIDTH).toBe(320);
-    expect(COMPANION_HEIGHT).toBe(300);
+    expect(COMPANION_HEIGHT).toBe(340);
     expect(COMPANION_WIDTH).toBeGreaterThanOrEqual(240);
   });
 
@@ -281,6 +292,85 @@ describe('companion-window: openCompanionWindow', () => {
     expect(
       companion.document.querySelector<HTMLInputElement>('input[name="distance"]')?.value,
     ).not.toBe(INITIAL_STATE.distanceText);
+  });
+
+  /**
+   * The redesign hides the account/risk pair from the companion's initial
+   * composition. "Hidden" must mean exactly that and nothing more: the values
+   * the page was set to are the ones the companion CALCULATES with from the
+   * first frame, they are editable behind the settings disclosure, and an
+   * edit made there is what the page shows when the window closes. A
+   * companion that quietly cold-started on `INITIAL_STATE` would look
+   * identical until the trader noticed the lot figure was sized for the
+   * wrong account — so the assertions below are on the derived figure, not
+   * just on the input values.
+   */
+  it('inherits the page account/risk on open and calculates with them immediately', () => {
+    const companion = fakeCompanionWindow();
+    const openPopup = vi.fn().mockReturnValue(companion);
+    const { doc, win } = fakeHostWindow({ open: openPopup });
+    // 40 000 at 2.5% = $1 000 of risk over a 50-point US30 stop = 20 lots —
+    // deliberately nothing like the P2 cold-start defaults.
+    mount(
+      doc,
+      win as unknown as Window,
+      state({ balanceText: '40000', riskPctText: '2.5', distanceText: '50' }),
+    );
+    expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('20.00');
+
+    openCompanionWindow(doc, win as unknown as Window);
+    const companionDoc = companion.document;
+
+    // Not visible in the initial composition …
+    expect(companionDoc.querySelector('.lotaje-summary input[name="balance"]')).toBeNull();
+    expect(companionDoc.querySelector('.lotaje-summary input[name="riskPct"]')).toBeNull();
+    expect(companionDoc.querySelector<HTMLElement>('#lotaje-risk-settings')?.hidden).toBe(true);
+    // … but already driving the figure, and already carrying the page's values.
+    expect(companionDoc.querySelector('.lotaje-lots-value')?.textContent).toBe('20.00');
+    expect(companionDoc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe(
+      '40000',
+    );
+    expect(companionDoc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe(
+      '2.5',
+    );
+    expect(companionDoc.querySelector('.lotaje-risk-usd')?.textContent).toBe('$1000.00');
+  });
+
+  it('an account/risk edit inside the companion settings re-derives, persists, and returns to the page', () => {
+    const openPopup = vi.fn();
+    const { doc, win } = fakeHostWindow({ open: openPopup });
+    const hostStorage = (win as unknown as { localStorage: Storage }).localStorage;
+    const companion = fakeCompanionWindow(undefined, hostStorage);
+    openPopup.mockReturnValue(companion);
+    mount(doc, win as unknown as Window, state({ distanceText: '50' }));
+
+    openCompanionWindow(doc, win as unknown as Window);
+    const companionDoc = companion.document;
+    companionDoc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!.click();
+    expect(companionDoc.querySelector<HTMLElement>('#lotaje-risk-settings')?.hidden).toBe(false);
+
+    setValue(companionDoc, 'balance', '40000');
+    setValue(companionDoc, 'riskPct', '2.5');
+
+    // Re-derived in place, in the companion.
+    expect(companionDoc.querySelector('.lotaje-risk-usd')?.textContent).toBe('$1000.00');
+    expect(companionDoc.querySelector('.lotaje-lots-value')?.textContent).toBe('20.00');
+    // Context change ⇒ the existing persistence path ran (`transitionState`)
+    // in the companion's realm, landing in the storage the page reads.
+    const persisted = hostStorage.getItem(LOTAJE_STORAGE_KEY);
+    expect(persisted).not.toBeNull();
+    expect(JSON.parse(persisted!)).toMatchObject({ balanceText: '40000', riskPctText: '2.5' });
+
+    companionDoc.querySelector<HTMLButtonElement>('.lotaje-companion-close')!.click();
+
+    // Back on the page: the same edit, in the page's own always-visible cells.
+    expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('40000');
+    expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('2.5');
+    expect(doc.querySelector('.lotaje-risk-usd')?.textContent).toBe('$1000.00');
+    expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('20.00');
+    // And the page still shows them where it always did.
+    expect(doc.querySelector('.lotaje-summary input[name="balance"]')).not.toBeNull();
+    expect(doc.querySelector('.lotaje-settings-trigger')).toBeNull();
   });
 
   it('the page shows a placeholder with a return affordance while the companion owns the view', () => {
@@ -402,9 +492,16 @@ describe('companion-window: openCompanionWindow', () => {
     expect(companionDoc.querySelector('.lotaje-title')?.textContent).toBe('Calculadora flotante');
     // No launcher inside the companion (it would only re-focus itself) and no
     // minimise button beside the close: nothing in the platform implements one,
-    // so painting one would be an inert control.
+    // so painting one would be an inert control. Exactly two header controls —
+    // the risk settings, then the close.
     expect(companionDoc.querySelector('.lotaje-companion-trigger')).toBeNull();
-    expect(companionDoc.querySelectorAll('.lotaje-header-actions button')).toHaveLength(1);
+    const headerButtons = Array.from(
+      companionDoc.querySelectorAll<HTMLButtonElement>('.lotaje-header-actions button'),
+    );
+    expect(headerButtons.map((button) => button.className)).toEqual([
+      'lotaje-settings-trigger',
+      'lotaje-companion-close',
+    ]);
     const close = companionDoc.querySelector<HTMLButtonElement>('.lotaje-companion-close');
     expect(close?.tagName).toBe('BUTTON');
     expect(close?.type).toBe('button');
