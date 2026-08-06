@@ -38,13 +38,6 @@ app-calculadora-page {
   padding: var(--space-6) var(--space-6) var(--space-10);
 }
 
-/* Deliberately NO `overflow-x: hidden` here: hiding an overflow would mask the
-   very defect (F21-1) this pass exists to remove, and would make the 240 px
-   measurement dishonest. The narrow arrangement has to actually fit. */
-html[data-lotaje-companion] #lotaje-mount {
-  padding: var(--space-2);
-}
-
 .lotaje-root {
   display: flex;
   flex-direction: column;
@@ -147,13 +140,18 @@ html[data-lotaje-companion] #lotaje-mount {
   cursor: not-allowed;
 }
 
+/* ---- companion header controls: risk settings, then close ----
+   One control shape, two jobs. Both are built only in the companion
+   (`buildHeader`), so their size is stated once here rather than as a
+   page default plus a companion override. */
+.lotaje-settings-trigger,
 .lotaje-companion-close {
   appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   background: transparent;
   border: 1px solid transparent;
@@ -164,13 +162,59 @@ html[data-lotaje-companion] #lotaje-mount {
     background var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out);
 }
+.lotaje-settings-trigger:hover,
 .lotaje-companion-close:hover {
   background: var(--surface-2);
   color: var(--text);
 }
+.lotaje-settings-trigger:focus-visible,
 .lotaje-companion-close:focus-visible {
   outline: none;
   box-shadow: var(--ring);
+}
+/* Open is a real state, not just a caret rotation: the trigger stays lit
+   while the panel it controls is showing. Accent = interaction/active state. */
+.lotaje-settings-trigger[aria-expanded='true'] {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+/* The disclosure is absolutely positioned on purpose: this window has no
+   room to grow, so opening the panel must never add to the document's
+   height — that is what would put the vertical scrollbar back. */
+.lotaje-settings {
+  position: relative;
+  display: inline-flex;
+}
+
+.lotaje-settings-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 208px;
+  padding: var(--space-3);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
+  text-align: left;
+}
+.lotaje-settings-panel[hidden] {
+  display: none;
+}
+/* The three cells are the page's own summary cells, relocated (`RiskFields`).
+   Inside the panel they stack instead of sharing a row, and the derived
+   figure is not a form control, so it reads as a line rather than a field. */
+.lotaje-settings-panel .lotaje-summary-cell--risk-usd {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
 }
 
 /* ---- zones: a single padded column, no competing card borders (§6.2) ---- */
@@ -445,108 +489,6 @@ html[data-lotaje-companion] #lotaje-mount {
 }
 .lotaje-asset-option[aria-selected='true'] .lotaje-asset-option-check {
   opacity: 1;
-}
-
-/* ---- Ficha del activo — full-width disclosure below the summary (§5.2) ---- */
-.lotaje-specs {
-  margin-top: var(--space-3);
-}
-.lotaje-spec-trigger {
-  appearance: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 40px;
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-sm);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-.lotaje-spec-trigger:hover {
-  background: var(--surface-2);
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-.lotaje-spec-trigger:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-}
-.lotaje-spec-trigger[aria-expanded='true'] {
-  color: var(--text);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-.lotaje-spec-trigger[aria-expanded='true'] .lotaje-caret {
-  transform: rotate(180deg);
-}
-.lotaje-spec-trigger-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lotaje-symbol-disclosure {
-  min-width: 0;
-  padding: var(--space-3);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-top: 0;
-  border-radius: 0 0 var(--radius-md) var(--radius-md);
-  color: var(--text);
-}
-.lotaje-symbol-disclosure[hidden] {
-  display: none;
-}
-
-.lotaje-asset-sheet h2 {
-  margin: 0 0 var(--space-2);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-}
-.lotaje-asset-sheet dl {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0 var(--space-4);
-  margin: 0;
-}
-.lotaje-asset-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
-  border-top: 1px solid var(--border);
-}
-.lotaje-asset-row dt {
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-}
-.lotaje-asset-row dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-  text-align: right;
-}
-.lotaje-asset-row .lotaje-asset-value--unavailable {
-  color: var(--text-muted);
-  font-family: inherit;
 }
 
 /* ---- Zone 2 · La pregunta — where the focus lives ---- */
@@ -834,6 +776,20 @@ html[data-lotaje-companion] #lotaje-mount {
   font-weight: var(--weight-medium);
   color: var(--accent);
 }
+/* Decoration inside the copy button, never a second control (it is
+   `aria-hidden` and has no handler). Companion-only, where the mockup shows
+   it and where the button's affordance has the least room to explain itself. */
+.lotaje-copy-glyph {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  align-self: center;
+  color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.lotaje-copy-action--copied .lotaje-copy-glyph {
+  color: var(--accent);
+}
 .lotaje-copy-feedback {
   min-height: 1.2em;
   color: var(--accent);
@@ -892,16 +848,6 @@ html[data-lotaje-companion] #lotaje-mount {
 .lotaje-companion-return:focus-visible {
   outline: none;
   box-shadow: var(--ring);
-}
-
-/* Product design §9.1/§6.3 ("El acompañante en ventana propia sí lleva
-   --elevation-2, pero eso es la ventana, no la jerarquía interna"): the
-   companion floats over other windows and its root carries --elevation-2;
-   the in-page version stays flat. `companion-window.ts` stamps this
-   attribute on the companion document's own <html> only — never on the
-   host document. */
-html[data-lotaje-companion] .lotaje-root {
-  box-shadow: var(--elevation-2);
 }
 
 @media (hover: none) {
@@ -1028,12 +974,6 @@ html[data-lotaje-companion] .lotaje-root {
     right: auto;
     min-width: 290px;
   }
-  .lotaje-specs {
-    margin-top: var(--space-4);
-  }
-  .lotaje-asset-sheet dl {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
   .lotaje-zone--question {
     grid-template-columns: minmax(0, 1fr);
@@ -1084,4 +1024,138 @@ html[data-lotaje-companion] .lotaje-root {
     justify-self: center;
     text-align: center;
   }
+}
+
+/* ============================================================
+   COMPANION — the floating window's own composition (320 x 340)
+
+   `companion-window.ts` stamps `data-lotaje-companion` on the companion
+   document's <html> only, never on the host page, so every rule below is
+   inert on `/calculadora`. Each carries a type + an attribute selector, so
+   it also outranks the container queries above regardless of source order.
+
+   This block only states what DIFFERS from those queries. At 320 wide the
+   companion's container measures 304 px, so `@container lotaje (min-width:
+   300px)` above is already active and already supplies the two-column
+   calculation area and the single-column mode stack; restating them here
+   would be two places to keep in step for no behaviour.
+
+   The measured budget, at 320 x 340: header 45 + activo 62.5 + modo/campos
+   116.5 + resultado 90.4 + chrome 18 = 332.4 px of content in a 340 px
+   viewport — 0 px of vertical overflow, with 7.6 px to spare, in points
+   mode and prices mode alike (the mode column, not the fields beside it, is
+   the taller of the two in both). Measured in a browser, not in jsdom: the
+   unit suite has no layout engine, so a pixel assertion there would pass
+   vacuously. That fit is what lets the window open with no vertical
+   scrollbar rather than hiding one — no `overflow` is suppressed anywhere
+   in this file, so a trader who shrinks the window by hand still gets an
+   honest scrollbar instead of clipped content.
+   ============================================================ */
+html[data-lotaje-companion] #lotaje-mount {
+  padding: var(--space-2);
+}
+/* Product design §9.1/§6.3 ("El acompañante en ventana propia sí lleva
+   --elevation-2, pero eso es la ventana, no la jerarquía interna"): the
+   companion floats over other windows and its root carries --elevation-2;
+   the in-page version stays flat. */
+html[data-lotaje-companion] .lotaje-root {
+  box-shadow: var(--elevation-2);
+}
+
+html[data-lotaje-companion] .lotaje-header {
+  padding: var(--space-2) var(--space-3);
+}
+html[data-lotaje-companion] .lotaje-header-mark {
+  width: 26px;
+  height: 26px;
+}
+html[data-lotaje-companion] .lotaje-title {
+  font-size: var(--text-sm);
+}
+html[data-lotaje-companion] .lotaje-zone {
+  padding-top: var(--space-2);
+}
+html[data-lotaje-companion] .lotaje-zone--answer {
+  padding-bottom: var(--space-2);
+}
+
+/* Activo, full width (the `span 2` above already does the widening). The
+   page's boxed summary surface is dropped: with a single cell left in it,
+   the border and inner padding were chrome around one control and 30-odd px
+   of the height budget. */
+html[data-lotaje-companion] .lotaje-summary {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+html[data-lotaje-companion] .lotaje-summary-cell,
+html[data-lotaje-companion] .lotaje-method,
+html[data-lotaje-companion] .lotaje-field-group {
+  gap: var(--space-1);
+}
+html[data-lotaje-companion] .lotaje-asset-trigger {
+  min-height: 34px;
+}
+/* Bounded so the open list still fits the window instead of pushing a
+   scrollbar onto a document that otherwise has none. */
+html[data-lotaje-companion] .lotaje-asset-menu {
+  max-height: 168px;
+}
+
+/* The two stacked options are the tallest thing in the window, so they are
+   what the height budget is won or lost on: icon over label, both a step
+   smaller, and the padding trimmed to what still keeps a comfortable target
+   (~40 px, above the 32 px this pointer-driven surface needs). */
+html[data-lotaje-companion] .lotaje-method-option {
+  min-height: 40px;
+  gap: 1px;
+  padding: var(--space-1);
+  font-size: var(--text-2xs);
+}
+html[data-lotaje-companion] .lotaje-method-option .lotaje-icon {
+  width: 14px;
+  height: 14px;
+}
+/* A single hairline separates the mode from its fields — the only internal
+   division in the window, and the one the mockup draws. */
+html[data-lotaje-companion] .lotaje-question-fields {
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--border);
+}
+html[data-lotaje-companion] .lotaje-field .ui-input {
+  padding: 6px 0;
+}
+
+/* One block: the figure, its label, the copy action. §7 — flat surface, a
+   single structural border, no accent edge and no grid decoration. */
+html[data-lotaje-companion] .lotaje-result {
+  --text-hero: 38px;
+  padding: var(--space-2) var(--space-3);
+  border-left: 1px solid var(--border);
+}
+html[data-lotaje-companion] .lotaje-result::after {
+  content: none;
+}
+html[data-lotaje-companion] .lotaje-copy-shell {
+  min-height: 0;
+}
+html[data-lotaje-companion] .lotaje-copy-action {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0 var(--space-2);
+}
+html[data-lotaje-companion] .lotaje-copy-content {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+/* The risk disclosure can grow with its own content but never past the
+   window: it scrolls inside itself rather than extending the document. */
+html[data-lotaje-companion] .lotaje-settings-panel {
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
 }

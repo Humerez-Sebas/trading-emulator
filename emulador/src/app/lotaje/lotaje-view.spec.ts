@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GENERATED_ASSETS, GENERATED_SOURCE } from '../domain/sizing/asset-registry.generated';
+import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
 import { COMPANION_HEIGHT, COMPANION_WIDTH } from './companion-window';
 import { getMountedState, getMountedWindow, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view';
 import { LOTAJE_STORAGE_KEY } from './persistence';
@@ -420,34 +420,43 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelectorAll('#lotaje-asset-menu')).toHaveLength(1);
   });
 
-  it('opens the Ficha from its own full-width disclosure row, independent of the instrument menu', () => {
-    const doc = freshDoc();
-    mount(doc, window);
-    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')!;
+  /**
+   * «Especificaciones del activo» is gone from both hosts — the trigger, the
+   * disclosure and the contract/tick/pip/point/volume/currency/provenance
+   * sheet with it. This asserts the ABSENCE by every hook the removed feature
+   * ever exposed, in the page and in the companion, so a partial revival
+   * (say, the DOM without the trigger) still fails here rather than shipping
+   * as dead markup.
+   */
+  it('renders no asset-specification trigger, disclosure or sheet in either host', () => {
+    for (const doc of [freshDoc(), freshCompanionDoc()]) {
+      mount(doc, window, state());
 
-    expect(specTrigger.tagName).toBe('BUTTON');
-    expect(specTrigger.type).toBe('button');
-    expect(specTrigger.textContent).toBe('Especificaciones del activo');
-    expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
-    expect(specTrigger.getAttribute('aria-controls')).toBe('lotaje-symbol-disclosure');
-    expect(disclosure.hidden).toBe(true);
+      for (const selector of [
+        '.lotaje-specs',
+        '.lotaje-spec-trigger',
+        '.lotaje-spec-trigger-label',
+        '#lotaje-symbol-disclosure',
+        '.lotaje-symbol-disclosure',
+        '.lotaje-asset-sheet',
+        '#lotaje-asset-sheet-title',
+        '[data-asset-field]',
+        '[aria-controls="lotaje-symbol-disclosure"]',
+      ]) {
+        expect(doc.querySelectorAll(selector)).toHaveLength(0);
+      }
+      expect(doc.querySelector('.lotaje-root')?.textContent).not.toContain(
+        'Especificaciones del activo',
+      );
+      expect(doc.querySelector('.lotaje-root')?.textContent).not.toContain('Ficha del activo');
 
-    specTrigger.click();
+      // The selector and the sizing it feeds are untouched by the removal.
+      expect(doc.querySelector('.lotaje-asset-trigger')).not.toBeNull();
+      expect(doc.querySelector('.lotaje-symbol-value')?.textContent).toBe('US30');
+      expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('2.22');
 
-    const sheet = doc.querySelector<HTMLElement>('.lotaje-asset-sheet');
-    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
-    expect(disclosure.hidden).toBe(false);
-    expect(sheet?.tagName).toBe('SECTION');
-    expect(sheet?.getAttribute('aria-labelledby')).toBe('lotaje-asset-sheet-title');
-    expect(sheet?.querySelector('#lotaje-asset-sheet-title')?.textContent).toBe('Ficha del activo');
-    // Opening the Ficha never opens the instrument menu, and vice versa.
-    expect(doc.querySelector('.lotaje-asset-trigger')?.getAttribute('aria-expanded')).toBe('false');
-
-    specTrigger.click();
-    expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
-    expect(disclosure.hidden).toBe(true);
-    expect(doc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
+      unmount();
+    }
   });
 
   it('sources exactly four selectable symbols from GENERATED_ASSETS, each with its ticker and name', () => {
@@ -568,104 +577,15 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelectorAll('.lotaje-asset-option[aria-selected="true"]')).toHaveLength(0);
   });
 
-  it('renders the full generated XAUUSD Ficha with registry point size and dated provenance', () => {
-    const doc = freshDoc();
-    const asset = GENERATED_ASSETS['XAUUSD'] as { pointSize: number };
-    const pointSize = asset.pointSize;
-    asset.pointSize = 0.02;
-    try {
-      mount(doc, window);
-      doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!.click();
-      selectSymbol(doc, 'XAUUSD');
-      const rows = Array.from(
-        doc.querySelectorAll<HTMLElement>('.lotaje-asset-sheet [data-asset-field]'),
-      );
-
-      expect(rows.map((row) => row.dataset['assetField'])).toEqual([
-        'contractSize',
-        'tickSize',
-        'pointSize',
-        'pipSize',
-        'volumeStep',
-        'volumeMin',
-        'currency',
-        'aliases',
-        'source',
-      ]);
-      expect(rows.map((row) => row.querySelector('dt')?.textContent)).toEqual([
-        'Contrato',
-        'Tick',
-        'Punto',
-        'Pip',
-        'Paso de volumen',
-        'Volumen mínimo',
-        'Divisa',
-        'Alias',
-        'Procedencia',
-      ]);
-      expect(rows.map((row) => row.querySelector('dd')?.textContent)).toEqual([
-        '100',
-        '0.01',
-        String(GENERATED_ASSETS['XAUUSD'].pointSize),
-        'No aplica',
-        '0.01',
-        '0.01',
-        'USD',
-        'No disponible',
-        GENERATED_SOURCE,
-      ]);
-      const source = rows.at(-1)?.querySelector('dd')?.textContent;
-      expect(source).toBe(GENERATED_SOURCE);
-      expect(source).toContain('Five Percent Online Ltd');
-      expect(source).toMatch(/@\d{4}-\d{2}-\d{2}$/);
-    } finally {
-      asset.pointSize = pointSize;
-    }
-  });
-
-  it('renders heuristic EURUSD metadata with honest unavailable rows', () => {
-    const doc = freshDoc();
-    mount(doc, window, state({ symbolText: 'EURUSD' }));
-    doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!.click();
-    const rows = Array.from(
-      doc.querySelectorAll<HTMLElement>('.lotaje-asset-sheet [data-asset-field]'),
-    );
-    const values = rows.map((row) => row.querySelector('dd')?.textContent);
-
-    expect(values).toEqual([
-      '100000',
-      'No disponible',
-      'No disponible',
-      '0.0001',
-      'No disponible',
-      'No disponible',
-      'No disponible',
-      'No disponible',
-      'heurística',
-    ]);
-    expect(rows).toHaveLength(9);
-    expect(doc.querySelector('.lotaje-asset-sheet')?.textContent).not.toContain(
-      'Five Percent Online Ltd',
-    );
-    expect(doc.querySelector('.lotaje-asset-sheet')?.textContent).not.toContain('2026-08-03');
-  });
-
   it('contains no unit control and keeps the stop unit as a derived label', () => {
     const doc = freshDoc();
     mount(doc, window, state({ symbolText: 'EURUSD' }));
-    doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!.click();
-    const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
-    expect(disclosure).not.toBeNull();
-    const controls = Array.from(
-      disclosure!.querySelectorAll<HTMLElement>('button, input, select, textarea'),
-    );
 
-    // The Ficha is pure reference material: it holds no control at all now
-    // that the free-text field is gone (F21-3).
-    expect(controls).toEqual([]);
-    expect(disclosure!.querySelector('[name*="unit" i]')).toBeNull();
-    expect(disclosure!.querySelector('input[type="checkbox"], input[type="radio"]')).toBeNull();
-    expect(disclosure!.querySelector('.lotaje-asset-sheet button')).toBeNull();
+    // The unit is derived from the symbol, never chosen: nothing anywhere in
+    // the view offers to set it.
+    const root = doc.querySelector<HTMLElement>('.lotaje-root')!;
+    expect(root.querySelector('[name*="unit" i]')).toBeNull();
+    expect(root.querySelector('input[type="checkbox"], input[type="radio"]')).toBeNull();
     const stopUnit = doc.querySelector<HTMLElement>('.lotaje-stop-unit');
     expect(stopUnit?.tagName).toBe('SPAN');
     expect(stopUnit?.textContent).toBe('pips');
@@ -673,7 +593,7 @@ describe('lotaje-view: mount/unmount', () => {
     expect(stopUnit?.hasAttribute('tabindex')).toBe(false);
   });
 
-  it('preserves D-3 target-realm copy after symbol selection and disclosure renders', () => {
+  it('preserves D-3 target-realm copy after symbol selection re-renders the view', () => {
     const doc = freshDoc();
     const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
     mount(doc, targetWindow(writeText));
@@ -681,9 +601,6 @@ describe('lotaje-view: mount/unmount', () => {
     setValue(doc, 'riskPct', '1');
     setValue(doc, 'distance', '45');
     selectSymbol(doc, 'US30');
-    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-    specTrigger.click();
-    specTrigger.click();
 
     doc.querySelector<HTMLButtonElement>('.lotaje-copy-action')!.click();
 
@@ -692,48 +609,36 @@ describe('lotaje-view: mount/unmount', () => {
   });
 
   // Wave 4 audit L-1: same disposition as the remount test above — this pins
-  // DOM hygiene (no duplicate disclosure/select/input nodes) across
-  // open/close cycles and an omitted-arity remount. It cannot detect a
-  // genuine in-memory cross-mount leak (that claim is IN-05's, below); see
-  // the comment on the earlier remount test for why.
+  // DOM hygiene (no duplicate select/menu/option nodes) across open/close
+  // cycles and an omitted-arity remount. It cannot detect a genuine in-memory
+  // cross-mount leak (that claim is IN-05's, below); see the comment on the
+  // earlier remount test for why.
   it('open/close cycles leave no duplicate or leaked symbol DOM', () => {
     const firstDoc = freshDoc();
     mount(firstDoc, window);
     const trigger = firstDoc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
-    const specTrigger = firstDoc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
     for (let cycle = 0; cycle < 3; cycle += 1) {
       trigger.click();
-      specTrigger.click();
       expect(trigger.getAttribute('aria-expanded')).toBe('true');
-      expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
-      expect(firstDoc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
       expect(firstDoc.querySelectorAll('#lotaje-asset-menu')).toHaveLength(1);
       expect(firstDoc.querySelectorAll('.lotaje-asset-option')).toHaveLength(4);
-      expect(firstDoc.querySelectorAll('.lotaje-asset-sheet')).toHaveLength(1);
       trigger.click();
-      specTrigger.click();
       expect(trigger.getAttribute('aria-expanded')).toBe('false');
-      expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
-      expect(firstDoc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(true);
       expect(firstDoc.querySelector<HTMLElement>('#lotaje-asset-menu')?.hidden).toBe(true);
     }
     selectSymbol(firstDoc, 'XAUUSD');
     unmount();
     // Task C-2: as above — scrub the key so this test still isolates the
-    // in-memory symbol-disclosure leak it names, not a storage round trip.
+    // in-memory leak it names, not a storage round trip.
     window.localStorage.removeItem(LOTAJE_STORAGE_KEY);
 
     const secondDoc = freshDoc();
     mount(secondDoc, window);
     const secondTrigger = secondDoc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger');
-    const secondSpecTrigger = secondDoc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger');
-    const secondDisclosure = secondDoc.querySelector<HTMLElement>('#lotaje-symbol-disclosure');
     const secondMenu = secondDoc.querySelector<HTMLElement>('#lotaje-asset-menu');
-    expect(secondDoc.querySelectorAll('#lotaje-symbol-disclosure')).toHaveLength(1);
-    expect(secondDisclosure?.hidden).toBe(true);
+    expect(secondDoc.querySelectorAll('#lotaje-asset-menu')).toHaveLength(1);
     expect(secondMenu?.hidden).toBe(true);
     expect(secondTrigger?.getAttribute('aria-expanded')).toBe('false');
-    expect(secondSpecTrigger?.getAttribute('aria-expanded')).toBe('false');
     expect(secondDoc.querySelectorAll('.lotaje-asset-option')).toHaveLength(4);
     expect(shownSymbol(secondDoc)).toBe('Símbolo');
     expect(secondDoc.querySelector<HTMLElement>('.lotaje-symbol-badge')?.hidden).toBe(true);
@@ -1269,11 +1174,9 @@ describe('lotaje-view: mount/unmount', () => {
     expectSelectedOnFocus(doc.querySelector<HTMLInputElement>('input[name="sl"]')!);
   });
 
-  it('Escape in Method B clears only distance and preserves all context and disclosure state', () => {
+  it('Escape in Method B clears only distance and preserves all context', () => {
     const doc = freshFocusableDoc();
     mount(doc, window, state({ entryText: '40000', slText: '39955' }));
-    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-    specTrigger.click();
     const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
     balance.focus();
 
@@ -1285,19 +1188,15 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
     expect(shownSymbol(doc)).toBe('US30');
     expect(checkedMethod(doc)).toBe('distance');
-    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
-    expect(doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(false);
 
     methodOption(doc, 'prices').click();
     expect(doc.querySelector<HTMLInputElement>('input[name="entry"]')?.value).toBe('40000');
     expect(doc.querySelector<HTMLInputElement>('input[name="sl"]')?.value).toBe('39955');
   });
 
-  it('Escape in Method A clears only literal SL and preserves entry, distance memory, and disclosure', () => {
+  it('Escape in Method A clears only literal SL and preserves entry and distance memory', () => {
     const doc = freshFocusableDoc();
     mount(doc, window, state({ method: 'prices', entryText: '40000', slText: '39955' }));
-    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-    specTrigger.click();
     const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
     balance.focus();
 
@@ -1310,8 +1209,6 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector<HTMLInputElement>('input[name="riskPct"]')?.value).toBe('1');
     expect(shownSymbol(doc)).toBe('US30');
     expect(checkedMethod(doc)).toBe('prices');
-    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
-    expect(doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')?.hidden).toBe(false);
 
     methodOption(doc, 'distance').click();
     expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
@@ -1598,13 +1495,11 @@ describe('lotaje-view: mount/unmount', () => {
     expect(handledDistance.value).toBe('');
   });
 
-  // ---- D-7: companion-only Alt+M / Alt+A / Alt+S shortcuts -----------------
+  // ---- D-7: companion-only Alt+M / Alt+S shortcuts --------------------------
   describe('D-7 companion-only Alt shortcuts', () => {
-    it('stay inert in the page host — no preventDefault, and no method/disclosure/focus effect either', () => {
+    it('stay inert in the page host — no preventDefault, and no method/focus effect either', () => {
       const doc = freshFocusableDoc(); // the page host: never stamped `data-lotaje-companion`.
       mount(doc, window, state({ distanceText: '45' }));
-      const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-      const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')!;
       const assetTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
       const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
       distance.focus();
@@ -1617,8 +1512,6 @@ describe('lotaje-view: mount/unmount', () => {
       // Pin the EFFECT, not just the flag: a handler that acts but forgets
       // `preventDefault` would still pass the loop above.
       expect(checkedMethod(doc)).toBe('distance');
-      expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
-      expect(disclosure.hidden).toBe(true);
       expect(assetTrigger.getAttribute('aria-expanded')).toBe('false');
       expect(doc.activeElement).toBe(distance);
       expect(distance.value).toBe('45');
@@ -1672,25 +1565,29 @@ describe('lotaje-view: mount/unmount', () => {
       expect(doc.querySelector<HTMLInputElement>('input[name="sl"]')?.value).toBe('39950');
     });
 
-    it('Alt+A toggles the asset-spec disclosure open and closed in the companion, aria-expanded truthful', () => {
+    /**
+     * `Alt+A` belonged to «Especificaciones del activo» and went away with
+     * it. The risk-settings disclosure that now occupies the header did NOT
+     * inherit the combo — it has a real, labelled, tab-reachable trigger. The
+     * combo must be genuinely inert, not silently rebound: this asserts it
+     * neither claims the key nor moves any of the state it could plausibly
+     * have been repointed at.
+     */
+    it('Alt+A is inert in the companion — the removed disclosure left no shortcut behind', () => {
       const doc = freshCompanionDoc();
       mount(doc, window, state());
-      const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-      const disclosure = doc.querySelector<HTMLElement>('#lotaje-symbol-disclosure')!;
-      const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
-      balance.focus(); // rule: works from ANY focused element inside the companion.
-      expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
-      expect(disclosure.hidden).toBe(true);
+      const settingsTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!;
+      const panel = doc.querySelector<HTMLElement>('#lotaje-risk-settings')!;
+      const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+      distance.focus();
 
-      const open = dispatchKey(balance, 'a', { altKey: true });
-      expect(open.defaultPrevented).toBe(true);
-      expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
-      expect(disclosure.hidden).toBe(false);
+      const event = dispatchKey(distance, 'a', { altKey: true });
 
-      const close = dispatchKey(balance, 'a', { altKey: true });
-      expect(close.defaultPrevented).toBe(true);
-      expect(specTrigger.getAttribute('aria-expanded')).toBe('false');
-      expect(disclosure.hidden).toBe(true);
+      expect(event.defaultPrevented).toBe(false);
+      expect(settingsTrigger.getAttribute('aria-expanded')).toBe('false');
+      expect(panel.hidden).toBe(true);
+      expect(checkedMethod(doc)).toBe('distance');
+      expect(doc.activeElement).toBe(distance);
     });
 
     it('Alt+S moves focus to the asset trigger from anywhere in the companion, without opening its menu', () => {
@@ -1786,7 +1683,7 @@ describe('lotaje-view: mount/unmount', () => {
     expect(writeText).toHaveBeenCalledTimes(1);
   });
 
-  it('D-5 state actions preserve D-4 disclosure and D-3 generation guards', async () => {
+  it('D-5 state actions preserve D-4 symbol state and D-3 generation guards', async () => {
     const pendingWrite = deferred<void>();
     const writeText = vi
       .fn<(text: string) => Promise<void>>()
@@ -1795,8 +1692,6 @@ describe('lotaje-view: mount/unmount', () => {
     const target = targetWindow(writeText);
     const doc = freshFocusableDoc();
     mount(doc, target, state());
-    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-    specTrigger.click();
     const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
     distance.focus();
 
@@ -1810,11 +1705,9 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector('.lotaje-copy-feedback')?.textContent).toBe('');
     expect(doc.querySelector('.lotaje-copy-action--copied')).toBeNull();
     expect(target.setTimeout).not.toHaveBeenCalled();
-    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
     expect(shownSymbol(doc)).toBe('US30');
     const escape = dispatchKey(distance, 'Escape');
     expect(escape.defaultPrevented).toBe(false);
-    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
     expect(shownSymbol(doc)).toBe('US30');
 
     setValue(doc, 'distance', '45');
@@ -1927,9 +1820,11 @@ describe('lotaje-view: mount/unmount', () => {
     expect(
       doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')?.getAttribute('aria-expanded'),
     ).toBe('false');
-    expect(
-      doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')?.getAttribute('aria-expanded'),
-    ).toBe('false');
+    // `symbolDisclosureOpen` above is a genuinely stale key an older build
+    // wrote: the disclosure it named no longer exists, and restoring a
+    // context must not resurrect any DOM for it.
+    expect(doc.querySelector('.lotaje-spec-trigger')).toBeNull();
+    expect(doc.querySelector('#lotaje-symbol-disclosure')).toBeNull();
     expect(storage.setItem).not.toHaveBeenCalled();
   });
 
@@ -2064,11 +1959,14 @@ describe('lotaje-view: mount/unmount', () => {
     );
   });
 
+  // Companion host: the risk-settings disclosure this matrix toggles only
+  // exists there, and merely OPENING it must stay as write-free as every
+  // other non-context action.
   it('IN-08 Method B no-trigger matrix: distance typing, stepping, Esc, disclosure toggling, and copy settlement write zero times', async () => {
     const storage = fakeStorage();
     const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
     const win = persistedWindow(storage, writeText);
-    const doc = freshFocusableDoc();
+    const doc = freshCompanionDoc();
     mount(doc, win, state());
     expect(storage.setItem).not.toHaveBeenCalled();
 
@@ -2087,9 +1985,9 @@ describe('lotaje-view: mount/unmount', () => {
     const assetTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
     assetTrigger.click();
     assetTrigger.click();
-    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-    specTrigger.click();
-    specTrigger.click();
+    const settingsTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!;
+    settingsTrigger.click();
+    settingsTrigger.click();
 
     distance.focus();
     const enter = dispatchKey(distance, 'Enter');
@@ -2217,9 +2115,10 @@ describe('lotaje-view: mount/unmount', () => {
     expect(doc.querySelector<HTMLInputElement>('input[name="balance"]')?.value).toBe('31000');
     expect(throwingStorage.setItem).toHaveBeenCalled();
 
-    const specTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-spec-trigger')!;
-    specTrigger.click();
-    expect(specTrigger.getAttribute('aria-expanded')).toBe('true');
+    const assetTrigger = doc.querySelector<HTMLButtonElement>('.lotaje-asset-trigger')!;
+    assetTrigger.click();
+    expect(assetTrigger.getAttribute('aria-expanded')).toBe('true');
+    assetTrigger.click();
 
     const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
     distance.focus();
@@ -2331,6 +2230,198 @@ describe('lotaje-view: mount/unmount', () => {
     // the other side, never after.
     unmount();
     expect(getMountedState()).toEqual(INITIAL_STATE);
+  });
+
+  // ---- companion composition + risk-settings disclosure --------------------
+  describe('companion composition', () => {
+    function pressOutside(doc: Document): void {
+      const outside = doc.querySelector('.lotaje-zone--answer')!;
+      const EventConstructor = doc.defaultView?.Event ?? Event;
+      outside.dispatchEvent(new EventConstructor('pointerdown', { bubbles: true }));
+    }
+
+    /**
+     * The 320x340 fit is a LAYOUT fact, and this suite runs on jsdom, which
+     * has no layout engine — asserting pixel heights here would pass
+     * vacuously and prove nothing. What this suite CAN own is the structural
+     * premise the measured fit rests on: the four things the page renders and
+     * the companion deliberately does not. The pixel measurement itself is a
+     * browser measurement, recorded in the PR (330.9 px of content in a 340
+     * px viewport, 0 px of vertical overflow).
+     */
+    it('omits everything the compact composition drops, and nothing else', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state({ method: 'prices', entryText: '39500', slText: '39300' }));
+      const root = doc.querySelector<HTMLElement>('.lotaje-root')!;
+
+      // 1. account/risk are not in the visible composition (they live in the
+      //    header disclosure, closed).
+      expect(root.querySelector('.lotaje-summary input[name="balance"]')).toBeNull();
+      expect(root.querySelector('.lotaje-summary input[name="riskPct"]')).toBeNull();
+      expect(root.querySelector('.lotaje-summary .lotaje-risk-usd')).toBeNull();
+      // 2. the result block carries no title, hint or standing note.
+      expect(root.querySelector('.lotaje-result-title')).toBeNull();
+      expect(root.querySelector('.lotaje-result-hint')).toBeNull();
+      expect(root.querySelector('.lotaje-result-note')).toBeNull();
+      expect(root.querySelector('.lotaje-result-mark')).toBeNull();
+      expect(root.querySelector('.lotaje-result-lede')).toBeNull();
+      // 3. no asset-spec disclosure (asserted in full by its own spec above).
+      expect(root.querySelector('.lotaje-specs')).toBeNull();
+
+      // What IS there: activo, modo/campos, and one result block.
+      expect(root.querySelector('.lotaje-asset-trigger')).not.toBeNull();
+      expect(root.querySelectorAll('.lotaje-method-option')).toHaveLength(2);
+      expect(
+        Array.from(root.querySelectorAll('.lotaje-method-option span')).map((s) => s.textContent),
+      ).toEqual(['Puntos', 'Precios']);
+      expect(root.querySelector('input[name="entry"]')).not.toBeNull();
+      expect(root.querySelector('input[name="sl"]')).not.toBeNull();
+      expect(root.querySelectorAll('.lotaje-result')).toHaveLength(1);
+      expect(root.querySelector('.lotaje-lots-value')?.textContent).toBe('0.50');
+      expect(root.querySelector('.lotaje-lots-label')?.textContent).toBe('lotes');
+      expect(root.querySelectorAll('.lotaje-copy-action')).toHaveLength(1);
+    });
+
+    it('the page keeps its full composition — account, risk, derived risk and the result lede', () => {
+      const doc = freshDoc();
+      mount(doc, window, state());
+      const root = doc.querySelector<HTMLElement>('.lotaje-root')!;
+
+      expect(root.querySelector('.lotaje-summary input[name="balance"]')).not.toBeNull();
+      expect(root.querySelector('.lotaje-summary input[name="riskPct"]')).not.toBeNull();
+      expect(root.querySelector('.lotaje-summary .lotaje-risk-usd')?.textContent).toBe('$100.00');
+      expect(root.querySelector('.lotaje-result-title')?.textContent).toBe('Tamaño de posición');
+      expect(root.querySelector('.lotaje-result-hint')).not.toBeNull();
+      expect(root.querySelector('.lotaje-result-note')).not.toBeNull();
+      // The page has no settings disclosure: its risk controls are never hidden.
+      expect(root.querySelector('.lotaje-settings-trigger')).toBeNull();
+      expect(root.querySelector('#lotaje-risk-settings')).toBeNull();
+      expect(root.querySelector('.lotaje-copy-glyph')).toBeNull();
+      expect(
+        Array.from(root.querySelectorAll('.lotaje-method-option span')).map((s) => s.textContent),
+      ).toEqual(['Distancia', 'Precios']);
+    });
+
+    it('the risk settings start closed, with a named trigger that owns the panel', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state());
+      const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!;
+      const panel = doc.querySelector<HTMLElement>('#lotaje-risk-settings')!;
+
+      expect(trigger.tagName).toBe('BUTTON');
+      expect(trigger.type).toBe('button');
+      expect(trigger.getAttribute('aria-label')).toBe('Ajustes de riesgo');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(trigger.getAttribute('aria-controls')).toBe('lotaje-risk-settings');
+      expect(panel.hidden).toBe(true);
+      expect(panel.getAttribute('role')).toBe('group');
+      expect(panel.getAttribute('aria-label')).toBe('Ajustes de riesgo');
+      // The trigger sits BEFORE the close action, inside the header.
+      expect(trigger.closest('.lotaje-header')).not.toBeNull();
+      expect(
+        trigger.compareDocumentPosition(doc.querySelector('.lotaje-companion-close')!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // Every decorative glyph in the header stays out of the a11y tree.
+      for (const icon of Array.from(doc.querySelectorAll('.lotaje-header svg'))) {
+        expect(icon.getAttribute('aria-hidden')).toBe('true');
+      }
+    });
+
+    it('the trigger opens the settings, moves focus into them, and reports the state truthfully', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state());
+      const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!;
+      const panel = doc.querySelector<HTMLElement>('#lotaje-risk-settings')!;
+
+      trigger.click();
+
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(panel.hidden).toBe(false);
+      expect(doc.activeElement).toBe(doc.querySelector('input[name="balance"]'));
+      expect(panel.querySelector('input[name="balance"]')).not.toBeNull();
+      expect(panel.querySelector('input[name="riskPct"]')).not.toBeNull();
+      expect(panel.querySelector('.lotaje-risk-usd')).not.toBeNull();
+
+      trigger.click();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(panel.hidden).toBe(true);
+    });
+
+    it('editing account and risk in the settings re-derives the figure without closing them', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state({ distanceText: '50' }));
+      const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!;
+      trigger.click();
+
+      setValue(doc, 'balance', '40000');
+      setValue(doc, 'riskPct', '2.5');
+
+      expect(doc.querySelector('.lotaje-risk-usd')?.textContent).toBe('$1000.00');
+      expect(doc.querySelector('.lotaje-lots-value')?.textContent).toBe('20.00');
+      // A re-render must not tear the open disclosure down under the cursor.
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(doc.querySelector<HTMLElement>('#lotaje-risk-settings')?.hidden).toBe(false);
+    });
+
+    it('Escape closes the settings, returns focus to the trigger, and leaves the stop field alone', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state({ distanceText: '45' }));
+      const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!;
+      trigger.click();
+      const balance = doc.querySelector<HTMLInputElement>('input[name="balance"]')!;
+
+      const escape = dispatchKey(balance, 'Escape');
+
+      expect(escape.defaultPrevented).toBe(true);
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(doc.querySelector<HTMLElement>('#lotaje-risk-settings')?.hidden).toBe(true);
+      expect(doc.activeElement).toBe(trigger);
+      // The open disclosure consumed the key: the stop is untouched.
+      expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('45');
+
+      // Closed again, Escape goes back to meaning "clear the stop".
+      const distance = doc.querySelector<HTMLInputElement>('input[name="distance"]')!;
+      distance.focus();
+      dispatchKey(distance, 'Escape');
+      expect(doc.querySelector<HTMLInputElement>('input[name="distance"]')?.value).toBe('');
+    });
+
+    it('an outside press closes the settings; a press inside them does not', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state());
+      const trigger = doc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!;
+      const panel = doc.querySelector<HTMLElement>('#lotaje-risk-settings')!;
+      trigger.click();
+
+      panel
+        .querySelector('input[name="balance"]')!
+        .dispatchEvent(new (doc.defaultView?.Event ?? Event)('pointerdown', { bubbles: true }));
+      expect(panel.hidden).toBe(false);
+
+      pressOutside(doc);
+
+      expect(panel.hidden).toBe(true);
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      // Focus is NOT yanked back on an outside press — the trader is pointing
+      // somewhere else, and stealing focus there would fight them.
+      expect(doc.activeElement).not.toBe(trigger);
+    });
+
+    it('unmount removes the settings dismiss listener from the realm it was added to', () => {
+      const doc = freshCompanionDoc();
+      mount(doc, window, state());
+      doc.querySelector<HTMLButtonElement>('.lotaje-settings-trigger')!.click();
+      const removeSpy = vi.spyOn(doc, 'removeEventListener');
+
+      unmount();
+
+      expect(
+        removeSpy.mock.calls.filter(
+          ([type, , options]) => type === 'pointerdown' && options === true,
+        ),
+      ).toHaveLength(1);
+    });
   });
 
   function setValue(doc: Document, name: string, text: string): void {

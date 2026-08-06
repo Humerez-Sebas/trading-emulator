@@ -29,16 +29,31 @@
  * `mount`/`unmount` below), so opening the companion is a relocation, never a
  * second copy. `./companion-window` itself imports nothing from Angular/NgRx/
  * `state/*`/`components/*`/`domain/chart/*` either. D-7 adds companion-only
- * `Alt+M`/`Alt+A`/`Alt+S` shortcuts as one more branch of the same root
- * keydown handler (`onRootKeyDown`), gated on `isCompanionDocument` — the
- * page host stays exactly as inert to them as before.
+ * `Alt+M`/`Alt+S` shortcuts as one more branch of the same root keydown
+ * handler (`onRootKeyDown`), gated on `isCompanionDocument` — the page host
+ * stays exactly as inert to them as before.
  *
  * The one thing this module reads about its own host is
  * `data-lotaje-companion` on the mounted document's root element — the
  * attribute `./companion-window` already stamps on the companion document
- * before calling `mount()`. It decides the title and whether the header
- * offers «Abrir mini calculadora» (page) or a real close action (companion).
- * No second mount, no second state, no host-injected configuration.
+ * before calling `mount()`. It is read ONCE per `mount()` into a `companion`
+ * boolean threaded explicitly through the builders, and it decides three
+ * things:
+ *
+ *   - the title, and whether the header offers «Abrir mini calculadora»
+ *     (page) or the risk-settings + close pair (companion);
+ *   - WHERE the account/risk controls live. They are the same three cells and
+ *     the same two `<input>` elements in both hosts — built once by
+ *     `buildRiskFields` — but the page lays them out in its summary row while
+ *     the companion tucks them into the header's collapsed risk-settings
+ *     disclosure, so the floating window's initial composition is just
+ *     activo → modo/campos → resultado. Editing them there writes the same
+ *     `LotajeState` through the same `transitionState`, so the values set on
+ *     the page are the ones the companion opens with and the ones the page
+ *     gets back when it closes;
+ *   - whether the result block carries its page-only title/hint/note.
+ *
+ * Still no second mount, no second state, no host-injected configuration.
  */
 import { resolveAsset } from '../domain/sizing/asset-registry';
 import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
@@ -83,7 +98,15 @@ let copyAttemptGeneration = 0;
 let activeFeedbackTimer: { window: Window; id: number } | null = null;
 let assetMenuOpen = false;
 let assetDismissHandler: ((event: Event) => void) | null = null;
-let symbolDisclosureOpen = false;
+let riskSettingsOpen = false;
+let riskSettingsDismissHandler: ((event: Event) => void) | null = null;
+/**
+ * `isCompanionDocument(doc)` resolved once by `mount()`. Zone 3 is rebuilt on
+ * every `render()` and needs the same answer the builders got, so it is held
+ * here rather than re-read from the DOM per render — one read, one decision,
+ * no way for the two to disagree mid-mount.
+ */
+let companionHost = false;
 
 const COPY_FEEDBACK_DURATION_MS = 1200;
 const COPY_FAILURE = 'No se pudo copiar — selecciona y copia';
@@ -96,18 +119,6 @@ type ZoneQuestionFields =
   | { method: 'distance'; input: HTMLInputElement; unit: HTMLElement }
   | { method: 'prices'; entry: HTMLInputElement; sl: HTMLInputElement };
 
-interface AssetValueRefs {
-  contractSize: HTMLElement;
-  tickSize: HTMLElement;
-  pointSize: HTMLElement;
-  pipSize: HTMLElement;
-  volumeStep: HTMLElement;
-  volumeMin: HTMLElement;
-  currency: HTMLElement;
-  aliases: HTMLElement;
-  source: HTMLElement;
-}
-
 interface Refs {
   // Zone 1 — structure never changes; fields are synced in place.
   assetTrigger: HTMLButtonElement;
@@ -116,12 +127,17 @@ interface Refs {
   symbolValue: HTMLElement;
   symbolMark: HTMLElement;
   symbolBadge: HTMLElement;
-  specTrigger: HTMLButtonElement;
-  symbolDisclosure: HTMLElement;
-  assetValues: AssetValueRefs;
   balanceInput: HTMLInputElement;
   riskPctInput: HTMLInputElement;
   riskUsd: HTMLElement;
+  /**
+   * Companion-only (`null` on the page): the header disclosure that holds the
+   * three risk cells there. Both refs are present or both are absent — the
+   * trigger without the panel it controls would be an inert control, which
+   * this module does not build (see `buildHeader`).
+   */
+  riskSettingsTrigger: HTMLButtonElement | null;
+  riskSettingsPanel: HTMLElement | null;
   // Zone 2 — rebuilt only when the method actually changes.
   questionFieldsContainer: HTMLElement;
   questionFields: ZoneQuestionFields;
@@ -171,7 +187,8 @@ type IconName =
   | 'close'
   | 'chevron'
   | 'check'
-  | 'info'
+  | 'settings'
+  | 'copy'
   | 'target'
   | 'points'
   | 'prices';
@@ -195,10 +212,23 @@ const ICONS: Readonly<Record<IconName, readonly IconShape[]>> = {
   ],
   chevron: [{ tag: 'path', attrs: { d: 'M6 9.5 12 15.5 18 9.5' } }],
   check: [{ tag: 'path', attrs: { d: 'M4.5 12.5 9.5 17.5 19.5 7' } }],
-  info: [
-    { tag: 'circle', attrs: { cx: '12', cy: '12', r: '9' } },
-    { tag: 'line', attrs: { x1: '12', y1: '11', x2: '12', y2: '16.5' } },
-    { tag: 'path', attrs: { d: 'M12 7.5h.01' } },
+  settings: [
+    { tag: 'circle', attrs: { cx: '12', cy: '12', r: '3.2' } },
+    {
+      tag: 'path',
+      attrs: {
+        d: 'M19.4 14.5a1.6 1.6 0 0 0 .32 1.77l.06.06a1.94 1.94 0 1 1-2.75 2.75l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47v.16a1.94 1.94 0 1 1-3.88 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a1.94 1.94 0 1 1-2.75-2.75l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-.97h-.16a1.94 1.94 0 1 1 0-3.88h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06a1.94 1.94 0 1 1 2.75-2.75l.06.06a1.6 1.6 0 0 0 1.77.32h.08a1.6 1.6 0 0 0 .97-1.47v-.16a1.94 1.94 0 1 1 3.88 0v.09a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.77-.32l.06-.06a1.94 1.94 0 1 1 2.75 2.75l-.06.06a1.6 1.6 0 0 0-.32 1.77v.08a1.6 1.6 0 0 0 1.47.97h.16a1.94 1.94 0 1 1 0 3.88h-.09a1.6 1.6 0 0 0-1.46.97Z',
+      },
+    },
+  ],
+  copy: [
+    { tag: 'rect', attrs: { x: '9', y: '9', width: '11', height: '11', rx: '2' } },
+    {
+      tag: 'path',
+      attrs: {
+        d: 'M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5',
+      },
+    },
   ],
   target: [
     { tag: 'circle', attrs: { cx: '12', cy: '12', r: '8.5' } },
@@ -326,26 +356,42 @@ function setAssetMenuOpen(open: boolean): void {
 }
 
 /**
- * Dismissal on an outside press. A capture-phase `pointerdown` on the mounted
+ * Dismissal on an outside press, shared by the asset menu and the companion's
+ * risk-settings disclosure. A capture-phase `pointerdown` on the mounted
  * DOCUMENT — not a `focusout` on the wrapper — because a press on
  * non-focusable page area produces no focus event at all, and because this is
  * deterministic: `.click()` never synthesises `pointerdown`, so the unit suite
  * exercises the keyboard/selection paths without this listener firing
- * incidentally. Registered only while the menu is open, removed the moment it
- * closes, and again on `unmount()` before the realm reference is dropped.
+ * incidentally. Registered only while its surface is open, removed the moment
+ * it closes, and again on `unmount()` before the realm reference is dropped.
+ *
+ * `wrapperOf` is a thunk, not an element: both wrappers are rebuilt by every
+ * fresh `mount()`, and resolving them at EVENT time keeps this handler's
+ * shape identical to every other handler in this file (stable module-level
+ * identity over live mount state).
  */
+function addOutsidePressHandler(
+  wrapperOf: () => Element | null | undefined,
+  onOutsidePress: () => void,
+): (event: Event) => void {
+  const handler = (event: Event): void => {
+    const wrapper = wrapperOf();
+    const target = event.target as Node | null;
+    if (wrapper && target && typeof target.nodeType === 'number' && wrapper.contains(target)) {
+      return;
+    }
+    onOutsidePress();
+  };
+  currentDoc?.addEventListener('pointerdown', handler, true);
+  return handler;
+}
+
 function syncAssetDismissListener(): void {
   if (assetMenuOpen && currentDoc && !assetDismissHandler) {
-    const handler = (event: Event): void => {
-      const wrapper = refs?.assetMenu.parentElement;
-      const target = event.target as Node | null;
-      if (wrapper && target && typeof target.nodeType === 'number' && wrapper.contains(target)) {
-        return;
-      }
-      setAssetMenuOpen(false);
-    };
-    assetDismissHandler = handler;
-    currentDoc.addEventListener('pointerdown', handler, true);
+    assetDismissHandler = addOutsidePressHandler(
+      () => refs?.assetMenu.parentElement,
+      () => setAssetMenuOpen(false),
+    );
     return;
   }
   if (!assetMenuOpen) removeAssetDismissListener();
@@ -438,11 +484,67 @@ function onAssetSelectKeyDown(event: KeyboardEvent): void {
   }
 }
 
-function onSpecTriggerClick(): void {
-  symbolDisclosureOpen = !symbolDisclosureOpen;
-  if (!refs) return;
-  refs.specTrigger.setAttribute('aria-expanded', String(symbolDisclosureOpen));
-  refs.symbolDisclosure.hidden = !symbolDisclosureOpen;
+// ---- companion risk settings (account size + risk %, behind a disclosure) ----
+/**
+ * The companion's initial composition is deliberately just activo → modo/
+ * campos → resultado: at 320x340 there is no room for the account/risk pair,
+ * and a trader who already set them on the page does not need to see them
+ * again to size a trade. They are one click away here, in a disclosure
+ * ANCHORED to its trigger and absolutely positioned, so opening it can never
+ * grow the document and reintroduce the vertical scrollbar the redesign
+ * exists to remove.
+ *
+ * The controls inside are the very same `<input>` elements the page renders
+ * in its summary row (`buildRiskFields`), wired to the very same `input`
+ * handlers, so editing here is an ordinary `LotajeState` transition: it
+ * re-derives the lot figure, persists through `transitionState`'s context
+ * diff, and travels back to the page when the companion closes.
+ */
+function setRiskSettingsOpen(open: boolean): void {
+  riskSettingsOpen = open;
+  if (refs?.riskSettingsTrigger && refs.riskSettingsPanel) {
+    refs.riskSettingsTrigger.setAttribute('aria-expanded', String(open));
+    refs.riskSettingsPanel.hidden = !open;
+  }
+  syncRiskSettingsDismissListener();
+}
+
+function syncRiskSettingsDismissListener(): void {
+  if (riskSettingsOpen && currentDoc && !riskSettingsDismissHandler) {
+    riskSettingsDismissHandler = addOutsidePressHandler(
+      () => refs?.riskSettingsPanel?.parentElement,
+      () => setRiskSettingsOpen(false),
+    );
+    return;
+  }
+  if (!riskSettingsOpen) removeRiskSettingsDismissListener();
+}
+
+function removeRiskSettingsDismissListener(): void {
+  if (!riskSettingsDismissHandler) return;
+  currentDoc?.removeEventListener('pointerdown', riskSettingsDismissHandler, true);
+  riskSettingsDismissHandler = null;
+}
+
+/**
+ * Closes the disclosure and returns focus to the trigger that opened it — the
+ * same contract `closeAssetMenu` already honours, and what keeps `Escape` and
+ * the outside-press path from stranding focus on a node that just became
+ * unreachable (`hidden` removes its contents from the tab order).
+ */
+function closeRiskSettings(returnFocus: boolean): void {
+  if (!riskSettingsOpen) return;
+  setRiskSettingsOpen(false);
+  if (returnFocus) refs?.riskSettingsTrigger?.focus();
+}
+
+function onRiskSettingsTriggerClick(): void {
+  if (riskSettingsOpen) {
+    closeRiskSettings(false);
+    return;
+  }
+  setRiskSettingsOpen(true);
+  refs?.balanceInput.focus();
 }
 
 function onDistanceInput(e: Event): void {
@@ -546,7 +648,11 @@ function onRootKeyDown(event: KeyboardEvent): void {
     // 546). The page host stays exactly as inert as it was before this task
     // — every combo below is gated on `isCompanionDocument`, never reached
     // otherwise. Deliberately no visual affordance (§546: "atajos por encima
-    // de descubribilidad").
+    // de descubribilidad"). `Alt+A` used to open the asset-spec disclosure
+    // and went away with it; the risk-settings disclosure that replaced it in
+    // the header deliberately did NOT inherit the combo — it has a real,
+    // labelled, tab-reachable trigger, which is the discoverable affordance
+    // the spec sheet never had.
     if (!isCompanionDocument(currentDoc)) return;
     const key = event.key.toLowerCase();
 
@@ -563,12 +669,6 @@ function onRootKeyDown(event: KeyboardEvent): void {
       return;
     }
 
-    if (key === 'a') {
-      event.preventDefault();
-      onSpecTriggerClick();
-      return;
-    }
-
     if (key === 's') {
       event.preventDefault();
       refs.assetTrigger.focus();
@@ -580,6 +680,16 @@ function onRootKeyDown(event: KeyboardEvent): void {
   }
 
   if (event.key === 'Escape') {
+    // The open disclosure claims Escape first: dismissing an open surface is
+    // what the key means while one is showing, and clearing the stop field
+    // underneath it at the same time would be two actions for one press. The
+    // asset menu handles its own Escape one level down (`onAssetSelectKeyDown`
+    // stops propagation) for exactly the same reason.
+    if (riskSettingsOpen) {
+      event.preventDefault();
+      closeRiskSettings(true);
+      return;
+    }
     if (currentState.method === 'distance') {
       if (currentState.distanceText !== '') setState({ distanceText: '' });
     } else if (currentState.slText !== '') {
@@ -779,7 +889,15 @@ function isCompanionDocument(doc: Document): boolean {
   return doc.documentElement.hasAttribute('data-lotaje-companion');
 }
 
-function buildHeader(doc: Document, companion: boolean): HTMLElement {
+function buildHeader(
+  doc: Document,
+  companion: boolean,
+  riskFields: RiskFields,
+): {
+  root: HTMLElement;
+  riskSettingsTrigger: HTMLButtonElement | null;
+  riskSettingsPanel: HTMLElement | null;
+} {
   const header = doc.createElement('header');
   header.className = 'lotaje-header';
 
@@ -796,19 +914,7 @@ function buildHeader(doc: Document, companion: boolean): HTMLElement {
 
   const actions = doc.createElement('div');
   actions.className = 'lotaje-header-actions';
-  if (companion) {
-    // Exactly one control, and only because `window.close()` genuinely closes
-    // this realm. No minimise button: nothing in the platform implements it,
-    // and an inert control that looks live is worse than no control.
-    const close = doc.createElement('button');
-    close.type = 'button';
-    close.className = 'lotaje-companion-close';
-    close.setAttribute('aria-label', 'Cerrar la calculadora flotante');
-    close.title = 'Cerrar';
-    close.append(buildIcon(doc, 'close', 'lotaje-icon'));
-    close.addEventListener('click', onCompanionCloseClick);
-    actions.append(close);
-  } else {
+  if (!companion) {
     const trigger = doc.createElement('button');
     trigger.type = 'button';
     trigger.className = 'lotaje-companion-trigger';
@@ -818,90 +924,49 @@ function buildHeader(doc: Document, companion: boolean): HTMLElement {
     trigger.append(label);
     trigger.addEventListener('click', onCompanionTriggerClick);
     actions.append(trigger);
+    header.append(identity, actions);
+    return { root: header, riskSettingsTrigger: null, riskSettingsPanel: null };
   }
 
+  // Two controls, in this order: the risk settings the compact composition
+  // hides, then the close action. Still no minimise button — nothing in the
+  // platform implements one, and an inert control that looks live is worse
+  // than no control.
+  const settings = doc.createElement('div');
+  settings.className = 'lotaje-settings';
+  const settingsTrigger = doc.createElement('button');
+  settingsTrigger.type = 'button';
+  settingsTrigger.className = 'lotaje-settings-trigger';
+  settingsTrigger.setAttribute('aria-label', 'Ajustes de riesgo');
+  settingsTrigger.setAttribute('aria-expanded', 'false');
+  settingsTrigger.setAttribute('aria-controls', 'lotaje-risk-settings');
+  settingsTrigger.title = 'Ajustes de riesgo';
+  settingsTrigger.append(buildIcon(doc, 'settings', 'lotaje-icon'));
+  settingsTrigger.addEventListener('click', onRiskSettingsTriggerClick);
+
+  const settingsPanel = doc.createElement('div');
+  settingsPanel.id = 'lotaje-risk-settings';
+  settingsPanel.className = 'lotaje-settings-panel';
+  settingsPanel.setAttribute('role', 'group');
+  settingsPanel.setAttribute('aria-label', 'Ajustes de riesgo');
+  settingsPanel.hidden = true;
+  settingsPanel.append(riskFields.balanceCell, riskFields.riskCell, riskFields.riskUsdCell);
+  settings.append(settingsTrigger, settingsPanel);
+
+  const close = doc.createElement('button');
+  close.type = 'button';
+  close.className = 'lotaje-companion-close';
+  close.setAttribute('aria-label', 'Cerrar la calculadora flotante');
+  close.title = 'Cerrar';
+  close.append(buildIcon(doc, 'close', 'lotaje-icon'));
+  close.addEventListener('click', onCompanionCloseClick);
+  actions.append(settings, close);
+
   header.append(identity, actions);
-  return header;
+  return { root: header, riskSettingsTrigger: settingsTrigger, riskSettingsPanel: settingsPanel };
 }
 
 // ---- Zone 1 · Contexto ----------------------------------------------------
-function appendAssetRow(
-  doc: Document,
-  list: HTMLDListElement,
-  field: keyof AssetValueRefs,
-  label: string,
-): HTMLElement {
-  const row = doc.createElement('div');
-  row.className = 'lotaje-asset-row';
-  row.setAttribute('data-asset-field', field);
-  const term = doc.createElement('dt');
-  term.textContent = label;
-  const value = doc.createElement('dd');
-  row.append(term, value);
-  list.append(row);
-  return value;
-}
-
-function buildAssetSheet(doc: Document): { root: HTMLElement; values: AssetValueRefs } {
-  const root = doc.createElement('section');
-  root.className = 'lotaje-asset-sheet';
-  root.setAttribute('aria-labelledby', 'lotaje-asset-sheet-title');
-  const title = doc.createElement('h2');
-  title.id = 'lotaje-asset-sheet-title';
-  title.textContent = 'Ficha del activo';
-  const list = doc.createElement('dl');
-  const values: AssetValueRefs = {
-    contractSize: appendAssetRow(doc, list, 'contractSize', 'Contrato'),
-    tickSize: appendAssetRow(doc, list, 'tickSize', 'Tick'),
-    pointSize: appendAssetRow(doc, list, 'pointSize', 'Punto'),
-    pipSize: appendAssetRow(doc, list, 'pipSize', 'Pip'),
-    volumeStep: appendAssetRow(doc, list, 'volumeStep', 'Paso de volumen'),
-    volumeMin: appendAssetRow(doc, list, 'volumeMin', 'Volumen mínimo'),
-    currency: appendAssetRow(doc, list, 'currency', 'Divisa'),
-    aliases: appendAssetRow(doc, list, 'aliases', 'Alias'),
-    source: appendAssetRow(doc, list, 'source', 'Procedencia'),
-  };
-  root.append(title, list);
-  return { root, values };
-}
-
-function syncAssetValue(target: HTMLElement, value: string): void {
-  target.textContent = value;
-  target.classList.toggle(
-    'lotaje-asset-value--unavailable',
-    value === 'No disponible' || value === 'No aplica',
-  );
-}
-
-function syncAssetSheet(values: AssetValueRefs, symbolText: string): void {
-  const resolved = resolveAsset(symbolText.trim());
-  const unavailable = 'No disponible';
-  syncAssetValue(values.contractSize, String(resolved.contractSize));
-  syncAssetValue(
-    values.tickSize,
-    resolved.tickSize === null ? unavailable : String(resolved.tickSize),
-  );
-  syncAssetValue(
-    values.pointSize,
-    resolved.pointSize === null ? unavailable : String(resolved.pointSize),
-  );
-  syncAssetValue(
-    values.pipSize,
-    resolved.pipSize === null ? 'No aplica' : String(resolved.pipSize),
-  );
-  syncAssetValue(
-    values.volumeStep,
-    resolved.volumeStep === null ? unavailable : String(resolved.volumeStep),
-  );
-  syncAssetValue(
-    values.volumeMin,
-    resolved.volumeMin === null ? unavailable : String(resolved.volumeMin),
-  );
-  syncAssetValue(values.currency, resolved.currency || unavailable);
-  syncAssetValue(values.aliases, unavailable);
-  syncAssetValue(values.source, resolved.source === 'heuristic' ? 'heurística' : resolved.source);
-}
-
 function buildAssetSelect(
   doc: Document,
   state: LotajeState,
@@ -1000,24 +1065,93 @@ function buildSummaryCell(
   return cell;
 }
 
+/**
+ * The account/risk trio, built ONCE per mount and placed by the caller: the
+ * page appends these three cells to its summary row, the companion hands them
+ * to `buildHeader`'s collapsed disclosure. Same elements, same handlers, same
+ * `LotajeState` — the two hosts differ in where the cells are attached, never
+ * in what they are or what they do.
+ */
+interface RiskFields {
+  readonly balanceCell: HTMLElement;
+  readonly riskCell: HTMLElement;
+  readonly riskUsdCell: HTMLElement;
+  readonly balanceInput: HTMLInputElement;
+  readonly riskPctInput: HTMLInputElement;
+  readonly riskUsd: HTMLElement;
+}
+
+function buildRiskFields(doc: Document, state: LotajeState, derived: LotajeDerived): RiskFields {
+  const balanceField = doc.createElement('div');
+  balanceField.className = 'lotaje-field lotaje-field-balance';
+  const balanceInput = doc.createElement('input');
+  balanceInput.id = 'lotaje-balance';
+  balanceInput.type = 'text';
+  balanceInput.inputMode = 'decimal';
+  balanceInput.name = 'balance';
+  balanceInput.className = 'ui-input';
+  balanceInput.value = state.balanceText;
+  balanceInput.addEventListener('input', onBalanceInput);
+  const balanceSuffix = doc.createElement('span');
+  balanceSuffix.className = 'lotaje-field-suffix';
+  balanceSuffix.textContent = 'USD';
+  balanceField.append(balanceInput, balanceSuffix);
+
+  const riskField = doc.createElement('div');
+  riskField.className = 'lotaje-field lotaje-field-risk';
+  const riskPctInput = doc.createElement('input');
+  riskPctInput.id = 'lotaje-risk';
+  riskPctInput.type = 'text';
+  riskPctInput.inputMode = 'decimal';
+  riskPctInput.name = 'riskPct';
+  riskPctInput.className = 'ui-input';
+  riskPctInput.value = state.riskPctText;
+  riskPctInput.addEventListener('input', onRiskPctInput);
+  const riskSuffix = doc.createElement('span');
+  riskSuffix.className = 'lotaje-field-suffix';
+  riskSuffix.textContent = '%';
+  riskField.append(riskPctInput, riskSuffix);
+
+  // Derived, not editable: no field chrome, accent colour, and its own cell so
+  // it stays the honest anchor beside the risk it was computed from (§3.1).
+  const riskUsd = doc.createElement('span');
+  riskUsd.className = 'lotaje-risk-usd';
+  riskUsd.textContent = formatMoney(derived.requestedRiskUsd);
+
+  return {
+    balanceCell: buildSummaryCell(
+      doc,
+      'balance',
+      buildLabel(doc, 'Tamaño de cuenta', 'lotaje-balance'),
+      balanceField,
+    ),
+    riskCell: buildSummaryCell(
+      doc,
+      'risk',
+      buildLabel(doc, 'Riesgo por operación', 'lotaje-risk'),
+      riskField,
+    ),
+    riskUsdCell: buildSummaryCell(doc, 'risk-usd', buildLabel(doc, 'Riesgo en USD'), riskUsd),
+    balanceInput,
+    riskPctInput,
+    riskUsd,
+  };
+}
+
+/**
+ * `riskFields` is appended here on the PAGE and is `null` in the companion,
+ * where `buildHeader` has already taken the same cells into its disclosure.
+ * An element belongs to exactly one parent, so this is a placement decision,
+ * not a duplication one.
+ */
 function buildZoneContext(
   doc: Document,
   state: LotajeState,
   derived: LotajeDerived,
+  riskFields: RiskFields | null,
 ): { root: HTMLElement } & Pick<
   Refs,
-  | 'assetTrigger'
-  | 'assetMenu'
-  | 'assetOptions'
-  | 'symbolValue'
-  | 'symbolMark'
-  | 'symbolBadge'
-  | 'specTrigger'
-  | 'symbolDisclosure'
-  | 'assetValues'
-  | 'balanceInput'
-  | 'riskPctInput'
-  | 'riskUsd'
+  'assetTrigger' | 'assetMenu' | 'assetOptions' | 'symbolValue' | 'symbolMark' | 'symbolBadge'
 > {
   const root = doc.createElement('section');
   root.className = 'lotaje-zone lotaje-zone--context';
@@ -1035,86 +1169,11 @@ function buildZoneContext(
   const asset = buildAssetSelect(doc, state, derived);
   summary.append(buildSummaryCell(doc, 'asset', assetLabel, asset.root));
 
-  const balanceField = doc.createElement('div');
-  balanceField.className = 'lotaje-field lotaje-field-balance';
-  const balanceInput = doc.createElement('input');
-  balanceInput.id = 'lotaje-balance';
-  balanceInput.type = 'text';
-  balanceInput.inputMode = 'decimal';
-  balanceInput.name = 'balance';
-  balanceInput.className = 'ui-input';
-  balanceInput.value = state.balanceText;
-  balanceInput.addEventListener('input', onBalanceInput);
-  const balanceSuffix = doc.createElement('span');
-  balanceSuffix.className = 'lotaje-field-suffix';
-  balanceSuffix.textContent = 'USD';
-  balanceField.append(balanceInput, balanceSuffix);
-  summary.append(
-    buildSummaryCell(
-      doc,
-      'balance',
-      buildLabel(doc, 'Tamaño de cuenta', 'lotaje-balance'),
-      balanceField,
-    ),
-  );
+  if (riskFields) {
+    summary.append(riskFields.balanceCell, riskFields.riskCell, riskFields.riskUsdCell);
+  }
 
-  const riskField = doc.createElement('div');
-  riskField.className = 'lotaje-field lotaje-field-risk';
-  const riskPctInput = doc.createElement('input');
-  riskPctInput.id = 'lotaje-risk';
-  riskPctInput.type = 'text';
-  riskPctInput.inputMode = 'decimal';
-  riskPctInput.name = 'riskPct';
-  riskPctInput.className = 'ui-input';
-  riskPctInput.value = state.riskPctText;
-  riskPctInput.addEventListener('input', onRiskPctInput);
-  const riskSuffix = doc.createElement('span');
-  riskSuffix.className = 'lotaje-field-suffix';
-  riskSuffix.textContent = '%';
-  riskField.append(riskPctInput, riskSuffix);
-  summary.append(
-    buildSummaryCell(
-      doc,
-      'risk',
-      buildLabel(doc, 'Riesgo por operación', 'lotaje-risk'),
-      riskField,
-    ),
-  );
-
-  // Derived, not editable: no field chrome, accent colour, and its own cell so
-  // it stays the honest anchor beside the risk it was computed from (§3.1).
-  const riskUsd = doc.createElement('span');
-  riskUsd.className = 'lotaje-risk-usd';
-  riskUsd.textContent = formatMoney(derived.requestedRiskUsd);
-  summary.append(buildSummaryCell(doc, 'risk-usd', buildLabel(doc, 'Riesgo en USD'), riskUsd));
-
-  // Ficha del activo — still progressive disclosure (§5.2), now on its own
-  // full-width row instead of hanging off the instrument chip, so opening it
-  // never displaces the summary above it.
-  const specs = doc.createElement('div');
-  specs.className = 'lotaje-specs';
-  const specTrigger = doc.createElement('button');
-  specTrigger.type = 'button';
-  specTrigger.className = 'lotaje-spec-trigger';
-  specTrigger.setAttribute('aria-expanded', 'false');
-  specTrigger.setAttribute('aria-controls', 'lotaje-symbol-disclosure');
-  specTrigger.append(buildIcon(doc, 'info', 'lotaje-icon'));
-  const specLabel = doc.createElement('span');
-  specLabel.className = 'lotaje-spec-trigger-label';
-  specLabel.textContent = 'Especificaciones del activo';
-  specTrigger.append(specLabel, buildIcon(doc, 'chevron', 'lotaje-caret'));
-  specTrigger.addEventListener('click', onSpecTriggerClick);
-
-  const symbolDisclosure = doc.createElement('div');
-  symbolDisclosure.id = 'lotaje-symbol-disclosure';
-  symbolDisclosure.className = 'lotaje-symbol-disclosure';
-  symbolDisclosure.hidden = true;
-  const assetSheet = buildAssetSheet(doc);
-  syncAssetSheet(assetSheet.values, state.symbolText);
-  symbolDisclosure.append(assetSheet.root);
-  specs.append(specTrigger, symbolDisclosure);
-
-  root.append(summary, specs);
+  root.append(summary);
 
   return {
     root,
@@ -1124,12 +1183,6 @@ function buildZoneContext(
     symbolValue: asset.symbolValue,
     symbolMark: asset.symbolMark,
     symbolBadge: asset.symbolBadge,
-    specTrigger,
-    symbolDisclosure,
-    assetValues: assetSheet.values,
-    balanceInput,
-    riskPctInput,
-    riskUsd,
   };
 }
 
@@ -1239,6 +1292,21 @@ const METHOD_LABELS: Readonly<Record<Method, string>> = {
   prices: 'Precios',
 };
 
+/**
+ * The companion's mockup names the distance mode «Puntos», and the redesign
+ * brief names the two options `Puntos` and `Precios` in the same breath — so
+ * that is what the floating window shows. The page keeps «Distancia», which
+ * its own brief settled on and which stays accurate for an FX symbol, where
+ * the field's unit is pips rather than points. The two labels naming one
+ * control differently is a divergence worth closing in one direction or the
+ * other; it is recorded here rather than resolved silently, because both
+ * spellings are explicitly specified for their own surface.
+ */
+const COMPANION_METHOD_LABELS: Readonly<Record<Method, string>> = {
+  distance: 'Puntos',
+  prices: 'Precios',
+};
+
 const METHOD_ICONS: Readonly<Record<Method, IconName>> = {
   distance: 'points',
   prices: 'prices',
@@ -1270,6 +1338,7 @@ function buildZoneQuestion(
   methodToggle.setAttribute('aria-labelledby', 'lotaje-method-label');
   methodToggle.addEventListener('keydown', onMethodToggleKeyDown);
 
+  const methodLabels = companionHost ? COMPANION_METHOD_LABELS : METHOD_LABELS;
   const methodOptions = {} as Record<Method, HTMLButtonElement>;
   for (const candidate of ['distance', 'prices'] as const) {
     const option = doc.createElement('button');
@@ -1279,7 +1348,7 @@ function buildZoneQuestion(
     option.setAttribute('data-method', candidate);
     option.append(buildIcon(doc, METHOD_ICONS[candidate], 'lotaje-icon'));
     const label = doc.createElement('span');
-    label.textContent = METHOD_LABELS[candidate];
+    label.textContent = methodLabels[candidate];
     option.append(label);
     option.addEventListener('click', () => onMethodOptionClick(candidate));
     methodToggle.append(option);
@@ -1321,10 +1390,12 @@ function syncMethodOptions(
  * No input lives in Zone 3, so unlike Zones 1-2 it is safe to fully rebuild
  * on every render — there is no focus/caret to preserve.
  *
- * The copy glyph is gone (brief §2.4): the figure itself is the control, so
- * there is no icon-only action left to depend on. The behaviour behind it is
- * untouched — click or `Enter` from any editable field still copies the bare
- * two-decimal payload through the mounted realm's clipboard (§7.5).
+ * The figure itself is the control (brief §2.4) — there is no separate
+ * icon-only action to reach or to disable. The companion adds a DECORATIVE
+ * copy glyph inside that same button, which is what the redesign mockup
+ * shows; it is `aria-hidden`, has no handler of its own, and changes nothing
+ * about the behaviour: click or `Enter` from any editable field still copies
+ * the bare two-decimal payload through the mounted realm's clipboard (§7.5).
  */
 function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: LotajeDerived): void {
   container.innerHTML = '';
@@ -1381,6 +1452,7 @@ function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: Lot
   lotsLabel.textContent = 'lotes';
   copyContent.append(lotsValue, lotsLabel);
   copyAction.append(copyContent);
+  if (companionHost) copyAction.append(buildIcon(doc, 'copy', 'lotaje-copy-glyph'));
   copyAction.addEventListener('click', () => onCopyActionClick(copyAction, feedback, payload));
   hero.append(copyAction);
   shell.append(hero, feedback);
@@ -1396,9 +1468,21 @@ function buildZoneAnswerBody(doc: Document, container: HTMLElement, derived: Lot
   }
 }
 
+/**
+ * The companion builds ONE block: the figure, its `lotes` label and the copy
+ * action, and nothing else. The page's target mark, «Tamaño de posición»
+ * title, explanatory hint and standing note are not merely hidden there —
+ * they are never created. At 320x340 each of them is a line of chrome
+ * competing with the only number the window exists to show, and a permanent
+ * note that cannot be dismissed is the kind of text a trader stops reading
+ * after the first session. Honest states (`invalidReason`, `minLotWarning`)
+ * are unaffected: they live in the body below and still REPLACE or ACCOMPANY
+ * the figure exactly as they do on the page.
+ */
 function buildZoneAnswer(
   doc: Document,
   derived: LotajeDerived,
+  companion: boolean,
 ): { root: HTMLElement; body: HTMLElement } {
   const root = doc.createElement('section');
   root.className = 'lotaje-zone lotaje-zone--answer';
@@ -1406,6 +1490,16 @@ function buildZoneAnswer(
 
   const result = doc.createElement('div');
   result.className = 'lotaje-result';
+
+  const body = doc.createElement('div');
+  body.className = 'lotaje-result-body';
+  buildZoneAnswerBody(doc, body, derived);
+
+  if (companion) {
+    result.append(body);
+    root.append(result);
+    return { root, body };
+  }
 
   const mark = doc.createElement('span');
   mark.className = 'lotaje-result-mark';
@@ -1420,10 +1514,6 @@ function buildZoneAnswer(
   hint.className = 'lotaje-result-hint';
   hint.textContent = RESULT_HINT;
   lede.append(title, hint);
-
-  const body = doc.createElement('div');
-  body.className = 'lotaje-result-body';
-  buildZoneAnswerBody(doc, body, derived);
 
   const note = doc.createElement('p');
   note.className = 'lotaje-result-note';
@@ -1455,7 +1545,6 @@ function render(): void {
   }
   refs.riskUsd.textContent = formatMoney(derived.requestedRiskUsd);
   refs.symbolBadge.hidden = !derived.isHeuristic;
-  syncAssetSheet(refs.assetValues, currentState.symbolText);
 
   // Zone 2 — rebuilt ONLY on an actual method change (a discrete click, never
   // an implicit side effect of typing a keystroke); otherwise synced in place
@@ -1536,7 +1625,8 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
     slText: typeof supplied.slText === 'string' ? supplied.slText : INITIAL_STATE.slText,
   };
   assetMenuOpen = false;
-  symbolDisclosureOpen = false;
+  riskSettingsOpen = false;
+  companionHost = isCompanionDocument(doc);
 
   const balance = parseDecimal(currentState.balanceText);
   const riskPct = parseDecimal(currentState.riskPctText);
@@ -1551,12 +1641,16 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
   root.className = 'lotaje-root';
 
   const derived = deriveLots(currentState);
-  const header = buildHeader(doc, isCompanionDocument(doc));
-  const zone1 = buildZoneContext(doc, currentState, derived);
+  // Built before the header and the context zone because BOTH of them are
+  // possible parents for these three cells, and exactly one of them takes
+  // ownership (see `RiskFields`).
+  const riskFields = buildRiskFields(doc, currentState, derived);
+  const header = buildHeader(doc, companionHost, riskFields);
+  const zone1 = buildZoneContext(doc, currentState, derived, companionHost ? null : riskFields);
   const zone2 = buildZoneQuestion(doc, currentState, derived);
-  const zone3 = buildZoneAnswer(doc, derived);
+  const zone3 = buildZoneAnswer(doc, derived, companionHost);
 
-  root.append(header, zone1.root, zone2.root, zone3.root);
+  root.append(header.root, zone1.root, zone2.root, zone3.root);
   container.append(root);
   currentRoot = root;
 
@@ -1567,12 +1661,11 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
     symbolValue: zone1.symbolValue,
     symbolMark: zone1.symbolMark,
     symbolBadge: zone1.symbolBadge,
-    specTrigger: zone1.specTrigger,
-    symbolDisclosure: zone1.symbolDisclosure,
-    assetValues: zone1.assetValues,
-    balanceInput: zone1.balanceInput,
-    riskPctInput: zone1.riskPctInput,
-    riskUsd: zone1.riskUsd,
+    balanceInput: riskFields.balanceInput,
+    riskPctInput: riskFields.riskPctInput,
+    riskUsd: riskFields.riskUsd,
+    riskSettingsTrigger: header.riskSettingsTrigger,
+    riskSettingsPanel: header.riskSettingsPanel,
     questionFieldsContainer: zone2.questionFieldsContainer,
     questionFields: zone2.questionFields,
     methodOptions: zone2.methodOptions,
@@ -1582,13 +1675,21 @@ export function mount(doc: Document, win: Window, ...rest: [LotajeState?]): void
   root.addEventListener('focusin', onRootFocusIn);
   root.addEventListener('keydown', onRootKeyDown);
 
-  const initialFocus = !restored
-    ? refs.balanceInput
+  // On the page, an unrestored context starts on the account field — it is
+  // the first thing to fill in. In the companion that field lives inside a
+  // COLLAPSED disclosure, where `focus()` is a no-op (a `hidden` subtree is
+  // not focusable); the honest first stop there is the asset trigger, which
+  // is also the one control an unrestored state is actually missing.
+  const initialInput: HTMLInputElement | null = !restored
+    ? companionHost
+      ? null
+      : refs.balanceInput
     : refs.questionFields.method === 'distance'
       ? refs.questionFields.input
       : refs.questionFields.sl;
+  const initialFocus: HTMLElement = initialInput ?? refs.assetTrigger;
   initialFocus.focus();
-  if (doc.activeElement === initialFocus) initialFocus.select();
+  if (initialInput && doc.activeElement === initialInput) initialInput.select();
 }
 
 /**
@@ -1603,8 +1704,9 @@ export function unmount(): void {
   mountGeneration += 1;
   copyAttemptGeneration += 1;
   clearCurrentCopyFeedback();
-  // Before `currentDoc` is dropped below — it is the realm the listener is on.
+  // Before `currentDoc` is dropped below — it is the realm the listeners are on.
   removeAssetDismissListener();
+  removeRiskSettingsDismissListener();
   currentRoot?.removeEventListener('focusin', onRootFocusIn);
   currentRoot?.removeEventListener('keydown', onRootKeyDown);
   if (currentRoot?.parentNode) {
@@ -1616,5 +1718,6 @@ export function unmount(): void {
   currentWindow = null;
   currentState = INITIAL_STATE;
   assetMenuOpen = false;
-  symbolDisclosureOpen = false;
+  riskSettingsOpen = false;
+  companionHost = false;
 }
