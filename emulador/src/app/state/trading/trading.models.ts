@@ -182,34 +182,9 @@ export function defaultTradingData(initialBalance = DEFAULT_BALANCE): TradingDat
 }
 
 /**
- * Contract size (units per 1.0 lot) by symbol: gold = 100 oz, silver =
- * 5000 oz, 6-letter forex pairs = 100,000. Anything else (US30, NAS100 and
- * other index CFDs) uses the broker-typical 1 $/point per lot — the old 100
- * fallback inflated index P/L and risk a hundredfold.
+ * `contractSizeFor` / `lotsForRisk` now live in the framework-free sizing
+ * kernel (RFC-020, D.20.1) so the emulator and the (future) Lotaje tool
+ * cannot diverge. Re-exported here so every existing consumer keeps
+ * importing from `state/trading/trading.models` unchanged.
  */
-export function contractSizeFor(symbol: string): number {
-  const s = symbol.toUpperCase();
-  if (s.startsWith('XAU')) return 100;
-  if (s.startsWith('XAG')) return 5000;
-  if (/^[A-Z]{6}$/.test(s)) return 100000;
-  return 1;
-}
-
-/**
- * Lot size so that hitting the SL loses `riskPct` % of the balance.
- * Rounded to the nearest 0.01 lot (broker step), minimum 0.01.
- */
-export function lotsForRisk(
-  balance: number,
-  riskPct: number,
-  entryPrice: number,
-  sl: number,
-  contractSize: number,
-): number {
-  const distance = Math.abs(entryPrice - sl);
-  if (!(distance > 0) || !(balance > 0) || !(riskPct > 0)) return 0;
-  const riskUsd = (balance * riskPct) / 100;
-  const lossPerLot = distance * contractSize;
-  const lots = riskUsd / lossPerLot;
-  return Math.max(0.01, Math.round(lots * 100) / 100);
-}
+export { contractSizeFor, lotsForRisk } from '../../domain/sizing/position-sizing';
