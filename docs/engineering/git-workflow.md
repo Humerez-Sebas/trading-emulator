@@ -16,6 +16,13 @@ Applies PHILOSOPHY §3.4 (reversibility & ceremony) and §5.3 (smallest green st
 - Stacked PRs are allowed when an RFC depends on an unmerged one (RFC-009 stacked on
   RFC-008): open the PR against the parent branch, **retarget to develop after the
   parent merges**.
+- **Back-merge `main → develop` after every product merge.** The moment a product/fix/
+  docs PR lands on `main`, merge `origin/main` into `develop` and re-run the gates
+  there. RFC work in flight is based on `develop`: skipping this leaves it building on a
+  base that is missing shipped product code, and defers the divergence to release day
+  (playbook step 3 below), where resolving it is far more expensive and lands on the one
+  PR that deploys to production. The back-merge is part of finishing the product PR, not
+  a separate chore.
 
 ## Branch hygiene rules
 
