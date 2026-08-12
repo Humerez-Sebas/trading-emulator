@@ -9,6 +9,7 @@ import {
   mergeByLww,
 } from './session-sync.mapping';
 import { singlePanelLayoutFor } from './session-migration';
+import { decideAdoption } from './owner-scope';
 import type {
   CloudFolderRow,
   CloudSessionRow,
@@ -411,9 +412,66 @@ export class SessionSyncService {
     await this.db.setLastPullAt(Date.now());
   }
 
+  /**
+   * Claims the quarantined (pre-split, un-owned) local records this owner can
+   * PROVE are theirs, using the RLS-scoped cloud answer already in hand.
+   *
+   * Called from inside the two pulls rather than as a step of its own so it
+   * costs no extra round trip and so `provenIds` is, by construction, the same
+   * complete id set `assertCompletePull` already vouched for — "absent from the
+   * cloud" must not be confusable with "not sent" when the conclusion is
+   * ownership.
+   *
+   * Ordering matters: adoption runs BEFORE the local set is read for the merge,
+   * so a claimed record participates in the very same LWW cycle (it carries its
+   * legacy `syncedAt`, and its cloud row provably exists, so `mergeByLww` keeps
+   * it instead of treating it as synced-absent).
+   *
+   * Copies, never moves: the quarantine keeps its byte-identical original, so a
+   * mis-claim is recoverable and O-7's "never auto-discard" holds without a
+   * separate backup step.
+   */
+  private async adoptQuarantinedFolders(provenIds: ReadonlySet<string>): Promise<void> {
+    const quarantined = await this.db.listQuarantinedFolders();
+    if (!quarantined.length) return;
+    const marker = await this.db.getAdoptionMarker();
+    const owned = new Set((await this.db.listFolders()).map((f) => f.id));
+    const claimed = decideAdoption(
+      quarantined,
+      (f) => f.id,
+      (f) => [f.id],
+      provenIds,
+      owned,
+      new Set(marker.folderKeys),
+    );
+    if (!claimed.length) return;
+    for (const folder of claimed) await this.db.putFolder(folder);
+    await this.db.recordAdopted({ folderKeys: claimed.map((f) => f.id) });
+  }
+
+  /** Sessions counterpart of {@link adoptQuarantinedFolders}; a meta is proven by any of its own session ids. */
+  private async adoptQuarantinedMetas(provenIds: ReadonlySet<string>): Promise<void> {
+    const quarantined = await this.db.listQuarantinedMetas();
+    if (!quarantined.length) return;
+    const marker = await this.db.getAdoptionMarker();
+    const owned = new Set((await this.db.listMetas()).map((m) => m.symbol));
+    const claimed = decideAdoption(
+      quarantined,
+      (m) => m.symbol,
+      (m) => [m.activeSessionId, ...(m.sessions ?? []).map((s) => s.id)],
+      provenIds,
+      owned,
+      new Set(marker.metaKeys),
+    );
+    if (!claimed.length) return;
+    for (const meta of claimed) await this.db.putMeta(meta);
+    await this.db.recordAdopted({ metaKeys: claimed.map((m) => m.symbol) });
+  }
+
   private async pullAndMergeFolders(): Promise<void> {
     try {
       const cloudRows = await this.listFolders();
+      await this.adoptQuarantinedFolders(new Set(cloudRows.map((c) => c.id)));
       const localFolders = await this.db.listFolders();
       const local = localFolders.map((f) => ({
         id: f.id,
@@ -475,6 +533,7 @@ export class SessionSyncService {
   private async pullAndMergeSessions(): Promise<void> {
     try {
       const cloudSummaries = await this.listSummaries();
+      await this.adoptQuarantinedMetas(new Set(cloudSummaries.map((s) => s.id)));
       const metas = await this.db.listMetas();
 
       interface LocalSessionItem {
