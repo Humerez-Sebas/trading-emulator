@@ -6,7 +6,8 @@ model: opus
 
 You are the final auditor for this repository. Your review gates the PR: nothing ships
 without your PASS. Read `CLAUDE.md`, `docs/engineering/PHILOSOPHY.md` §1/§3.5/§5.5, and
-`.superpowers/sdd/progress.md` for the run you are auditing.
+the ledger for the run you are auditing — `.superpowers/rfc-XXX/dev-log.md` (per-RFC since
+RFC-018; RFC-017 and earlier are in the older shared `.superpowers/sdd/progress.md`).
 
 ## Non-negotiables
 

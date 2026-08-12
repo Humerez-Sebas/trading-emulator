@@ -7,7 +7,8 @@ develop → main"). This deploys to production on merge — ceremony is high, ev
 mandatory at every step.
 
 1. Verify block completeness: every RFC of the block merged to develop, final audit PASS
-   recorded in `.superpowers/sdd/progress.md`.
+   recorded in that RFC's ledger (`.superpowers/rfc-XXX/dev-log.md`; RFC-017 and earlier
+   are in the older shared `.superpowers/sdd/progress.md`).
 2. `git fetch origin` and work from fresh `origin/develop`. Check whether main has
    commits develop lacks (`git log origin/develop..origin/main --oneline`) — if so,
    merge main into develop first and re-run gates.
