@@ -1,7 +1,10 @@
-import { Injectable } from '@angular/core';
+/* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
+import { inject, Injectable } from '@angular/core';
 import { MAX_EVIDENCE_SCENES } from '../domain/reflection/scene-spec';
 import { assertNoCandles } from './session-sync.mapping';
 import { Lesson } from '../state/lessons/lessons.models';
+import { NO_OWNER_MESSAGE, ownerLessonsDbName } from './owner-scope';
+import { type OwnerIdentity, OwnerIdentityService } from './owner-identity.service';
 
 /**
  * Dedicated IndexedDB database for Lessons (RFC-016, D15.B, J-1..J-5).
@@ -9,18 +12,36 @@ import { Lesson } from '../state/lessons/lessons.models';
  * requires bumping its version, which a STOP-protected spec pins. Survival
  * tier: highest (P-3/N-4) — this DB is never touched by session/workspace/
  * telemetry deletion paths (J-4 detector).
+ *
+ * Session Sovereignty V2: the database is now named PER OWNER. Lessons are the
+ * trader's journal — `whatHappened`/`repeat`/`avoid` free text — the most private
+ * thing this app stores, and before the split any other account signing in on the
+ * same browser profile rendered them (`LessonsEffects` hydrates from here on
+ * `ROOT_EFFECTS_INIT`). Same treatment as the playbook: the legacy un-suffixed
+ * `emulador-lessons` database is left on disk untouched (quarantine, O-7) and the
+ * cloud pull, whose merge has no delete branch, repopulates whatever was pushed.
  */
-const DB_NAME = 'emulador-lessons';
 const DB_VERSION = 1;
 const STORE = 'lessons';
 
 @Injectable({ providedIn: 'root' })
 export class LessonsDbService {
   private dbPromise: Promise<IDBDatabase> | null = null;
+  private dbOwnerId: string | null = null;
 
-  private open(): Promise<IDBDatabase> {
-    this.dbPromise ??= new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
+  constructor(private readonly owner: OwnerIdentity = inject(OwnerIdentityService)) {}
+
+  private async open(): Promise<IDBDatabase> {
+    const ownerId = await this.owner.ownerId();
+    if (!ownerId) throw new Error(NO_OWNER_MESSAGE);
+    if (this.dbPromise && this.dbOwnerId === ownerId) return this.dbPromise;
+    if (this.dbPromise) {
+      const stale = this.dbPromise;
+      void stale.then((db) => db.close()).catch(() => undefined);
+    }
+    this.dbOwnerId = ownerId;
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(ownerLessonsDbName(ownerId), DB_VERSION);
       req.onupgradeneeded = () => {
         if (!req.result.objectStoreNames.contains(STORE)) {
           req.result.createObjectStore(STORE, { keyPath: 'id' });
@@ -33,12 +54,14 @@ export class LessonsDbService {
         db.onversionchange = () => {
           db.close();
           this.dbPromise = null;
+          this.dbOwnerId = null;
         };
         resolve(db);
       };
       req.onerror = () => reject(req.error);
     });
-    return this.dbPromise;
+    this.dbPromise = opening;
+    return opening;
   }
 
   private tx(db: IDBDatabase, mode: IDBTransactionMode) {
