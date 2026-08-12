@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| **Estado** | Implementada (Tasks 1–6 completas; Tasks 7–8 supersedidas por TEDS — ver §6); Task 9 cierra invariantes y documentación; auditoría final de rama pendiente antes del PR a `develop` |
+| **Estado** | **CURRENT — Implementado (2026-07-26)**, mergeado a `develop` en PR #45 (`4e005d6`). Tasks 1–6 completas; Tasks 7–8 supersedidas por TEDS (ver §6); Task 9 cerró invariantes y documentación; auditoría final de rama PASS. |
 | **Fecha** | 2026-07-17 (diseño aprobado) · 2026-07-16 (formalización) |
 | **Bloque** | Mastery Block — Fase 4 |
 | **Documentos Rectores** | [TRADER_KNOWLEDGE_MODEL.md](../TRADER_KNOWLEDGE_MODEL.md), [DOMAIN_MODEL.md](../DOMAIN_MODEL.md), `DESIGN_SYSTEM.md` |

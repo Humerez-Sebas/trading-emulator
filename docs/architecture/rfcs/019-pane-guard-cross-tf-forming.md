@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| **Estado** | Diseño aprobado — implementación pendiente |
+| **Estado** | **CURRENT — Implementado (2026-07-29)**, mergeado a `develop` en PR #47 (`49781f8`). Bitácora del run: `.superpowers/rfc-019/dev-log.md` §8. |
 | **Fecha** | 2026-07-27 |
 | **Bloque** | Mastery Block — Fase 4 (continuación de RFC-018) |
 | **Documentos Rectores** | [DOMAIN_MODEL.md](../DOMAIN_MODEL.md), [EXPERIENCE_DOMAINS.md](../EXPERIENCE_DOMAINS.md), [TEDS_GRAMMAR.md](../TEDS_GRAMMAR.md), [PHILOSOPHY.md](../../engineering/PHILOSOPHY.md) |
