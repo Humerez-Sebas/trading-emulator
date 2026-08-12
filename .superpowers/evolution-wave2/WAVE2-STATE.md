@@ -134,11 +134,41 @@ canonical repo (never `.claude/worktrees/`).
 
 | Agent | Track | Worktree | Branch | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | DISPATCHED |
-| B | Multi-symbol feasibility | `trading-emulator-multisymbol` | `agent/multisymbol-feasibility` | DISPATCHED |
-| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | DISPATCHED |
-| D | Unit semantics & UI contract | `trading-emulator-unit-semantics` | `agent/unit-semantics` | DISPATCHED |
-| E | Clock authority | `trading-emulator-clock-authority` | `agent/clock-authority` | DISPATCHED |
+| A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | INTERRUPTED → RESUMED |
+| B | Multi-symbol feasibility | `trading-emulator-multisymbol` | `agent/multisymbol-feasibility` | INTERRUPTED → RESUMED |
+| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | INTERRUPTED → RESUMED |
+| D | Unit semantics & UI contract | `trading-emulator-unit-semantics` | `agent/unit-semantics` | INTERRUPTED → RESUMED |
+| E | Clock authority | `trading-emulator-clock-authority` | `agent/clock-authority` | INTERRUPTED → RESUMED |
+
+### Interruption event — all five agents killed simultaneously
+
+All five specialists terminated at once on a shared **session usage limit** (reset 15:10
+America/La_Paz), not on any fault in their own work. This is the exact failure mode the
+checkpoint protocol exists for, and it produced a clean natural experiment in whether the
+protocol was actually followed.
+
+State reconciled from git — the only authoritative source — at the moment of death:
+
+| Agent | Commits at base+ | Uncommitted at kill time | Verdict |
+| :--- | :--- | :--- | :--- |
+| A | `c338491` | 4 modified (+303/−85, incl. `workspace-db.service.ts` at 291 lines changed) + 3 untracked new services/effects | **worst exposure** — ~300 lines of implementation, unrecoverable if the worktree were lost |
+| B | `1c24bbc`, `105f672` | none — clean | **followed the protocol** |
+| C | `6db3c0f` | 2 modified engine files (`capability.ts` +24/−5, `chart-engine.ts` +12/−2) | engine surgery at risk |
+| D | `2a6d7c6` | 1 untracked spec | test would have been lost entirely |
+| E | `bf82ba2`, `e2c39ad` | 1 untracked spec | test would have been lost entirely |
+
+**Lesson worth keeping:** instructing an agent to checkpoint is not the same as it
+checkpointing. Four of five carried uncommitted work when killed, and the one that did not
+(B) is also the only research-only track — the agents doing the riskiest edits were the
+least protected. Every resume message therefore led with an explicit
+commit-this-exact-pathspec-first instruction naming the files at risk, before any
+continuation of the mission.
+
+Two placement defects were caught during reconciliation and sent back with the resumes: D
+and E both wrote their spec to `emulador/src/app/<name>.spec.ts` at the app root instead of
+beside the module under test, which is this repo's convention.
+
+Nothing was lost. No worktree was reset, and no evidence was discarded to tidy up.
 
 Agent A is the only track carrying a reachable-today data-loss defect. Agent B is
 research-only (no production multi-symbol runtime). Agents C/D/E may implement only what
