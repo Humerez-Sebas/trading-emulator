@@ -8,9 +8,9 @@ import {
   LogicalRange,
   UTCTimestamp,
 } from 'lightweight-charts';
-import { RenderModel } from './render-model';
+import { Candle, RenderModel } from './render-model';
 import { ChartEventBus } from './chart-event-bus';
-import { Capability } from './capability';
+import { Capability, MainSeriesCapability } from './capability';
 import { hexToRgba } from './color-utils';
 
 export interface ChartApplyHandle {
@@ -21,14 +21,6 @@ export interface ChartApplyHandle {
 }
 
 export class ChartEngine implements ChartApplyHandle {
-  // TODO: Eliminar esta exposición directa en RFC-004/RFC-005 una vez que DrawingsCapability y TradingCapability estén implementados.
-  public get chartApi(): IChartApi {
-    return this.chart;
-  }
-  public get seriesApi(): ISeriesApi<'Candlestick'> {
-    return this.mainSeries;
-  }
-
   private chart: IChartApi;
   private mainSeries: ISeriesApi<'Candlestick'>;
 

@@ -1,5 +1,5 @@
 // emulador/src/app/domain/chart/capability.ts
-import { IChartApi } from 'lightweight-charts';
+import { IChartApi, ISeriesApi } from 'lightweight-charts';
 import { ChartEventBus } from './chart-event-bus';
 import { RenderModel } from './render-model';
 
@@ -13,10 +13,9 @@ export interface Capability {
 
   /**
    * Se invoca una vez al registrar la capability. Recibe el chart y el bus de
-   * eventos para suscribirse / adjuntar primitivas.
-   * NOTA (RFC-004/005): es probable que `init` se extienda para recibir también
-   * la serie principal (`ISeriesApi<'Candlestick'>`) cuando Trading/Drawings la
-   * necesiten; hasta entonces los getters puente `seriesApi` cubren ese acceso.
+   * eventos para suscribirse / adjuntar primitivas. La serie principal NO viaja
+   * por aquí: llega por el constructor, que el propio engine invoca (ver
+   * `MainSeriesCapability` y `ChartEngine.registerCapability`).
    */
   init(chart: IChartApi, bus: ChartEventBus): void;
 
@@ -32,3 +31,18 @@ export interface Capability {
   /** Limpieza: desuscribir del bus, quitar primitivas, liberar recursos. */
   destroy(): void;
 }
+
+/**
+ * Clase de `Capability` que el engine puede construir por sí mismo: su único
+ * argumento de constructor es la serie principal.
+ *
+ * RFC-004/RFC-005 (cierre del puente de migración): antes, quien registraba una
+ * capability tenía que leer `engine.seriesApi` para poder construirla, y ese
+ * getter exponía la `ISeriesApi` completa a la capa Angular. Ahora el engine
+ * recibe la CLASE y la instancia con su propia serie, de modo que la serie nunca
+ * cruza el límite del dominio. Consecuencia buscada: no queda ninguna vía por la
+ * que `ChartComponent` obtenga un handle de `lightweight-charts`.
+ */
+export type MainSeriesCapability<T extends Capability = Capability> = new (
+  series: ISeriesApi<'Candlestick'>,
+) => T;
