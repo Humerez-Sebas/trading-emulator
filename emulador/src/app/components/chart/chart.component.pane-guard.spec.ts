@@ -167,8 +167,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
               : undefined,
       });
       component.engine = engine;
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
       component.panelDrawings = {
         items: [
           {
@@ -215,8 +213,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
               : undefined,
       });
       component.engine = engine;
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
       component.lineDrag = null;
 
       component.handleMouseDown({
@@ -248,8 +244,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
             : undefined,
     });
     component.engine = engine;
-    component.chart = {};
-    component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
     component.panelDrawings = {
       items: [
         {
@@ -292,8 +286,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
             : undefined,
       });
       component.engine = engine;
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
       component.container.nativeElement.style.cursor = 'pointer'; // pre-set to a non-default value
 
       component.handleHoverFeedback({
@@ -317,8 +309,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
             : undefined,
       });
       component.engine = engine;
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
 
       component.handleHoverFeedback({ clientX: 300, clientY: 250 } as unknown as MouseEvent);
 
@@ -329,8 +319,7 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
   describe('handleContextMenu: right-click on the price-axis strip', () => {
     it('opens no menu (not a chart gesture)', () => {
       const { component } = setup();
-      component.engine = stubEngine(700, 500);
-      component.series = { coordinateToPrice: () => 90 };
+      component.engine = stubEngine(700, 500, { priceForY: () => 90 });
 
       component.handleContextMenu({ clientX: 750, clientY: 250 } as unknown as MouseEvent);
 
@@ -339,8 +328,7 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
 
     it('regression: right-click inside the pane still opens the menu', () => {
       const { component } = setup();
-      component.engine = stubEngine(700, 500);
-      component.series = { coordinateToPrice: () => 90 };
+      component.engine = stubEngine(700, 500, { priceForY: () => 90 });
 
       component.handleContextMenu({ clientX: 300, clientY: 250 } as unknown as MouseEvent);
 

@@ -951,8 +951,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       }
     }
     // closed trade box under the cursor: offer hide/delete of the record
-    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
-    const box = tradingCap?.hitTestBox(x, y);
+    const box = this.tradingCap?.hitTestBox(x, y);
     this.menu.set({ x, y, options, boxId: box?.id ?? null });
   }
 
