@@ -104,7 +104,14 @@ function setup() {
 }
 
 /** A stub `engine` whose `paneRect()` reports a pane narrower/shorter than the
- * container — the axis strip is [paneWidth, Infinity) x, [paneHeight, Infinity) y. */
+ * container — the axis strip is [paneWidth, Infinity) x, [paneHeight, Infinity) y.
+ *
+ * RFC-004/RFC-005 (bridge removal): `priceForY` / `yForPrice` moved ONTO this stub. They used
+ * to be scaffolded per-test as `component.series = { coordinateToPrice, priceToCoordinate }`,
+ * because `ChartComponent` held the raw `ISeriesApi` from `engine.seriesApi`. It no longer
+ * holds any lightweight-charts handle, so the same two conversions are now engine queries.
+ * The returned values (100 / 250) are the ones every one of those per-test stubs used.
+ * No assertion in this file changed. */
 function stubEngine(
   paneWidth: number,
   paneHeight: number,
@@ -112,6 +119,8 @@ function stubEngine(
 ) {
   return {
     paneRect: () => ({ width: paneWidth, height: paneHeight }),
+    priceForY: () => 100,
+    yForPrice: () => 250,
     setInteractivity: vi.fn(),
     getCapability: (id: string) => {
       if (id === 'drawings') {
