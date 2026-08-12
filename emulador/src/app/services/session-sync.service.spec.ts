@@ -1145,3 +1145,188 @@ describe('reconstructWorkspaces — V1 cloud row migration (RFC-011 Task 4)', ()
     expect(ws!.active.linkGroups).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Session Sovereignty V2 — owner isolation, quarantine, evidence-based adoption
+//
+// EVERY test below is a NEGATIVE PROBE: point `ownerWorkspaceDbName` at the
+// legacy constant (i.e. undo the partition) and these go red. They reconstruct
+// the whole user-visible path — two accounts, one browser profile, a real
+// fake-indexeddb database per owner — rather than comparing one field to another.
+// ---------------------------------------------------------------------------
+
+/** A PostgREST summary row for `sessions`, as `listSummaries` selects it. */
+function summaryRow(id: string, symbol = 'EURUSD', clientUpdatedAtMs = 10) {
+  return {
+    id,
+    name: 'Plan',
+    symbol,
+    folder_id: null,
+    client_updated_at: new Date(clientUpdatedAtMs).toISOString(),
+    last_opened_at: null,
+    required_datasets: [],
+    trades_count: 0,
+    initial_balance: 10000,
+    balance: 10000,
+    cursor: 0,
+    schema_version: 3,
+    summary: null,
+  };
+}
+
+describe('Session Sovereignty V2 — owner isolation across an account switch', () => {
+  beforeEach(async () => {
+    await freshDb(OWNER);
+  });
+
+  it('A then B: B empty pull does not delete, mutate, expose or upload A data', async () => {
+    const dbA = dbFor(OWNER);
+    await dbA.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'A-active',
+        activeClientUpdatedAt: 1000,
+        activeSyncedAt: 1000,
+        trading: { ...defaultTradingData(), positions: [position()] },
+        sessions: [savedSession({ id: 'A-archived', clientUpdatedAt: 900, syncedAt: 900 })],
+      }),
+    );
+    await dbA.putFolder({
+      id: 'A-folder',
+      name: 'Plan A',
+      order: 0,
+      clientUpdatedAt: 5,
+      syncedAt: 5,
+    });
+
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    await makeService(client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    // not deleted, not mutated
+    const after = await dbA.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('A-active');
+    expect(after?.trading?.positions).toHaveLength(1);
+    expect((after?.sessions ?? []).map((s) => s.id)).toEqual(['A-archived']);
+    expect((await dbA.listFolders()).map((f) => f.id)).toEqual(['A-folder']);
+
+    // not exposed
+    expect(await dbFor(OTHER_OWNER).listMetas()).toEqual([]);
+    expect(await dbFor(OTHER_OWNER).listFolders()).toEqual([]);
+
+    // not uploaded under B owner_id — the flushDirty half of the defect
+    expect(recorder.upsertCalls).toEqual([]);
+  });
+
+  it('A then B then A: A local state is still available when A logs back in', async () => {
+    const dbA = dbFor(OWNER);
+    await dbA.putMeta(
+      workspaceMeta({
+        symbol: 'XAUUSD',
+        activeSessionId: undefined,
+        sessions: [savedSession({ id: 'A-archived', clientUpdatedAt: 9, syncedAt: 9 })],
+      }),
+    );
+
+    const b = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    await makeService(b.client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    // A signs back in; the cloud still holds A row, so nothing is synced-absent.
+    const a = makeFakeClient({
+      summaryRows: [summaryRow('A-archived', 'XAUUSD', 9)],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(a.client, dbFor(OWNER)).pullAndMerge();
+
+    const after = await dbFor(OWNER).getMeta('XAUUSD');
+    expect((after?.sessions ?? []).map((s) => s.id)).toEqual(['A-archived']);
+  });
+
+  it('B then A: a workspace B creates never appears in A partition', async () => {
+    await dbFor(OTHER_OWNER).putMeta(
+      workspaceMeta({ symbol: 'GBPUSD', activeSessionId: 'B-active' }),
+    );
+    expect(await dbFor(OWNER).getMeta('GBPUSD')).toBeUndefined();
+    expect(await dbFor(OWNER).listMetas()).toEqual([]);
+  });
+
+  it('a DIRTY local-only session is never uploaded under a second account owner_id', async () => {
+    // The second half of the defect: never-synced locals survived the delete
+    // branch and were then upserted with the SECOND account owner_id.
+    await dbFor(OWNER).putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'A-only',
+        activeClientUpdatedAt: 5000,
+        activeSyncedAt: undefined, // never pushed
+        trading: { ...defaultTradingData(), positions: [position()] },
+      }),
+    );
+
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    await makeService(client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    expect(recorder.upsertCalls.filter((c) => c.table === 'sessions')).toEqual([]);
+    // still local, still dirty, for its real owner
+    const mine = await dbFor(OWNER).getMeta('EURUSD');
+    expect(mine?.activeSyncedAt).toBeUndefined();
+    expect(mine?.trading?.positions).toHaveLength(1);
+  });
+
+  it('D1 is PRESERVED within one owner: a complete empty pull still removes a synced-absent session', async () => {
+    // The fix must be narrow. Same-owner delete propagation is intended
+    // behaviour (multi-device) and owner scoping must not silently disable it.
+    const db = dbFor(OWNER);
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: undefined,
+        sessions: [savedSession({ id: 'deleted-elsewhere', clientUpdatedAt: 10, syncedAt: 10 })],
+      }),
+    );
+
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(client, db).pullAndMerge();
+
+    const after = await db.getMeta('EURUSD');
+    expect((after?.sessions ?? []).map((s) => s.id)).toEqual([]);
+  });
+
+  it('fails closed with no resolvable owner: no un-owned fallback store is read or written', async () => {
+    const noOwner = new WorkspaceDbService(fixedOwnerIdentity(null));
+    await expect(noOwner.listMetas()).rejects.toThrow(/Sin sesion|Sin sesión/);
+    await expect(noOwner.putMeta(workspaceMeta({ symbol: 'EURUSD' }))).rejects.toThrow(
+      /Sin sesion|Sin sesión/,
+    );
+    await expect(noOwner.listFolders()).rejects.toThrow(/Sin sesion|Sin sesión/);
+    await expect(noOwner.getLastPullAt()).rejects.toThrow(/Sin sesion|Sin sesión/);
+    // Market data is NOT user-owned and stays available (domain separation).
+    await expect(noOwner.listDatasets()).resolves.toEqual([]);
+  });
+});
