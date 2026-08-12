@@ -1330,3 +1330,231 @@ describe('Session Sovereignty V2 — owner isolation across an account switch', 
     await expect(noOwner.listDatasets()).resolves.toEqual([]);
   });
 });
+
+describe('Session Sovereignty V2 — legacy quarantine and evidence-based adoption (O-7)', () => {
+  beforeEach(async () => {
+    await freshDb(OWNER);
+  });
+
+  it('quarantined legacy data is NOT adopted merely because someone logged in', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'legacy-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+      folders: [{ id: 'legacy-folder', name: 'Vieja', order: 0, clientUpdatedAt: 1, syncedAt: 1 }],
+    });
+
+    // A pull that proves nothing: this owner owns no cloud rows at all.
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+    await makeService(client, db).pullAndMerge();
+
+    expect(await db.listMetas()).toEqual([]);
+    expect(await db.listFolders()).toEqual([]);
+    // still recoverable, byte for byte
+    expect((await db.listQuarantinedMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+    expect((await db.listQuarantinedFolders()).map((f) => f.id)).toEqual(['legacy-folder']);
+  });
+
+  it('adopts a quarantined record ONLY when the cloud proves this owner owns one of its ids', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+        workspaceMeta({
+          symbol: 'GBPUSD', // somebody else's; nothing proves it
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'stranger-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+      folders: [
+        { id: 'proven-folder', name: 'Mia', order: 0, clientUpdatedAt: 1, syncedAt: 1 },
+        { id: 'stranger-folder', name: 'Ajena', order: 1, clientUpdatedAt: 1, syncedAt: 1 },
+      ],
+    });
+
+    const { client } = makeFakeClient({
+      summaryRows: [summaryRow('proven-session')],
+      summaryCount: 1,
+      folderRows: [
+        { id: 'proven-folder', name: 'Mia', sort: 0, client_updated_at: new Date(1).toISOString() },
+      ],
+      folderCount: 1,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+    await makeService(client, db).pullAndMerge();
+
+    // proven -> adopted
+    expect((await db.listMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+    expect((await db.listFolders()).map((f) => f.id)).toEqual(['proven-folder']);
+    // unproven -> still quarantined, never claimed, never destroyed
+    expect(await db.getMeta('GBPUSD')).toBeUndefined();
+    expect((await db.listQuarantinedMetas()).map((m) => m.symbol).sort()).toEqual([
+      'EURUSD',
+      'GBPUSD',
+    ]);
+    expect((await db.listQuarantinedFolders()).map((f) => f.id).sort()).toEqual([
+      'proven-folder',
+      'stranger-folder',
+    ]);
+    // the claim is recorded in the OWNER partition, not in the quarantine
+    const marker = await db.getAdoptionMarker();
+    expect(marker.metaKeys).toEqual(['EURUSD']);
+    expect(marker.folderKeys).toEqual(['proven-folder']);
+  });
+
+  it('adoption never overwrites this owner live record for the same key', async () => {
+    const db = dbFor(OWNER);
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'mine-live',
+        activeClientUpdatedAt: 999,
+        activeSyncedAt: 999,
+      }),
+    );
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+
+    const { client } = makeFakeClient({
+      summaryRows: [summaryRow('proven-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(client, db).pullAndMerge();
+
+    const after = await db.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('mine-live');
+    expect(after?.sessions ?? []).toEqual([]);
+  });
+
+  it('a second account cannot claim the legacy record the first account adopted', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'A-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+
+    const a = makeFakeClient({
+      summaryRows: [summaryRow('A-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(a.client, dbFor(OWNER)).pullAndMerge();
+    expect((await dbFor(OWNER).listMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+
+    // B logs in owning a DIFFERENT session id: nothing proves the legacy record
+    // is B's, so B must not get it even though it is still in quarantine.
+    const b = makeFakeClient({
+      summaryRows: [summaryRow('B-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    await makeService(b.client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    expect(await dbFor(OTHER_OWNER).getMeta('EURUSD')).toBeUndefined();
+    expect((await dbFor(OWNER).listMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+  });
+
+  it('an offline pull adopts nothing and loses nothing; adoption is retried on the next login', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+
+    // First login: the sessions select rejects (offline).
+    const offline = makeFakeClient({
+      summaryRows: [summaryRow('proven-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    let alreadyRejected = false;
+    offline.recorder.rejectSelectOnce = {
+      sessions: () => {
+        if (alreadyRejected) return false;
+        alreadyRejected = true;
+        return true;
+      },
+    };
+    const db = dbFor(OWNER);
+    await makeService(offline.client, db).pullAndMerge();
+
+    expect(await db.listMetas()).toEqual([]);
+    expect((await db.listQuarantinedMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+    expect((await db.getAdoptionMarker()).metaKeys).toEqual([]);
+
+    // Second login, online: the very same record is now adopted.
+    const online = makeFakeClient({
+      summaryRows: [summaryRow('proven-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(online.client, db).pullAndMerge();
+    expect((await db.listMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+  });
+
+  it('a truncated page can never prove ownership (adoption inherits the completeness guard)', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+    const { client } = makeFakeClient({
+      summaryRows: [summaryRow('proven-session')],
+      summaryCount: 99, // the server says it holds more rows than it sent
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+    await makeService(client, db).pullAndMerge();
+
+    // assertCompletePull throws before adoption runs: nothing claimed, nothing lost.
+    expect(await db.listMetas()).toEqual([]);
+    expect((await db.listQuarantinedMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+  });
+});
