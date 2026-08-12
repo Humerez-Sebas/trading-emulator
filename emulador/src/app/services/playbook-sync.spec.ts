@@ -10,6 +10,7 @@ import {
 } from './session-sync.service';
 import type { SupabaseService } from '../auth/supabase.service';
 import { WorkspaceDbService } from './workspace-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
 import type { PlaybookRule } from '../state/playbook/playbook.models';
 
 // ---------------------------------------------------------------------------
@@ -223,7 +224,7 @@ describe('mergePlaybookPull', () => {
 // ---------------------------------------------------------------------------
 
 function makeService(client: unknown): SessionSyncService {
-  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService());
+  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService(fixedOwnerIdentity('owner-test')));
 }
 
 describe('SessionSyncService.pushPlaybookRules', () => {

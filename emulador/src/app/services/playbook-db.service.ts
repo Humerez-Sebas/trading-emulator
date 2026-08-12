@@ -3,7 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { assertNoCandles } from './session-sync.mapping';
 import { PlaybookRule } from '../state/playbook/playbook.models';
 import { NO_OWNER_MESSAGE, ownerPlaybookDbName } from './owner-scope';
-import { type OwnerIdentity, OwnerIdentityService } from './owner-identity.service';
+import { OwnerIdentityService } from './owner-identity.service';
 
 /**
  * Dedicated IndexedDB database for the Playbook (RFC-015, D15.B).
@@ -29,7 +29,7 @@ export class PlaybookDbService {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private dbOwnerId: string | null = null;
 
-  constructor(private readonly owner: OwnerIdentity = inject(OwnerIdentityService)) {}
+  constructor(private readonly owner: OwnerIdentityService = inject(OwnerIdentityService)) {}
 
   private async open(): Promise<IDBDatabase> {
     const ownerId = await this.owner.ownerId();

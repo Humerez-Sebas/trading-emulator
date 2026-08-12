@@ -6,29 +6,81 @@ import { PAYLOAD_MAX_BYTES, reconstructWorkspaces } from './session-sync.mapping
 import { SESSION_PAYLOAD_VERSION_3 } from './session-sync.models';
 import type { CloudFolderRow, CloudSessionRow, SessionPayloadV1 } from './session-sync.models';
 import { WorkspaceDbService } from './workspace-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
+import { ownerWorkspaceDbName } from './owner-scope';
+import { DB_VERSION as MARKET_DB_VERSION } from './market-data-db';
 import { workspaceMeta, savedSession, position } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
+import type { SessionFolder } from '../state/trading/trading.models';
+import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import { singlePanelLayoutFor } from './session-migration';
 import type { LinkGroup } from '../state/link-groups/link-groups.models';
+
+/** Owner every test in this file runs as (Session Sovereignty V2: user stores are per-owner). */
+const OWNER = 'owner-test';
+/** A DIFFERENT account signing in on the same browser profile. */
+const OTHER_OWNER = 'owner-intruder';
 
 function makeService(client: unknown, db?: WorkspaceDbService): SessionSyncService {
   return new SessionSyncService(
     { client } as unknown as SupabaseService,
-    db ?? new WorkspaceDbService(),
+    db ?? new WorkspaceDbService(fixedOwnerIdentity(OWNER)),
   );
 }
 
 const SYNC_DB_NAME = 'emulador-workspaces';
 
-/** Delete the workspaces DB and return a fresh, real (fake-indexeddb-backed) WorkspaceDbService. */
-async function freshDb(): Promise<WorkspaceDbService> {
-  await new Promise<void>((res, rej) => {
-    const req = indexedDB.deleteDatabase(SYNC_DB_NAME);
+function deleteDb(name: string): Promise<void> {
+  return new Promise<void>((res, rej) => {
+    const req = indexedDB.deleteDatabase(name);
     req.onsuccess = () => res();
     req.onerror = () => rej(req.error);
     req.onblocked = () => res();
   });
-  return new WorkspaceDbService();
+}
+
+/**
+ * Delete every database the service now spans — the shared market-data one
+ * (which also carries the legacy quarantine) and BOTH owners' user databases —
+ * and return a fresh, real (fake-indexeddb-backed) `WorkspaceDbService`.
+ */
+async function freshDb(ownerId: string = OWNER): Promise<WorkspaceDbService> {
+  await deleteDb(SYNC_DB_NAME);
+  await deleteDb(ownerWorkspaceDbName(OWNER));
+  await deleteDb(ownerWorkspaceDbName(OTHER_OWNER));
+  return new WorkspaceDbService(fixedOwnerIdentity(ownerId));
+}
+
+/** A `WorkspaceDbService` for another owner on the same origin (no DB deletion). */
+function dbFor(ownerId: string): WorkspaceDbService {
+  return new WorkspaceDbService(fixedOwnerIdentity(ownerId));
+}
+
+/**
+ * Writes records straight into the legacy, un-owned `meta`/`folders` stores of
+ * the SHARED database — the quarantine — the way a pre-split install left them.
+ * Bypasses the service deliberately: `WorkspaceDbService` exposes no write path
+ * into the quarantine, which is the whole point of the design.
+ */
+async function seedQuarantine(opts: {
+  metas?: WorkspaceMeta[];
+  folders?: SessionFolder[];
+}): Promise<void> {
+  // Open through the service first so the shared schema exists at DB_VERSION.
+  await dbFor(OWNER).listDatasets();
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(SYNC_DB_NAME, MARKET_DB_VERSION);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['meta', 'folders'], 'readwrite');
+    for (const m of opts.metas ?? []) tx.objectStore('meta').put(m);
+    for (const f of opts.folders ?? []) tx.objectStore('folders').put(f);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
 }
 
 // ---------------------------------------------------------------------------
@@ -915,18 +967,21 @@ describe('SessionSyncService — truncated cloud pull must not delete local data
     expect((updated?.sessions ?? []).some((s) => s.id === 'sess-gone')).toBe(false);
   });
 
-  it('RESIDUAL HAZARD (unfixed, documented): a complete pull for a DIFFERENT owner still wipes local data', async () => {
-    // IndexedDB is origin-scoped, not user-scoped (`WorkspaceDbService` opens a
-    // constant DB_NAME and logout never clears it). A second account signing in
-    // on the same browser profile gets a COMPLETE, correct, empty pull — count
-    // 0, rows 0 — so the completeness guard cannot help, and every session the
-    // first account had synced is deleted locally. Fixing this needs local data
-    // bound to an owner id, which is a protocol decision (RFC), not a hotfix.
-    // This spec exists so the behaviour is pinned rather than assumed fixed.
+  it('FIXED (was RESIDUAL HAZARD): a complete empty pull for a DIFFERENT owner cannot reach the first owner’s data', async () => {
+    // Session Sovereignty V2 inverts this spec. It previously PINNED the hazard
+    // as known-unfixed: IndexedDB was origin-scoped while RLS is owner-scoped, so
+    // a second account signing in on the same browser profile received a
+    // COMPLETE, correct, EMPTY pull (rows 0, count 0 — the completeness guard
+    // cannot help, the answer really is complete) and every session the first
+    // account had synced was deleted locally.
+    //
+    // The user-owned stores now live in a per-owner database, so the second
+    // account's pull reads and writes its OWN partition and the first account's
+    // records are unreachable — not merely un-deleted.
     const meta = workspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: undefined,
-      sessions: [savedSession({ id: 'other-users-session', clientUpdatedAt: 1000, syncedAt: 1000 })],
+      sessions: [savedSession({ id: 'first-owners-session', clientUpdatedAt: 1000, syncedAt: 1000 })],
     });
     await db.putMeta(meta);
 
@@ -935,13 +990,16 @@ describe('SessionSyncService — truncated cloud pull must not delete local data
       summaryCount: 0,
       folderRows: [],
       folderCount: 0,
-      userId: 'a-different-user',
+      userId: OTHER_OWNER,
     });
 
-    await makeService(client, db).pullAndMerge();
+    // The intruder's own service instance — same origin, same fake client.
+    await makeService(client, dbFor(OTHER_OWNER)).pullAndMerge();
 
-    const updated = await db.getMeta('EURUSD');
-    expect((updated?.sessions ?? []).some((s) => s.id === 'other-users-session')).toBe(false);
+    const survived = await db.getMeta('EURUSD');
+    expect((survived?.sessions ?? []).some((s) => s.id === 'first-owners-session')).toBe(true);
+    // …and the intruder sees nothing of it.
+    expect(await dbFor(OTHER_OWNER).getMeta('EURUSD')).toBeUndefined();
   });
 });
 

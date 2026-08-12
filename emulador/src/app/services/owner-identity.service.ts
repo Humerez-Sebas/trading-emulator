@@ -56,7 +56,17 @@ export class OwnerIdentityService implements OwnerIdentity {
   }
 }
 
-/** Fixed-identity `OwnerIdentity` for tests and for composition roots that already know the owner. */
-export function fixedOwnerIdentity(ownerId: string | null): OwnerIdentity {
-  return { ownerId: () => Promise.resolve(ownerId) };
+/**
+ * Fixed-identity stand-in for tests (and for any composition root that already
+ * knows the owner).
+ *
+ * Returns the CONCRETE class type because Angular's DI compiler refuses an
+ * interface as an injection token (NG2003), so every consumer must declare
+ * `OwnerIdentityService` as its constructor-parameter type even though it only
+ * ever uses the `OwnerIdentity` surface. Same shape-cast idiom the repo already
+ * uses for `{ client } as unknown as SupabaseService` in the session-sync specs.
+ */
+export function fixedOwnerIdentity(ownerId: string | null): OwnerIdentityService {
+  const fake: OwnerIdentity = { ownerId: () => Promise.resolve(ownerId) };
+  return fake as OwnerIdentityService;
 }

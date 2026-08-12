@@ -1,6 +1,8 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { WorkspaceDbService } from './workspace-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
+import { ownerWorkspaceDbName } from './owner-scope';
 import { series, workspaceMeta } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
 import { singlePanelLayoutFor } from './session-migration';
@@ -9,15 +11,27 @@ import type { LinkGroup } from '../state/link-groups/link-groups.models';
 
 const DB_NAME = 'emulador-workspaces';
 
-/** Delete the DB and return a fresh service instance. */
-async function freshDb(): Promise<WorkspaceDbService> {
-  await new Promise<void>((res, rej) => {
-    const req = indexedDB.deleteDatabase(DB_NAME);
+/** Owner every test in this file runs as (Session Sovereignty V2: user stores are per-owner). */
+const OWNER = 'owner-test';
+
+function deleteDb(name: string): Promise<void> {
+  return new Promise<void>((res, rej) => {
+    const req = indexedDB.deleteDatabase(name);
     req.onsuccess = () => res();
     req.onerror = () => rej(req.error);
     req.onblocked = () => res(); // resolve even if blocked in test env
   });
-  return new WorkspaceDbService();
+}
+
+/**
+ * Delete BOTH databases the service now spans and return a fresh instance: the
+ * shared market-data one (`candles`/`datasets`/`series`, plus the legacy
+ * quarantine) and this owner's user database (`meta`/`folders`/`sync`).
+ */
+async function freshDb(): Promise<WorkspaceDbService> {
+  await deleteDb(DB_NAME);
+  await deleteDb(ownerWorkspaceDbName(OWNER));
+  return new WorkspaceDbService(fixedOwnerIdentity(OWNER));
 }
 
 let svc: WorkspaceDbService;
@@ -199,7 +213,17 @@ describe('WorkspaceDbService — session folders (v3)', () => {
 });
 
 describe('WorkspaceDbService — v1 → v3 migration', () => {
-  it('migrates a legacy v1 workspaces store into meta + series on v2 open', async () => {
+  // CHANGED BY Session Sovereignty V2 (the one pre-existing assertion this RFC
+  // had to rewrite, see SESSION_SOVEREIGNTY_RFC.md §"Specs this RFC changes").
+  // The v1→v3 `onupgradeneeded` migration still runs and still lands the legacy
+  // workspace in the SHARED database's `meta`/`series` stores — but `meta` there
+  // is now the QUARANTINE, not live state, because a v1 record predates user
+  // identity entirely and nothing can prove whose it is. So the migrated record
+  // must be readable as quarantine and must NOT appear as the current owner's
+  // workspace: adopting it merely because someone logged in is exactly what
+  // owner policy O-7 forbids. The series half is Market-Data domain and stays
+  // directly readable.
+  it('migrates a legacy v1 workspaces store into the quarantine + shared series', async () => {
     // 1. Pre-seed a v1 database with a whole-workspace record in a 'workspaces' store
     const legacyWorkspace = {
       symbol: 'GBPUSD',
@@ -231,22 +255,22 @@ describe('WorkspaceDbService — v1 → v3 migration', () => {
       openReq.onerror = () => reject(openReq.error);
     });
 
-    // 2. Instantiate the v2 service — it opens v2 and triggers onupgradeneeded
-    const svc2 = new WorkspaceDbService();
+    // 2. Instantiate the v2+ service — it opens v6 and triggers onupgradeneeded
+    const svc2 = new WorkspaceDbService(fixedOwnerIdentity(OWNER));
 
-    // 3. The migration should have populated meta and series
-    const ws = await svc2.getWorkspace('GBPUSD');
-    expect(ws).toBeDefined();
-    expect(ws!.symbol).toBe('GBPUSD');
-    expect(ws!.activeTf).toBe('H1');
-    expect(ws!.currentTime).toBe(7200);
-    expect(ws!.series['H1']).toHaveLength(3);
+    // 3. The migration populated the quarantine (shared `meta`) and the series
+    const quarantined = await svc2.listQuarantinedMetas();
+    const legacy = quarantined.find((m) => m.symbol === 'GBPUSD');
+    expect(legacy).toBeDefined();
+    expect(legacy!.activeTf).toBe('H1');
+    expect(legacy!.currentTime).toBe(7200);
+    expect(legacy!.files).toEqual({ H1: 'gbpusd_h1.csv' });
 
-    const meta = await svc2.getMeta('GBPUSD');
-    expect(meta).toBeDefined();
-    expect(meta!.files).toEqual({ H1: 'gbpusd_h1.csv' });
+    // 4. …and it is NOT the current owner's workspace (O-7: no auto-adoption)
+    expect(await svc2.getMeta('GBPUSD')).toBeUndefined();
+    expect(await svc2.getWorkspace('GBPUSD')).toBeUndefined();
 
-    // 'workspaces' store should be gone (v2 only has 'meta' and 'series')
+    // 'workspaces' store should be gone (its rows are now in meta + series)
     const info = await svc2.getSeriesInfo('GBPUSD', 'H1');
     expect(info!.count).toBe(3);
   });
@@ -260,8 +284,10 @@ const DB_NAME_V5 = 'emulador-workspaces';
 
 /** Opens the raw IndexedDB after the service has warmed it up at the current DB_VERSION. */
 async function rawDb(svcInstance: WorkspaceDbService): Promise<IDBDatabase> {
-  // Trigger a no-op operation so the service opens (and upgrades) the DB first
-  await svcInstance.listMetas();
+  // Trigger a no-op operation so the service opens (and upgrades) the SHARED
+  // database first. Must be a MARKET-DATA read: Session Sovereignty V2 moved
+  // listMetas onto the per-owner database, which would open the wrong one.
+  await svcInstance.listDatasets();
   return new Promise<IDBDatabase>((resolve, reject) => {
     // Open at the same version the service uses so fake-indexeddb does not
     // try to upgrade or block on an in-progress transaction.
@@ -384,12 +410,17 @@ describe('WorkspaceDbService — v4→v5 upgrade: data written at v4 is readable
       req.onerror = () => reject(req.error);
     });
 
-    // 2. Open at v5 via the service — should trigger upgrade and add datasets+candles
-    const svc5 = new WorkspaceDbService();
-    const ws = await svc5.getWorkspace('ETHUSD');
-    expect(ws).toBeDefined();
-    expect(ws!.symbol).toBe('ETHUSD');
-    expect(ws!.series['H1']).toHaveLength(3);
+    // 2. Open at v6 via the service — should trigger upgrade and add datasets+candles
+    const svc5 = new WorkspaceDbService(fixedOwnerIdentity(OWNER));
+    // CHANGED BY Session Sovereignty V2 (see the v1→v3 test above for the full
+    // rationale): the upgrade still preserves both halves, but a v4 `meta` row
+    // predates user identity, so it survives as QUARANTINE rather than as the
+    // current owner's workspace. The series half is Market-Data domain and is
+    // still read directly through the shared database.
+    const quarantined = await svc5.listQuarantinedMetas();
+    expect(quarantined.map((m) => m.symbol)).toContain('ETHUSD');
+    expect(await svc5.getSeriesInfo('ETHUSD', 'H1')).toEqual({ lastTime: 2 * 3600, count: 3 });
+    expect(await svc5.getMeta('ETHUSD')).toBeUndefined();
   });
 });
 
@@ -415,7 +446,7 @@ function datasetRecord(p: Partial<DatasetRecord> = {}): DatasetRecord {
 
 /** Adds candle rows directly to the candles store (autoIncrement id). */
 async function seedCandles(records: Omit<CandleRecord, 'id'>[]): Promise<void> {
-  await svc.listMetas(); // ensure schema is open at the current DB_VERSION
+  await svc.listDatasets(); // ensure the SHARED schema is open at DB_VERSION
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onsuccess = () => resolve(req.result);

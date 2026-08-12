@@ -9,6 +9,8 @@ import { LessonsEffects } from './lessons.effects';
 import { LessonsActions } from './lessons.actions';
 import { Lesson } from './lessons.models';
 import { LessonsDbService } from '../../services/lessons-db.service';
+import { fixedOwnerIdentity, OwnerIdentityService } from '../../services/owner-identity.service';
+import { ownerLessonsDbName } from '../../services/owner-scope';
 import { selectLessons } from './lessons.selectors';
 
 function lesson(id: string, over: Partial<Lesson> = {}): Lesson {
@@ -40,6 +42,9 @@ describe('LessonsEffects', () => {
         provideMockActions(() => actions$),
         provideMockStore(),
         LessonsDbService,
+        // Session Sovereignty V2: LessonsDbService is per-owner, so the real
+        // identity (which reads a Supabase session) is replaced by a fixed one.
+        { provide: OwnerIdentityService, useValue: fixedOwnerIdentity('owner-test') },
       ],
     }).compileComponents();
 
@@ -70,7 +75,7 @@ describe('LessonsEffects', () => {
   });
 
   it('hydrate$ DB failure → hydrated([]) (stream alive)', async () => {
-    indexedDB.deleteDatabase('emulador-lessons');
+    indexedDB.deleteDatabase(ownerLessonsDbName('owner-test'));
     const p = firstValueFrom(effects.hydrate$);
     actions$.next(LessonsActions.hydrate());
     const result = await p;

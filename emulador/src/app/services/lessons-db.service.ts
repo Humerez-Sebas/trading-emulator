@@ -4,7 +4,7 @@ import { MAX_EVIDENCE_SCENES } from '../domain/reflection/scene-spec';
 import { assertNoCandles } from './session-sync.mapping';
 import { Lesson } from '../state/lessons/lessons.models';
 import { NO_OWNER_MESSAGE, ownerLessonsDbName } from './owner-scope';
-import { type OwnerIdentity, OwnerIdentityService } from './owner-identity.service';
+import { OwnerIdentityService } from './owner-identity.service';
 
 /**
  * Dedicated IndexedDB database for Lessons (RFC-016, D15.B, J-1..J-5).
@@ -29,7 +29,7 @@ export class LessonsDbService {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private dbOwnerId: string | null = null;
 
-  constructor(private readonly owner: OwnerIdentity = inject(OwnerIdentityService)) {}
+  constructor(private readonly owner: OwnerIdentityService = inject(OwnerIdentityService)) {}
 
   private async open(): Promise<IDBDatabase> {
     const ownerId = await this.owner.ownerId();

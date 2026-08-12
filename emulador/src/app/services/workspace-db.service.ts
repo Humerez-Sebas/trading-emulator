@@ -10,7 +10,7 @@ import {
   ownerWorkspaceDbName,
   USER_DB_VERSION,
 } from './owner-scope';
-import { type OwnerIdentity, OwnerIdentityService } from './owner-identity.service';
+import { OwnerIdentityService } from './owner-identity.service';
 import {
   ALL_PARTITION,
   CANDLES_BY_SYMBOL_TF_TIME,
@@ -74,7 +74,7 @@ export class WorkspaceDbService {
   private userDbPromise: Promise<IDBDatabase> | null = null;
   private userDbOwnerId: string | null = null;
 
-  constructor(private readonly owner: OwnerIdentity = inject(OwnerIdentityService)) {}
+  constructor(private readonly owner: OwnerIdentityService = inject(OwnerIdentityService)) {}
 
   /**
    * Opens (and caches) the CURRENT owner's workspace database.

@@ -10,6 +10,7 @@ import {
 } from './session-sync.service';
 import type { SupabaseService } from '../auth/supabase.service';
 import { WorkspaceDbService } from './workspace-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
 import type { Lesson } from '../state/lessons/lessons.models';
 import type { SceneSpec } from '../domain/reflection/scene-spec';
 
@@ -282,7 +283,7 @@ describe('mergeLessonsPull', () => {
 // ---------------------------------------------------------------------------
 
 function makeService(client: unknown): SessionSyncService {
-  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService());
+  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService(fixedOwnerIdentity('owner-test')));
 }
 
 describe('SessionSyncService.pushLessons', () => {
