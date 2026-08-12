@@ -40,10 +40,16 @@ async function freshDb(): Promise<WorkspaceDbService> {
 interface FakeResult {
   data: unknown;
   error: { message: string } | null;
+  /**
+   * Mirrors PostgREST's `count` (populated only when the caller passes
+   * `{ count: 'exact' }`). `undefined` models a client that never asked.
+   */
+  count?: number | null;
 }
 
 class FakeQueryBuilder implements PromiseLike<FakeResult> {
   selectCols: string | undefined;
+  selectOpts: { count?: string } | undefined;
   eqCol: string | undefined;
   eqVal: unknown;
   upsertRow: unknown;
@@ -55,8 +61,9 @@ class FakeQueryBuilder implements PromiseLike<FakeResult> {
     private readonly recorder: Recorder,
   ) {}
 
-  select(cols: string): this {
+  select(cols: string, opts?: { count?: string }): this {
     this.selectCols = cols;
+    this.selectOpts = opts;
     return this;
   }
 
@@ -126,14 +133,32 @@ function makeFakeClient(opts: {
   payload?: unknown;
   folderRows?: unknown[];
   userId?: string | null;
+  /**
+   * Server-side EXACT row totals, as PostgREST would report them under
+   * `Prefer: count=exact`. Set one HIGHER than the corresponding `*Rows`
+   * length to model a response the server truncated at `db-max-rows`.
+   * Omitted ⇒ the totals equal what was returned (a complete answer).
+   */
+  summaryCount?: number;
+  folderCount?: number;
 }) {
+  /** PostgREST only populates `count` when the caller asked for it. */
+  const countFor = (b: FakeQueryBuilder, total: number | undefined, rows: unknown[]) =>
+    b.selectOpts?.count === 'exact' ? (total ?? rows.length) : undefined;
+
   const recorder: Recorder = {
     upsertCalls: [],
     deleteCalls: [],
     callOrder: [],
-    resolveSelect: (table) => {
-      if (table === 'sessions') return { data: opts.summaryRows ?? [], error: null };
-      if (table === 'folders') return { data: opts.folderRows ?? [], error: null };
+    resolveSelect: (table, b) => {
+      if (table === 'sessions') {
+        const rows = opts.summaryRows ?? [];
+        return { data: rows, error: null, count: countFor(b, opts.summaryCount, rows) };
+      }
+      if (table === 'folders') {
+        const rows = opts.folderRows ?? [];
+        return { data: rows, error: null, count: countFor(b, opts.folderCount, rows) };
+      }
       return { data: [], error: null };
     },
     resolveSingle: () => ({ data: { payload: opts.payload }, error: null }),
@@ -722,6 +747,201 @@ describe('SessionSyncService.pullAndMerge', () => {
         (c) => c.table === 'sessions' && (c.row as Record<string, unknown>)['id'] === 'A',
       ),
     ).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TD-E5 red team: absence is DESTRUCTIVE (mergeByLww D1), so a pull that is
+// merely INCOMPLETE — a page PostgREST silently capped at `db-max-rows`, HTTP
+// 200, no error — would delete local entities that still exist in the cloud.
+// `assertCompletePull` compares the returned row count against the server's own
+// exact count and fails closed into the caller's existing offline catch.
+//
+// These specs pin the hazard, not just the fix: each one FAILS on the
+// pre-guard code (the omitted rows get deleted).
+// ---------------------------------------------------------------------------
+
+function summaryRow(id: string, clientUpdatedAt = '2024-01-01T00:00:00.000Z') {
+  return {
+    id,
+    name: id,
+    symbol: 'EURUSD',
+    folder_id: null,
+    client_updated_at: clientUpdatedAt,
+    last_opened_at: null,
+    required_datasets: [],
+    trades_count: 0,
+    initial_balance: 10000,
+    balance: 10000,
+    cursor: 1700050000,
+    schema_version: 3,
+    summary: null,
+  };
+}
+
+describe('SessionSyncService — truncated cloud pull must not delete local data (TD-E5)', () => {
+  let db: WorkspaceDbService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('listSummaries throws when the server reports more rows than it returned', async () => {
+    const { client } = makeFakeClient({
+      summaryRows: [summaryRow('a'), summaryRow('b')],
+      summaryCount: 3, // server holds 3; the page carried 2
+    });
+
+    await expect(makeService(client).listSummaries()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('listFolders throws when the server reports more rows than it returned', async () => {
+    const { client } = makeFakeClient({
+      folderRows: [{ id: 'f1', name: 'A', sort: 0, client_updated_at: '2024-01-01T00:00:00.000Z' }],
+      folderCount: 2,
+    });
+
+    await expect(makeService(client).listFolders()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('a synced local session OMITTED from a truncated page survives the pull', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [
+        savedSession({ id: 'sess-returned', clientUpdatedAt: 1000, syncedAt: 1000 }),
+        savedSession({ id: 'sess-omitted', clientUpdatedAt: 1000, syncedAt: 1000 }),
+      ],
+    });
+    await db.putMeta(meta);
+
+    // The cloud still holds BOTH rows (count: 2) but the page carried only one.
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [summaryRow('sess-returned')],
+      summaryCount: 2,
+      folderRows: [],
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    const ids = (updated?.sessions ?? []).map((s) => s.id);
+    expect(ids).toContain('sess-omitted');
+    expect(ids).toContain('sess-returned');
+    // Fail-closed means the whole merge is skipped — never a cloud delete.
+    expect(recorder.deleteCalls.filter((c) => c.table === 'sessions')).toEqual([]);
+  });
+
+  it('a DIRTY (unpushed) local session omitted from a truncated page is preserved AND pushed', async () => {
+    // The unrecoverable case: syncedAt=1000 is what the cloud holds, but the
+    // user has edited since (clientUpdatedAt=2000) and that delta exists ONLY
+    // locally. `pullAndMerge` deletes at step 3 and flushes at step 5, so
+    // without the guard the delta is destroyed before the flush could save it.
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [savedSession({ id: 'sess-dirty', clientUpdatedAt: 2000, syncedAt: 1000 })],
+    });
+    await db.putMeta(meta);
+
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 7, // server has rows it did not return
+      folderRows: [],
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    const kept = (updated?.sessions ?? []).find((s) => s.id === 'sess-dirty');
+    expect(kept).toBeDefined();
+    // ...and the unpushed delta is now safely in the cloud rather than lost.
+    expect(
+      recorder.upsertCalls.find(
+        (c) => c.table === 'sessions' && (c.row as Record<string, unknown>)['id'] === 'sess-dirty',
+      ),
+    ).toBeDefined();
+  });
+
+  it('a synced-absent ACTIVE session keeps its trading data when the page was truncated', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'A',
+      activeClientUpdatedAt: 1000,
+      activeSyncedAt: 1000,
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta(meta);
+
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 4, folderRows: [] });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.activeSessionId).toBe('A');
+    expect(updated?.trading?.positions ?? []).toHaveLength(1);
+  });
+
+  it('a synced local folder omitted from a truncated page is not deleted', async () => {
+    await db.putFolder({ id: 'f-omitted', name: 'Estrategias', order: 0, clientUpdatedAt: 1000, syncedAt: 1000 });
+
+    const { client } = makeFakeClient({ summaryRows: [], folderRows: [], folderCount: 3 });
+
+    await makeService(client, db).pullAndMerge();
+
+    expect((await db.listFolders()).map((f) => f.id)).toContain('f-omitted');
+  });
+
+  it('D1 is PRESERVED: a genuinely complete pull still removes a synced-absent local session', async () => {
+    // The guard must be narrow. An empty page whose exact count is also 0 is a
+    // complete answer — the cloud really has nothing — so D1 must still fire.
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [savedSession({ id: 'sess-gone', clientUpdatedAt: 1000, syncedAt: 1000 })],
+    });
+    await db.putMeta(meta);
+
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0, // complete: the server confirms zero rows
+      folderRows: [],
+      folderCount: 0,
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    expect((updated?.sessions ?? []).some((s) => s.id === 'sess-gone')).toBe(false);
+  });
+
+  it('RESIDUAL HAZARD (unfixed, documented): a complete pull for a DIFFERENT owner still wipes local data', async () => {
+    // IndexedDB is origin-scoped, not user-scoped (`WorkspaceDbService` opens a
+    // constant DB_NAME and logout never clears it). A second account signing in
+    // on the same browser profile gets a COMPLETE, correct, empty pull — count
+    // 0, rows 0 — so the completeness guard cannot help, and every session the
+    // first account had synced is deleted locally. Fixing this needs local data
+    // bound to an owner id, which is a protocol decision (RFC), not a hotfix.
+    // This spec exists so the behaviour is pinned rather than assumed fixed.
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [savedSession({ id: 'other-users-session', clientUpdatedAt: 1000, syncedAt: 1000 })],
+    });
+    await db.putMeta(meta);
+
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: 'a-different-user',
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    expect((updated?.sessions ?? []).some((s) => s.id === 'other-users-session')).toBe(false);
   });
 });
 

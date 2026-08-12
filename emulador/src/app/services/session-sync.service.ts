@@ -54,15 +54,23 @@ export class SessionSyncService {
     return id;
   }
 
-  /** Lightweight session list for the Sessions UI — selects every column except `payload`. */
+  /**
+   * Lightweight session list for the Sessions UI — selects every column except
+   * `payload`. Asks for the server's own exact count and refuses a truncated
+   * answer (`assertCompletePull`): `mergeByLww` reads absence as a remote
+   * deletion (D1), so a partial page would delete sessions that still exist in
+   * the cloud.
+   */
   async listSummaries(): Promise<SessionSummary[]> {
-    const { data, error } = await this.client
+    const { data, error, count } = await this.client
       .from('sessions')
       .select(
         'id,name,symbol,folder_id,client_updated_at,last_opened_at,required_datasets,trades_count,initial_balance,balance,cursor,schema_version,summary',
+        { count: 'exact' },
       );
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as Record<string, unknown>[];
+    assertCompletePull('sessions', rows.length, count);
     return rows.map((r) => {
       const summary = r['summary'] as { winRate?: number; sparkline?: number[] } | null | undefined;
       return {
@@ -141,13 +149,18 @@ export class SessionSyncService {
     if (error) throw new Error(error.message);
   }
 
-  /** Lists all folders for the current user (RLS-scoped server-side). */
+  /**
+   * Lists all folders for the current user (RLS-scoped server-side). Same
+   * completeness guard as `listSummaries` — folders are deleted on remote
+   * absence by the very same `mergeByLww` rule.
+   */
   async listFolders(): Promise<CloudFolderRow[]> {
-    const { data, error } = await this.client
+    const { data, error, count } = await this.client
       .from('folders')
-      .select('id,name,sort,client_updated_at');
+      .select('id,name,sort,client_updated_at', { count: 'exact' });
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as Record<string, unknown>[];
+    assertCompletePull('folders', rows.length, count);
     return rows.map((r) => ({
       id: r['id'] as string,
       name: r['name'] as string,
@@ -583,6 +596,37 @@ export class SessionSyncService {
 /** dirty ⇔ clientUpdatedAt > (syncedAt ?? 0). Absent clientUpdatedAt is treated as never-dirty (0 > 0 is false). */
 function isDirty(clientUpdatedAt: number | undefined, syncedAt: number | undefined): boolean {
   return (clientUpdatedAt ?? 0) > (syncedAt ?? 0);
+}
+
+/**
+ * Rejects a pull whose row set is smaller than the server's own exact count.
+ *
+ * WHY THIS EXISTS: `mergeByLww` gives absence a DESTRUCTIVE meaning — a local
+ * entity that was previously synced but is missing from the pull is treated as
+ * "deleted on another device" (D1) and removed locally. That inference is only
+ * sound if the response is the COMPLETE remote set. PostgREST silently caps a
+ * response at `db-max-rows` (a Supabase Dashboard "Max rows" setting, not a DB
+ * GUC — it is not readable from SQL), returning HTTP 200 with a short page and
+ * no error. Applying such a page would delete local sessions/folders that still
+ * exist in the cloud, destroying any unpushed local edits they carried — the
+ * pull runs BEFORE `flushDirty` in `pullAndMerge`, so those edits are gone
+ * before the flush that would have saved them.
+ *
+ * Fail closed: throwing routes into each pull's existing offline `catch`, which
+ * leaves local state untouched and retries on the next pull — the same proven
+ * path an offline/RLS failure already takes. A short page is a degraded answer,
+ * never a licence to delete.
+ *
+ * `count` is `null` when the caller did not request one (or the server declined
+ * to compute it); we then have no completeness evidence either way and keep the
+ * pre-existing behaviour rather than inventing a stricter one.
+ */
+function assertCompletePull(entity: string, received: number, count: number | null): void {
+  if (count != null && received < count) {
+    throw new Error(
+      `Respuesta incompleta del servidor (${entity}): ${received} de ${count} filas.`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
