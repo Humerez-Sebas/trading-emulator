@@ -86,8 +86,46 @@ stronger evidence for text values.
 
 | Field | Value |
 | :--- | :--- |
-| State | see the LANDING/VERCEL section of `WAVE2-SYNTHESIS.md` |
-| Forbidden project | `prj_KpNe7NDXP95iXljbwcZCh4Wcv0Wo` — never modified, never targeted |
+| State | **DEPLOYED AND REMOTELY VERIFIED** |
+| Project name | `trading-emulator-landing` |
+| Project ID | `prj_0Jnk79dou9l4zTu3xOESfjKFibzF` |
+| Team | `hum24` / `team_dVBTaqwZmidnC7KJf7h6BpLI` |
+| Preview URL | `https://trading-emulator-landing-37wpawyee-hum24.vercel.app` |
+| Preview deployment | `dpl_HmWMqvQv5vG58ubQFMBTGXbDSHJz`, `readyState: READY`, `target: null` (preview) |
+| Built from | commit `161e9f5`, ref `agent/landing-product-showcase` |
+| Local build | `node scripts/build.mjs` exit `0` — 6 files, 139.1 kB |
+| Forbidden project | `prj_KpNe7NDXP95iXljbwcZCh4Wcv0Wo` (`emulador`) — **never modified, never targeted, never linked** |
+
+Before deploying, `list_projects` confirmed `emulador` was the ONLY existing project, so a
+new one was required; after `vercel link`, `.vercel/project.json` was checked to prove the
+linked `projectId` is not the forbidden one.
+
+**Remote verification** (not a local build claim — the deployed HTML was fetched back):
+
+| Check | Remote result |
+| :--- | :--- |
+| Operativa `Lotaje` | `Lotaje</span><strong>0,13</strong>` |
+| `/calculadora` NAS100 distance | `Distancia al stop<span class="box">50` |
+| Floating XAUUSD distance | `Distancia<span class="box">7,5` |
+| Lot figures | `2,00 lotes` and `0,13 lotes` both present |
+| TradePanel `750 pts` intentionally kept | `100,00 $ · 750 pts` present |
+| Stale `5 000 pts` | **absent** (0 occurrences) |
+| Stale `0,66` | **absent** (0 occurrences) |
+
+### Two facts the owner should know
+
+1. **The first CLI deploy landed on `target: production` of the NEW project.** `vercel deploy`
+   defaulted there for a freshly linked project with no Git connection. It is the new
+   landing project's own production alias — the `emulador` project was never involved — but
+   because the mandate specified `preview`, a second deploy with an explicit
+   `--target=preview` was made, and that preview deployment is the URL recorded above.
+   Deployment `dpl_8DmNELPNkvPpGoViLAt5usDmjfc7` still exists on the new project's
+   production target; delete or ignore it as you prefer.
+2. **The preview URL is NOT publicly shareable as configured.** The project has
+   `ssoProtection.enabled = true` with `deploymentType: all_except_custom_domains`, so an
+   unauthenticated visitor is redirected to a Vercel login (confirmed in a real browser).
+   Content was verified through the authenticated fetch path instead. Turning that off is a
+   project-settings change and was deliberately NOT made — it is the owner's call.
 
 ## WAVE 2 SPECIALIST TRACKS
 
