@@ -6,37 +6,104 @@ Base SHA: `894d72be95f8ad4b8d63e629114e486e825b13d7`
 
 ## STATUS
 
-IMPLEMENTING. Engine + capability contract edited and committed (`a1c7f70`). Consumers
-(`chart.component.ts`, `frozen-scene-host.component.ts`) NOT yet rewired — tsc is
-currently RED by construction. Gates not yet run. `npm ci` completed OK in `emulador/`.
+**ALL 22 PRODUCTION BRIDGE CALL SITES ARE MIGRATED. The bridge getters are DELETED. The
+public surface HAS shrunk (see SURFACE DELTA).** Remaining work is spec-stub rewiring,
+new tests, the I1 detector and the two report artifacts.
+
+Gate state as of `663efbb`:
+- `npx tsc -p tsconfig.app.json --noEmit` → **exit 0** (fresh, run after the rewiring).
+- `npx tsc -p tsconfig.spec.json --noEmit` → **exit 0**. NOTE: this proves nothing about the
+  specs, because they cast the component to `any`; see the 6 runtime failures below. That is
+  the Wave-1 lesson repeating — green types over a broken boundary.
+- targeted `npx ng test --watch=false --include="src/app/components/chart/chart.component.*.spec.ts"`
+  → **exit 1: 6 failed / 24 passed (30)**, 2 failed files. Full suite NOT yet run.
+- `npm run lint` NOT yet run. `npm run build` NOT yet run.
+
+**I1 DETECTOR: NOT ENABLED. The backlog is not zero yet** — not because production code
+still reaches for a handle (it does not), but because I have not written the rule or proven
+zero violations. Do NOT claim I1 is on. See I1 PLAN below for the exact scoping that makes
+it suppression-free.
 
 ## COMPLETED
 
-- C1 recon + full call-site classification (see RECOUNT below).
-- Design decision fixed (see DESIGN below).
-- `capability.ts`: stale RFC-004/005 NOTE replaced; new `MainSeriesCapability<T>` type.
-- `chart-engine.ts`: `chartApi` / `seriesApi` getters + their TODO DELETED; imports updated.
-- Commit `6db3c0f` (recon), `a1c7f70` (engine surgery WIP).
+- C1 recon + full call-site classification (RECOUNT below): **22**, not 18.
+- Design fixed (DESIGN below), with three rejected alternatives recorded.
+- `capability.ts`: stale RFC-004/005 NOTE replaced; new `MainSeriesCapability<T>`.
+- `chart-engine.ts`: `chartApi` + `seriesApi` getters and their TODO **DELETED**;
+  `registerCapability` now takes the capability CLASS and injects the engine's own series;
+  the 6 new narrow methods added.
+- `trading-capability.ts`: `addPlacementLine` / `movePlacementLine` /
+  `clearPlacementLines`; `destroy()` clears preview lines; `hitTestTradeLine` returns a
+  handle-free `TradeLineHit` **copy** (not the stored object, so the `IPriceLine` really
+  cannot escape).
+- `chart.component.ts`: all 22 sites migrated; `private chart`, `private series` and
+  `placingLines` fields deleted; `IChartApi`/`ISeriesApi`/`IPriceLine`/`LineStyle` imports
+  gone; new private `tradingCap` getter.
+- `frozen-scene-host.component.ts`: 3 `engine.seriesApi` reads → `registerCapability(Class)`.
+- `chart.component.pane-guard.spec.ts`: `stubEngine` now serves `priceForY`/`yForPrice`.
+
+Commits: `6db3c0f` recon → `a1c7f70` engine getters deleted → `cc03bd4` progress →
+`2443e22` **the main refactor** → `663efbb` pane-guard stub (partial).
+
+## SURFACE DELTA (the C3 hard criterion — already satisfied structurally)
+
+Deleted: `chartApi` (returns `IChartApi`), `seriesApi` (returns `ISeriesApi`). Those two
+members made the ENTIRE lightweight-charts object graph reachable from Angular
+(`IChartApi` → `ITimeScaleApi`, `IPriceScaleApi`, `IPaneApi`…; `ISeriesApi` → `IPriceLine`,
+primitives, markers). Added: 6 members, every one primitive-in / primitive-or-void-out.
+**No added member returns a library object.** Exact method counts for the report still need
+to be taken from `node_modules/lightweight-charts/dist/typings.d.ts`.
 
 ## IN FLIGHT
 
-`chart-engine.ts` still needs:
-- `registerCapability(Ctor: MainSeriesCapability<T>): T` (constructs with its own
-  `mainSeries`, then the existing duplicate-id throw, then `cap.init(chart, bus)`).
-- the six new narrow query/command methods (see DESIGN).
-Then the consumers + specs (see NEXT STEPS).
+Deleting the now-dead per-test scaffold lines in `chart.component.pane-guard.spec.ts`
+(`component.chart = {}` and `component.series = {...}` at roughly lines 170, 218, 251, 295,
+321, 333, 343) — they are inert leftovers now that `stubEngine` serves the conversions.
 
 ## NOT STARTED
 
-- `TradingCapability` placement-preview API + `hitTestTradeLine` return narrowing.
-- `chart.component.ts` rewiring (22 call sites).
-- `frozen-scene-host.component.ts` (3 sites) + its spec's `FakeChartEngine`.
-- Spec stub rewiring: `chart.component.pane-guard.spec.ts`,
-  `chart.component.trade-guard.spec.ts`, `chart.component.time-shift.spec.ts`.
-- New boundary tests + negative probes.
-- I1 detector (local ESLint rule).
+- `chart.component.trade-guard.spec.ts` rewiring — **this is what the 6 failures need**
+  (4 of the 6 are in this file).
+- `chart.component.time-shift.spec.ts` — check whether it reaches `upsertCandle`; its file
+  currently PASSES, so touch it only if the full suite says otherwise.
+- `frozen-scene-host.component.spec.ts`: `FakeChartEngine.registerCapability` must
+  instantiate the class it is handed (`new Ctor(this.seriesApi)`) and keep pushing `cap.id`,
+  so its "registers exactly these three capabilities" assertions stay identical.
+- New boundary tests in `chart-engine.spec.ts` + a `trading-capability` placement spec.
+- Negative probes with exact numbers.
+- I1 detector.
 - `ENGINE_BOUNDARY_RESTORATION_REPORT.md`, `ENGINE_PUBLIC_CONTRACT.md`.
-- All four gates + `npm run build`.
+- Full four gates + `npm run build`.
+
+## THE 6 KNOWN FAILURES (all stub-shape, none behavioral)
+
+`chart.component.pane-guard.spec.ts` (2): "scenario 5 (counter-guard…) still selects",
+"regression: right-click inside the pane still opens the menu".
+`chart.component.trade-guard.spec.ts` (4): "regression: order options are present…",
+"handleContextMenu offers no order options (menu still opens)", "offers no order options",
+"handleContextMenu offers no order options".
+
+Cause: those tests scaffolded `component.series = { coordinateToPrice: () => 90 }` and left
+`component.engine` undefined. The guards they pass through now read `this.engine`, so the
+methods bail out early. Fix = give those tests an engine stub carrying `priceForY` (plus
+`destroy` for fixture teardown) instead of a series stub. Assertions must NOT change.
+
+IMPORTANT observation worth keeping: pane-guard "scenario 3" and "scenario 4" still PASS
+even though the guard now bails early — they assert that nothing happens, so an early
+return produces a false pass. The rewiring must restore the real code path or those two
+tests silently stop proving anything.
+
+## I1 PLAN (why it can be suppression-free)
+
+Local ESLint rule (same pattern as the existing `emulador/eslint-rules/require-reset-selectors.js`,
+plain AST, no new dependency): forbid importing the HANDLE types `IChartApi`, `ISeriesApi`,
+`IPriceLine`, `ISeriesMarkersPluginApi` from `lightweight-charts` in files outside
+`src/app/domain/chart/**`, scoped to NON-spec files. Branded payload types (`UTCTimestamp`,
+`LogicalRange`, `MouseEventParams`, `Time`) stay allowed — they are the RFC-002 bus
+contract. Specs are excluded at CONFIG level (the config already relaxes rules for specs
+with the same "fakes and stubs are legitimate" rationale), NOT by per-line suppression;
+`components/chart/time-coordinates.spec.ts` is the only spec that imports a handle type and
+it does so to fake a chart for a domain function.
 
 ## EVIDENCE
 
@@ -176,40 +243,62 @@ steps. Fails the C3 hard criterion.
 to import `TradingCapability` etc., violating kernel invariant 2 (closed core) and creating
 an import cycle.
 
-## NEXT STEPS
+## NEXT STEPS (exact, in order)
 
-1. Finish `chart-engine.ts`: `registerCapability(Ctor)` + the 6 methods.
-2. `TradingCapability`: placement-preview API, `destroy()` also clears preview lines,
-   narrow `hitTestTradeLine`.
-3. `chart.component.ts`: delete `private chart` / `private series` / `placingLines`;
-   swap all 22 sites; guards `!this.chart || !this.series` → `!this.engine`; drop
-   `IChartApi`/`ISeriesApi`/`IPriceLine`/`LineStyle` imports.
-4. `frozen-scene-host.component.ts:298-300` → `registerCapability(TradingCapability)` etc.;
-   its spec's `FakeChartEngine.registerCapability` must instantiate the passed class
-   (assertions on registered ids stay identical).
-5. Spec stub rewiring (mechanical, assertions untouched — document as a deviation):
-   pane-guard (`stubEngine` gains `priceForY`/`yForPrice`; drop `component.chart`/`.series`),
-   trade-guard (same), time-shift (`component.series = {update,setData}` →
-   engine stub with `upsertCandle`).
-6. New tests + negative probes.
-7. I1 ESLint rule, scoped as described; verify zero violations with NO suppressions.
-8. Gates RAW: `npx tsc -p tsconfig.app.json --noEmit`,
+1. **THE EXACT NEXT ACTION:** in `chart.component.trade-guard.spec.ts`, replace each
+   `component.series = { coordinateToPrice: () => 90 }` (lines ~130, 140, 219, 246) and
+   `{ ...=> 95 }` (~169, 273) with `component.engine = { priceForY: () => 90, destroy: () => {} }`
+   (95 where it was 95); and in the two `handleMouseDown` tests (~195, 299) simply DELETE the
+   `component.chart = {}` and `component.series = {...}` lines — those tests already set a
+   full `component.engine`. `destroy` is needed because `ngOnDestroy` calls `this.engine?.destroy()`
+   at fixture teardown (the file already documents that at its line ~201). Leave `paneRect`
+   OFF the stub: `inPane` does `this.engine?.paneRect?.()` and must keep failing OPEN
+   (`undefined`), which is what those tests have always relied on.
+2. Delete the now-inert `component.chart` / `component.series` lines in the pane-guard spec.
+3. Re-run the targeted include; expect 30/30.
+4. `frozen-scene-host.component.spec.ts` `FakeChartEngine.registerCapability(Ctor)` →
+   instantiate and push the instance.
+5. New tests + negative probes.
+6. I1 ESLint rule (see I1 PLAN); prove zero violations with NO suppressions.
+7. Gates RAW and UNPIPED: `npx tsc -p tsconfig.app.json --noEmit`,
    `npx tsc -p tsconfig.spec.json --noEmit`, `npx ng test --watch=false`, `npm run lint`,
-   then `npm run build`.
-9. Write the two report artifacts.
+   then `npm run build` (watch for NEW chunk types; the 648 kB budget warning is accepted).
+8. Write the two report artifacts.
 
 ## RESUME BRIEF
 
-Cold-start: everything you need is in EVIDENCE + DESIGN above. `npm ci` is already done in
-`emulador/`. Baseline at base SHA: 183 files / 2417 tests green.
+Cold-start, zero memory assumed. `npm ci` is DONE in `emulador/`. Baseline at base SHA:
+183 files / 2417 tests, all four gates green.
 
-The mission: delete the RFC-004/005 migration bridge (`ChartEngine.chartApi`,
-`ChartEngine.seriesApi`) without changing behavior, replacing 22 raw `lightweight-charts`
-call sites in `chart.component.ts` with a narrow named contract, and prove the public
-surface shrank. Commits so far: `6db3c0f` (recon), `a1c7f70` (engine getters deleted +
-`MainSeriesCapability`). tsc is RED right now on purpose — consumers still reference the
-deleted getters. Resume at NEXT STEPS #1.
+**Mission:** delete the expired RFC-004/RFC-005 migration bridge (`ChartEngine.chartApi`,
+`ChartEngine.seriesApi`) with ZERO behavior change, replacing every raw
+`lightweight-charts` call in `ChartComponent` with a narrow named contract, and prove the
+public surface shrank.
 
-Hard rules: no `getChartApi`/`getSeriesApi` or any renamed equivalent; no method returning
-a library object; no suppressions to turn on the I1 rule; pathspec commits only; never
-touch `develop`/`main` or sibling worktrees; never push.
+**Where you are:** the hard part is DONE and committed. `chartApi`/`seriesApi` no longer
+exist; `chart.component.ts` imports no handle type; all 22 call sites go through 6 new
+engine methods (`priceForY`, `yForPrice`, `xForDisplayTime`, `upsertCandle`,
+`scrollToRealTime`, `shiftVisibleRange`) plus 3 `TradingCapability` placement methods.
+`tsc` app + spec both exit 0. **6 targeted tests fail, all of them because old specs
+scaffolded the raw series onto the component; none is a behavior regression.** Start at
+NEXT STEPS #1.
+
+**Real count vs Wave 1:** Wave 1 claimed 18 (10 coord / 4 price-line / 2 update / 2
+timeScale). Real: **22** raw call sites (13 coord / 4 price-line / 2 update / 3 timeScale),
+plus 2 `IPriceLine.applyOptions` calls on a handle the component was holding = 24 raw
+library operations. Wave 1 missed the two `timeToCoordinate` calls in `applySnap` (they go
+via `chart.timeScale()`, so a series-only grep misses them), one `coordinateToPrice`, one
+`scrollToRealTime`, and the two `applyOptions` calls entirely. Wave 1 also read the
+`seriesApi` sunset condition BACKWARDS — see REFUTATION 1.
+
+**Has the surface shrunk? YES, structurally** (2 members returning the whole library object
+graph → 6 primitive-typed members). The exact before/after numbers for the report still
+need to be counted out of `lightweight-charts`' typings.
+
+**I1 detector: OFF, and honestly not yet earned** — the rule is not written and zero
+violations are not proven. Do not report it as enabled.
+
+Hard rules: no `getChartApi`/`getSeriesApi` or any renamed equivalent; no method returning a
+library object; no suppressions to turn on the I1 rule; pathspec commits only, commit after
+every unit; never touch `develop`/`main` or a sibling worktree; never push; never pipe a
+gate through `| tail`.
