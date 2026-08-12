@@ -1,8 +1,13 @@
 name: CI
 
 on:
+  # `pull_request.branches` filters on the PR's BASE branch. `develop` is where
+  # every RFC/feature branch lands first, so without it here those PRs merged
+  # with no gate ever running. `push` deliberately stays main-only: the deploy
+  # job below is additionally guarded on `push` + `refs/heads/main`, so this
+  # widening cannot reach production.
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   push:
     branches: [main]
 
