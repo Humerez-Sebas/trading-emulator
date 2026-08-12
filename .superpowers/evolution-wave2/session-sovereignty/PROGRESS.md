@@ -5,9 +5,21 @@ Worktree `C:\Users\78701\Desktop\trading-emulator-session-sovereignty`
 
 ## STATUS
 
-Phase: A1 inventory complete (read-only). Design converging. No production code written yet.
+Phase: **A3 implementation LANDED and committed** (all production code written). A4 probes
+partially written. Suite NOT green yet. A5 and A6 docs NOT started.
 
-Baseline verified installed: `npm ci` exit 0 in `emulador/`.
+Commits: `c338491` (A1 ledger) → `ad0285b` (core partition) → `537c7ab` (lessons DB) →
+`dc599c9` (existing specs adapted to the per-owner stores).
+
+`npm ci` already done in `emulador/` (exit 0) — do NOT redo it.
+
+Gate status:
+- `npx tsc -p tsconfig.app.json --noEmit` → exit 0 (measured at `ad0285b`)
+- `npx tsc -p tsconfig.spec.json --noEmit` → exit 0 (measured at `ad0285b`)
+- `npx ng test --watch=false` → exit 1, **10 failed files / 173 passed (183)** measured
+  BEFORE `dc599c9`; every failure was "service constructed without an owner identity",
+  which `dc599c9` addresses. NOT re-run since. **Re-run this first.**
+- `npm run lint` → NOT YET RUN.
 
 ## COMPLETED
 
@@ -19,14 +31,64 @@ Baseline verified installed: `npm ci` exit 0 in `emulador/`.
 - Traced the complete V2 mechanism end to end, plus TWO additional reachable paths the
   red-team report did not name (in-memory carry-over; playbook/lessons exposure).
 
-## IN FLIGHT
+## IMPLEMENTED (all committed)
 
-Nothing committed yet.
+New files:
+- `emulador/src/app/services/owner-scope.ts` — per-owner DB names, `USER_DB_VERSION = 1`,
+  `NO_OWNER_MESSAGE`, `AdoptionMarker`, and the PURE `decideAdoption()` that encodes O-7.
+- `emulador/src/app/services/owner-identity.service.ts` — `OwnerIdentityService.ownerId()`
+  from `supabase.auth.getSession()` (memoized once non-null; the memo's soundness DEPENDS on
+  the hard reload below), plus `fixedOwnerIdentity(id)` for specs. NOTE: Angular DI rejects
+  an interface as a token (NG2003), so every consumer types the param as the CLASS.
+- `emulador/src/app/state/auth/session-sovereignty.effects.ts` — `hardReloadOnLogout$`:
+  `inject(DOCUMENT).location.assign('/login')` on `loggedOut`. Registered in `app.config.ts`.
+
+Changed:
+- `workspace-db.service.ts` — now spans TWO databases. `meta`/`folders`/`sync` →
+  `emulador-workspace-<ownerId>` (v1, created by `openUser()`); `candles`/`datasets`/`series`
+  stay in `emulador-workspaces` (v6, schema UNCHANGED, worker untouched). The shared DB's
+  `meta`/`folders` become the read-only QUARANTINE, exposed only via
+  `listQuarantinedMetas()`/`listQuarantinedFolders()`. New `getAdoptionMarker()` /
+  `recordAdopted()` write the marker into the OWNER partition, never the quarantine.
+  `getWorkspace`/`remove` now span both DBs (no longer one transaction — documented).
+  Fails closed with `NO_OWNER_MESSAGE` when no owner resolves; there is no un-owned fallback.
+- `session-sync.service.ts` — `adoptQuarantinedMetas()` / `adoptQuarantinedFolders()` called
+  from INSIDE `pullAndMergeSessions`/`pullAndMergeFolders`, right after the cloud id set is in
+  hand and BEFORE the local set is read for the merge. Zero extra round trips and it inherits
+  `assertCompletePull` (a truncated page can never prove ownership).
+- `playbook-db.service.ts`, `lessons-db.service.ts` — owner-suffixed DB names, same
+  fail-closed rule. Legacy un-suffixed DBs left untouched on disk = quarantine.
+
+## IN FLIGHT — exact next action
+
+Appending the negative-probe suite to
+`emulador/src/app/services/session-sync.service.spec.ts` (currently ~1147 lines; the harness
+additions `OWNER`, `OTHER_OWNER`, `dbFor()`, `seedQuarantine()` and the inverted
+`FIXED (was RESIDUAL HAZARD)` test are ALREADY committed at `dc599c9`).
+
+The last attempt to append the block via a bash heredoc FAILED with
+`unexpected EOF while looking for matching '` — the spec text contains typographic
+apostrophes (’) inside `it(...)` titles which broke the shell quoting. **Write that block with
+the Write/Edit tool instead of a heredoc, or use only ASCII apostrophes.** Nothing was written
+to the file by the failed attempt, so the spec is exactly as committed.
+
+Probe block to append (12 tests, all designed to fail if owner scoping is removed):
+A→B no delete/mutate/expose/upload · A→B→A still there · B→A invisible · dirty local-only
+never uploaded as B · D1 still works WITHIN one owner · fail-closed with no owner ·
+quarantine not adopted without proof · adopted only on remote-ID correlation (per record) ·
+adoption never overwrites a live record · a second account cannot claim the first's adopted
+record · offline pull adopts nothing and retries later · a truncated page cannot prove
+ownership.
 
 ## NOT STARTED
 
-A2 decision matrix doc, A3 implementation, A4 negative probes, A5 `WorkspaceMeta.trading`
-investigation, A6 deliverable docs.
+- A4 falsification A/B run (point `ownerWorkspaceDbName` at the legacy constant, record exact
+  pass/fail counts with and without the guard).
+- Full gate run (`ng test`, `lint`) after the probes land.
+- A5 `WorkspaceMeta.trading` ownership investigation — see the strong lead already found,
+  below.
+- A6 docs: `SESSION_SOVEREIGNTY_RFC.md`, `SESSION_SOVEREIGNTY_MIGRATION.md`,
+  `TRADING_METADATA_OWNERSHIP_INVESTIGATION.md`.
 
 ## EVIDENCE
 
@@ -105,15 +167,42 @@ resolve to the legacy constant) and require the new specs to fail.
   criteria. It stops P1 and P2 but not P3 or P4: B still *sees* and can *mutate* A's
   workspace/playbook/lessons state because those reads never go through the sync layer.
 
+## A5 LEAD (found while tracing, NOT yet proven or refuted — do not refactor on suspicion)
+
+Writers of `WorkspaceMeta.trading` / the LWW clocks, all non-transactional read-modify-write
+over the whole record:
+1. `workspaces.effects.ts` `persistMeta$` (300 ms debounce) — re-reads `existing` and
+   re-applies `activeClientUpdatedAt`/`activeSyncedAt` so it does not clobber them.
+2. `workspaces.effects.ts` `doSwitch` step 1 (`:309`) — `putMeta({symbol, ...meta, linkGroups,
+   lastModified})` and **does NOT re-read/re-apply the clocks**. `MetaSnapshot` is
+   `Omit<WorkspaceMeta,'symbol'|'lastModified'|'linkGroups'>` so the clocks are IN the type,
+   but `selectWorkspaceMetaSnapshot` (`state/selectors.ts:126`) never produces those keys, so
+   the spread omits them and `put` replaces the record WITHOUT them. **Hypothesis: an asset
+   switch silently drops `activeClientUpdatedAt`/`activeSyncedAt`.**
+3. `session-sync.service.ts` — `flushDirtySessions`, `pullAndMergeSessions` (D1),
+   `markActiveDirty`, `reconstructActiveIds`, all `putMeta`.
+4. `sesiones-page.component.ts` — several `getMeta`→mutate→`putMeta` pairs (lines ~852-1179).
+
+First-pass reasoning (NOT a conclusion): dropping the clocks makes the next pull treat the
+session as never-synced, which is the CONSERVATIVE branch (kept, not deleted), and
+`markActiveDirty` restamps `activeClientUpdatedAt` so a later push still happens. So the
+clock loss may be benign rather than destructive. The reachable harm to look for is a LOST
+UPDATE: `persistMeta$` reads `existing` (clocks C), then `markActiveDirty` stamps C' and
+writes, then `persistMeta$`'s own `putMeta` lands with the stale C and erases the dirty stamp
+→ that edit is never pushed. Both effects are `concatMap`ped independently (300 ms vs 2000 ms
+debounce off the SAME snapshot stream), so the interleaving window is narrow but real.
+**Required verdict: PROVEN (with a deterministic reproduction) or REFUTED (with the argument).
+A test, not an opinion.**
+
 ## NEXT STEPS
 
-1. Write PROGRESS.md + commit (this).
-2. Implement owner-partitioned user-owned stores + evidence-based adoption + hard reload on
-   logout.
-3. Negative probes.
-4. Gates.
-5. A5 investigation.
-6. Docs.
+1. Append the 12-test probe block to `session-sync.service.spec.ts` (Write tool, not heredoc).
+2. Add a spec for `SessionSovereigntyEffects` (TestBed, `{ provide: DOCUMENT, useValue: { location: { assign: vi.fn() } } }`)
+   — it is the executable invariant underwriting `OwnerIdentityService`'s memo.
+3. Run `npx ng test --watch=false` raw; fix; then `npm run lint`, both tsc gates, `npm run build`.
+4. Falsification A/B with exact numbers.
+5. A5 investigation → PROVEN or REFUTED.
+6. Write the three A6 docs.
 
 ## RESUME BRIEF
 
@@ -140,3 +229,27 @@ Chosen design (see `SESSION_SOVEREIGNTY_RFC.md` once written):
 - Playbook/lessons DBs get the same owner-suffixed name (kills P4).
 
 Gates must be run raw and unpiped from `emulador/`; baseline is 183 files / 2417 tests green.
+
+### Pre-existing spec assertions this work DELIBERATELY changed (must be declared in the report)
+
+1. `workspace-db.service.spec.ts` — "v1 → v3 migration" and "v4→v5 upgrade" now assert the
+   migrated `meta` lands in the QUARANTINE and is NOT the current owner's workspace. A v1/v4
+   record predates user identity, so adopting it because someone logged in is precisely what
+   O-7 forbids. The series half (Market-Data) is still directly readable.
+2. `session-sync.service.spec.ts` — "RESIDUAL HAZARD (unfixed, documented)" is inverted to
+   "FIXED (was RESIDUAL HAZARD)". That spec existed to pin the hazard as known-unfixed; this
+   RFC fixes it, so the spec MUST change — that is the intended consequence, not a workaround.
+
+Everything else in the spec suite changed only mechanically (identity injection, DB names in
+teardown helpers, `listMetas()`→`listDatasets()` for shared-schema warmup).
+
+### Traps already hit (do not rediscover)
+
+- Angular DI: `constructor(private x: SomeInterface = inject(SomeClass))` compiles under tsc
+  but fails the Angular compiler with NG2003. Type the parameter as the CLASS.
+- `tsc` passing proves nothing here: the 10 spec failures were runtime `inject()`-outside-an-
+  injection-context errors, invisible to both tsc gates.
+- Bash heredocs choke on the typographic apostrophes used in spec titles.
+- `rawDb()`/`seedCandles()` in `workspace-db.service.spec.ts` used `listMetas()` to force the
+  SHARED schema open; that now opens the per-owner DB, so they must use `listDatasets()`.
+- `candles-writer.spec.ts` had the same problem in `resetAndInitSchema()`.
