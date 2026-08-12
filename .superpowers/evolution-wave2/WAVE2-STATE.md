@@ -208,6 +208,54 @@ against sibling branches, and promotion requires Spanish translation.
 **Extracted for its own track:** the `syncTimeRange` logical-vs-absolute-range divergence is
 independent of multi-symbol and should not wait on it.
 
+## INDEPENDENT VERIFICATION — AGENT E (clock authority)
+
+Agent E reported COMPLETE. Branch `agent/clock-authority`, head `cee6cff`, 7 commits from
+base, worktree clean.
+
+| Claim | Verdict | Evidence the orchestrator re-derived |
+| :--- | :--- | :--- |
+| Zero application source, zero `pipeline/`, zero existing tests changed | **CONFIRMED** | `git diff --name-status 894d72b..HEAD` = 3 added `.md` under the deliverable dir + exactly 1 added spec. A grep for any non-spec, non-`.superpowers` path returns nothing. |
+| 5 defect probes fail on base, 9 pass (14 total) | **CONFIRMED** | The spec contains exactly 5 `it.fails(` calls (lines 128/138/148/165/175) and 9 plain `it(` — the 7 raw grep hits included 2 header-comment mentions. Counts match the report precisely. |
+| Probe file placed beside its subject | **CONFIRMED** | `emulador/src/app/domain/chart/display-time.clock-authority.spec.ts`, matching the repo's existing `<subject>.<aspect>.spec.ts` convention. The app-root placement flagged at resume was corrected. |
+| Surface count is 15, not Wave 1's 11 | **SUPPORTED** — accepted on the agent's method, not re-counted site-by-site | The re-measure is documented per-site with file and line in `CLOCK_AUTHORITY_INVESTIGATION.md`. The orchestrator spot-verified the class split and the mechanism, not all 15 citations. |
+
+**The `it.fails` pattern is the single best artifact of this wave.** Defect probes are
+committed in a form that keeps the suite green while the defect stands, and trips into a
+visible failure the moment someone genuinely fixes the surface. It converts "we know about
+this bug" from a comment into an executable tripwire. Copy it.
+
+**Two refutations that prevented real harm.** Wave 1 recommended routing
+`session.service.ts:107-108` (`yearsInRange`) and `market-data-db.ts:80-81`
+(`partitionTimeBounds`) through a timezone conversion. E showed both are correct precisely
+BECAUSE they read the stored epoch as UTC — that is the pipeline's own partition predicate,
+so "fixing" them would request `2025.parquet` for candles written to `2026.parquet` for every
+stored epoch in the first NY evening of a year. That is **silent data loss dressed as a
+timezone fix**, and it would have passed review as an improvement.
+
+**Why nothing was fixed, and why that is right.** Class A (10 sites) is conclusively a
+defect, but 4 of those sites are UI copy or a persisted field name, and Class B's semantics
+turn on D-E1, which only the owner can settle: today's journal date is the FX/CFD **trading
+day** and agrees with the D1 candles the trader sees (D1 rolls at 17:00 NY), so switching to
+the NY calendar date would make the journal disagree with the chart's own dailies. A partial
+fix would leave the app self-inconsistent in a NEW way. Deferring implementation to an owner
+decision is the correct call, not a shortfall.
+
+Gates on the final committed state: `tsc app` 0, `tsc spec` 0, `ng test` 0
+(**184 files / 2426 passed + 5 expected fail = 2431**), `lint` 0. Baseline 183/2417 → 184/2431
+(+1 file, +14 probes), which reconciles. Gate 2 earned its keep by catching that the agent's
+own header comment contained `src/**/*.spec.ts`, whose `*/` closed the block comment early
+(fixed in `722b877`).
+
+Branch disposition: **MERGE AFTER owner settles D-E1..D-E4.** The probe spec and the two
+documents are mergeable as-is and valuable on their own — they lock the three refutations
+against future "fixes" — but the Class A remediation must not land piecemeal.
+
+Also recorded and deliberately NOT fixed: 8 "UTC seconds" doc lies in
+`trading.models.ts`/`drawings.models.ts`, a `createdAt` seconds-vs-ms name collision, and 3
+misleading docstrings inside the protected `pipeline/` tree (proposed only, per its protected
+status). These are cheap-agent backlog.
+
 ## OWNER DECISIONS BINDING THIS WAVE
 
 - **O-1 / O-2** — no global 100× rescale; `pts` ambiguity is fixed with vocabulary, not
