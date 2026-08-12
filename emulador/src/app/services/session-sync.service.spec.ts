@@ -1155,8 +1155,10 @@ describe('reconstructWorkspaces — V1 cloud row migration (RFC-011 Task 4)', ()
 // fake-indexeddb database per owner — rather than comparing one field to another.
 // ---------------------------------------------------------------------------
 
-/** A PostgREST summary row for `sessions`, as `listSummaries` selects it. */
-function summaryRow(id: string, symbol = 'EURUSD', clientUpdatedAtMs = 10) {
+/** A PostgREST `sessions` summary row for the sovereignty probes (the file already
+ * has a `summaryRow` helper fixed to EURUSD; these probes need the symbol and a
+ * numeric epoch, so this is a sibling rather than a signature change to it). */
+function ownedSummaryRow(id: string, symbol = 'EURUSD', clientUpdatedAtMs = 10) {
   return {
     id,
     name: 'Plan',
@@ -1244,7 +1246,7 @@ describe('Session Sovereignty V2 — owner isolation across an account switch', 
 
     // A signs back in; the cloud still holds A row, so nothing is synced-absent.
     const a = makeFakeClient({
-      summaryRows: [summaryRow('A-archived', 'XAUUSD', 9)],
+      summaryRows: [ownedSummaryRow('A-archived', 'XAUUSD', 9)],
       summaryCount: 1,
       folderRows: [],
       folderCount: 0,
@@ -1387,7 +1389,7 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
     });
 
     const { client } = makeFakeClient({
-      summaryRows: [summaryRow('proven-session')],
+      summaryRows: [ownedSummaryRow('proven-session')],
       summaryCount: 1,
       folderRows: [
         { id: 'proven-folder', name: 'Mia', sort: 0, client_updated_at: new Date(1).toISOString() },
@@ -1438,7 +1440,7 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
     });
 
     const { client } = makeFakeClient({
-      summaryRows: [summaryRow('proven-session')],
+      summaryRows: [ownedSummaryRow('proven-session')],
       summaryCount: 1,
       folderRows: [],
       folderCount: 0,
@@ -1463,7 +1465,7 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
     });
 
     const a = makeFakeClient({
-      summaryRows: [summaryRow('A-session')],
+      summaryRows: [ownedSummaryRow('A-session')],
       summaryCount: 1,
       folderRows: [],
       folderCount: 0,
@@ -1475,7 +1477,7 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
     // B logs in owning a DIFFERENT session id: nothing proves the legacy record
     // is B's, so B must not get it even though it is still in quarantine.
     const b = makeFakeClient({
-      summaryRows: [summaryRow('B-session')],
+      summaryRows: [ownedSummaryRow('B-session')],
       summaryCount: 1,
       folderRows: [],
       folderCount: 0,
@@ -1500,7 +1502,7 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
 
     // First login: the sessions select rejects (offline).
     const offline = makeFakeClient({
-      summaryRows: [summaryRow('proven-session')],
+      summaryRows: [ownedSummaryRow('proven-session')],
       summaryCount: 1,
       folderRows: [],
       folderCount: 0,
@@ -1523,7 +1525,7 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
 
     // Second login, online: the very same record is now adopted.
     const online = makeFakeClient({
-      summaryRows: [summaryRow('proven-session')],
+      summaryRows: [ownedSummaryRow('proven-session')],
       summaryCount: 1,
       folderRows: [],
       folderCount: 0,
@@ -1544,7 +1546,7 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
       ],
     });
     const { client } = makeFakeClient({
-      summaryRows: [summaryRow('proven-session')],
+      summaryRows: [ownedSummaryRow('proven-session')],
       summaryCount: 99, // the server says it holds more rows than it sent
       folderRows: [],
       folderCount: 0,
