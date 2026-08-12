@@ -20,8 +20,14 @@ this document records the repo-specific protocol layered on top.
 
 ## Artifacts and where they live
 
-- `.superpowers/sdd/progress.md` — the ledger, the single source of run truth.
-  **Git-tracked** (everything else in `.superpowers/sdd/` is gitignored).
+- `.superpowers/rfc-XXX/dev-log.md` — **the ledger of the current run**, the single source
+  of run truth. **Git-tracked**, one durable file per RFC. This has been the layout since
+  RFC-018 (decision O1 of the RFC-019 run); `rfc-018`, `rfc-019` and `rfc-020` are all
+  tracked today. A run opens its own directory rather than overwriting a shared file.
+- `.superpowers/sdd/progress.md` — the **HISTORICAL** shared ledger, still git-tracked.
+  It carries the RFC-017-era record; every run used to overwrite it wholesale, which is
+  exactly why the per-RFC layout replaced it. Read it for history; do not write new runs
+  into it. (Everything else in `.superpowers/sdd/` is gitignored.)
 - `.superpowers/sdd/task-N-{brief,report,diff}.md`, `review-*.diff` — working artifacts,
   local only.
 - The implementation plan lives in `docs/superpowers/plans/`, the spec in
@@ -29,7 +35,7 @@ this document records the repo-specific protocol layered on top.
 - Historical note: one early run committed task artifacts into `docs/superpowers/plans/`
   — that was a mistake, not a convention.
 
-## Ledger protocol (progress.md)
+## Ledger protocol (`.superpowers/rfc-XXX/dev-log.md`)
 
 Each task entry records: status, commit hash, verification evidence (test count
 progression, tsc/lint state), scope actually touched, **deviations** (classified inert /

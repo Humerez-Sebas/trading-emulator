@@ -93,7 +93,8 @@ escalation. Never create one speculatively.
 Is it a decision future work must obey? → RFC / vision doc (D-id)
 Is it operational judgment/procedure?   → docs/engineering/*.md
 Is it domain understanding (why/trade-offs)? → docs/engineering/domain/*.md
-Is it run state (task progress, evidence)?   → .superpowers/sdd/progress.md
+Is it run state (task progress, evidence)?   → .superpowers/rfc-XXX/dev-log.md
+                                               (RFC-017 and earlier: .superpowers/sdd/progress.md)
 Is it session-scoped agent state?            → agent memory (pointers only —
                                                promote anything durable into the repo)
 ```

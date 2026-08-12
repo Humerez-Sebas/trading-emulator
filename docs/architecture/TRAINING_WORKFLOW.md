@@ -88,9 +88,20 @@ Las sesiones se almacenan de forma estructurada según criterios que definen el 
 ---
 
 ## 5. Referencias de Implementación y Fricciones
-* **Limitaciones Técnicas del Sistema:** Ver [CURRENT_LIMITATIONS.md](file:///C:/Users/78701/.gemini/antigravity/brain/03df98d6-3118-4433-b135-ddcd7cd376a5/CURRENT_LIMITATIONS.md) *(ej. problemas de coordenadas al escalar el eje de precios vertical, y el retardo del llenado en la misma vela de placement)*.
-* **Puntos de Fricción en el Flujo de Trabajo:** Ver [KNOWN_PAIN_POINTS.md](file:///C:/Users/78701/.gemini/antigravity/brain/03df98d6-3118-4433-b135-ddcd7cd376a5/KNOWN_PAIN_POINTS.md) *(ej. clicks manuales repetitivos para avanzar períodos inactivos de mercado y el overshoot debido a alta velocidad)*.
-* **Evolución y Mejoras Futuras:** Ver [FUTURE_IDEAS.md](file:///C:/Users/78701/.gemini/antigravity/brain/03df98d6-3118-4433-b135-ddcd7cd376a5/FUTURE_IDEAS.md) *(ej. segmentación estadística semanal/mensual, mapas de trades históricos agregados y comentarios por sesión)*.
+
+> **HISTÓRICO — referencias externas no disponibles.** Los tres documentos citados abajo
+> vivían fuera del repositorio, en el *brain* local de otra herramienta
+> (`C:/Users/78701/.gemini/antigravity/brain/03df98d6-3118-4433-b135-ddcd7cd376a5/`). Ese
+> directorio todavía existe en la máquina del propietario pero ya **no contiene** estos
+> tres archivos (verificado 2026-08-12), y nunca estuvieron versionados aquí. Se conserva
+> la cita como registro histórico —no se inventa un destino ni se elimina la referencia—
+> y el paréntesis de cada viñeta preserva el contenido que resumían. Para el estado
+> vigente de limitaciones y trabajo futuro, la autoridad es
+> [ROADMAP.md](./ROADMAP.md) y los RFCs en [`rfcs/`](./rfcs/).
+
+* **Limitaciones Técnicas del Sistema:** Ver `CURRENT_LIMITATIONS.md` (externo, no disponible) *(ej. problemas de coordenadas al escalar el eje de precios vertical, y el retardo del llenado en la misma vela de placement)*.
+* **Puntos de Fricción en el Flujo de Trabajo:** Ver `KNOWN_PAIN_POINTS.md` (externo, no disponible) *(ej. clicks manuales repetitivos para avanzar períodos inactivos de mercado y el overshoot debido a alta velocidad)*.
+* **Evolución y Mejoras Futuras:** Ver `FUTURE_IDEAS.md` (externo, no disponible) *(ej. segmentación estadística semanal/mensual, mapas de trades históricos agregados y comentarios por sesión)*.
 
 ---
 
