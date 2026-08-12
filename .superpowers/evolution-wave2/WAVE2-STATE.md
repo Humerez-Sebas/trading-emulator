@@ -174,6 +174,40 @@ Agent A is the only track carrying a reachable-today data-loss defect. Agent B i
 research-only (no production multi-symbol runtime). Agents C/D/E may implement only what
 their own evidence adjudicates.
 
+## INDEPENDENT VERIFICATION — AGENT B (multi-symbol feasibility)
+
+Agent B reported COMPLETE. Verified against git and source rather than accepted; every
+claim below was re-derived by the orchestrator.
+
+Branch `agent/multisymbol-feasibility`, head `3ae5935`, 5 commits from base, worktree clean.
+
+| Claim | Verdict | Evidence the orchestrator re-derived |
+| :--- | :--- | :--- |
+| Zero production files touched; research only | **CONFIRMED** | `git diff --name-status 894d72b..HEAD` = exactly 4 added `.md` files, all under `.superpowers/evolution-wave2/multisymbol/`. A grep for any path outside that directory returns nothing. |
+| `series` projection has no symbol dimension | **CONFIRMED** | `market.reducer.ts:8` — `series: Partial<Record<Timeframe, Candle[]>>`, precisely as cited. |
+| **No frozen decision needs revocation** | **CONFIRMED — and it is the most consequential finding of the track** | `008-012…:39-41` reads *"Trading multi-simbolo. La Sesion opera UN unico simbolo (primarySymbol). Los paneles de simbolo secundario son estrictamente view-only (referencia/contexto)."* The non-goal forbids multi-symbol **trading**, and its second sentence positively **endorses** view-only secondary-symbol panels. A future RFC that opened by revoking D1 would revoke something it does not need and risk reading as authorisation for cross-symbol execution. |
+| `resolvePanelCandles` takes no symbol (F19-2 live and latent) | **CONFIRMED** | `chart-model-mapper.service.ts:464` — signature is `(series, timeframe)`, and the memo is keyed only on `{series, timeframe}`. Adding a `setPanelSymbol` action would leave a foreign-symbol panel resolving candles from the single global projection. |
+| Guards cannot return false in production today | **CONFIRMED** | Panel default is `symbol: ''` (`layout.models.ts:128`), and `layout.trade-predicates.spec.ts:85-86` pins `panelTracksPrimarySeries(descriptor({symbol: ''}), 'US30') === true`. So RFC-018 T-1/T-2/T-3 and RFC-019's candle gate have never been exercised against a real foreign symbol. |
+| `PanelRuntime` was never implemented | **CONFIRMED** | Zero hits repo-wide. |
+| `syncTimeRange` forwards bar indices where RFC-010 §4 specifies absolute time | **CONFIRMED at mechanism level** | `chart-sync-router.ts:20` maps `VisibleRangeChanged → 'syncTimeRange'`; the transport is `applyVisibleRange(range: LogicalRange \| null)` and `LogicalRange` is lightweight-charts' **bar-index** range. `010-synchronization.md:56-58` requires *"al mismo rango temporal absoluto, cada uno proyectandolo a su propia escala/timeframe"*, and §4's crosshair clause explicitly states shared candle indices must NOT be assumed across timeframes. Reachable cross-timeframe today, without multi-symbol. B correctly declined to claim user-visible confirmation and asked for a browser reproduction first — that reservation is upheld. |
+| Candles index `['symbol','timeframe','time']` exists | **CONFIRMED** | `workspace-db.service.ts:112`. |
+
+Two minor inaccuracies, neither material: B reported "four commits" (there are five from base,
+including its own first checkpoint), and two file citations did not resolve at the given paths
+(`chart-sync-bus.ts:11`, `market-data-db.ts:35`) though the substance was verified elsewhere in
+each case. Line numbers inside the files that do exist were exact.
+
+**Orchestrator assessment.** B is the only agent that never carried uncommitted work, and it
+is the only track that refuted two of its OWN hypotheses (a symbol-neutral clock; the two
+stores as a cache tier over one authority) in addition to Wave 1's premise. Its central cost —
+resident memory at N symbols — is explicitly unquantified, and B flagged that itself; no figure
+should be quoted for it. Branch disposition: **RESEARCH ONLY, do not merge to `develop` as
+architecture** — the docs are mergeable, the RFC number (`023`) is bookkeeping to reconcile
+against sibling branches, and promotion requires Spanish translation.
+
+**Extracted for its own track:** the `syncTimeRange` logical-vs-absolute-range divergence is
+independent of multi-symbol and should not wait on it.
+
 ## OWNER DECISIONS BINDING THIS WAVE
 
 - **O-1 / O-2** — no global 100× rescale; `pts` ambiguity is fixed with vocabulary, not
