@@ -14,9 +14,10 @@ import { LessonDraft } from './lesson-form.component';
 import { Lesson } from '../../state/lessons/lessons.models';
 import { ChartEngineFactory } from './frozen-scene-host.component';
 
+// RFC-004/RFC-005: the `seriesApi` / `chartApi` mirror fields are gone — those bridge getters
+// no longer exist on the real `ChartEngine`, and this fake never needed them (its
+// `registerCapability` ignores its argument).
 class FakeChartEngine {
-  seriesApi = {};
-  chartApi = {};
   events = {
     on: () => () => {},
     emit: () => {},

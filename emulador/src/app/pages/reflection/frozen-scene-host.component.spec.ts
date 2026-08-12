@@ -32,10 +32,12 @@ import { DARK_CHART_COLORS } from '../../state/settings/settings.models';
  * component file) instead of a bare `new ChartEngine(...)`, so this spec
  * substitutes that factory via a plain TestBed provider — no `vi.mock` at all.
  * Real `TradingCapability`/`DrawingsCapability`/`SessionCapability` are still
- * constructed against the FAKE engine's `seriesApi` (their constructors are
- * trivial — they only store the reference); their `.init()` — the only method
- * that touches real `lightweight-charts` functions like `createSeriesMarkers`
- * — is NEVER called, because the fake engine's `registerCapability` never
+ * constructed against the FAKE engine's own series stand-in (their constructors are
+ * trivial — they only store the reference). RFC-004/RFC-005 moved that construction
+ * INTO the engine: the component now passes the CLASS to `registerCapability`, so the
+ * fake instantiates it (see `FakeChartEngine.registerCapability`). Their `.init()` — the
+ * only method that touches real `lightweight-charts` functions like `createSeriesMarkers`
+ * — is still NEVER called, because the fake engine's `registerCapability` never
  * invokes it. `lightweight-charts` itself needs no mock (its module
  * evaluation alone is already proven safe by `chart-engine.spec.ts`, which
  * imports the REAL package via `importOriginal`).
@@ -44,8 +46,14 @@ import { DARK_CHART_COLORS } from '../../state/settings/settings.models';
 class FakeChartEngine {
   static instances: FakeChartEngine[] = [];
   readonly container: HTMLElement;
+  /**
+   * The fake's OWN series stand-in. It is no longer a mirror of a real engine member:
+   * RFC-004/RFC-005 deleted `ChartEngine.seriesApi` (and `chartApi`), so nothing outside the
+   * chart domain can obtain a series any more. It survives here only because this fake plays
+   * the engine's role of handing a series to each capability it builds — see
+   * `registerCapability`.
+   */
   readonly seriesApi = {};
-  readonly chartApi = {};
   readonly events = { on: () => () => {}, emit: () => {}, destroy: () => {} };
   interactivityCalls: boolean[] = [];
   registeredCapabilities: { id: string }[] = [];
@@ -59,8 +67,18 @@ class FakeChartEngine {
   setInteractivity(enabled: boolean): void {
     this.interactivityCalls.push(enabled);
   }
-  registerCapability(cap: { id: string }): void {
+  /**
+   * RFC-004/RFC-005: `registerCapability` now receives the capability CLASS, not an instance
+   * — the real engine constructs it with its OWN main series, and that is exactly what made
+   * `seriesApi` deletable. This fake mirrors that contract: it instantiates the class with
+   * its own series stand-in and records the INSTANCE, so the "registers exactly these three"
+   * assertion still reads real `cap.id` values. `.init()` is still never called, so no real
+   * `lightweight-charts` function runs — unchanged from before.
+   */
+  registerCapability(Ctor: new (series: unknown) => { id: string }): { id: string } {
+    const cap = new Ctor(this.seriesApi);
     this.registeredCapabilities.push(cap);
+    return cap;
   }
   render(model: Partial<RenderModel>): void {
     this.renderCalls.push(model);
