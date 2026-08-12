@@ -256,6 +256,54 @@ Also recorded and deliberately NOT fixed: 8 "UTC seconds" doc lies in
 misleading docstrings inside the protected `pipeline/` tree (proposed only, per its protected
 status). These are cheap-agent backlog.
 
+## INDEPENDENT VERIFICATION — AGENT D (unit semantics)
+
+Agent D reported COMPLETE. Branch `agent/unit-semantics`, head `1984e5d`, 8 commits from
+base, worktree clean.
+
+| Claim | Verdict | Evidence the orchestrator re-derived |
+| :--- | :--- | :--- |
+| Change scope is 4 docs + 1 spec + 2 production files | **CONFIRMED** | `git diff --name-status` exactly that; production diff is `execution-costs.ts` and `trading.models.ts`, +63/−25 total. |
+| The persisted key `pointSize` was NOT renamed | **CONFIRMED** | `execution-costs.ts:127` still returns `{ ...COST_PRESETS[cls], pointSize: costQuoteUnitFor(symbol) }` — the property name is untouched; only the resolver behind it was renamed. |
+| The rename is module-private | **CONFIRMED** | `function costQuoteUnitFor(...)` at line 94 has no `export`. A diff filtered to `+/- export` lines returns nothing, so no public signature changed anywhere. **Zero migration surface, as claimed.** |
+| Probe 4 is a REFUTATION, not a hole | **CONFIRMED — arithmetic independently recomputed** | `20000.01 / 0.01` in node = `2000000.9999999998`, absolute error `2.33e-10`, giving the `1e-4` epsilon **5.6 orders of magnitude** of headroom. No fixture at index/metal/FX price scales can make the epsilon decisive. D quoted the literal with the opposite error sign (`…0002` vs `…9998`); magnitude and conclusion are unaffected. |
+| Gates green, +35 tests from one new spec | **CONFIRMED as internally consistent** | 184 files / 2452 tests vs baseline 183 / 2417 → +1 file, +35 tests, matching one new spec exactly. Nothing pre-existing broke, was removed, or was skipped. |
+| The deferral blocker (META_STORE has no schema version; `session-sync` consumes raw legacy metas) | **SUPPORTED BUT NOT FULLY PROVEN** — which is precisely how D characterised it | Structural preconditions verified: no `schemaVersion` anywhere in `workspace-db.service.ts`, and `session-sync.service.ts` calls `listMetas()` at lines 327, 465 and 554. The NaN corruption path itself was not executed, and D named the two missing pieces itself (no audit of real stored data; no proof against mid-upgrade multi-device interleaving). |
+
+**The judgement call D got right.** It was authorised to perform the `pointSize` →
+`costQuoteUnit` rename if migration safety could be proven. It found that it could not, and
+stopped — the failure mode it identified is `pointsToPrice(2, undefined)` → `NaN` silently
+corrupting every fill in already-recorded backtest history, against a benefit that is
+essentially agent-facing clarity. It then did the subset with genuinely zero migration
+surface (the false doc comment, the private resolver, a stale comment) and deferred the rest
+to its own PR. That is the correct trade, and the reasoning is recorded rather than implied.
+
+**Probe 2 is the durable win of this track.** Wave 1's proposed "fix" — changing the index
+cost divisor from 1 to 0.01 — now **fails a named test** (6 failures) instead of passing
+review as an improvement. The same wave that produced the false positive has left behind the
+tripwire that prevents its recurrence.
+
+**Three findings worth extracting.** (1) `ExecutionCosts.pointSize` is a *union* of the other
+two authorities — equal to quote resolution off-index, equal to a whole index point on-index —
+which is exactly why reconciling it against `AssetSpec.pointSize` looks plausible: it IS the
+same number for three of the four instrument families with shipped data. (2) The chart-family
+divisor is a property of the DATA, not the instrument (`derivePointSize` samples 30 closes),
+and `selectPointSize` falls back to a hardcoded symbol-blind `0.01` when no candles are
+loaded — 1000× off for EURUSD, display-only, left alone under O-2. (3) **Five of six generated
+MT5 fields have zero production consumers** (`tickSize`, `pointSize`, `volumeStep`,
+`volumeMin`, `digits`; only `contractSize` is read) — a trap rather than a cleanup, since an
+unused broker-authoritative `pointSize` sitting beside a hand-authored `ExecutionCosts.pointSize`
+is the precise shape that invites the wrong wiring.
+
+**Also refuted:** "TradePanel and Lotaje disagree on lot size." Both call `lotsForRisk(...)`
+with a price pair; neither divides by a point size to size a position. `slPoints` is
+display-only. The 100× divergence is a transcription hazard, never a computational one —
+consistent with what the orchestrator found independently while fixing the landing.
+
+Branch disposition: **MERGE AS-IS.** The production delta is two comment/doc corrections plus
+a module-private rename, guarded by 35 new cross-surface tests, with all four gates green. The
+vocabulary strings and the persisted rename are explicitly NOT in it and remain owner-gated.
+
 ## OWNER DECISIONS BINDING THIS WAVE
 
 - **O-1 / O-2** — no global 100× rescale; `pts` ambiguity is fixed with vocabulary, not
