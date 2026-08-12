@@ -13,13 +13,14 @@ Commits: `c338491` (A1 ledger) → `ad0285b` (core partition) → `537c7ab` (les
 
 `npm ci` already done in `emulador/` (exit 0) — do NOT redo it.
 
-Gate status:
-- `npx tsc -p tsconfig.app.json --noEmit` → exit 0 (measured at `ad0285b`)
-- `npx tsc -p tsconfig.spec.json --noEmit` → exit 0 (measured at `ad0285b`)
-- `npx ng test --watch=false` → exit 1, **10 failed files / 173 passed (183)** measured
-  BEFORE `dc599c9`; every failure was "service constructed without an owner identity",
-  which `dc599c9` addresses. NOT re-run since. **Re-run this first.**
-- `npm run lint` → NOT YET RUN.
+Gate status — ALL GREEN at `ef4f00f` (run raw and unpiped from `emulador/`):
+- `npx tsc -p tsconfig.app.json --noEmit` → `APP_TSC_EXIT=0`
+- `npx tsc -p tsconfig.spec.json --noEmit` → `SPEC_TSC_EXIT=0`
+- `npx ng test --watch=false` → `NG_TEST_EXIT=0`, **185 files / 2441 tests passed**
+  (baseline 183 / 2417 → +2 files, +24 tests)
+- `npm run lint` → `LINT_EXIT=0`, "All files pass linting."
+- `npm run build` → `BUILD_EXIT=0`; initial bundle 655.51 kB (baseline 648 kB, +7 kB;
+  the known-accepted 500 kB budget warning, no new chunk types, no vitest sentinel)
 
 ## COMPLETED
 
@@ -150,10 +151,38 @@ P4 — private-knowledge exposure (NOT in the red-team report):
 lessons (the trader's journal: `whatHappened` / `repeat` / `avoid` free text). Their merges
 never delete, so nothing is destroyed — this is an exposure/adoption defect, not a loss one.
 
-## NEGATIVE PROBES
+## NEGATIVE PROBES — DONE, falsification recorded
 
-None yet. Planned probe design: revert the owner scoping (single line: make the owner DB name
-resolve to the legacy constant) and require the new specs to fail.
+Method: revert owner isolation at ONE point — `ownerWorkspaceDbName()` returns a single
+owner-independent name (`'emulador-workspace-shared'`) instead of `emulador-workspace-<id>`.
+That models the historical origin-scoped-but-not-user-scoped store exactly, while keeping the
+market-data/user split intact so nothing fails for an unrelated schema reason. Nothing
+committed; restored with `git checkout --`.
+
+```
+A — isolation reverted
+  npx ng test --watch=false
+  Test Files  2 failed | 183 passed (185)
+  Tests       7 failed | 2434 passed (2441)
+  FALSIFY_EXIT=1
+
+B — isolation restored
+  Test Files  185 passed (185)
+  Tests       2441 passed (2441)
+  RESTORED_EXIT=0
+```
+
+The 7 failures, and what each proves:
+
+| Failing test | Assertion | Proves |
+|---|---|---|
+| A then B: no delete/mutate/expose/upload | `expected undefined to be 'A-active'` | B's empty pull destroys A's active session |
+| A then B then A | `expected [] to deeply equal ['A-archived']` | A's archived session is gone for good |
+| a DIRTY local-only session is never uploaded as B | `expected [{table:'sessions',…}] to deeply equal []` | **A's never-synced session IS uploaded under B's owner_id** (path P2, previously unreported) |
+| B then A: B workspace invisible to A | `expected {symbol:'GBPUSD',…} to be undefined` | cross-account exposure |
+| a second account cannot claim the adopted record | `expected {symbol:'EURUSD',…} to be undefined` | B claims what A already adopted |
+| FIXED (was RESIDUAL HAZARD) | `expected false to be true` | the historical V2 defect verbatim |
+| decideAdoption: different owners, different DBs | `expected 'emulador-workspace-shared' not to be …` | the naming invariant itself |
 
 ## DEAD ENDS & REFUTED HYPOTHESES
 
