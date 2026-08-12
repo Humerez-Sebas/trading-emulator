@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { BehaviorSubject, firstValueFrom } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { authGuard } from './auth.guard';
 import { authFeature } from '../state/auth/auth.reducer';
@@ -23,6 +23,12 @@ describe('authGuard', () => {
     });
     store = TestBed.inject(MockStore);
   });
+
+  // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+  // forced selector results live on the module-level memoized selector, which
+  // TestBed.resetTestingModule() does not undo — they must be released here or
+  // they poison every later spec file in the same vitest worker.
+  afterEach(() => store.resetSelectors());
 
   function runGuard(url: string) {
     return TestBed.runInInjectionContext(() =>

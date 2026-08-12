@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { Component, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -71,6 +71,12 @@ describe('WorkspaceViewport lazy chart creation (RFC-012 Task 4)', () => {
     store.overrideSelector(selectCurrentTime, 0);
     store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
   });
+
+  // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+  // forced selector results live on the module-level memoized selector, which
+  // TestBed.resetTestingModule() does not undo — they must be released here or
+  // they poison every later spec file in the same vitest worker.
+  afterEach(() => store.resetSelectors());
 
   function create() {
     const fixture = TestBed.createComponent(WorkspaceViewportComponent);
