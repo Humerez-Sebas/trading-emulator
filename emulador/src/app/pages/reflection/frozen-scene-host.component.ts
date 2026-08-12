@@ -295,9 +295,11 @@ export class FrozenSceneHostComponent implements AfterViewInit, OnDestroy {
   private createEngine(container: HTMLElement): ChartEngine {
     const engine = this.engineFactory.create(container);
     engine.setInteractivity(false);
-    engine.registerCapability(new TradingCapability(engine.seriesApi));
-    engine.registerCapability(new DrawingsCapability(engine.seriesApi));
-    engine.registerCapability(new SessionCapability(engine.seriesApi));
+    // RFC-004/RFC-005: the engine builds each capability with its OWN main series; this host
+    // no longer reads a `seriesApi` bridge getter, because that getter no longer exists.
+    engine.registerCapability(TradingCapability);
+    engine.registerCapability(DrawingsCapability);
+    engine.registerCapability(SessionCapability);
     return engine;
   }
 

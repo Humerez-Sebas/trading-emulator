@@ -157,12 +157,28 @@ export class ChartEngine implements ChartApplyHandle {
     }
   }
 
-  public registerCapability(cap: Capability): void {
+  /**
+   * Builds and registers a capability. Takes the CLASS, not an instance: the engine owns
+   * the main series and injects it itself, which is why no caller needs (or can obtain) a
+   * reference to it — that is what retired the RFC-004/RFC-005 `seriesApi` bridge getter.
+   *
+   * Returns the instance so a caller that needs the concrete type right away does not have
+   * to round-trip through `getCapability`.
+   *
+   * Ordering note (behavior-preserving): the duplicate-id `Error` is still thrown with the
+   * same message, but construction now happens BEFORE the check. Every capability's
+   * constructor only stores the series reference (no side effects), so a rejected duplicate
+   * registration remains inert — verified against all four capabilities in
+   * `domain/chart/capabilities/`.
+   */
+  public registerCapability<T extends Capability>(Ctor: MainSeriesCapability<T>): T {
+    const cap = new Ctor(this.mainSeries);
     if (this.capabilities.has(cap.id)) {
       throw new Error(`Capability with ID "${cap.id}" is already registered.`);
     }
     this.capabilities.set(cap.id, cap);
     cap.init(this.chart, this.bus);
+    return cap;
   }
 
   public getCapability<T extends Capability = Capability>(id: string): T | undefined {
@@ -207,6 +223,69 @@ export class ChartEngine implements ChartApplyHandle {
     // Capabilities (RFC-003): el engine actualiza su serie y delega el resto del
     // modelo a los plugins registrados.
     this.capabilities.forEach((cap) => cap.render(model));
+  }
+
+  /**
+   * O(1) incremental paint of ONE bar (upsert by time), for normal replay advance and for
+   * the live "forming" bucket. Distinct from `render({ candles })`, which does a full
+   * `setData` of the whole window: the caller chooses per frame, and that choice is
+   * load-bearing (a large forward jump must NOT go bar-by-bar — see
+   * `ChartComponent.render`).
+   *
+   * RFC-004/RFC-005: replaces the raw `seriesApi.update(...)` the bridge used to allow.
+   * Takes the DOMAIN `Candle` (display time already applied by the caller, plain seconds);
+   * the `CandlestickData` cast stays inside the engine, exactly as in `render`.
+   */
+  public upsertCandle(candle: Candle): void {
+    this.mainSeries.update(candle as unknown as CandlestickData);
+  }
+
+  /**
+   * Price at a pane y coordinate (container CSS px), or `null` when the series cannot
+   * resolve it. Read-only geometry query — no behavior, so it does not touch kernel
+   * invariant 2 (see `paneRect`'s note, which established this reasoning).
+   */
+  public priceForY(y: number): number | null {
+    return this.mainSeries.coordinateToPrice(y) as number | null;
+  }
+
+  /** Pane y coordinate for a price, or `null` when it is not resolvable. Inverse of `priceForY`. */
+  public yForPrice(price: number): number | null {
+    return this.mainSeries.priceToCoordinate(price) as number | null;
+  }
+
+  /**
+   * Pane x coordinate for a DISPLAY time (unix seconds already shifted by the caller's
+   * display zone), via the time scale.
+   *
+   * Deliberately NOT the same mapping as `DrawingsCapability.xForTime`, which resolves by
+   * BAR INDEX and is gap-immune (see `time-coordinates.ts`). This one is the library's
+   * `timeToCoordinate`, and the single consumer (`ChartComponent.applySnap`) has always used
+   * that mapping. Preserving it is a behavior-preservation requirement, not an oversight.
+   */
+  public xForDisplayTime(displayTime: number): number | null {
+    return this.chart.timeScale().timeToCoordinate(displayTime as UTCTimestamp) as number | null;
+  }
+
+  /** Scrolls the time scale to the newest bar. */
+  public scrollToRealTime(): void {
+    this.chart.timeScale().scrollToRealTime();
+  }
+
+  /**
+   * Sets the visible logical range WITHOUT echo suppression, for the lazy-prepend "hold the
+   * view still" shift.
+   *
+   * Why this is not `applyVisibleRange`: that method arms the one-shot
+   * `suppressNextRangeEvent` flag, so the resulting `VisibleRangeChanged` bus event is
+   * swallowed. The lazy-prepend call site has never suppressed it, and the emission is
+   * OBSERVABLE — `ChartSyncBus` consumers (other panels in the link group) follow the
+   * shifted range through that event. Routing the prepend through `applyVisibleRange` would
+   * silently stop synced panels from following a prepend. Two call sites with two different
+   * echo semantics therefore need two methods.
+   */
+  public shiftVisibleRange(from: number, to: number): void {
+    this.chart.timeScale().setVisibleLogicalRange({ from, to } as unknown as LogicalRange);
   }
 
   public setInteractivity(enabled: boolean): void {
