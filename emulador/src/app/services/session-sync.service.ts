@@ -413,11 +413,7 @@ export class SessionSyncService {
             const expectedOwnerId = await this.currentUserId();
             await this.upsertSession(row);
             await this.assertExpectedOwner(expectedOwnerId);
-            await this.db.acknowledgeSessionSynced(
-              meta.symbol,
-              row.id,
-              uploadedClientUpdatedAt,
-            );
+            await this.db.acknowledgeSessionSynced(meta.symbol, row.id, uploadedClientUpdatedAt);
           } catch (error) {
             if (error instanceof OwnerAgreementError) throw error;
             // stays dirty, retried next flush
@@ -430,11 +426,7 @@ export class SessionSyncService {
             const expectedOwnerId = await this.currentUserId();
             await this.upsertSession(row);
             await this.assertExpectedOwner(expectedOwnerId);
-            await this.db.acknowledgeSessionSynced(
-              meta.symbol,
-              row.id,
-              uploadedClientUpdatedAt,
-            );
+            await this.db.acknowledgeSessionSynced(meta.symbol, row.id, uploadedClientUpdatedAt);
           } catch (error) {
             if (error instanceof OwnerAgreementError) throw error;
             // stays dirty, retried next flush
@@ -537,10 +529,7 @@ export class SessionSyncService {
     try {
       const cloudRows = await this.listFolders();
       await this.assertExpectedOwner(expectedOwnerId);
-      await this.adoptQuarantinedFolders(
-        new Set(cloudRows.map((c) => c.id)),
-        expectedOwnerId,
-      );
+      await this.adoptQuarantinedFolders(new Set(cloudRows.map((c) => c.id)), expectedOwnerId);
       const localFolders = await this.db.listFolders();
       const local = localFolders.map((f) => ({
         id: f.id,
@@ -564,7 +553,7 @@ export class SessionSyncService {
         const isCloudOnly = existing == null;
         if (isCloudWon || isCloudOnly) {
           await this.assertExpectedOwner(expectedOwnerId);
-          await this.db.putFolder({
+          await this.db.replaceFolderIfUnchanged(existing, {
             id: cloudFolder.id,
             name: cloudFolder.name,
             order: cloudFolder.sort,
@@ -576,7 +565,8 @@ export class SessionSyncService {
 
       for (const id of toDeleteLocalIds) {
         await this.assertExpectedOwner(expectedOwnerId);
-        await this.db.deleteFolder(id);
+        const expected = localById.get(id);
+        if (expected) await this.db.replaceFolderIfUnchanged(expected, null);
       }
 
       for (const id of toPushIds) {
@@ -608,10 +598,7 @@ export class SessionSyncService {
     try {
       const cloudSummaries = await this.listSummaries();
       await this.assertExpectedOwner(expectedOwnerId);
-      await this.adoptQuarantinedMetas(
-        new Set(cloudSummaries.map((s) => s.id)),
-        expectedOwnerId,
-      );
+      await this.adoptQuarantinedMetas(new Set(cloudSummaries.map((s) => s.id)), expectedOwnerId);
       const metas = await this.db.listMetas();
 
       interface LocalSessionItem {
@@ -659,29 +646,23 @@ export class SessionSyncService {
       const { toDeleteLocalIds } = mergeByLww(local, cloud, syncedIds);
 
       // D1: previously-synced locals now absent from the cloud are removed.
-      const changedMetas = new Set<WorkspaceMeta>();
       for (const id of toDeleteLocalIds) {
         const item = local.find((l) => l.id === id);
         if (!item) continue;
-        if (item._kind === 'archived') {
-          item._meta.sessions = (item._meta.sessions ?? []).filter((s) => s.id !== id);
-        } else {
-          item._meta.activeSessionId = undefined;
-          item._meta.activeClientUpdatedAt = undefined;
-          item._meta.activeSyncedAt = undefined;
-          item._meta.trading = defaultTradingData();
-        }
-        changedMetas.add(item._meta);
+        await this.assertExpectedOwner(expectedOwnerId);
+        await this.db.removeSessionIfUnchanged(
+          item.symbol,
+          item.id,
+          item._kind,
+          item.clientUpdatedAt,
+          item.syncedAt,
+        );
       }
 
       // Cloud-won sessions (cloud strictly newer, or cloud-only) are not
       // materialized into full local trading state here — payloads are
       // pulled lazily on open (see reconstructWorkspaces / fetchPayload).
-      // We only need to make sure D1 removals above are persisted.
-      for (const meta of changedMetas) {
-        await this.assertExpectedOwner(expectedOwnerId);
-        await this.db.putMeta(meta);
-      }
+      // D1 removals above are applied transactionally against their evaluated revisions.
     } catch (error) {
       if (error instanceof OwnerAgreementError) throw error;
       // Offline or RLS failure — leave local sessions untouched, retried next pull.
@@ -712,30 +693,18 @@ export class SessionSyncService {
   private async reconstructActiveIds(expectedOwnerId?: string): Promise<void> {
     const metas = await this.db.listMetas();
     for (const meta of metas) {
-      const candidates: { id: string; clientUpdatedAt: number }[] = [];
-      if (meta.activeSessionId) {
-        candidates.push({
-          id: meta.activeSessionId,
-          clientUpdatedAt: meta.activeClientUpdatedAt ?? 0,
-        });
-      }
-      for (const s of meta.sessions ?? []) {
-        candidates.push({ id: s.id, clientUpdatedAt: s.clientUpdatedAt ?? s.createdAt });
-      }
-      if (!candidates.length) continue;
-
-      const knownActiveId = meta.activeSessionId;
-      const stillPresent = knownActiveId && candidates.some((c) => c.id === knownActiveId);
-      if (stillPresent) continue;
-
-      const newest = candidates.reduce((best, c) =>
-        c.clientUpdatedAt > best.clientUpdatedAt ? c : best,
-      );
-      if (newest.id !== meta.activeSessionId) {
-        if (expectedOwnerId) await this.assertExpectedOwner(expectedOwnerId);
-        meta.activeSessionId = newest.id;
-        await this.db.putMeta(meta);
-      }
+      if (meta.activeSessionId || !(meta.sessions ?? []).length) continue;
+      if (expectedOwnerId) await this.assertExpectedOwner(expectedOwnerId);
+      await this.db.updateMeta(meta.symbol, (current) => {
+        if (!current || current.activeSessionId || !(current.sessions ?? []).length)
+          return undefined;
+        const newest = current.sessions!.reduce((best, session) =>
+          (session.clientUpdatedAt ?? session.createdAt) > (best.clientUpdatedAt ?? best.createdAt)
+            ? session
+            : best,
+        );
+        return { ...current, activeSessionId: newest.id };
+      });
     }
   }
 }

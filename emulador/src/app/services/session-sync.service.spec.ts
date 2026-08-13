@@ -112,6 +112,40 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
+type PausedOwnerAssertion = Deferred<void> & { release: Deferred<void> };
+
+function pausedOwnerAssertion(db: WorkspaceDbService, occurrence: number): PausedOwnerAssertion {
+  const reached = deferred<void>();
+  const release = deferred<void>();
+  let calls = 0;
+  vi.spyOn(db, 'assertOwner').mockImplementation(async () => {
+    calls += 1;
+    if (calls === occurrence) {
+      reached.resolve();
+      await release.promise;
+    }
+  });
+  return Object.assign(reached, { release });
+}
+
+async function pullFoldersOnly(service: SessionSyncService): Promise<void> {
+  await (
+    service as unknown as { pullAndMergeFolders(expectedOwnerId: string): Promise<void> }
+  ).pullAndMergeFolders(OWNER);
+}
+
+async function pullSessionsOnly(service: SessionSyncService): Promise<void> {
+  await (
+    service as unknown as { pullAndMergeSessions(expectedOwnerId: string): Promise<void> }
+  ).pullAndMergeSessions(OWNER);
+}
+
+async function reconstructActiveOnly(service: SessionSyncService): Promise<void> {
+  await (
+    service as unknown as { reconstructActiveIds(expectedOwnerId: string): Promise<void> }
+  ).reconstructActiveIds(OWNER);
+}
+
 class FakeQueryBuilder implements PromiseLike<FakeResult> {
   selectCols: string | undefined;
   selectOpts: { count?: string } | undefined;
@@ -385,25 +419,28 @@ describe('SessionSyncService — in-flight owner agreement', () => {
   it.each([
     ['listSummaries', 'sessions'],
     ['listFolders', 'folders'],
-  ] as const)('%s rejects cloud data when auth changes A to B during the request', async (method, table) => {
-    let authOwner = OWNER;
-    const response = deferred<FakeResult>();
-    const started = deferred<void>();
-    const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
-    const original = recorder.resolveSelect;
-    recorder.resolveSelect = (selectedTable, builder) => {
-      if (selectedTable !== table) return original(selectedTable, builder);
-      started.resolve();
-      return response.promise;
-    };
-    const pending = makeService(client)[method]();
-    await started.promise;
+  ] as const)(
+    '%s rejects cloud data when auth changes A to B during the request',
+    async (method, table) => {
+      let authOwner = OWNER;
+      const response = deferred<FakeResult>();
+      const started = deferred<void>();
+      const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
+      const original = recorder.resolveSelect;
+      recorder.resolveSelect = (selectedTable, builder) => {
+        if (selectedTable !== table) return original(selectedTable, builder);
+        started.resolve();
+        return response.promise;
+      };
+      const pending = makeService(client)[method]();
+      await started.promise;
 
-    authOwner = OTHER_OWNER;
-    response.resolve({ data: [], error: null, count: 0 });
+      authOwner = OTHER_OWNER;
+      response.resolve({ data: [], error: null, count: 0 });
 
-    await expect(pending).rejects.toThrow(/owner|propietario/i);
-  });
+      await expect(pending).rejects.toThrow(/owner|propietario/i);
+    },
+  );
 
   it('fetchPayload rejects a payload when auth changes A to B during the request', async () => {
     let authOwner = OWNER;
@@ -1087,7 +1124,13 @@ describe('SessionSyncService — truncated cloud pull must not delete local data
   });
 
   it('a synced local folder omitted from a truncated page is not deleted', async () => {
-    await db.putFolder({ id: 'f-omitted', name: 'Estrategias', order: 0, clientUpdatedAt: 1000, syncedAt: 1000 });
+    await db.putFolder({
+      id: 'f-omitted',
+      name: 'Estrategias',
+      order: 0,
+      clientUpdatedAt: 1000,
+      syncedAt: 1000,
+    });
 
     const { client } = makeFakeClient({ summaryRows: [], folderRows: [], folderCount: 3 });
 
@@ -1133,7 +1176,9 @@ describe('SessionSyncService — truncated cloud pull must not delete local data
     const meta = workspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: undefined,
-      sessions: [savedSession({ id: 'first-owners-session', clientUpdatedAt: 1000, syncedAt: 1000 })],
+      sessions: [
+        savedSession({ id: 'first-owners-session', clientUpdatedAt: 1000, syncedAt: 1000 }),
+      ],
     });
     await db.putMeta(meta);
 
@@ -1297,6 +1342,127 @@ describe('SessionSyncService.flushDirty — folder push', () => {
         syncedAt: 100,
       },
     ]);
+  });
+});
+
+describe('SessionSyncService — pull consequences use current local revisions', () => {
+  it('does not replace a newer folder edit with an older cloud winner', async () => {
+    const db = await freshDb();
+    await db.putFolder({ id: 'f1', name: 'Local', order: 0, clientUpdatedAt: 100, syncedAt: 100 });
+    const { client } = makeFakeClient({
+      folderRows: [
+        { id: 'f1', name: 'Cloud', sort: 1, client_updated_at: new Date(200).toISOString() },
+      ],
+      folderCount: 1,
+      userId: OWNER,
+    });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullFoldersOnly(makeService(client, db));
+    await pause.promise;
+    await db.putFolder({ id: 'f1', name: 'Newer', order: 7, clientUpdatedAt: 300, syncedAt: 100 });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.listFolders())[0]).toEqual({
+      id: 'f1',
+      name: 'Newer',
+      order: 7,
+      clientUpdatedAt: 300,
+      syncedAt: 100,
+    });
+  });
+
+  it('does not delete a folder edited after the D1 snapshot', async () => {
+    const db = await freshDb();
+    await db.putFolder({ id: 'f1', name: 'Old', order: 0, clientUpdatedAt: 100, syncedAt: 100 });
+    const { client } = makeFakeClient({ folderRows: [], folderCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullFoldersOnly(makeService(client, db));
+    await pause.promise;
+    await db.putFolder({ id: 'f1', name: 'Newer', order: 2, clientUpdatedAt: 300, syncedAt: 100 });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.listFolders())[0]?.name).toBe('Newer');
+  });
+
+  it('does not delete an archived session edited after the D1 snapshot', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [
+        savedSession({ id: 'archived', name: 'Old', clientUpdatedAt: 100, syncedAt: 100 }),
+      ],
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({
+      ...original,
+      sessions: [
+        savedSession({ id: 'archived', name: 'Newer', clientUpdatedAt: 300, syncedAt: 100 }),
+      ],
+    });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.getMeta('EURUSD'))?.sessions?.[0]?.name).toBe('Newer');
+  });
+
+  it('does not clear active trading edited after the D1 snapshot', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'old' })] },
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({
+      ...original,
+      activeClientUpdatedAt: 300,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'newer' })] },
+    });
+    pause.release.resolve();
+    await pending;
+
+    const after = await db.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('active');
+    expect(after?.trading?.positions[0]?.id).toBe('newer');
+  });
+
+  it('reconstructs the active id without replacing concurrent persistence', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [savedSession({ id: 'archived', clientUpdatedAt: 100, syncedAt: 100 })],
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 1);
+    const pending = reconstructActiveOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({
+      ...original,
+      activeSessionId: 'concurrent',
+      activeClientUpdatedAt: 300,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'newer' })] },
+    });
+    pause.release.resolve();
+    await pending;
+
+    const after = await db.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('concurrent');
+    expect(after?.trading?.positions[0]?.id).toBe('newer');
   });
 });
 
@@ -1592,7 +1758,9 @@ describe('Session Sovereignty V2 — owner isolation across an account switch', 
     });
     const service = makeService(client, dbA);
 
-    await expect(service.upsertSession(cleanRow({ id: 'A-upload' }))).rejects.toThrow(/owner|propietario/i);
+    await expect(service.upsertSession(cleanRow({ id: 'A-upload' }))).rejects.toThrow(
+      /owner|propietario/i,
+    );
     await expect(service.deleteSession('A-delete')).rejects.toThrow(/owner|propietario/i);
     await expect(service.pullAndMerge()).rejects.toThrow(/owner|propietario/i);
 

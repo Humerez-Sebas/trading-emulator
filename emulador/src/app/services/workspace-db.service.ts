@@ -1,7 +1,7 @@
 /* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
 import { inject, Injectable } from '@angular/core';
 import { Candle, Timeframe } from '../models';
-import { SessionFolder } from '../state/trading/trading.models';
+import { defaultTradingData, SessionFolder } from '../state/trading/trading.models';
 import { AssetMeta, Workspace, WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import {
   ADOPTION_MARKER_KEY,
@@ -409,6 +409,27 @@ export class WorkspaceDbService {
     return this.completed(tx);
   }
 
+  /** Applies a cloud folder consequence only while its evaluated local revision is current. */
+  async replaceFolderIfUnchanged(
+    expected: SessionFolder | undefined,
+    next: SessionFolder | null,
+  ): Promise<void> {
+    const id = expected?.id ?? next?.id;
+    if (!id) return;
+    const { tx, store } = await this.userTx(FOLDERS_STORE, 'readwrite');
+    const completion = this.completed(tx);
+    const current = await this.request<SessionFolder | undefined>(store.get(id));
+    const unchanged = expected
+      ? current?.clientUpdatedAt === expected.clientUpdatedAt &&
+        current?.syncedAt === expected.syncedAt
+      : current == null;
+    if (unchanged) {
+      if (next) store.put(next);
+      else if (expected) store.delete(expected.id);
+    }
+    await completion;
+  }
+
   /** Acknowledges only the exact folder revision that completed its cloud upsert. */
   async acknowledgeFolderSynced(id: string, clientUpdatedAt: number): Promise<void> {
     const { tx, store } = await this.userTx(FOLDERS_STORE, 'readwrite');
@@ -441,6 +462,47 @@ export class WorkspaceDbService {
       const sessions = [...(current.sessions ?? [])];
       sessions[index] = { ...sessions[index], syncedAt: clientUpdatedAt };
       return { ...current, sessions };
+    });
+  }
+
+  /** Removes one D1 target only while its evaluated local revision is still current. */
+  async removeSessionIfUnchanged(
+    symbol: string,
+    sessionId: string,
+    kind: 'active' | 'archived',
+    clientUpdatedAt: number,
+    syncedAt: number | undefined,
+  ): Promise<void> {
+    await this.updateMeta(symbol, (current) => {
+      if (!current) return undefined;
+      if (kind === 'active') {
+        if (
+          current.activeSessionId !== sessionId ||
+          (current.activeClientUpdatedAt ?? 0) !== clientUpdatedAt ||
+          current.activeSyncedAt !== syncedAt
+        ) {
+          return undefined;
+        }
+        return {
+          ...current,
+          activeSessionId: undefined,
+          activeClientUpdatedAt: undefined,
+          activeSyncedAt: undefined,
+          trading: defaultTradingData(),
+        };
+      }
+      const saved = (current.sessions ?? []).find((session) => session.id === sessionId);
+      if (
+        !saved ||
+        (saved.clientUpdatedAt ?? 0) !== clientUpdatedAt ||
+        saved.syncedAt !== syncedAt
+      ) {
+        return undefined;
+      }
+      return {
+        ...current,
+        sessions: (current.sessions ?? []).filter((session) => session.id !== sessionId),
+      };
     });
   }
 
@@ -658,9 +720,7 @@ export class WorkspaceDbService {
       const sync = tx.objectStore(SYNC_STORE);
       const metaStore = tx.objectStore(META_STORE);
       const folderStore = tx.objectStore(FOLDERS_STORE);
-      const current = await this.request<AdoptionMarker | undefined>(
-        sync.get(ADOPTION_MARKER_KEY),
-      );
+      const current = await this.request<AdoptionMarker | undefined>(sync.get(ADOPTION_MARKER_KEY));
       const copiedMetaKeys: string[] = [];
       const copiedFolderKeys: string[] = [];
       for (const meta of metas) {
@@ -698,5 +758,4 @@ export class WorkspaceDbService {
     }
     await completion;
   }
-
 }

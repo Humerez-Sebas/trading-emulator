@@ -11,6 +11,7 @@ import { AuthActions } from './auth.actions';
 import { SupabaseAuthService } from '../../auth/supabase-auth.service';
 import { ROOT_EFFECTS_INIT } from '@ngrx/effects';
 import { authFeature } from './auth.reducer';
+import { fixedOwnerIdentity, OwnerIdentityService } from '../../services/owner-identity.service';
 
 describe('AuthEffects', () => {
   let actions$: Subject<any>;
@@ -45,6 +46,7 @@ describe('AuthEffects', () => {
         { provide: SupabaseAuthService, useValue: auth },
         { provide: Router, useValue: router },
         { provide: DOCUMENT, useValue: { location: { assign } } },
+        { provide: OwnerIdentityService, useValue: fixedOwnerIdentity('u1') },
       ],
     });
     store = TestBed.inject(MockStore);
@@ -156,6 +158,22 @@ describe('AuthEffects', () => {
         AuthActions.login({ email: 'b@example.com', password: 'pass12', returnUrl: null }),
       );
       await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('/mercados'));
+
+      expect(emitted).toEqual([]);
+      sub.unsubscribe();
+    });
+
+    it('uses persisted owner A when bootstrap has not resolved the NgRx user before B login', async () => {
+      store.overrideSelector(authFeature.selectUser, null);
+      store.refreshState();
+      auth.signIn.mockResolvedValue({ id: 'u2', email: 'b@example.com' });
+      const emitted: unknown[] = [];
+      const sub = effects.login$.subscribe((action) => emitted.push(action));
+
+      actions$.next(
+        AuthActions.login({ email: 'b@example.com', password: 'pass12', returnUrl: '/home' }),
+      );
+      await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('/home'));
 
       expect(emitted).toEqual([]);
       sub.unsubscribe();
