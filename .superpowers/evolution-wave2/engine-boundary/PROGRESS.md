@@ -7,9 +7,8 @@ Checkpoint: `a736da843a4d35490fd93007d14e9da6ff4ad932`
 
 ## Status
 
-**TRACK C DONE_WITH_CONCERNS.** The boundary work is complete and four of five final gates
-are green. The full test gate reproducibly hits only the known `candles-writer` 5000 ms
-timeout under suite load; its isolated `9/9` run is green. No timeout change was made.
+**TRACK C CLOSEOUT IN PROGRESS.** The historical five-gate evidence remains below. Final
+review findings C-R1 through C-R4 are implemented; fresh final gates and re-review remain.
 
 - [x] 22 production bridge call sites migrated to narrow contracts.
 - [x] `chartApi` and `seriesApi` deleted; no generic getter/handle replacement added.
@@ -83,4 +82,25 @@ npm run build                            exit 0, initial 651.83 kB
   1 known warning: 500 kB budget exceeded by 151.83 kB
 ```
 
-No install, lockfile change, push, merge, deploy or mutation commit occurred.
+An earlier setup step ran `npm ci` successfully; `package.json` and `package-lock.json`
+remained unchanged. No dependency/lockfile mutation, push, merge or deploy occurred.
+
+## Closeout Findings And Evidence
+
+- C-R1: `registerCapability` now returns `void`; `getCapability` is keyed by
+  `CapabilityApiMap` and returns only handle-free facades. The generic-return mutation made
+  spec TypeScript fail at the `expectTypeOf<void>` contract; inverse restoration was green.
+- C-R2: detector coverage now includes dot/indexed TypeScript import types and named/star
+  direct re-exports. Chart-domain files run the rule in import-allowed/export-denied mode.
+- C-R3: `npm run lint` runs `node eslint-rules/no-chart-handles.test.js` before `ng lint`.
+- C-R4: install history wording corrected while preserving unchanged package/lock files.
+- Independent review `ses_00402de38ffet2fHXAeapj5aSZ` rejected the first closeout attempt:
+  two High and three Medium findings. The raw event payload and domain-re-export findings
+  were verified and fixed; docs/proof gaps were resolved. Low indexed import type was fixed.
+- Event RED: targeted boundary spec `2 failed / 19 passed`; both failures showed raw
+  `hoveredSeries`, `seriesData`, and `sourceEvent` crossing the bus.
+- Event/proof GREEN: targeted boundary spec `23/23`; affected event/engine/panel suite
+  `101/101`; lint green with local rule tests included.
+- Import-type negative probe: temporary
+  `import('lightweight-charts').IChartApi` in `chart.component.ts` made `npm run lint` fail
+  with exactly one `engine-boundary/no-chart-handles` error; inverse restoration was green.

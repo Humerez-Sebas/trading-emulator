@@ -13,6 +13,14 @@ const ruleTester = new RuleTester({
   },
 });
 
+const domainRuleTester = new RuleTester({
+  languageOptions: {
+    parser: tseslint.parser,
+    ecmaVersion: 2022,
+    sourceType: 'module',
+  },
+});
+
 ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
   valid: [
     {
@@ -62,6 +70,11 @@ ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
       errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
     },
     {
+      name: 'rejects a handle through an indexed TypeScript import type',
+      code: `type ChartHandle = import('lightweight-charts')['IChartApi'];`,
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
       name: 'rejects an aliased direct handle re-export',
       code: `export type { ISeriesApi as SeriesHandle } from 'lightweight-charts';`,
       errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'ISeriesApi' } }],
@@ -70,6 +83,24 @@ ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
       name: 'rejects a star re-export that includes handles',
       code: `export type * from 'lightweight-charts';`,
       errors: [{ messageId: 'forbiddenNamespaceImport' }],
+    },
+  ],
+});
+
+domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBoundary.rules['no-chart-handles'], {
+  valid: [
+    {
+      name: 'allows the chart domain to import handles it owns',
+      code: `import type { IChartApi } from 'lightweight-charts';`,
+      options: [{ allowImports: true }],
+    },
+  ],
+  invalid: [
+    {
+      name: 'still rejects a direct handle re-export from the chart domain',
+      code: `export type { IChartApi } from 'lightweight-charts';`,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
     },
   ],
 });

@@ -19,7 +19,7 @@ import { Store } from '@ngrx/store';
 // (`IChartApi`, `ISeriesApi`, `IPriceLine`, `ISeriesMarkersPluginApi`) is gone: this
 // component no longer touches a lightweight-charts object. Their imports (plus namespace
 // imports) are blocked outside domain/chart by `engine-boundary/no-chart-handles`.
-import { LogicalRange, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
+import { LogicalRange, UTCTimestamp } from 'lightweight-charts';
 import { Candle, derivePointSize } from '../../models';
 import {
   type DisplayZone,
@@ -65,6 +65,7 @@ import { TradingCapability } from '../../domain/chart/capabilities/trading-capab
 import { TradingActions } from '../../state/trading/trading.actions';
 import { lotsForRisk, OrderSide, PendingType } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
+import { ChartPointerEvent } from '../../domain/chart/chart-event-bus';
 import { ChartEventBus } from '../../domain/chart/chart-event-bus';
 import {
   ChartConfig,
@@ -1054,7 +1055,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * Mouse follow: moves the SL/TP preview line while placing and refreshes
    * the ruler-style readout (points, sized lots, R multiple).
    */
-  private updatePlacingHover(param: MouseEventParams<Time>): void {
+  private updatePlacingHover(param: ChartPointerEvent): void {
     const placing = this.placing();
     if (!placing || !param.point || !this.engine) return;
     const raw = this.engine.priceForY(param.point.y);
@@ -1088,7 +1089,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
 
   /** Click while placing: fixes the SL first, then the TP (TP optional). */
-  private handlePlacingClick(param: MouseEventParams<Time>): void {
+  private handlePlacingClick(param: ChartPointerEvent): void {
     const placing = this.placing();
     if (!placing || !param.point || !this.engine) return;
     const raw = this.engine.priceForY(param.point.y);
@@ -1247,7 +1248,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   // ============ drawing ============
 
   /** Data point (real UTC) under the cursor; extrapolates into the future. */
-  private pointAt(param: MouseEventParams<Time>): DrawingPoint | null {
+  private pointAt(param: ChartPointerEvent): DrawingPoint | null {
     if (!param.point || !this.engine) return null;
     const time = this.drawingsCap.timeForX(param.point.x);
     const price = this.engine.priceForY(param.point.y);
@@ -1255,7 +1256,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     return { time, price };
   }
 
-  private handleClick(param: MouseEventParams<Time>): void {
+  private handleClick(param: ChartPointerEvent): void {
     this.chartFocused.emit();
     // an active quick ruler: the next left click dismisses the measurement
     if (this.quickRuler) {
@@ -1341,7 +1342,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.store.dispatch(DrawingsActions.pasteClipboard({ panelId, drawing }));
   }
 
-  private handleCrosshair(param: MouseEventParams<Time>): void {
+  private handleCrosshair(param: ChartPointerEvent): void {
     if (this.placing()) {
       this.updatePlacingHover(param);
       return;

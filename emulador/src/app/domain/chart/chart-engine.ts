@@ -7,9 +7,11 @@ import {
   CrosshairMode,
   LogicalRange,
   UTCTimestamp,
+  MouseEventParams,
+  Time,
 } from 'lightweight-charts';
 import { Candle, RenderModel } from './render-model';
-import { ChartEventBus } from './chart-event-bus';
+import { ChartEventBus, ChartPointerEvent } from './chart-event-bus';
 import { Capability, CapabilityApiMap, MainSeriesCapability } from './capability';
 import { hexToRgba } from './color-utils';
 
@@ -18,6 +20,14 @@ export interface ChartApplyHandle {
   applyCrosshair(time: UTCTimestamp | null): void;
   /** Sets the visible logical range; `null` is a no-op (never clears). Re-entrancy-guarded. */
   applyVisibleRange(range: LogicalRange | null): void;
+}
+
+function pointerEventOf(param: MouseEventParams<Time>): ChartPointerEvent {
+  return {
+    time: param.time,
+    logical: param.logical,
+    point: param.point ? { x: param.point.x, y: param.point.y } : undefined,
+  };
 }
 
 export class ChartEngine implements ChartApplyHandle {
@@ -97,10 +107,10 @@ export class ChartEngine implements ChartApplyHandle {
       wickDownColor: '#ef5350',
     });
 
-    this.chart.subscribeClick((p) => this.bus.emit('ChartClicked', p));
-    this.chart.subscribeDblClick((p) => this.bus.emit('ChartClicked', p));
+    this.chart.subscribeClick((p) => this.bus.emit('ChartClicked', pointerEventOf(p)));
+    this.chart.subscribeDblClick((p) => this.bus.emit('ChartClicked', pointerEventOf(p)));
     this.chart.subscribeCrosshairMove((p) => {
-      if (!this.applyingSync) this.bus.emit('CrosshairMoved', p);
+      if (!this.applyingSync) this.bus.emit('CrosshairMoved', pointerEventOf(p));
     });
     this.chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
       // One-shot echo suppression (load-bearing — see `suppressNextRangeEvent`'s doc): the first

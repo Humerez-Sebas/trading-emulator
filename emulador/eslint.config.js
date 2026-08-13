@@ -39,6 +39,15 @@ module.exports = defineConfig([
     },
   },
   {
+    files: ['src/app/domain/chart/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    plugins: { 'engine-boundary': engineBoundary },
+    rules: {
+      // The chart domain owns library handles and may import them, but must not re-export them.
+      'engine-boundary/no-chart-handles': ['error', { allowImports: true }],
+    },
+  },
+  {
     files: ['src/app/**/*.ts'],
     ignores: ['src/app/domain/chart/**', '**/*.spec.ts'],
     plugins: { 'engine-boundary': engineBoundary },

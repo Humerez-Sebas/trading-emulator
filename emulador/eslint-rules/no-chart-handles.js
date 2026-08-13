@@ -25,7 +25,13 @@ const noChartHandles = {
     docs: {
       description: 'Disallow importing raw lightweight-charts handles outside the chart domain.',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: { allowImports: { type: 'boolean' } },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       forbiddenNamedImport:
         'Do not import {{name}} outside src/app/domain/chart. Use a narrow ChartEngine or Capability contract instead.',
@@ -35,6 +41,7 @@ const noChartHandles = {
   },
 
   create(context) {
+    const allowImports = context.options[0]?.allowImports === true;
     function importedName(specifier) {
       const imported = specifier.imported ?? specifier.local;
       return imported.type === 'Identifier' ? imported.name : String(imported.value);
@@ -48,6 +55,7 @@ const noChartHandles = {
     return {
       ImportDeclaration(node) {
         if (node.source.value !== 'lightweight-charts') return;
+        if (allowImports) return;
 
         for (const specifier of node.specifiers) {
           if (specifier.type === 'ImportNamespaceSpecifier') {
@@ -64,6 +72,17 @@ const noChartHandles = {
           return;
         }
         if (node.qualifier?.type === 'Identifier') reportNamed(node, node.qualifier.name);
+      },
+      TSIndexedAccessType(node) {
+        if (
+          node.objectType.type !== 'TSImportType' ||
+          node.objectType.source.value !== 'lightweight-charts' ||
+          node.indexType.type !== 'TSLiteralType' ||
+          node.indexType.literal.type !== 'Literal'
+        ) {
+          return;
+        }
+        reportNamed(node, String(node.indexType.literal.value));
       },
       ExportNamedDeclaration(node) {
         if (node.source?.value !== 'lightweight-charts') return;

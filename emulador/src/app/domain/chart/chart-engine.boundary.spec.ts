@@ -8,8 +8,8 @@ import type {
   SeriesType,
   Time,
 } from 'lightweight-charts';
-import type { Capability } from './capability';
-import { ChartEventBus } from './chart-event-bus';
+import type { Capability, CapabilityApiMap } from './capability';
+import { ChartEventBus, type ChartEventMap } from './chart-event-bus';
 import type { RenderModel } from './render-model';
 
 /**
@@ -29,7 +29,18 @@ import type { RenderModel } from './render-model';
  *      difference is load-bearing. Collapsing the former into the latter (the obvious
  *      "simplification") is a real behaviour change and must fail here.
  */
-const { chartStub, timeScaleStub, seriesStub, getRangeCb, reset, flushEcho } = vi.hoisted(() => {
+const {
+  chartStub,
+  timeScaleStub,
+  seriesStub,
+  getClickCb,
+  getCrosshairCb,
+  getRangeCb,
+  reset,
+  flushEcho,
+} = vi.hoisted(() => {
+  let clickCb: ((p: unknown) => void) | undefined;
+  let crosshairCb: ((p: unknown) => void) | undefined;
   let rangeCb: ((r: unknown) => void) | undefined;
   let pendingRangeEcho: (() => void) | undefined;
 
@@ -56,9 +67,13 @@ const { chartStub, timeScaleStub, seriesStub, getRangeCb, reset, flushEcho } = v
     priceScale: () => ({ applyOptions: vi.fn() }),
   };
   const chartStub = {
-    subscribeClick: vi.fn(),
+    subscribeClick: (cb: (p: unknown) => void) => {
+      clickCb = cb;
+    },
     subscribeDblClick: vi.fn(),
-    subscribeCrosshairMove: vi.fn(),
+    subscribeCrosshairMove: (cb: (p: unknown) => void) => {
+      crosshairCb = cb;
+    },
     timeScale: () => timeScaleStub,
     addSeries: () => seriesStub,
     applyOptions: vi.fn(),
@@ -72,8 +87,12 @@ const { chartStub, timeScaleStub, seriesStub, getRangeCb, reset, flushEcho } = v
     chartStub,
     timeScaleStub,
     seriesStub,
+    getClickCb: () => clickCb,
+    getCrosshairCb: () => crosshairCb,
     getRangeCb: () => rangeCb,
     reset: () => {
+      clickCb = undefined;
+      crosshairCb = undefined;
       rangeCb = undefined;
       pendingRangeEcho = undefined;
     },
@@ -118,6 +137,24 @@ class ProbeCapability implements Capability {
 /** A second class with the SAME id, for the duplicate-registration test. */
 class DuplicateProbeCapability extends ProbeCapability {}
 
+class PublicProbeCapability implements Capability {
+  readonly id = 'drawings';
+  static built: PublicProbeCapability[] = [];
+  readonly publicApi = {
+    timeForX: (x: number) => x + 1,
+    xForTime: (timeUtc: number) => timeUtc - 1,
+    hitTestDrawing: () => 'drawing-1',
+    hitTestHandle: () => 'p1' as const,
+  };
+
+  constructor(readonly series: ISeriesApi<'Candlestick'>) {
+    PublicProbeCapability.built.push(this);
+  }
+  init(): void {}
+  render(): void {}
+  destroy(): void {}
+}
+
 type RawChartHandle =
   | IChartApi
   | ISeriesApi<SeriesType>
@@ -135,6 +172,24 @@ type PublicHandleEscapeHatches = {
     : Member;
 }[keyof ChartEngineType];
 
+type ContainsRawHandle<T, Depth extends unknown[] = []> = Depth['length'] extends 8
+  ? false
+  : T extends RawChartHandle
+    ? true
+    : T extends (...args: infer Args) => infer Result
+      ? true extends ContainsRawHandle<Args[number], [...Depth, unknown]>
+        ? true
+        : ContainsRawHandle<Result, [...Depth, unknown]>
+      : T extends readonly (infer Item)[]
+        ? ContainsRawHandle<Item, [...Depth, unknown]>
+        : T extends object
+          ? true extends {
+                [Key in keyof T]: ContainsRawHandle<T[Key], [...Depth, unknown]>;
+              }[keyof T]
+            ? true
+            : false
+          : false;
+
 describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
   let ChartEngine: typeof ChartEngineType;
   let engine: ChartEngineType;
@@ -143,6 +198,7 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
     reset();
     vi.clearAllMocks();
     ProbeCapability.built = [];
+    PublicProbeCapability.built = [];
     vi.resetModules();
     ({ ChartEngine } = await import('./chart-engine'));
     engine = new ChartEngine(document.createElement('div'));
@@ -159,6 +215,36 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
       // `keyof` excludes private runtime own properties (`chart`, `mainSeries`) while a renamed
       // public getter or method returning any forbidden handle makes this type cease to be `never`.
       expectTypeOf<PublicHandleEscapeHatches>().toEqualTypeOf<never>();
+    });
+
+    it('has no raw handle nested in host-facing event or capability contracts', () => {
+      expectTypeOf<ContainsRawHandle<ChartEventMap>>().toEqualTypeOf<false>();
+      expectTypeOf<ContainsRawHandle<CapabilityApiMap>>().toEqualTypeOf<false>();
+    });
+  });
+
+  describe('event payloads do not carry lightweight-charts handles', () => {
+    it.each([
+      ['ChartClicked', getClickCb],
+      ['CrosshairMoved', getCrosshairCb],
+    ] as const)('%s emits only the data fields hosts consume', (eventType, getCallback) => {
+      const seen: unknown[] = [];
+      engine.events.on(eventType, (payload) => seen.push(payload));
+      const raw = {
+        time: 1_700_000_000,
+        logical: 12,
+        point: { x: 10, y: 20 },
+        hoveredSeries: seriesStub,
+        seriesData: new Map([[seriesStub, { close: 1 }]]),
+        sourceEvent: { type: 'mousemove' },
+      };
+
+      getCallback()?.(raw);
+
+      expect(seen).toEqual([
+        { time: 1_700_000_000, logical: 12, point: { x: 10, y: 20 } },
+      ]);
+      expect(seen[0]).not.toBe(raw);
     });
   });
 
@@ -279,6 +365,16 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
 
       engine.render({});
       expect(ProbeCapability.built[0].renderCalls).toBe(1);
+    });
+
+    it('getCapability returns the registered handle-free facade rather than the capability', () => {
+      engine.registerCapability(PublicProbeCapability);
+
+      const api = engine.getCapability('drawings');
+
+      expect(api).toBe(PublicProbeCapability.built[0].publicApi);
+      expect(api?.timeForX(9)).toBe(10);
+      expect(api).not.toBe(PublicProbeCapability.built[0]);
     });
 
     it('still throws on a duplicate id, with the same message', () => {

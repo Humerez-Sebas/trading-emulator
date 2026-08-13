@@ -2,7 +2,7 @@
 
 ## Verdict
 
-**Track C is implemented with one final-gate concern.** The RFC-004/RFC-005 raw-handle
+**Track C implementation is ready for final verification and re-review.** The RFC-004/RFC-005 raw-handle
 bridge is retired with no intentional behavior change. The historical bridge is classified
 as an **EXPIRED MIGRATION CONSTRAINT**: its migration purpose has ended, every live host
 operation has a narrow owner, and the backlog is zero before detector enablement.
@@ -22,6 +22,9 @@ operation has a narrow owner, and the backlog is zero before detector enablement
 - Corrected the checkpoint boundary spec: exact bridge-name absence remains runtime-tested;
   renamed public handle outputs are now checked at compile time over `keyof ChartEngine`.
 - Added and enabled a local ESLint detector with deterministic `RuleTester` coverage.
+- Closed the final-review constructor/generic-lookup leak: registration returns `void`, while
+  hosts receive only mapped drawings/trading facades.
+- Reduced raw library mouse callbacks to `ChartPointerEvent` before event-bus emission.
 
 The detailed OLD-to-NEW map and ownership rationale are in `ENGINE_PUBLIC_CONTRACT.md`.
 
@@ -71,20 +74,20 @@ node eslint-rules/no-chart-handles.test.js
 exit 0
 ```
 
-Cases prove all four named handles fail, an aliased handle fails, namespace import fails,
-and payload/data imports plus unrelated-module imports pass.
+Cases prove all four named handles fail, aliases fail, namespace imports fail, dot/indexed
+TypeScript import types fail, named/star re-exports fail, and data-only forms pass.
 
 ## Detector Semantics And State
 
 Rule: `engine-boundary/no-chart-handles`.
 
 - Applies to non-spec TypeScript under `src/app/**`.
-- Excludes `src/app/domain/chart/**`, where library ownership legitimately lives.
+- Chart-domain files may import owned handles but may not directly re-export them.
 - Rejects named imports `IChartApi`, `ISeriesApi`, `IPriceLine` and
   `ISeriesMarkersPluginApi` from `lightweight-charts`.
 - Rejects namespace imports from `lightweight-charts`, which could bypass named checks.
 - Allows `LogicalRange`, `MouseEventParams`, `Time`, `UTCTimestamp` and data-only imports.
-- Inspects static imports only; this is sufficient for the measured backlog and named bypass.
+- Inspects static imports, TypeScript import types, and direct re-exports.
 - Uses plain ESLint AST and existing packages; no dependency or lockfile changed.
 - Backlog at enablement: **0 production violations** outside `domain/chart`.
 - Suppressions for this rule: **0**.
@@ -146,7 +149,7 @@ clean.
 - `shiftVisibleRange` remains echoing while `applyVisibleRange` remains one-shot suppressed;
   both next-frame semantics are explicitly tested.
 - Engine-side capability construction preserves registration order, duplicate-id error text,
-  instance lookup, render fan-out and destroy order.
+  facade lookup, render fan-out and destroy order.
 - Placement preview specs preserve exact line styles/options, no-op movement, replacement,
   teardown and handle-free hit results.
 - Existing guard specs were rewired to narrow engine fakes without assertion changes.
@@ -171,22 +174,34 @@ same fixed 5000 ms limit (`5029 ms` and `5014 ms`). No Track C file imports or m
 worker/spec, and all 19 boundary-contract tests pass. The timeout was not raised or otherwise
 masked because that would broaden this track.
 
-No dependency install, lockfile change, deploy, push, merge or work outside this Track C
-worktree occurred.
+An earlier setup step ran `npm ci` successfully. It did not change `package.json` or
+`package-lock.json`; no dependency or lockfile mutation occurred. No deploy, push, merge or
+work outside this Track C worktree occurred.
+
+## Closeout Review Resolution
+
+Independent review of `894d72b..24e1dad` rejected the first closeout attempt with two High
+and three Medium findings. Resolutions:
+
+- Raw `MouseEventParams` no longer crosses the engine bus; RED was `2 failed / 19 passed`,
+  GREEN is `23/23` after adding the event, recursive type, and facade retrieval contracts.
+- The detector now runs inside `domain/chart` in import-allowed/export-denied mode, closing
+  the direct domain re-export bypass.
+- Recursive compile-time checks cover `ChartEventMap` and `CapabilityApiMap`.
+- This report, the public contract, and the ledger now describe `void` registration,
+  facade lookup, and the earlier successful `npm ci` accurately.
+- The Low indexed-import-type bypass was also closed with `RuleTester` coverage.
 
 ## Residual Risk
 
-- The import detector does not perform type-flow analysis or inspect dynamic `import()` /
-  CommonJS `require()` expressions. The measured production package-import backlog is zero,
-  namespace imports are blocked, and the compile-time `ChartEngine` output contract protects
-  the primary escape boundary; expanding to general module-flow analysis is not justified by
-  current evidence.
+- The import detector does not perform general type-flow analysis or inspect runtime dynamic
+  `import()` / CommonJS `require()` expressions. This TypeScript ESM app has zero measured
+  production use of those forms; static imports, TypeScript import types, and direct
+  re-exports are enforced.
 - `Capability.init` legitimately receives `IChartApi` inside `domain/chart`; capability
   implementations remain trusted boundary owners and require normal review/lifecycle tests.
 - TypeScript `private` is compile-time privacy, not ECMAScript `#private`; runtime reflection
   can observe internal own properties. This is not public API, and the corrected test avoids
   claiming otherwise.
-- The repository-wide `ng test` gate is not green in this environment because the known
-  `candles-writer` 25k-row performance case times out under full-suite load, despite passing
-  alone. This is the sole reason the closure status is `DONE_WITH_CONCERNS` rather than
-  `DONE`.
+- The historical full-suite timeout evidence above remains preserved. Fresh closeout gates
+  are recorded in the ledger and this report after they run.
