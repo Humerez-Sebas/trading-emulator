@@ -656,7 +656,7 @@ export class SessionSyncService {
           item._kind,
           item.clientUpdatedAt,
           item.syncedAt,
-          item._kind === 'active' ? item._meta.trading : undefined,
+          item._kind === 'active' ? item._meta : undefined,
         );
       }
 

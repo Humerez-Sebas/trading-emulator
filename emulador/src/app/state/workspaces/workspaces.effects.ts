@@ -272,10 +272,29 @@ export class WorkspacesEffects {
                 // the snapshot) — reconcile them against the latest stored value
                 // inside the same transaction as this whole-record write.
                 const now = Date.now();
-                const tradingChanged =
+                const activePayloadChanged =
                   existing?.activeSessionId === meta.activeSessionId &&
-                  JSON.stringify(existing?.trading) !== JSON.stringify(meta.trading);
-                const clocks = reconcileSessionClocks(meta, existing, now, tradingChanged);
+                  JSON.stringify({
+                    currentTime: existing?.currentTime,
+                    activeTf: existing?.activeTf,
+                    selectedTfs: existing?.selectedTfs,
+                    drawings: existing?.drawings,
+                    trading: existing?.trading,
+                    layout: existing?.layout,
+                    panels: existing?.panels,
+                    linkGroups: existing?.linkGroups,
+                  }) !==
+                    JSON.stringify({
+                      currentTime: meta.currentTime,
+                      activeTf: meta.activeTf,
+                      selectedTfs: meta.selectedTfs,
+                      drawings: meta.drawings,
+                      trading: meta.trading,
+                      layout: meta.layout,
+                      panels: meta.panels,
+                      linkGroups: Object.values(meta.linkGroups),
+                    });
+                const clocks = reconcileSessionClocks(meta, existing, now, activePayloadChanged);
                 return {
                   symbol: current!,
                   ...meta,

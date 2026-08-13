@@ -43,6 +43,32 @@ interface SeriesRecord {
   candles: Candle[];
 }
 
+function sameActivePayload(current: WorkspaceMeta, expected: WorkspaceMeta | undefined): boolean {
+  if (!expected) return false;
+  return (
+    JSON.stringify({
+      currentTime: current.currentTime,
+      activeTf: current.activeTf,
+      selectedTfs: current.selectedTfs,
+      drawings: current.drawings,
+      trading: current.trading,
+      layout: current.layout,
+      panels: current.panels,
+      linkGroups: current.linkGroups,
+    }) ===
+    JSON.stringify({
+      currentTime: expected.currentTime,
+      activeTf: expected.activeTf,
+      selectedTfs: expected.selectedTfs,
+      drawings: expected.drawings,
+      trading: expected.trading,
+      layout: expected.layout,
+      panels: expected.panels,
+      linkGroups: expected.linkGroups,
+    })
+  );
+}
+
 /**
  * IndexedDB wrapper for asset workspaces, spanning TWO physical databases
  * (Session Sovereignty V2 — see `owner-scope.ts` for the full rationale):
@@ -472,7 +498,7 @@ export class WorkspaceDbService {
     kind: 'active' | 'archived',
     clientUpdatedAt: number,
     syncedAt: number | undefined,
-    expectedTrading?: WorkspaceMeta['trading'],
+    expectedActive?: WorkspaceMeta,
   ): Promise<void> {
     await this.updateMeta(symbol, (current) => {
       if (!current) return undefined;
@@ -481,7 +507,7 @@ export class WorkspaceDbService {
           current.activeSessionId !== sessionId ||
           (current.activeClientUpdatedAt ?? 0) !== clientUpdatedAt ||
           current.activeSyncedAt !== syncedAt ||
-          JSON.stringify(current.trading) !== JSON.stringify(expectedTrading)
+          !sameActivePayload(current, expectedActive)
         ) {
           return undefined;
         }

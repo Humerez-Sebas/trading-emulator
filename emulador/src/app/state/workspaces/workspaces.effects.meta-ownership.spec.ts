@@ -301,7 +301,7 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
 
     const stored = await db.getMeta(SYMBOL);
     expect(raceDb.getMeta).not.toHaveBeenCalled();
-    expect(stored?.activeClientUpdatedAt).toBe(dirty?.activeClientUpdatedAt);
+    expect(stored!.activeClientUpdatedAt).toBeGreaterThanOrEqual(dirty!.activeClientUpdatedAt!);
     expect(stored!.activeClientUpdatedAt).toBeGreaterThan(stored!.activeSyncedAt!);
     expect(stored?.trading?.positions).toHaveLength(1);
   });
