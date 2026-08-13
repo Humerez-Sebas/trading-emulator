@@ -5,26 +5,37 @@ Worktree `C:\Users\78701\Desktop\trading-emulator-session-sovereignty`
 
 ## STATUS
 
-Track A: **COMPLETE.** A1 inventory, A3 owner isolation, A4 negative probes, A5
-trading-metadata defect repair, and A6 architecture/migration/investigation artifacts are
-implemented. Nothing was pushed or merged; no Supabase, Vercel, dependency, lockfile,
-market-data worker, sibling worktree, or `develop` change was made.
+Track A plus the required independent-review corrections: **COMPLETE.** Session clocks are
+identity-bound at persistence boundaries; dirty time is monotonic; auth/DB owner drift fails
+closed; O-7 requires all meaningful ids; adoption data+marker are atomic; null exact counts
+prove nothing. Nothing was pushed or merged; no Supabase, Vercel, dependency, lockfile,
+market-data worker, recovery UI, sibling worktree, or `develop` change was made.
 
 Primary A5 verdict: **CONFIRMED DEFECT**.
 
-Final code commit before docs: `0b725d1` (`fix(workspaces): keep outgoing real session dirty`).
-The final docs/progress commit is recorded in Git immediately after this file is committed.
+Review-correction commits before docs:
+- `9c3a52f` `fix(workspaces): bind sync clocks to session identity`
+- `128b163` `fix(sync): fail closed on ambiguous ownership`
+- `02495e3` `refactor(sync): keep adoption transaction-only`
+- `f1e1312` `test(sync): pin atomic and exact-count boundaries`
+
+The final closeout commit SHA cannot be embedded in its own contents without changing that
+SHA. The authoritative final SHA is `git rev-parse HEAD` after this artifact is committed and
+is reported in the final response.
 
 `npm ci` already done in `emulador/` (exit 0) — do NOT redo it.
 
-Final gate status — ALL GREEN after `0b725d1` (run raw and unpiped from `emulador/`):
+Final gate status after `f1e1312` (run raw and unpiped from `emulador/`):
 - `npx tsc -p tsconfig.app.json --noEmit` → `APP_TSC_EXIT=0`
 - `npx tsc -p tsconfig.spec.json --noEmit` → `SPEC_TSC_EXIT=0`
-- `npx ng test --watch=false` → `NG_TEST_EXIT=0`, **186 files / 2443 tests passed**
-  (baseline 183 / 2417 → +3 files, +26 tests)
+- first `npx ng test --watch=false`, run concurrently with build → `NG_TEST_EXIT=1`,
+  **185 files / 2454 passed, 1 timed out**; the 25k candle-writer test reached 5012 ms
+- diagnosis: targeted candle-writer rerun → exit 0, **1 file / 9 tests passed**
+- isolated `npx ng test --watch=false` rerun → `NG_TEST_EXIT=0`,
+  **186 files / 2455 tests passed**
 - `npm run lint` → `LINT_EXIT=0`, "All files pass linting."
-- `npm run build` → `BUILD_EXIT=0`; initial bundle **655.75 kB**, budget exceeded by
-  **155.75 kB** against 500.00 kB (known-accepted warning; no Vitest sentinel or unexpected
+- `npm run build` → `BUILD_EXIT=0`; initial bundle **656.82 kB**, budget exceeded by
+  **156.82 kB** against 500.00 kB (known-accepted warning; no Vitest sentinel or unexpected
   chunk type observed)
 
 Targeted TDD evidence:
@@ -32,6 +43,11 @@ Targeted TDD evidence:
   **1 failed / 1 passed**. Failure: expected `upsertSession` once, got zero.
 - GREEN after the minimal fix: exit 0; **1 file / 2 tests passed**.
 - Adjacent `workspaces.effects.spec.ts`: exit 0; **1 file / 38 tests passed**.
+- Review RED before production edits: clock provenance **2 failed / 2 passed**; O-7
+  **1 failed / 10 passed**; atomic adoption **1 failed / 46 passed**; sync boundaries
+  **5 failed / 50 passed**.
+- Review GREEN: workspace effects **43/43** and sync/storage/owner/playbook/lessons
+  **154/154**; final focused exact-count/atomic set **104/104**.
 
 Mandated post-implementation negative probe:
 - Mutation: removed only `activeClientUpdatedAt` from `doSwitch`'s outgoing `putMeta` while
@@ -40,6 +56,20 @@ Mandated post-implementation negative probe:
   client time versus preserved `activeSyncedAt=110` is clean under strict `>`.
 - Restoration: mutation never committed; `git diff --exit-code HEAD` was clean for the code
   and spec; rerun exit 0 with **2/2 passed**.
+
+Fresh closeout falsification:
+- Owner partition mutation: one shared workspace DB name; targeted command exit 1,
+  **7 failed / 59 passed**. Exact restoration via `git diff --exit-code`; rerun exit 0,
+  **66/66 passed**.
+- A5 mutation: outgoing reconciliation dirty flag `true -> false`; targeted command exit 1,
+  **4 failed / 1 passed**. Exact restoration via `git diff --exit-code`; rerun exit 0,
+  **5/5 passed**.
+
+Residual decisions:
+- Stale tabs fail closed at the auth/DB owner boundary and require reload. No auth-change
+  listener, broad cross-tab protocol, or recovery UI was added.
+- Mixed-owner, partially proven, and no-id legacy metas remain quarantined. No per-session
+  extraction was implemented, so ownership is not claimed unconditionally.
 
 ## COMPLETED
 
@@ -277,10 +307,9 @@ Chosen design (see `SESSION_SOVEREIGNTY_RFC.md` once written):
   from them.
 - **Evidence-based, per-record adoption:** inside `pullAndMergeSessions`/`pullAndMergeFolders`,
   where the authoritative RLS-scoped cloud id set is already in hand, a quarantined record is
-  adopted into the current owner's partition ONLY if one of its own ids is present in that
-  cloud set (remote-ID correlation = proof of ownership). Adopted keys are recorded in the
-  OWNER partition's `sync` store, never in the quarantine. Uncorrelated records stay
-  quarantined and are retried on every later login.
+  adopted into the current owner's partition ONLY if every meaningful id it carries is
+  present in that exact-count cloud set. The record and owner-local marker commit atomically;
+  mixed/no-id records remain quarantined and are retried on later login.
 - **Hard document reload on `loggedOut`** kills P3 (in-memory carry-over) by construction.
 - Playbook/lessons DBs get the same owner-suffixed name (kills P4).
 

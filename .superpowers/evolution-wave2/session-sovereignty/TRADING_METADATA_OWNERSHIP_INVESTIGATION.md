@@ -6,9 +6,9 @@ CONFIRMED DEFECT
 
 ## Question
 
-Does the whole-record `WorkspaceMeta` write performed by
-`WorkspacesEffects.doSwitch` preserve the active session's sync clocks and make
-the outgoing real-session snapshot eligible for the next flush?
+Do whole-record persistence writers bind sync clocks to session identity across
+`newSession`/`switchSession`, preserve stable-id A5 behavior, and leave each real
+changed snapshot eligible for the next flush?
 
 ## Writer inventory
 
@@ -24,8 +24,11 @@ replaces the complete record:
 | `SessionSyncService.pullAndMergeSessions` and reconstruction | Applies cloud membership/LWW outcomes and writes changed records |
 | Sessions page mutations | Read-modify-write paths for active/archived session operations |
 
-The defect is specifically in the checkpoint `doSwitch` writer. No broad
-ownership refactor is needed to repair it.
+The original defect was in the checkpoint `doSwitch` writer. Independent review
+found the first repair still treated the active pair as symbol-level: an
+identity transition could preserve A's clocks as B's active clocks while the
+archived A snapshot had none. The bounded correction remains at persistence
+writers; no reducer or persisted-schema expansion was required.
 
 ## Causal reconstruction
 
@@ -134,27 +137,40 @@ The `+1` terms enforce the repository's strict `>` convention even if two writes
 share a millisecond or the stored client clock is ahead of local wall time.
 Scratch sessions are not newly marked dirty.
 
+The review correction adds identity reconciliation shared by `persistMeta$` and
+`doSwitch`: outgoing clocks move to the matching archived id; an incoming saved
+id contributes its own clocks; a genuinely new id starts without inherited
+provenance; archived clocks already written are preserved by id on later
+debounced persists. `doSwitch` then stamps the real active snapshot dirty. The
+same monotonic formula now guards `markActiveDirty` against equal/backward wall
+time.
+
+Deterministic real-reducer sequences prove immediate `newSession -> switchAsset`
+and `switchSession -> switchAsset`. They verify archived and active ids retain
+their own provenance and both real snapshots are observed by `flushDirty`.
+
 ## Mutation proof
 
-After implementation, only `activeClientUpdatedAt` was temporarily removed from
-the outgoing `putMeta`; `activeSyncedAt` preservation remained enabled.
+The fresh closeout mutation changed only the outgoing `doSwitch` reconciliation
+flag from dirty to non-dirty.
 
 ```text
 Test Files  1 failed (1)
-Tests       1 failed | 1 passed (2)
-AssertionError: expected "upsertSession" to be called once, but got 0 times
+Tests       4 failed | 1 passed (5)
 exit 1
 ```
 
-Failure mechanism: the outgoing row retained `activeSyncedAt=110`, lost its
-client edit clock, evaluated clean, and was skipped by `flushDirty`. The mutation
-was never committed. Restoring the intended line produced 2/2 passing (exit 0),
-and `git diff --exit-code HEAD` confirmed exact restoration.
+Failures covered stable-id A5 dirtiness and the new identity/provenance paths.
+The mutation was never committed. Restoring the intended boolean produced 5/5
+passing (exit 0), and `git diff --exit-code` confirmed exact restoration.
 
 ## Ownership conclusion
 
-Trading state owns the active session identity and snapshot in NgRx. Sync owns
-the persisted LWW clocks. Any whole-record persistence writer whose source omits
-those clocks must re-read them. The outgoing-switch writer additionally owns the
-atomic dirty stamp because it is the last writer guaranteed to see the outgoing
-snapshot before incoming restoration changes the selector stream.
+Trading state owns active identity and snapshots in NgRx. Sync owns LWW clocks,
+but those clocks are attributes of session ids, not the symbol-keyed meta record.
+Any whole-record persistence writer whose source omits clocks must reconcile
+them by id. The outgoing-switch writer additionally owns the atomic dirty stamp
+because it is the last writer guaranteed to see the outgoing snapshot before
+incoming restoration changes the selector stream. Primary A5 verdict remains
+**CONFIRMED DEFECT**; this does not prove unconditional ownership for ambiguous
+mixed-id legacy records.

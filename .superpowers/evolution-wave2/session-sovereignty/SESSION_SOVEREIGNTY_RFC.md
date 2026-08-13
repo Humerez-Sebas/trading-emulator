@@ -2,8 +2,9 @@
 
 ## Status and scope
 
-Track A is implemented on `agent/session-sovereignty-v2`. This RFC records the
-architecture that exists on the branch. It does not authorize Supabase changes,
+Track A plus the bounded independent-review corrections are implemented on
+`agent/session-sovereignty-v2`. This RFC records the architecture that exists on
+the branch. It does not authorize Supabase changes,
 dependency changes, a generic repository layer, or migration of market data into
 user partitions.
 
@@ -72,12 +73,14 @@ read-only quarantine:
 
 - live reads and writes use only the current owner's partition;
 - quarantine rows are never updated, moved, or deleted;
-- adoption copies one record into an owner partition only when one of that
-  record's own session/folder ids appears in the complete RLS-scoped cloud set;
+- adoption copies one record into an owner partition only when every meaningful
+  session/folder id carried by that whole record appears in the complete
+  RLS-scoped cloud set; records with no ids are not adopted;
 - `assertCompletePull` must accept the exact-count response before that set can
   prove ownership;
 - existing live keys are never overwritten;
-- adopted keys are recorded in that owner's `sync` store;
+- the copied record and its adopted-key marker commit atomically in one
+  owner-database transaction;
 - unproven rows remain in quarantine and are reconsidered after later pulls.
 
 This is policy O-7: never auto-adopt ambiguity, never auto-discard evidence, and
@@ -103,20 +106,30 @@ the normal cloud pull. An A to B switch is logout/reload/login, never an in-page
 identity mutation. B to A follows the same lifecycle and reopens A's unchanged
 partition.
 
-### O-5: Outgoing real-session persistence owns its atomic dirty stamp
+Cross-tab auth drift is fail-closed. Before any SessionSync cloud mutation or
+destructive pull, the authenticated Supabase user id must agree with the owner
+resolved by `WorkspaceDbService`. A stale A-bound tab observing B auth can
+neither upload/delete under B nor apply B's absence to A-local rows. The stale
+tab must be reloaded; this track adds no cross-tab coordination or recovery UI.
 
-`WorkspacesEffects.doSwitch` writes a whole `WorkspaceMeta` record before it
-restores the incoming workspace. Because the NgRx snapshot intentionally omits
-sync clocks, this writer re-reads the outgoing stored meta in the same operation.
-For a session satisfying the existing `isRealSession` predicate it:
+### O-5: Persistence clocks follow session identity, not symbol storage keys
 
-- preserves `activeSyncedAt` as provenance of the last successful push; and
-- writes `activeClientUpdatedAt` strictly later than both stored clocks.
+`persistMeta$` and `WorkspacesEffects.doSwitch` write whole `WorkspaceMeta`
+records while the NgRx snapshot intentionally omits sync clocks. Both writers
+therefore reconcile clocks by session id against the stored record:
 
-The timestamp and outgoing trading snapshot land in one `putMeta`. This keeps the
-outgoing row eligible for `flushDirty` even though the later 2-second debounce
-observes the restored incoming workspace. Scratch sessions preserve any existing
-clock but are not newly marked dirty.
+- when the former active id is archived, its active clock pair moves onto that
+  `SavedSession`, and its real outgoing snapshot is stamped dirty;
+- when an archived id becomes active, that saved session's own clocks become the
+  active clocks;
+- a genuinely new id starts with fresh provenance and never inherits the former
+  active id's clocks;
+- later debounced writes preserve already-reconciled archived clocks by id.
+
+`doSwitch` stamps a real active snapshot with
+`max(Date.now(), priorClient + 1, priorSynced + 1)` in the same `putMeta`.
+`markActiveDirty` uses the same monotonic formula, so equal or backward wall time
+cannot make an edit clean. Scratch sessions are not newly marked dirty.
 
 ## Durable owner boundaries
 
@@ -138,11 +151,12 @@ membership semantics are unchanged within one owner.
 | Failure | Behavior |
 |---|---|
 | No auth session or owner lookup fails | User-owned store rejects; no fallback to quarantine/shared state |
+| Auth user differs from the DB-bound owner | SessionSync rejects before cloud mutation or destructive pull; stale tab requires reload |
 | Offline cold startup with a persisted session | Owner id comes from local Supabase session; that owner's local partition remains usable |
 | Owner cannot be resolved offline | Fail closed; data remains on disk for retry |
 | Pull fails before complete cloud ids exist | No adoption; normal pull catch leaves local state intact |
-| Server response is truncated | `assertCompletePull` rejects it; no destructive absence inference and no ownership proof |
-| Adoption is interrupted after copy but before marker | Existing owner key prevents overwrite on retry; quarantine remains intact |
+| Server response is truncated or exact count is null | `assertCompletePull` rejects it; no destructive absence inference and no ownership proof |
+| Adoption is interrupted during copy/marker write | The owner-DB transaction aborts both; retry copies data and marker together; quarantine remains intact |
 | Adoption marker is written but quarantine remains | Expected; quarantine is preservation evidence, not a move queue |
 | Upsert fails after dirty stamp | `activeSyncedAt` is unchanged, so the row remains dirty and retryable |
 | Logout sign-out call fails | Existing auth flow still dispatches `loggedOut`; hard reload clears in-memory user state |
@@ -167,17 +181,20 @@ databases requires a separate, explicit retention/recovery decision.
 
 ## Negative probes
 
-The owner-isolation probe temporarily made `ownerWorkspaceDbName()` return one
-owner-independent name. The full suite then failed 7 tests in 2 files (exit 1):
+The fresh owner-isolation probe temporarily made `ownerWorkspaceDbName()` return
+one owner-independent name. The targeted command failed 7 tests in 2 files, with
+59 passing (exit 1):
 A to B destruction, A to B to A loss, local-only upload as B, B to A exposure,
 cross-owner legacy claim, the historical wrong-owner hazard, and the naming
-invariant. Restoring owner scoping returned 185 files / 2441 tests (exit 0).
+invariant. Exact restoration was verified by `git diff --exit-code`; the same
+targeted command returned 66/66 tests (exit 0).
 
-The A5 mutation probe removed only `activeClientUpdatedAt` from the outgoing
-`putMeta`. The targeted consequence spec failed 1 of 2 tests (exit 1):
-`flushDirty` made zero session upserts because the row had preserved
-`activeSyncedAt=110` but no client edit clock. Restoring the field returned 2 of
-2 tests (exit 0).
+The fresh A5 mutation changed only `doSwitch`'s reconciliation call from
+`markActiveDirty=true` to `false`. The targeted meta-ownership command failed 4
+of 5 tests (exit 1): stable-id dirtiness, new-session provenance,
+switch-session provenance, and subsequent persist preservation. Exact
+restoration was verified by `git diff --exit-code`; the command then returned
+5/5 tests (exit 0). The primary A5 verdict remains **CONFIRMED DEFECT**.
 
 These probes are mutation evidence, not committed alternate behavior.
 
@@ -193,7 +210,11 @@ npm run lint
 npm run build
 ```
 
-Exact closure output is recorded in `PROGRESS.md`. The known initial-bundle
+Exact closure output is recorded in `PROGRESS.md`: app/spec tsc exit 0, lint exit
+0, build exit 0, and the isolated full rerun passed 186 files / 2455 tests. The
+first concurrent full-suite attempt had one honest 5.012-second timeout in the
+25k-row candle-writer test; its targeted rerun passed 9/9 and the isolated full
+rerun passed. The known initial-bundle
 budget warning is accepted only if the build exits zero and introduces no new
 chunk type or Vitest sentinel.
 
@@ -208,7 +229,11 @@ chunk type or Vitest sentinel.
   destructive sync state, not general device preferences.
 - Telemetry remains outside this implementation. It is loss-tolerant, local-only
   data and has no destructive cloud merge in this track.
-- Multi-tab behavior still relies on existing IndexedDB `versionchange`
-  handling; no cross-tab account-switch protocol is added.
+- No broad cross-tab account-switch protocol is added. A stale tab fails closed
+  at the owner-agreement boundary and requires reload; automatic auth-event
+  reload in another tab remains unimplemented.
+- Ownership is proven only for whole legacy records whose every meaningful id
+  appears in a complete exact-count owner-scoped response. Mixed-owner and
+  no-id rows remain quarantined; per-session extraction is intentionally absent.
 - No Supabase schema, RLS, Vercel, dependency, lockfile, or market-data worker
   change is part of this RFC.

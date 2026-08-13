@@ -4,8 +4,9 @@
 
 The migration never rewrites or deletes an unowned legacy record. New writes go
 to an owner partition. Legacy workspace records are copied per record only when
-a complete RLS-scoped cloud response proves ownership by id. This makes every
-interruption retryable and leaves the original as recovery evidence.
+a complete exact-count RLS-scoped cloud response proves every meaningful id
+carried by the whole record. The owner copy and marker commit atomically, and
+the original remains as recovery evidence.
 
 ## Physical layout
 
@@ -28,8 +29,8 @@ database deletion.
 3. The cloud pull populates only rows visible to that user under RLS.
 4. Shared candles/datasets/series remain available as cache data.
 
-No legacy adoption occurs unless a quarantined record independently correlates
-with one of this user's cloud ids.
+No legacy adoption occurs unless every meaningful id in a quarantined record
+correlates with this user's complete cloud id set.
 
 ### Existing unowned legacy database
 
@@ -41,12 +42,14 @@ against complete owner-visible ids.
 
 ### Known-owner evidence
 
-A quarantined workspace meta is eligible when its active session id or one of
-its archived session ids appears in the complete RLS-scoped session set. A
+A quarantined workspace meta is eligible only when every non-null active and
+archived session id it carries appears in the complete RLS-scoped session set. A
+mixed A+B record, a record with an unproven id, and a record with no ids remain
+ambiguous; this track does not extract individual sessions from such a meta. A
 folder is eligible when its own id appears in the complete RLS-scoped folder
 set. The record is copied into that owner's partition only if that partition
-does not already own the key. The owner-local adoption marker is appended after
-the copy. The quarantine original remains untouched.
+does not already own the key. The copy and owner-local adoption marker are
+written in one transaction. The quarantine original remains untouched.
 
 ### Ambiguous legacy
 
@@ -70,6 +73,12 @@ remain preserved in their old databases for a future explicit recovery flow.
 A's partition is neither read nor mutated. A local-only record cannot be
 uploaded as B because it is absent from B's local set.
 
+If another tab changes Supabase auth without this tab crossing the logout reload
+boundary, SessionSync compares auth owner to the `WorkspaceDbService` owner
+before mutation or destructive pull. A mismatch rejects without cloud calls or
+A-local mutation. That stale tab requires reload; no recovery UI or cross-tab
+protocol is introduced here.
+
 ### B to A
 
 The same hard-boundary lifecycle runs. The new document resolves A and reopens
@@ -84,10 +93,11 @@ never-synced row has no `syncedAt` and remains local to its owner until that
 owner's authenticated sync succeeds. It is never discovered by another owner's
 `listMetas`, `listFolders`, playbook load, or lessons load.
 
-When switching assets, a real outgoing active session is persisted together
-with a strictly newer `activeClientUpdatedAt`, while its prior
-`activeSyncedAt` is preserved. Thus a restored incoming workspace cannot cause
-the outgoing snapshot to become clean before its flush.
+At persistence boundaries, clocks move with session ids: the former active pair
+moves to its archived `SavedSession`, a reopened archived pair becomes active,
+and a new active id never inherits the former pair. Real changed snapshots use a
+strictly monotonic client clock and remain flush-eligible. `markActiveDirty` uses
+the same maximum of wall time and both prior clocks plus one.
 
 ### Remote-synced records
 
@@ -117,10 +127,9 @@ on disk and can be retried after identity is restored.
 There is no global move transaction to leave half-complete:
 
 - interruption before copy leaves only quarantine, so the next pull retries;
-- interruption after copy but before marker leaves the owner key present, so a
-  retry does not overwrite it;
-- interruption after marker is harmless because quarantine is intentionally
-  retained;
+- interruption during copy or marker write aborts the whole owner transaction;
+- a retry writes both copy and marker atomically;
+- interruption after commit is harmless because quarantine is intentionally retained;
 - interruption during cloud sync leaves dirty clocks/pending deletes in the
   same owner partition;
 - an owner DB creation failure leaves legacy and cloud data unchanged.
@@ -129,10 +138,11 @@ Recovery never starts by deleting either side.
 
 ## Verification and rollback
 
-Executable probes cover A to B, A to B to A, B to A, dirty local-only isolation,
+Executable probes cover A to B, A to B to A, B to A, stale A-bound DB under B
+auth, dirty local-only isolation,
 same-owner D1, no-owner fail-closed behavior, proof-only adoption, live-record
-non-overwrite, second-owner non-claim, offline retry, and truncated-response
-refusal.
+non-overwrite, mixed-owner refusal, atomic adoption interruption/retry,
+second-owner non-claim, offline retry, and truncated/null-count refusal.
 
 Rollback must preserve all databases. Reverting to code that writes the shared
 legacy stores reintroduces the defect and cannot see newer owner-partition
