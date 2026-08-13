@@ -246,6 +246,11 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
       ]);
       expect(seen[0]).not.toBe(raw);
     });
+
+    it('does not expose emit() on the host-facing event contract', () => {
+      // @ts-expect-error hosts receive a subscribe-only event view
+      engine.events.emit('ChartClicked', {});
+    });
   });
 
   describe('coordinate queries', () => {
@@ -354,7 +359,9 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
 
     it('calls init with the chart and the engine bus', () => {
       engine.registerCapability(ProbeCapability);
-      expect(ProbeCapability.built[0].initArgs).toEqual({ chart: chartStub, bus: engine.events });
+      expect(ProbeCapability.built[0].initArgs?.chart).toBe(chartStub);
+      expect(ProbeCapability.built[0].initArgs?.bus).not.toBe(engine.events);
+      expect(ProbeCapability.built[0].initArgs?.bus).toHaveProperty('emit');
     });
 
     it('getCapability exposes only the base contract, and render fans out to the instance', () => {

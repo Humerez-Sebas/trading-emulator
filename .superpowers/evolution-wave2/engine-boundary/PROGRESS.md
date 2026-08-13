@@ -101,6 +101,10 @@ remained unchanged. No dependency/lockfile mutation, push, merge or deploy occur
   `hoveredSeries`, `seriesData`, and `sourceEvent` crossing the bus.
 - Event/proof GREEN: targeted boundary spec `23/23`; affected event/engine/panel suite
   `101/101`; lint green with local rule tests included.
+- Re-review then found a domain import-then-export bypass and shared-bus structural typing
+  path. The detector now tracks forbidden imported local names through source-less exports;
+  the engine now uses separate capability/host buses and exposes only `ChartEventSource`.
+  Updated affected suite: `116/116` green.
 - Import-type negative probe: temporary
   `import('lightweight-charts').IChartApi` in `chart.component.ts` made `npm run lint` fail
   with exactly one `engine-boundary/no-chart-handles` error; inverse restoration was green.

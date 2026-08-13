@@ -65,8 +65,7 @@ import { TradingCapability } from '../../domain/chart/capabilities/trading-capab
 import { TradingActions } from '../../state/trading/trading.actions';
 import { lotsForRisk, OrderSide, PendingType } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { ChartPointerEvent } from '../../domain/chart/chart-event-bus';
-import { ChartEventBus } from '../../domain/chart/chart-event-bus';
+import { ChartEventSource, ChartPointerEvent } from '../../domain/chart/chart-event-bus';
 import {
   ChartConfig,
   Drawing as DomainDrawing,
@@ -388,7 +387,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * ChartPanelComponent can forward crosshair/range events to the ChartSyncBus.
    * Additive only — the audited render path is unchanged.
    */
-  readonly chartReady = output<ChartEventBus>();
+  readonly chartReady = output<ChartEventSource>();
 
   /**
    * RFC-010: a second, additive output — a handle the wrapping ChartPanelComponent

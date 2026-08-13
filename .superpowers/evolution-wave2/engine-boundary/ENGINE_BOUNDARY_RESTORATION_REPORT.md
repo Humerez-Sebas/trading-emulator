@@ -186,8 +186,10 @@ and three Medium findings. Resolutions:
 - Raw `MouseEventParams` no longer crosses the engine bus; RED was `2 failed / 19 passed`,
   GREEN is `23/23` after adding the event, recursive type, and facade retrieval contracts.
 - The detector now runs inside `domain/chart` in import-allowed/export-denied mode, closing
-  the direct domain re-export bypass.
+  direct and import-then-export domain barrel bypasses.
 - Recursive compile-time checks cover `ChartEventMap` and `CapabilityApiMap`.
+- Capabilities receive a private bus distinct from the subscribe-only host event source, so
+  structurally compatible raw library payloads cannot be emitted to host listeners.
 - This report, the public contract, and the ledger now describe `void` registration,
   facade lookup, and the earlier successful `npm ci` accurately.
 - The Low indexed-import-type bypass was also closed with `RuleTester` coverage.

@@ -17,6 +17,13 @@ export interface ChartEventMap {
 export type ChartEventType = keyof ChartEventMap;
 export type Unsubscribe = () => void;
 
+export interface ChartEventSource {
+  on<K extends ChartEventType>(
+    type: K,
+    callback: (payload: ChartEventMap[K]) => void,
+  ): Unsubscribe;
+}
+
 /** Pub/sub local, agnóstico de framework. */
 export class ChartEventBus {
   private listeners: {

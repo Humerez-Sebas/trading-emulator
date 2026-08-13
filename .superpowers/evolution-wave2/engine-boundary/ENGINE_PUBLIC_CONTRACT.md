@@ -8,7 +8,8 @@ CONSTRAINT**. It existed while chart behavior was being extracted from `ChartCom
 operations, and the engine constructs main-series capabilities itself. The bridge no longer
 has a legitimate consumer. Library mouse payloads are also reduced to the handle-free
 `ChartPointerEvent` before they enter `ChartEventBus`; raw `seriesData` and `hoveredSeries`
-never cross to a host.
+never cross to a host. Hosts receive a subscribe-only `ChartEventSource`; capabilities use a
+separate private bus and cannot publish arbitrary payloads to host listeners.
 
 The original `chartApi` sunset condition was met directly. The old `capability.ts` note
 predicted that the main series might later enter through `Capability.init`; that prediction
@@ -71,6 +72,8 @@ Combining them would be a behavior change even though both call
    `CapabilityApiMap`, including nested method outputs.
 4. Runtime tests prove pointer events are copied to data-only payloads and capability lookup
    returns a facade rather than the concrete capability instance.
+5. A compile-time negative contract proves the host event source has no `emit`, and a runtime
+   assertion proves capabilities receive a different private bus.
 
 It deliberately does not reflect over runtime own fields: TypeScript `private` fields such
 as `chart` and `mainSeries` exist at runtime but are excluded from `keyof ChartEngine` and

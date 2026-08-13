@@ -102,5 +102,14 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       options: [{ allowImports: true }],
       errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
     },
+    {
+      name: 'rejects exporting a handle imported earlier by the chart domain',
+      code: `
+        import type { IChartApi } from 'lightweight-charts';
+        export type { IChartApi };
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
   ],
 });

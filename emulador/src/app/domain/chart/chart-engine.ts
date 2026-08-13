@@ -11,7 +11,7 @@ import {
   Time,
 } from 'lightweight-charts';
 import { Candle, RenderModel } from './render-model';
-import { ChartEventBus, ChartPointerEvent } from './chart-event-bus';
+import { ChartEventBus, ChartEventSource, ChartPointerEvent } from './chart-event-bus';
 import { Capability, CapabilityApiMap, MainSeriesCapability } from './capability';
 import { hexToRgba } from './color-utils';
 
@@ -34,10 +34,11 @@ export class ChartEngine implements ChartApplyHandle {
   private chart: IChartApi;
   private mainSeries: ISeriesApi<'Candlestick'>;
 
-  private bus = new ChartEventBus();
+  private hostBus = new ChartEventBus();
+  private capabilityBus = new ChartEventBus();
   private capabilities = new Map<string, Capability>();
-  public get events(): ChartEventBus {
-    return this.bus;
+  public get events(): ChartEventSource {
+    return this.hostBus;
   }
 
   /** D19.A: set by `destroy()`; makes `paneRect()` return `null` post-teardown instead of
@@ -107,10 +108,10 @@ export class ChartEngine implements ChartApplyHandle {
       wickDownColor: '#ef5350',
     });
 
-    this.chart.subscribeClick((p) => this.bus.emit('ChartClicked', pointerEventOf(p)));
-    this.chart.subscribeDblClick((p) => this.bus.emit('ChartClicked', pointerEventOf(p)));
+    this.chart.subscribeClick((p) => this.hostBus.emit('ChartClicked', pointerEventOf(p)));
+    this.chart.subscribeDblClick((p) => this.hostBus.emit('ChartClicked', pointerEventOf(p)));
     this.chart.subscribeCrosshairMove((p) => {
-      if (!this.applyingSync) this.bus.emit('CrosshairMoved', pointerEventOf(p));
+      if (!this.applyingSync) this.hostBus.emit('CrosshairMoved', pointerEventOf(p));
     });
     this.chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
       // One-shot echo suppression (load-bearing — see `suppressNextRangeEvent`'s doc): the first
@@ -121,7 +122,7 @@ export class ChartEngine implements ChartApplyHandle {
         this.suppressNextRangeEvent = false;
         return;
       }
-      if (!this.applyingSync) this.bus.emit('VisibleRangeChanged', r);
+      if (!this.applyingSync) this.hostBus.emit('VisibleRangeChanged', r);
     });
   }
 
@@ -184,7 +185,7 @@ export class ChartEngine implements ChartApplyHandle {
       throw new Error(`Capability with ID "${cap.id}" is already registered.`);
     }
     this.capabilities.set(cap.id, cap);
-    cap.init(this.chart, this.bus);
+    cap.init(this.chart, this.capabilityBus);
   }
 
   public getCapability<K extends keyof CapabilityApiMap>(id: K): CapabilityApiMap[K] | undefined {
@@ -331,7 +332,8 @@ export class ChartEngine implements ChartApplyHandle {
   public destroy(): void {
     this.capabilities.forEach((cap) => cap.destroy());
     this.capabilities.clear();
-    this.bus.destroy();
+    this.capabilityBus.destroy();
+    this.hostBus.destroy();
     this.chart.remove();
     this.destroyed = true;
   }
