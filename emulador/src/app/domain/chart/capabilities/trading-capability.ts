@@ -1,4 +1,10 @@
-import { Capability } from '../capability';
+import {
+  Capability,
+  PlacementLineSpec,
+  PlacementSlot,
+  TradeLineHit,
+  TradingCapabilityApi,
+} from '../capability';
 import {
   IChartApi,
   ISeriesApi,
@@ -42,18 +48,6 @@ export interface TradeLine {
  * holding. No consumer ever read `.line` (verified across app code and specs), so dropping
  * it from the public result closes that leak at zero behavioural cost.
  */
-export type TradeLineHit = Omit<TradeLine, 'line'>;
-
-/** Which leg of an in-progress interactive order placement a preview line belongs to. */
-export type PlacementSlot = 'entry' | 'sl' | 'tp';
-
-/** Mutable properties of a placement preview line, in domain terms (no library types). */
-export interface PlacementLineSpec {
-  price: number;
-  color: string;
-  title: string;
-}
-
 /**
  * Per-slot line style for the placement preview. These are the exact constants
  * `ChartComponent` used inline before the preview moved in here: entry = `LargeDashed`,
@@ -68,6 +62,15 @@ const PLACEMENT_LINE_STYLE: Record<PlacementSlot, LineStyle> = {
 
 export class TradingCapability implements Capability {
   public readonly id = 'trading';
+  public readonly publicApi: TradingCapabilityApi = {
+    hitTestBox: (x, y) => this.hitTestBox(x, y),
+    hitTestEdge: (x, y) => this.hitTestEdge(x, y),
+    hitTestDelete: (x, y) => this.hitTestDelete(x, y),
+    addPlacementLine: (slot, spec) => this.addPlacementLine(slot, spec),
+    movePlacementLine: (slot, price, title) => this.movePlacementLine(slot, price, title),
+    clearPlacementLines: () => this.clearPlacementLines(),
+    hitTestTradeLine: (x, y) => this.hitTestTradeLine(x, y),
+  };
   private chart: IChartApi | null = null;
   private bus: ChartEventBus | null = null;
 

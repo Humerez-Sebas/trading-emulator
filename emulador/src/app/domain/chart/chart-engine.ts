@@ -10,7 +10,7 @@ import {
 } from 'lightweight-charts';
 import { Candle, RenderModel } from './render-model';
 import { ChartEventBus } from './chart-event-bus';
-import { Capability, MainSeriesCapability } from './capability';
+import { Capability, CapabilityApiMap, MainSeriesCapability } from './capability';
 import { hexToRgba } from './color-utils';
 
 export interface ChartApplyHandle {
@@ -162,27 +162,23 @@ export class ChartEngine implements ChartApplyHandle {
    * the main series and injects it itself, which is why no caller needs (or can obtain) a
    * reference to it — that is what retired the RFC-004/RFC-005 `seriesApi` bridge getter.
    *
-   * Returns the instance so a caller that needs the concrete type right away does not have
-   * to round-trip through `getCapability`.
-   *
    * Ordering note (behavior-preserving): the duplicate-id `Error` is still thrown with the
    * same message, but construction now happens BEFORE the check. Every capability's
    * constructor only stores the series reference (no side effects), so a rejected duplicate
    * registration remains inert — verified against all four capabilities in
    * `domain/chart/capabilities/`.
    */
-  public registerCapability<T extends Capability>(Ctor: MainSeriesCapability<T>): T {
+  public registerCapability(Ctor: MainSeriesCapability): void {
     const cap = new Ctor(this.mainSeries);
     if (this.capabilities.has(cap.id)) {
       throw new Error(`Capability with ID "${cap.id}" is already registered.`);
     }
     this.capabilities.set(cap.id, cap);
     cap.init(this.chart, this.bus);
-    return cap;
   }
 
-  public getCapability<T extends Capability = Capability>(id: string): T | undefined {
-    return this.capabilities.get(id) as T | undefined;
+  public getCapability<K extends keyof CapabilityApiMap>(id: K): CapabilityApiMap[K] | undefined {
+    return this.capabilities.get(id)?.publicApi as CapabilityApiMap[K] | undefined;
   }
 
   public render(model: Partial<RenderModel>): void {

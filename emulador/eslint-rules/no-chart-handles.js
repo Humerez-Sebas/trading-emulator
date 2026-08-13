@@ -5,10 +5,10 @@
  * Prevent raw lightweight-charts handles from crossing out of the chart domain.
  *
  * Scope is set in eslint.config.js: production TypeScript under src/app, excluding
- * src/app/domain/chart/** and specs. This rule intentionally inspects imports only. It
- * permits lightweight-charts payload/data types while rejecting the four handle types
- * the retired RFC-004/RFC-005 bridge exposed. Namespace imports are rejected because
- * they can access those handles without a named ImportSpecifier.
+ * src/app/domain/chart/** and specs. It permits lightweight-charts payload/data types while
+ * rejecting the four handle types the retired RFC-004/RFC-005 bridge exposed through static
+ * imports, TypeScript import types, and direct re-exports. Namespace imports and star
+ * re-exports are rejected because they can expose handles without a named specifier.
  */
 
 const FORBIDDEN_HANDLES = new Set([
@@ -35,6 +35,16 @@ const noChartHandles = {
   },
 
   create(context) {
+    function importedName(specifier) {
+      const imported = specifier.imported ?? specifier.local;
+      return imported.type === 'Identifier' ? imported.name : String(imported.value);
+    }
+
+    function reportNamed(node, name) {
+      if (!FORBIDDEN_HANDLES.has(name)) return;
+      context.report({ node, messageId: 'forbiddenNamedImport', data: { name } });
+    }
+
     return {
       ImportDeclaration(node) {
         if (node.source.value !== 'lightweight-charts') return;
@@ -46,15 +56,24 @@ const noChartHandles = {
           }
           if (specifier.type !== 'ImportSpecifier') continue;
 
-          const imported = specifier.imported;
-          const name = imported.type === 'Identifier' ? imported.name : String(imported.value);
-          if (FORBIDDEN_HANDLES.has(name)) {
-            context.report({
-              node: specifier,
-              messageId: 'forbiddenNamedImport',
-              data: { name },
-            });
-          }
+          reportNamed(specifier, importedName(specifier));
+        }
+      },
+      TSImportType(node) {
+        if (node.source.type !== 'Literal' || node.source.value !== 'lightweight-charts') {
+          return;
+        }
+        if (node.qualifier?.type === 'Identifier') reportNamed(node, node.qualifier.name);
+      },
+      ExportNamedDeclaration(node) {
+        if (node.source?.value !== 'lightweight-charts') return;
+        for (const specifier of node.specifiers) {
+          reportNamed(specifier, importedName(specifier));
+        }
+      },
+      ExportAllDeclaration(node) {
+        if (node.source.value === 'lightweight-charts') {
+          context.report({ node, messageId: 'forbiddenNamespaceImport' });
         }
       },
     };

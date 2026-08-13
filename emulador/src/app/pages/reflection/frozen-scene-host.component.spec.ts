@@ -75,10 +75,9 @@ class FakeChartEngine {
    * assertion still reads real `cap.id` values. `.init()` is still never called, so no real
    * `lightweight-charts` function runs — unchanged from before.
    */
-  registerCapability(Ctor: new (series: unknown) => { id: string }): { id: string } {
+  registerCapability(Ctor: new (series: unknown) => { id: string }): void {
     const cap = new Ctor(this.seriesApi);
     this.registeredCapabilities.push(cap);
-    return cap;
   }
   render(model: Partial<RenderModel>): void {
     this.renderCalls.push(model);

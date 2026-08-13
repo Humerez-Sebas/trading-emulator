@@ -100,7 +100,7 @@ class ProbeCapability implements Capability {
   renderCalls = 0;
   destroyed = false;
 
-  constructor(readonly series: unknown) {
+  constructor(readonly series: ISeriesApi<'Candlestick'>) {
     ProbeCapability.built.push(this);
   }
   init(chart: IChartApi, bus: ChartEventBus): void {
@@ -255,27 +255,30 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
   });
 
   describe('registerCapability builds the capability from the engine-owned series', () => {
-    it('constructs the class with the engine’s own main series and returns the instance', () => {
-      const cap = engine.registerCapability(ProbeCapability);
+    it('constructs the class with the engine’s own main series without returning the instance', () => {
+      const registration = engine.registerCapability(ProbeCapability);
 
       expect(ProbeCapability.built).toHaveLength(1);
-      expect(cap).toBe(ProbeCapability.built[0]);
+      expectTypeOf(registration).toEqualTypeOf<void>();
+      expect(registration).toBeUndefined();
       // THE point of the whole refactor: the series reaches the capability without any
       // caller ever holding it.
-      expect(cap.series).toBe(seriesStub);
+      expect(ProbeCapability.built[0].series).toBe(seriesStub);
     });
 
     it('calls init with the chart and the engine bus', () => {
-      const cap = engine.registerCapability(ProbeCapability);
-      expect(cap.initArgs).toEqual({ chart: chartStub, bus: engine.events });
+      engine.registerCapability(ProbeCapability);
+      expect(ProbeCapability.built[0].initArgs).toEqual({ chart: chartStub, bus: engine.events });
     });
 
-    it('getCapability resolves the same instance by id, and render fans out to it', () => {
-      const cap = engine.registerCapability(ProbeCapability);
-      expect(engine.getCapability('probe')).toBe(cap);
+    it('getCapability exposes only the base contract, and render fans out to the instance', () => {
+      engine.registerCapability(ProbeCapability);
+
+      // @ts-expect-error callers cannot select an arbitrary capability instance type
+      expect(engine.getCapability<ProbeCapability>('probe')).toBeUndefined();
 
       engine.render({});
-      expect(cap.renderCalls).toBe(1);
+      expect(ProbeCapability.built[0].renderCalls).toBe(1);
     });
 
     it('still throws on a duplicate id, with the same message', () => {
@@ -286,20 +289,22 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
     });
 
     it('a rejected duplicate leaves the FIRST instance registered and un-destroyed', () => {
-      const first = engine.registerCapability(ProbeCapability);
+      engine.registerCapability(ProbeCapability);
+      const first = ProbeCapability.built[0];
       expect(() => engine.registerCapability(DuplicateProbeCapability)).toThrow();
 
-      expect(engine.getCapability('probe')).toBe(first);
+      engine.render({});
+      expect(first.renderCalls).toBe(1);
       expect(first.destroyed).toBe(false);
     });
 
     it('destroy() tears down registered capabilities before removing the chart', () => {
-      const cap = engine.registerCapability(ProbeCapability);
+      engine.registerCapability(ProbeCapability);
+      const cap = ProbeCapability.built[0];
       engine.destroy();
 
       expect(cap.destroyed).toBe(true);
       expect(chartStub.remove).toHaveBeenCalledTimes(1);
-      expect(engine.getCapability('probe')).toBeUndefined();
     });
   });
 });

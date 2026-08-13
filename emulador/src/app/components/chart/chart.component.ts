@@ -353,8 +353,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   /** Guards post-destroy access from global handlers (mouseup, keydown). */
   private destroyed = false;
   private lastConfig?: ChartConfig;
-  private get drawingsCap(): DrawingsCapability {
-    return this.engine!.getCapability('drawings') as DrawingsCapability;
+  private get drawingsCap() {
+    return this.engine!.getCapability('drawings')!;
   }
   /**
    * RFC-004/RFC-005: the trading capability now owns the interactive-placement preview
@@ -362,8 +362,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * Optional on purpose — the same `engine?.getCapability(...)` shape the hit-test call
    * sites already used, so a component whose `ngAfterViewInit` was stubbed out still no-ops.
    */
-  private get tradingCap(): TradingCapability | undefined {
-    return this.engine?.getCapability<TradingCapability>('trading');
+  private get tradingCap() {
+    return this.engine?.getCapability('trading');
   }
 
   // --- trade overlay state ---

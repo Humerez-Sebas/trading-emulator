@@ -31,6 +31,14 @@ ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
       name: 'ignores imports from other modules',
       code: `import type { IChartApi } from './test-double';`,
     },
+    {
+      name: 'allows a data-only TypeScript import type',
+      code: `type Candle = import('lightweight-charts').CandlestickData;`,
+    },
+    {
+      name: 'allows a data-only direct re-export',
+      code: `export type { CandlestickData } from 'lightweight-charts';`,
+    },
   ],
   invalid: [
     ...['IChartApi', 'ISeriesApi', 'IPriceLine', 'ISeriesMarkersPluginApi'].map((handle) => ({
@@ -46,6 +54,21 @@ ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
     {
       name: 'rejects namespace imports that bypass named-import checks',
       code: `import * as LightweightCharts from 'lightweight-charts';`,
+      errors: [{ messageId: 'forbiddenNamespaceImport' }],
+    },
+    {
+      name: 'rejects a handle through a TypeScript import type',
+      code: `type ChartHandle = import('lightweight-charts').IChartApi;`,
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects an aliased direct handle re-export',
+      code: `export type { ISeriesApi as SeriesHandle } from 'lightweight-charts';`,
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'ISeriesApi' } }],
+    },
+    {
+      name: 'rejects a star re-export that includes handles',
+      code: `export type * from 'lightweight-charts';`,
       errors: [{ messageId: 'forbiddenNamespaceImport' }],
     },
   ],
