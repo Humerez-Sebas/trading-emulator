@@ -42,7 +42,7 @@ const noChartHandles = {
 
   create(context) {
     const allowImports = context.options[0]?.allowImports === true;
-    const importedHandleLocals = new Set();
+    const importedHandleLocals = new Map();
     function importedName(specifier) {
       const imported = specifier.imported ?? specifier.local;
       return imported.type === 'Identifier' ? imported.name : String(imported.value);
@@ -59,11 +59,13 @@ const noChartHandles = {
 
         for (const specifier of node.specifiers) {
           if (allowImports) {
-            if (
-              specifier.type === 'ImportSpecifier' &&
-              FORBIDDEN_HANDLES.has(importedName(specifier))
-            ) {
-              importedHandleLocals.add(specifier.local.name);
+            if (specifier.type === 'ImportNamespaceSpecifier') {
+              importedHandleLocals.set(specifier.local.name, null);
+            } else if (specifier.type === 'ImportSpecifier') {
+              const name = importedName(specifier);
+              if (FORBIDDEN_HANDLES.has(name)) {
+                importedHandleLocals.set(specifier.local.name, name);
+              }
             }
             continue;
           }
@@ -98,7 +100,12 @@ const noChartHandles = {
           if (node.source?.value === 'lightweight-charts') {
             reportNamed(specifier, importedName(specifier));
           } else if (!node.source && importedHandleLocals.has(specifier.local.name)) {
-            reportNamed(specifier, specifier.local.name);
+            const name = importedHandleLocals.get(specifier.local.name);
+            if (name === null) {
+              context.report({ node: specifier, messageId: 'forbiddenNamespaceImport' });
+            } else {
+              reportNamed(specifier, name);
+            }
           }
         }
       },

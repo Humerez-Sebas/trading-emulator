@@ -111,5 +111,23 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       options: [{ allowImports: true }],
       errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
     },
+    {
+      name: 'rejects exporting an aliased handle imported earlier by the chart domain',
+      code: `
+        import type { IChartApi as ChartHandle } from 'lightweight-charts';
+        export type { ChartHandle };
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects exporting a namespace imported earlier by the chart domain',
+      code: `
+        import type * as LightweightCharts from 'lightweight-charts';
+        export type { LightweightCharts };
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamespaceImport' }],
+    },
   ],
 });
