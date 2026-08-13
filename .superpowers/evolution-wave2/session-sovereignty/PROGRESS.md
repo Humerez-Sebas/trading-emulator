@@ -5,22 +5,41 @@ Worktree `C:\Users\78701\Desktop\trading-emulator-session-sovereignty`
 
 ## STATUS
 
-Phase: **A3 implementation LANDED and committed** (all production code written). A4 probes
-partially written. Suite NOT green yet. A5 and A6 docs NOT started.
+Track A: **COMPLETE.** A1 inventory, A3 owner isolation, A4 negative probes, A5
+trading-metadata defect repair, and A6 architecture/migration/investigation artifacts are
+implemented. Nothing was pushed or merged; no Supabase, Vercel, dependency, lockfile,
+market-data worker, sibling worktree, or `develop` change was made.
 
-Commits: `c338491` (A1 ledger) → `ad0285b` (core partition) → `537c7ab` (lessons DB) →
-`dc599c9` (existing specs adapted to the per-owner stores).
+Primary A5 verdict: **CONFIRMED DEFECT**.
+
+Final code commit before docs: `0b725d1` (`fix(workspaces): keep outgoing real session dirty`).
+The final docs/progress commit is recorded in Git immediately after this file is committed.
 
 `npm ci` already done in `emulador/` (exit 0) — do NOT redo it.
 
-Gate status — ALL GREEN at `ef4f00f` (run raw and unpiped from `emulador/`):
+Final gate status — ALL GREEN after `0b725d1` (run raw and unpiped from `emulador/`):
 - `npx tsc -p tsconfig.app.json --noEmit` → `APP_TSC_EXIT=0`
 - `npx tsc -p tsconfig.spec.json --noEmit` → `SPEC_TSC_EXIT=0`
-- `npx ng test --watch=false` → `NG_TEST_EXIT=0`, **185 files / 2441 tests passed**
-  (baseline 183 / 2417 → +2 files, +24 tests)
+- `npx ng test --watch=false` → `NG_TEST_EXIT=0`, **186 files / 2443 tests passed**
+  (baseline 183 / 2417 → +3 files, +26 tests)
 - `npm run lint` → `LINT_EXIT=0`, "All files pass linting."
-- `npm run build` → `BUILD_EXIT=0`; initial bundle 655.51 kB (baseline 648 kB, +7 kB;
-  the known-accepted 500 kB budget warning, no new chunk types, no vitest sentinel)
+- `npm run build` → `BUILD_EXIT=0`; initial bundle **655.75 kB**, budget exceeded by
+  **155.75 kB** against 500.00 kB (known-accepted warning; no Vitest sentinel or unexpected
+  chunk type observed)
+
+Targeted TDD evidence:
+- RED before production edit: targeted meta-ownership spec exit 1; 1 file failed;
+  **1 failed / 1 passed**. Failure: expected `upsertSession` once, got zero.
+- GREEN after the minimal fix: exit 0; **1 file / 2 tests passed**.
+- Adjacent `workspaces.effects.spec.ts`: exit 0; **1 file / 38 tests passed**.
+
+Mandated post-implementation negative probe:
+- Mutation: removed only `activeClientUpdatedAt` from `doSwitch`'s outgoing `putMeta` while
+  retaining `activeSyncedAt` preservation.
+- Result: exit 1; **1 failed / 1 passed**. `flushDirty` made zero upserts because absent
+  client time versus preserved `activeSyncedAt=110` is clean under strict `>`.
+- Restoration: mutation never committed; `git diff --exit-code HEAD` was clean for the code
+  and spec; rerun exit 0 with **2/2 passed**.
 
 ## COMPLETED
 
@@ -60,9 +79,11 @@ Changed:
 - `playbook-db.service.ts`, `lessons-db.service.ts` — owner-suffixed DB names, same
   fail-closed rule. Legacy un-suffixed DBs left untouched on disk = quarantine.
 
-## IN FLIGHT — exact next action
+## HISTORICAL CHECKPOINT — superseded
 
-Appending the negative-probe suite to
+The following was the checkpoint state before the now-completed A4/A5/A6 work. It is retained
+as preservation evidence and is not the current next action. The run had been appending the
+negative-probe suite to
 `emulador/src/app/services/session-sync.service.spec.ts` (currently ~1147 lines; the harness
 additions `OWNER`, `OTHER_OWNER`, `dbFor()`, `seedQuarantine()` and the inverted
 `FIXED (was RESIDUAL HAZARD)` test are ALREADY committed at `dc599c9`).
@@ -81,14 +102,15 @@ adoption never overwrites a live record · a second account cannot claim the fir
 record · offline pull adopts nothing and retries later · a truncated page cannot prove
 ownership.
 
-## NOT STARTED
+## HISTORICAL NOT-STARTED LIST — now complete
 
 - A4 falsification A/B run (point `ownerWorkspaceDbName` at the legacy constant, record exact
   pass/fail counts with and without the guard).
 - Full gate run (`ng test`, `lint`) after the probes land.
-- A5 `WorkspaceMeta.trading` ownership investigation — see the strong lead already found,
-  below.
-- A6 docs: `SESSION_SOVEREIGNTY_RFC.md`, `SESSION_SOVEREIGNTY_MIGRATION.md`,
+- A5 `WorkspaceMeta.trading` ownership investigation — completed with verdict
+  **CONFIRMED DEFECT** and fixed in `0b725d1`.
+- A6 docs — completed:
+  `SESSION_SOVEREIGNTY_RFC.md`, `SESSION_SOVEREIGNTY_MIGRATION.md`, and
   `TRADING_METADATA_OWNERSHIP_INVESTIGATION.md`.
 
 ## EVIDENCE
@@ -196,7 +218,7 @@ The 7 failures, and what each proves:
   criteria. It stops P1 and P2 but not P3 or P4: B still *sees* and can *mutate* A's
   workspace/playbook/lessons state because those reads never go through the sync layer.
 
-## A5 LEAD (found while tracing, NOT yet proven or refuted — do not refactor on suspicion)
+## A5 CHECKPOINT LEAD (historical; resolved below)
 
 Writers of `WorkspaceMeta.trading` / the LWW clocks, all non-transactional read-modify-write
 over the whole record:
@@ -223,21 +245,26 @@ debounce off the SAME snapshot stream), so the interleaving window is narrow but
 **Required verdict: PROVEN (with a deterministic reproduction) or REFUTED (with the argument).
 A test, not an opinion.**
 
-## NEXT STEPS
+## A5 RESOLUTION
 
-1. Append the 12-test probe block to `session-sync.service.spec.ts` (Write tool, not heredoc).
-2. Add a spec for `SessionSovereigntyEffects` (TestBed, `{ provide: DOCUMENT, useValue: { location: { assign: vi.fn() } } }`)
-   — it is the executable invariant underwriting `OwnerIdentityService`'s memo.
-3. Run `npx ng test --watch=false` raw; fix; then `npm run lint`, both tsc gates, `npm run build`.
-4. Falsification A/B with exact numbers.
-5. A5 investigation → PROVEN or REFUTED.
-6. Write the three A6 docs.
+**CONFIRMED DEFECT.** The checkpoint consequence test failed because the outgoing whole-record
+write removed both clocks, making `flushDirty` skip the real session. `doSwitch` now re-reads
+the outgoing stored meta, preserves `activeSyncedAt`, and stamps
+`activeClientUpdatedAt = max(Date.now(), priorClient + 1, priorSynced + 1)` in the same write
+as the outgoing real-session snapshot. The existing `isRealSession` predicate gates the
+stamp. Full causal evidence is in `TRADING_METADATA_OWNERSHIP_INVESTIGATION.md`.
 
-## RESUME BRIEF
+## NEXT STEPS — none for Track A
 
-Mission: fix red-team hazard V2 (cross-account destruction of local IndexedDB state) with
-migration discipline. Owner policy **O-7 is binding**: never auto-adopt ambiguous legacy
-data, never auto-discard it, never let B touch A's legacy state; quarantine first.
+Track A is closed. Residual risks are documented in the RFC and migration artifact; they are
+not authorization for follow-on implementation in this track.
+
+## RESUME BRIEF — CLOSED
+
+Mission completed: red-team hazard V2 and the confirmed outgoing-trading metadata defect are
+fixed with migration discipline. Owner policy **O-7 remains binding**: never auto-adopt
+ambiguous legacy data, never auto-discard it, never let B touch A's legacy state; quarantine
+first.
 
 Chosen design (see `SESSION_SOVEREIGNTY_RFC.md` once written):
 - **Split the physical database along the existing domain boundary.** The user-owned stores
