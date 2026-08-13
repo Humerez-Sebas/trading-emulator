@@ -266,9 +266,9 @@ export class WorkspacesEffects {
               // carried by selectWorkspaceMetaSnapshot (state owns it), so it
               // is written straight from `meta`. The LWW clocks
               // (activeClientUpdatedAt/activeSyncedAt) remain sync-only (NOT in
-              // the snapshot) — read the existing record first and re-apply
-              // them, otherwise every persist here would clobber them with
-              // undefined, breaking the dirty check on the next sync.
+               // the snapshot) — read the existing record first and reconcile
+               // them by session id, otherwise a transition would either
+               // inherit the former active clocks or erase archived clocks.
               const existing = await this.db.getMeta(current!).catch(() => undefined);
               const now = Date.now();
               const clocks = reconcileSessionClocks(meta, existing, now, false);
