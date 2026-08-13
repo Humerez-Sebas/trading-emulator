@@ -25,7 +25,8 @@ is reported in the final response.
 
 `npm ci` already done in `emulador/` (exit 0) — do NOT redo it.
 
-Final gate status after `f1e1312` (run raw and unpiped from `emulador/`):
+Final gate status (run raw and unpiped from `emulador/`): **DONE_WITH_CONCERNS** because the
+mandatory full-suite gate remains load-flaky on one unrelated 25k-row worker test.
 - `npx tsc -p tsconfig.app.json --noEmit` → `APP_TSC_EXIT=0`
 - `npx tsc -p tsconfig.spec.json --noEmit` → `SPEC_TSC_EXIT=0`
 - first `npx ng test --watch=false`, run concurrently with build → `NG_TEST_EXIT=1`,
@@ -33,6 +34,10 @@ Final gate status after `f1e1312` (run raw and unpiped from `emulador/`):
 - diagnosis: targeted candle-writer rerun → exit 0, **1 file / 9 tests passed**
 - isolated `npx ng test --watch=false` rerun → `NG_TEST_EXIT=0`,
   **186 files / 2455 tests passed**
+- exact-final-commit reruns: two further raw full runs each passed **185 files / 2454 tests**
+  and timed out only `candles-writer.spec.ts` at 5042 ms and 5017 ms (exit 1)
+- each diagnostic targeted run passed **9/9** in 1.72-2.04 seconds; no worker/test timeout
+  code was changed because that is outside the bounded review corrections
 - `npm run lint` → `LINT_EXIT=0`, "All files pass linting."
 - `npm run build` → `BUILD_EXIT=0`; initial bundle **656.82 kB**, budget exceeded by
   **156.82 kB** against 500.00 kB (known-accepted warning; no Vitest sentinel or unexpected

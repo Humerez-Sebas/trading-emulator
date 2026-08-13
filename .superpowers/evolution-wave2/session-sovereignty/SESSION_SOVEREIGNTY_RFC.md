@@ -211,10 +211,11 @@ npm run build
 ```
 
 Exact closure output is recorded in `PROGRESS.md`: app/spec tsc exit 0, lint exit
-0, build exit 0, and the isolated full rerun passed 186 files / 2455 tests. The
-first concurrent full-suite attempt had one honest 5.012-second timeout in the
-25k-row candle-writer test; its targeted rerun passed 9/9 and the isolated full
-rerun passed. The known initial-bundle
+0, and build exit 0. One isolated full rerun passed 186 files / 2455 tests, but
+the initial concurrent run and two later raw final-commit reruns timed out only
+the unrelated 25k-row candle-writer test at 5.012, 5.042, and 5.017 seconds.
+Targeted reruns passed 9/9 well below the limit. Closure is therefore
+`DONE_WITH_CONCERNS`, not an all-green claim. The known initial-bundle
 budget warning is accepted only if the build exits zero and introduces no new
 chunk type or Vitest sentinel.
 
