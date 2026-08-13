@@ -146,6 +146,18 @@ There is no global move transaction to leave half-complete:
 
 Recovery never starts by deleting either side.
 
+## Closeout acceptance (2026-08-13)
+
+The v1 upgrade now retains the original `workspaces` object store as source evidence. Git
+history proved the projection omitted newer workspace fields, so lossless representation could
+not be established and O-7 prohibited deleting the source. Exact-count proof now requires
+`received === count`. Cloud pull, D1, acknowledgement, and active-id consequences compare and
+apply inside owner-database transactions; a newer local revision is never replaced or deleted.
+
+Independent review accepted implementation head `498646b` with zero Critical/High/Medium
+findings. Fresh raw gates: app tsc `0`; spec tsc `0`; tests `186/2483` exit `0`; lint `0`;
+build `0` with the known initial-budget warning at `661.05 kB` and no unexpected chunks.
+
 ## Verification and rollback
 
 Executable probes cover A to B, A to B to A, B to A, stale A-bound DB under B

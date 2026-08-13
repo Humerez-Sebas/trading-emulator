@@ -179,6 +179,19 @@ passing (exit 0), and `git diff --exit-code HEAD` confirmed exact restoration.
 
 ## Ownership conclusion
 
+### Closeout addendum (2026-08-13)
+
+The final review extended the identity-bound clock rule from trading alone to the complete
+active session payload: cursor, timeframe selection, drawings, trading, layout, panels, and
+link groups. `persistMeta$` advances the active client clock transactionally when that payload
+changes; D1 compares the same payload before clearing an active session. Session/folder
+acknowledgements and pull consequences likewise apply only to the exact evaluated revision.
+
+Independent review accepted `894d72b..498646b` with zero Critical/High/Medium findings.
+Fresh final evidence: app/spec tsc `0`; `186 files / 2483 tests` exit `0`; lint `0`; build
+`0` with the known `661.05 kB` initial-budget warning. Primary A5 verdict remains
+**CONFIRMED DEFECT**, now closed by the accepted implementation.
+
 Trading state owns active identity and snapshots in NgRx. Sync owns LWW clocks,
 but those clocks are attributes of session ids, not the symbol-keyed meta record.
 Any whole-record persistence writer whose source omits clocks must reconcile

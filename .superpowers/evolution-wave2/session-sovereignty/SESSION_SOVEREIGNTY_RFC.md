@@ -234,6 +234,20 @@ candle timeout did not occur in this final sequential run. Closure is `DONE`.
 
 ## Residual risks and non-goals
 
+### Closeout addendum (2026-08-13)
+
+Independent acceptance review of `894d72b..498646b` ended **ACCEPTED** with zero
+Critical/High/Medium findings after all bounded review findings were corrected. The final
+contract includes exact-revision acknowledgement, transaction-local guarded pull consequences,
+monotonic folder/session and complete active-payload revisions, direct-login owner hard
+boundaries with local-only targets, exact pull-count equality, and retained v1 source evidence.
+
+The closeout agent reran all five commands raw and unpiped: both tsc commands exit `0`; full
+suite exit `0` at **186 files / 2483 tests**; lint exit `0`; build exit `0`, initial bundle
+`661.05 kB` (`161.05 kB` over the known 500 kB budget), with no Vitest sentinel or new chunk
+type. Track disposition: **MERGE AS-IS** when the owner chooses integration; this closeout did
+not merge, push, open a PR, deploy, or mutate `develop`.
+
 - Ambiguous local-only legacy workspace/playbook/lesson data is preserved but
   not automatically surfaced. A future user-driven recovery workflow may be
   needed; silently assigning it is forbidden.

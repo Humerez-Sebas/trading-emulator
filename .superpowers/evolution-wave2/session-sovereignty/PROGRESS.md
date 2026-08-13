@@ -5,7 +5,7 @@ Worktree `C:\Users\78701\Desktop\trading-emulator-session-sovereignty`
 
 ## STATUS
 
-Track A plus the final bounded independent-review corrections: **COMPLETE / DONE.** Session
+Track A plus the final bounded independent-review corrections: **INDEPENDENTLY ACCEPTED / DONE.** Session
 clocks are identity-bound and transactionally reconciled; dirty time is monotonic; every
 cloud boundary captures and revalidates auth/DB owner before returning data or mutating local
 state; O-7 requires all meaningful ids; adoption performs transaction-local non-overwrite and
@@ -14,6 +14,30 @@ Supabase, Vercel, dependency, lockfile, market-data worker, recovery UI, auth li
 worktree, or `develop` change was made.
 
 Primary A5 verdict: **CONFIRMED DEFECT**.
+
+### 2026-08-13 closeout continuation
+
+Accepted implementation head: `498646b` (the final documentation commit follows it).
+Independent OpenCode reviewer verdict: **ACCEPTED**, zero Critical/High/Medium findings after
+three bounded finding/fix loops. Claude CLI review was attempted first and failed before review
+with expired OAuth (`401`); it made no worktree change.
+
+Fresh closeout-agent gates, raw and unpiped from `emulador/` at `498646b`:
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- `npx ng test --watch=false` -> exit `0`, **186 files / 2483 tests passed**.
+- `npm run lint` -> exit `0`, `All files pass linting.`
+- `npm run build` -> exit `0`; initial bundle **661.05 kB**, **161.05 kB** over the
+  known-accepted 500 kB budget; no Vitest sentinel or unexpected chunk type.
+
+Closeout TDD evidence: initial RED sync `4 failed / 65 passed`, auth `1 failed / 3 passed`;
+review-loop REDs `1/16`, `5/69`, and `5/174`; final focused GREEN `186/186`.
+
+Fresh restored mutations: owner partition `7 failed / 73 passed` -> `80/80`; A5 dirty flag
+`4 failed / 2 passed` -> `6/6`; stale acknowledgement `2 failed / 67 passed` -> `69/69`;
+direct-login boundary inversion `3 failed / 13 passed` -> `16/16`. The v1 source-store
+deletion mutation made the migration run non-completing. Every mutation was inverse-patched,
+then `git diff --exit-code HEAD` proved exact restoration before final gates.
 
 Review-correction commits before docs:
 - `9c3a52f` `fix(workspaces): bind sync clocks to session identity`
