@@ -1,6 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, vi, beforeEach } from 'vitest';
 import type { ChartEngine as ChartEngineType } from './chart-engine';
-import type { IChartApi } from 'lightweight-charts';
+import type {
+  IChartApi,
+  IPriceLine,
+  ISeriesApi,
+  ISeriesMarkersPluginApi,
+  SeriesType,
+  Time,
+} from 'lightweight-charts';
 import type { Capability } from './capability';
 import { ChartEventBus } from './chart-event-bus';
 import type { RenderModel } from './render-model';
@@ -111,6 +118,23 @@ class ProbeCapability implements Capability {
 /** A second class with the SAME id, for the duplicate-registration test. */
 class DuplicateProbeCapability extends ProbeCapability {}
 
+type RawChartHandle =
+  | IChartApi
+  | ISeriesApi<SeriesType>
+  | IPriceLine
+  | ISeriesMarkersPluginApi<Time>;
+
+type MemberOutput<T> = T extends (...args: infer _Args) => infer Result ? Result : T;
+
+type PublicHandleEscapeHatches = {
+  [Member in keyof ChartEngineType]: Extract<
+    NonNullable<MemberOutput<ChartEngineType[Member]>>,
+    RawChartHandle
+  > extends never
+    ? never
+    : Member;
+}[keyof ChartEngineType];
+
 describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
   let ChartEngine: typeof ChartEngineType;
   let engine: ChartEngineType;
@@ -125,31 +149,16 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
   });
 
   describe('the migration bridge is gone', () => {
-    it('exposes no chartApi / seriesApi member under any name that returns a library handle', () => {
+    it('exposes no chartApi / seriesApi member', () => {
       const surface = engine as unknown as Record<string, unknown>;
       expect('chartApi' in surface).toBe(false);
       expect('seriesApi' in surface).toBe(false);
-      // Guards against reintroduction under a new name (the C3 criterion): no public member
-      // may hand out the chart or the series object itself.
-      const proto = Object.getPrototypeOf(engine) as object;
-      const names = [
-        ...Object.getOwnPropertyNames(proto),
-        ...Object.getOwnPropertyNames(engine),
-      ].filter((n) => n !== 'constructor');
-      const escapeHatches = names.filter((n) => {
-        const desc =
-          Object.getOwnPropertyDescriptor(proto, n) ??
-          Object.getOwnPropertyDescriptor(engine, n);
-        if (!desc) return false;
-        let value: unknown;
-        try {
-          value = desc.get ? desc.get.call(engine) : desc.value;
-        } catch {
-          return false;
-        }
-        return value === chartStub || value === seriesStub;
-      });
-      expect(escapeHatches).toEqual([]);
+    });
+
+    it('has no public property or method output typed as a lightweight-charts handle', () => {
+      // `keyof` excludes private runtime own properties (`chart`, `mainSeries`) while a renamed
+      // public getter or method returning any forbidden handle makes this type cease to be `never`.
+      expectTypeOf<PublicHandleEscapeHatches>().toEqualTypeOf<never>();
     });
   });
 
