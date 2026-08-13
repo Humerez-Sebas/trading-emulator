@@ -231,7 +231,7 @@ describe('SessionSyncService.pushPlaybookRules', () => {
   it('upserts each rule with user_id, snake_case keys, ISO client_updated_at, onConflict: id', async () => {
     const upsertCalls: { table: string; row: unknown; opts: unknown }[] = [];
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: (table: string) => ({
         upsert: (row: unknown, opts: unknown) => {
           upsertCalls.push({ table, row, opts });
@@ -248,7 +248,7 @@ describe('SessionSyncService.pushPlaybookRules', () => {
     expect(upsertCalls[0].table).toBe('playbook_rules');
     expect(upsertCalls[0].opts).toEqual({ onConflict: 'id' });
     const row = upsertCalls[0].row as Record<string, unknown>;
-    expect(row['user_id']).toBe('user-1');
+    expect(row['user_id']).toBe('owner-test');
     expect(row['id']).toBe('r1');
     expect(row['client_updated_at']).toBe(new Date(1_700_050_000_000).toISOString());
   });
@@ -256,7 +256,7 @@ describe('SessionSyncService.pushPlaybookRules', () => {
   it('is a no-op for an empty array (no network call)', async () => {
     let called = false;
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => {
         called = true;
         return { upsert: () => Promise.resolve({ data: null, error: null }) };
@@ -271,7 +271,7 @@ describe('SessionSyncService.pushPlaybookRules', () => {
 
   it('rejects on the first row error (no partial-success stamping by the caller)', async () => {
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({
         upsert: () => Promise.resolve({ data: null, error: { message: 'boom' } }),
       }),

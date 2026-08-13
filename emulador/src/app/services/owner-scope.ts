@@ -81,8 +81,9 @@ export const NO_OWNER_MESSAGE =
  *
  * OWNER POLICY O-7, encoded literally:
  *  - never auto-adopt on ambiguity → a record is claimed ONLY when it carries
- *    an id that the RLS-scoped cloud answer proves belongs to this owner
- *    (remote-ID correlation). No correlation ⇒ not returned, ever.
+ *    only ids that the RLS-scoped cloud answer proves belong to this owner
+ *    (remote-ID correlation). Every meaningful id must be proven; no ids or
+ *    any unproven id means the whole record remains ambiguous.
  *  - never auto-discard → callers only ADD to the owner partition; nothing in
  *    this decision can delete anything.
  *  - never let B overwrite A → a key the owner partition already holds is
@@ -113,8 +114,8 @@ export function decideAdoption<T>(
   for (const record of quarantined) {
     const key = keyOf(record);
     if (ownedKeys.has(key) || alreadyAdopted.has(key)) continue;
-    const proven = idsOf(record).some((id) => id != null && provenIds.has(id));
-    if (proven) claimed.push(record);
+    const ids = idsOf(record).filter((id): id is string => id != null);
+    if (ids.length > 0 && ids.every((id) => provenIds.has(id))) claimed.push(record);
   }
   return claimed;
 }

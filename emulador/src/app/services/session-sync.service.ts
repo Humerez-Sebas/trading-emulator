@@ -52,6 +52,7 @@ export class SessionSyncService {
     const { data } = await this.client.auth.getSession();
     const id = data.session?.user?.id;
     if (!id) throw new Error('No hay sesión activa.');
+    await this.db.assertOwner(id);
     return id;
   }
 
@@ -146,6 +147,7 @@ export class SessionSyncService {
   }
 
   async deleteSession(id: string): Promise<void> {
+    await this.currentUserId();
     const { error } = await this.client.from('sessions').delete().eq('id', id);
     if (error) throw new Error(error.message);
   }
@@ -184,6 +186,7 @@ export class SessionSyncService {
   }
 
   async deleteFolder(id: string): Promise<void> {
+    await this.currentUserId();
     const { error } = await this.client.from('folders').delete().eq('id', id);
     if (error) throw new Error(error.message);
   }
@@ -400,6 +403,7 @@ export class SessionSyncService {
    * leaves local state intact and is retried on the next pull.
    */
   async pullAndMerge(): Promise<void> {
+    await this.currentUserId();
     await this.flushPendingDeletes();
 
     await this.pullAndMergeFolders();
@@ -445,11 +449,10 @@ export class SessionSyncService {
       new Set(marker.folderKeys),
     );
     if (!claimed.length) return;
-    for (const folder of claimed) await this.db.putFolder(folder);
-    await this.db.recordAdopted({ folderKeys: claimed.map((f) => f.id) });
+    await this.db.adoptQuarantined({ folders: claimed });
   }
 
-  /** Sessions counterpart of {@link adoptQuarantinedFolders}; a meta is proven by any of its own session ids. */
+  /** Sessions counterpart of {@link adoptQuarantinedFolders}; every id in the whole meta must be proven. */
   private async adoptQuarantinedMetas(provenIds: ReadonlySet<string>): Promise<void> {
     const quarantined = await this.db.listQuarantinedMetas();
     if (!quarantined.length) return;
@@ -464,8 +467,7 @@ export class SessionSyncService {
       new Set(marker.metaKeys),
     );
     if (!claimed.length) return;
-    for (const meta of claimed) await this.db.putMeta(meta);
-    await this.db.recordAdopted({ metaKeys: claimed.map((m) => m.symbol) });
+    await this.db.adoptQuarantined({ metas: claimed });
   }
 
   private async pullAndMergeFolders(): Promise<void> {
@@ -612,7 +614,11 @@ export class SessionSyncService {
   async markActiveDirty(symbol: string): Promise<void> {
     const meta = await this.db.getMeta(symbol);
     if (!meta?.trading || !isRealSession(meta.trading)) return;
-    meta.activeClientUpdatedAt = Date.now();
+    meta.activeClientUpdatedAt = Math.max(
+      Date.now(),
+      (meta.activeClientUpdatedAt ?? 0) + 1,
+      (meta.activeSyncedAt ?? 0) + 1,
+    );
     await this.db.putMeta(meta);
   }
 
@@ -676,14 +682,13 @@ function isDirty(clientUpdatedAt: number | undefined, syncedAt: number | undefin
  * path an offline/RLS failure already takes. A short page is a degraded answer,
  * never a licence to delete.
  *
- * `count` is `null` when the caller did not request one (or the server declined
- * to compute it); we then have no completeness evidence either way and keep the
- * pre-existing behaviour rather than inventing a stricter one.
+ * `count` is `null` when the server did not provide proof. That cannot authorize
+ * destructive absence inference or quarantine adoption, so it also fails closed.
  */
 function assertCompletePull(entity: string, received: number, count: number | null): void {
-  if (count != null && received < count) {
+  if (count == null || received < count) {
     throw new Error(
-      `Respuesta incompleta del servidor (${entity}): ${received} de ${count} filas.`,
+      `Respuesta incompleta del servidor (${entity}): ${received} de ${count ?? 'conteo desconocido'} filas.`,
     );
   }
 }

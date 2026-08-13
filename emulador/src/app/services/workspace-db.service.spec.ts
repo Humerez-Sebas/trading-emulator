@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceDbService } from './workspace-db.service';
 import { fixedOwnerIdentity } from './owner-identity.service';
-import { ownerWorkspaceDbName } from './owner-scope';
+import { ADOPTION_MARKER_KEY, ownerWorkspaceDbName } from './owner-scope';
 import { series, workspaceMeta } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
 import { singlePanelLayoutFor } from './session-migration';
@@ -555,6 +555,39 @@ describe('WorkspaceDbService — sync bookkeeping (v6)', () => {
     const list = await svc.listPendingDeletes();
     expect(list).toEqual([{ entity: 'session', id: 's1' }]);
     expect(await svc.getLastPullAt()).toBe(999);
+  });
+});
+
+describe('WorkspaceDbService — atomic quarantine adoption', () => {
+  it('rolls back the copied meta when the marker write is interrupted, then retries both atomically', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD' });
+    const originalPut = IDBObjectStore.prototype.put;
+    const putSpy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+      this: IDBObjectStore,
+      value: unknown,
+      key?: IDBValidKey,
+    ) {
+      if ((value as { key?: string }).key === ADOPTION_MARKER_KEY) {
+        throw new Error('marker interrupted');
+      }
+      return key === undefined
+        ? originalPut.call(this, value)
+        : originalPut.call(this, value, key);
+    });
+    const atomicDb = svc as WorkspaceDbService & {
+      adoptQuarantined(claim: { metas?: WorkspaceMeta[] }): Promise<void>;
+    };
+
+    await expect(
+      Promise.resolve().then(() => atomicDb.adoptQuarantined({ metas: [meta] })),
+    ).rejects.toThrow(/marker interrupted/);
+    putSpy.mockRestore();
+    expect(await svc.getMeta('EURUSD')).toBeUndefined();
+    expect((await svc.getAdoptionMarker()).metaKeys).toEqual([]);
+
+    await atomicDb.adoptQuarantined({ metas: [meta] });
+    expect(await svc.getMeta('EURUSD')).toEqual(meta);
+    expect((await svc.getAdoptionMarker()).metaKeys).toEqual(['EURUSD']);
   });
 });
 

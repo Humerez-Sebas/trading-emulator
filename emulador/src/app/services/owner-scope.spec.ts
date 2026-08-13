@@ -122,6 +122,18 @@ describe('owner-scope — decideAdoption (O-7)', () => {
     expect(claimed).toEqual([]);
   });
 
+  it('refuses a mixed-owner record even when one of its ids is proven', () => {
+    const claimed = decideAdoption(
+      [{ key: 'EURUSD', ids: ['mine', 'theirs'] }],
+      keyOf,
+      idsOf,
+      new Set(['mine']),
+      empty,
+      empty,
+    );
+    expect(claimed).toEqual([]);
+  });
+
   it('is non-destructive by construction: the input is never mutated', () => {
     const input: Rec[] = [{ key: 'EURUSD', ids: ['s1'] }];
     const snapshot = JSON.stringify(input);

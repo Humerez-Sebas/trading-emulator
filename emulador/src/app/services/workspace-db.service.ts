@@ -76,6 +76,14 @@ export class WorkspaceDbService {
 
   constructor(private readonly owner: OwnerIdentityService = inject(OwnerIdentityService)) {}
 
+  /** Fails closed unless this DB instance and the caller's auth context name the same owner. */
+  async assertOwner(expectedOwnerId: string): Promise<void> {
+    const ownerId = await this.owner.ownerId();
+    if (!ownerId || ownerId !== expectedOwnerId) {
+      throw new Error('El propietario autenticado no coincide con el espacio de trabajo local.');
+    }
+  }
+
   /**
    * Opens (and caches) the CURRENT owner's workspace database.
    *
@@ -575,6 +583,45 @@ export class WorkspaceDbService {
       folderKeys: record?.folderKeys ?? [],
       updatedAt: record?.updatedAt ?? 0,
     };
+  }
+
+  /** Copies quarantine claims and advances their marker in one owner-DB transaction. */
+  async adoptQuarantined(claim: {
+    metas?: WorkspaceMeta[];
+    folders?: SessionFolder[];
+  }): Promise<void> {
+    const metas = claim.metas ?? [];
+    const folders = claim.folders ?? [];
+    if (!metas.length && !folders.length) return;
+
+    const db = await this.openUser();
+    const tx = db.transaction([META_STORE, FOLDERS_STORE, SYNC_STORE], 'readwrite');
+    const completion = this.completed(tx);
+    try {
+      const sync = tx.objectStore(SYNC_STORE);
+      const current = await this.request<AdoptionMarker | undefined>(
+        sync.get(ADOPTION_MARKER_KEY),
+      );
+      for (const meta of metas) tx.objectStore(META_STORE).put(meta);
+      for (const folder of folders) tx.objectStore(FOLDERS_STORE).put(folder);
+      sync.put({
+        key: ADOPTION_MARKER_KEY,
+        metaKeys: [...new Set([...(current?.metaKeys ?? []), ...metas.map((meta) => meta.symbol)])],
+        folderKeys: [
+          ...new Set([...(current?.folderKeys ?? []), ...folders.map((folder) => folder.id)]),
+        ],
+        updatedAt: Date.now(),
+      } satisfies AdoptionMarker);
+    } catch (error) {
+      try {
+        tx.abort();
+      } catch {
+        // The transaction may already have aborted because of the failed request.
+      }
+      void completion.catch(() => undefined);
+      throw error;
+    }
+    await completion;
   }
 
   /** Records newly-claimed quarantine keys for this owner (append-only, deduped). */

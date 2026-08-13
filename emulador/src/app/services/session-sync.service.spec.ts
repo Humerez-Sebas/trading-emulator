@@ -191,12 +191,12 @@ function makeFakeClient(opts: {
    * length to model a response the server truncated at `db-max-rows`.
    * Omitted ⇒ the totals equal what was returned (a complete answer).
    */
-  summaryCount?: number;
-  folderCount?: number;
+  summaryCount?: number | null;
+  folderCount?: number | null;
 }) {
   /** PostgREST only populates `count` when the caller asked for it. */
-  const countFor = (b: FakeQueryBuilder, total: number | undefined, rows: unknown[]) =>
-    b.selectOpts?.count === 'exact' ? (total ?? rows.length) : undefined;
+  const countFor = (b: FakeQueryBuilder, total: number | null | undefined, rows: unknown[]) =>
+    b.selectOpts?.count === 'exact' ? (total === undefined ? rows.length : total) : undefined;
 
   const recorder: Recorder = {
     upsertCalls: [],
@@ -221,7 +221,7 @@ function makeFakeClient(opts: {
   const client = {
     auth: {
       getSession: async () => ({
-        data: { session: opts.userId === null ? null : { user: { id: opts.userId ?? 'user-1' } } },
+        data: { session: opts.userId === null ? null : { user: { id: opts.userId ?? OWNER } } },
       }),
     },
     from: (table: string) => new FakeQueryBuilder(table, recorder),
@@ -366,7 +366,7 @@ describe('SessionSyncService.fetchPayload', () => {
 
 describe('SessionSyncService.upsertSession', () => {
   it('upserts a dbRow with owner_id, snake_case keys, ISO client_updated_at, and payload', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const row = cleanRow();
 
@@ -377,7 +377,7 @@ describe('SessionSyncService.upsertSession', () => {
     expect(table).toBe('sessions');
     expect(opts).toEqual({ onConflict: 'id' });
     const r = dbRow as Record<string, unknown>;
-    expect(r['owner_id']).toBe('user-1');
+    expect(r['owner_id']).toBe(OWNER);
     expect(r['id']).toBe('sess-1');
     expect(r['symbol']).toBe('EURUSD');
     expect(r['folder_id']).toBeNull();
@@ -394,7 +394,7 @@ describe('SessionSyncService.upsertSession', () => {
   });
 
   it('converts a non-null lastOpenedAt (ms) to an ISO string', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const row = cleanRow({ lastOpenedAt: 1_700_060_000_000 });
 
@@ -405,7 +405,7 @@ describe('SessionSyncService.upsertSession', () => {
   });
 
   it('rejects an over-2MB payload WITHOUT calling upsert (size guard runs before network)', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const huge = {
       ...cleanPayload(),
@@ -418,7 +418,7 @@ describe('SessionSyncService.upsertSession', () => {
   });
 
   it('rejects a payload containing a forbidden candle field WITHOUT calling upsert', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const withCandles = {
       ...cleanPayload(),
@@ -472,7 +472,7 @@ describe('SessionSyncService.listFolders', () => {
 
 describe('SessionSyncService.upsertFolder', () => {
   it('upserts a folder dbRow with owner_id and ISO client_updated_at', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const row: CloudFolderRow = {
       id: 'f1',
@@ -488,7 +488,7 @@ describe('SessionSyncService.upsertFolder', () => {
     expect(table).toBe('folders');
     expect(opts).toEqual({ onConflict: 'id' });
     const r = dbRow as Record<string, unknown>;
-    expect(r['owner_id']).toBe('user-1');
+    expect(r['owner_id']).toBe(OWNER);
     expect(r['id']).toBe('f1');
     expect(r['name']).toBe('My Folder');
     expect(r['sort']).toBe(0);
@@ -588,7 +588,7 @@ describe('SessionSyncService.flushDirty — folders', () => {
       clientUpdatedAt: 5000,
       syncedAt: 1000,
     });
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client, db);
 
     await service.flushDirty();
@@ -608,7 +608,7 @@ describe('SessionSyncService.flushDirty — folders', () => {
       clientUpdatedAt: 1000,
       syncedAt: 1000,
     });
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client, db);
 
     await service.flushDirty();
@@ -856,6 +856,16 @@ describe('SessionSyncService — truncated cloud pull must not delete local data
     await expect(makeService(client).listFolders()).rejects.toThrow(/incompleta/i);
   });
 
+  it('listSummaries rejects a null exact count because it proves no completeness', async () => {
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: null });
+    await expect(makeService(client).listSummaries()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('listFolders rejects a null exact count because it proves no completeness', async () => {
+    const { client } = makeFakeClient({ folderRows: [], folderCount: null });
+    await expect(makeService(client).listFolders()).rejects.toThrow(/incompleta/i);
+  });
+
   it('a synced local session OMITTED from a truncated page survives the pull', async () => {
     const meta = workspaceMeta({
       symbol: 'EURUSD',
@@ -1023,7 +1033,7 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     const { client, recorder } = makeFakeClient({
       summaryRows: [],
       folderRows: [],
-      userId: 'user-1',
+      userId: OWNER,
     });
     const service = makeService(client, db);
 
@@ -1060,7 +1070,7 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     const { client, recorder } = makeFakeClient({
       summaryRows: [],
       folderRows: [],
-      userId: 'user-1',
+      userId: OWNER,
     });
     const service = makeService(client, db);
 
@@ -1104,6 +1114,24 @@ describe('SessionSyncService.markActiveDirty', () => {
     const updated = await db.getMeta('EURUSD');
     expect(updated?.activeClientUpdatedAt).toBe(12345);
 
+    vi.restoreAllMocks();
+  });
+
+  it('advances beyond both prior clocks when wall time is equal or moves backward', async () => {
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'A',
+        activeClientUpdatedAt: 500,
+        activeSyncedAt: 700,
+        trading: { ...defaultTradingData(), positions: [position()] },
+      }),
+    );
+    vi.spyOn(Date, 'now').mockReturnValue(100);
+
+    await makeService({}, db).markActiveDirty('EURUSD');
+
+    expect((await db.getMeta('EURUSD'))?.activeClientUpdatedAt).toBe(701);
     vi.restoreAllMocks();
   });
 
@@ -1295,6 +1323,37 @@ describe('Session Sovereignty V2 — owner isolation across an account switch', 
     expect(mine?.trading?.positions).toHaveLength(1);
   });
 
+  it('an A-bound DB fails closed for upsert, destructive pull, and delete under B auth', async () => {
+    const dbA = dbFor(OWNER);
+    await dbA.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: undefined,
+        sessions: [savedSession({ id: 'A-session', clientUpdatedAt: 10, syncedAt: 10 })],
+      }),
+    );
+    await dbA.addPendingDelete({ entity: 'session', id: 'A-delete' });
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    const service = makeService(client, dbA);
+
+    await expect(service.upsertSession(cleanRow({ id: 'A-upload' }))).rejects.toThrow(/owner|propietario/i);
+    await expect(service.deleteSession('A-delete')).rejects.toThrow(/owner|propietario/i);
+    await expect(service.pullAndMerge()).rejects.toThrow(/owner|propietario/i);
+
+    expect(recorder.upsertCalls).toEqual([]);
+    expect(recorder.deleteCalls).toEqual([]);
+    expect((await dbA.getMeta('EURUSD'))?.sessions?.map((session) => session.id)).toEqual([
+      'A-session',
+    ]);
+    expect(await dbA.listPendingDeletes()).toEqual([{ entity: 'session', id: 'A-delete' }]);
+  });
+
   it('D1 is PRESERVED within one owner: a complete empty pull still removes a synced-absent session', async () => {
     // The fix must be narrow. Same-owner delete propagation is intended
     // behaviour (multi-device) and owner scoping must not silently disable it.
@@ -1417,6 +1476,32 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
     const marker = await db.getAdoptionMarker();
     expect(marker.metaKeys).toEqual(['EURUSD']);
     expect(marker.folderKeys).toEqual(['proven-folder']);
+  });
+
+  it('does not adopt a mixed-owner meta when only some of its meaningful ids are proven', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: 'A-session',
+          sessions: [savedSession({ id: 'B-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+    const { client } = makeFakeClient({
+      summaryRows: [ownedSummaryRow('A-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+
+    await makeService(client, db).pullAndMerge();
+
+    expect(await db.getMeta('EURUSD')).toBeUndefined();
+    expect((await db.getAdoptionMarker()).metaKeys).toEqual([]);
+    expect((await db.listQuarantinedMetas()).map((meta) => meta.symbol)).toEqual(['EURUSD']);
   });
 
   it('adoption never overwrites this owner live record for the same key', async () => {
