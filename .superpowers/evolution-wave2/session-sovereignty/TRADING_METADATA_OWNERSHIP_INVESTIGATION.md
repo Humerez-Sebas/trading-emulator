@@ -17,9 +17,9 @@ replaces the complete record:
 
 | Writer | Ordering and clock behavior |
 |---|---|
-| `WorkspacesEffects.persistMeta$` | Debounced 300 ms; re-reads stored meta and reapplies `activeClientUpdatedAt`/`activeSyncedAt` because the selector snapshot omits them |
-| `WorkspacesEffects.doSwitch` | Synchronously persists outgoing meta before restoring incoming workspace; checkpoint code spread the clock-free selector snapshot into a whole-record put |
-| `SessionSyncService.markActiveDirty` | For an `isRealSession`, stamps `activeClientUpdatedAt` then writes the whole meta |
+| `WorkspacesEffects.persistMeta$` | Debounced 300 ms; atomically reads the latest stored meta, reconciles clocks, and replaces the row through `updateMeta` |
+| `WorkspacesEffects.doSwitch` | Synchronously persists outgoing meta before restoring incoming workspace; uses the same transaction-local reconciliation and marks the outgoing real session dirty |
+| `SessionSyncService.markActiveDirty` | For an `isRealSession`, atomically increments `activeClientUpdatedAt` from the latest stored clocks through `updateMeta` |
 | `SessionSyncService.flushDirtySessions` | Pushes only when `activeClientUpdatedAt > (activeSyncedAt ?? 0)` and advances `activeSyncedAt` after success |
 | `SessionSyncService.pullAndMergeSessions` and reconstruction | Applies cloud membership/LWW outcomes and writes changed records |
 | Sessions page mutations | Read-modify-write paths for active/archived session operations |
@@ -141,9 +141,17 @@ The review correction adds identity reconciliation shared by `persistMeta$` and
 `doSwitch`: outgoing clocks move to the matching archived id; an incoming saved
 id contributes its own clocks; a genuinely new id starts without inherited
 provenance; archived clocks already written are preserved by id on later
-debounced persists. `doSwitch` then stamps the real active snapshot dirty. The
-same monotonic formula now guards `markActiveDirty` against equal/backward wall
-time.
+debounced persists. The final bounded correction moves both persistence
+reconciliation and `markActiveDirty` into `WorkspaceDbService.updateMeta`, whose
+single readwrite transaction reads the latest row and applies a synchronous pure
+callback before writing. `doSwitch` stamps the real active snapshot dirty; the
+same monotonic formula guards dirty marking against equal/backward wall time.
+
+A controlled stale-read test commits a newer dirty stamp, supplies a stale value
+through the legacy `getMeta` surface, then runs debounced persistence. The new
+path never calls that stale surface; it reconciles against the real latest row
+inside the transaction. The durable client clock remains unchanged, remains
+strictly above `activeSyncedAt`, and the real trading position remains present.
 
 Deterministic real-reducer sequences prove immediate `newSession -> switchAsset`
 and `switchSession -> switchAsset`. They verify archived and active ids retain
@@ -151,26 +159,27 @@ their own provenance and both real snapshots are observed by `flushDirty`.
 
 ## Mutation proof
 
-The fresh closeout mutation changed only the outgoing `doSwitch` reconciliation
+The fresh final mutation changed only the outgoing `doSwitch` reconciliation
 flag from dirty to non-dirty.
 
 ```text
 Test Files  1 failed (1)
-Tests       4 failed | 1 passed (5)
+Tests       4 failed | 2 passed (6)
 exit 1
 ```
 
-Failures covered stable-id A5 dirtiness and the new identity/provenance paths.
-The mutation was never committed. Restoring the intended boolean produced 5/5
-passing (exit 0), and `git diff --exit-code` confirmed exact restoration.
+Failures covered stable-id A5 dirtiness and the identity/provenance paths. The
+mutation was never committed. Restoring the intended boolean produced 6/6
+passing (exit 0), and `git diff --exit-code HEAD` confirmed exact restoration.
 
 ## Ownership conclusion
 
 Trading state owns active identity and snapshots in NgRx. Sync owns LWW clocks,
 but those clocks are attributes of session ids, not the symbol-keyed meta record.
 Any whole-record persistence writer whose source omits clocks must reconcile
-them by id. The outgoing-switch writer additionally owns the atomic dirty stamp
-because it is the last writer guaranteed to see the outgoing snapshot before
-incoming restoration changes the selector stream. Primary A5 verdict remains
-**CONFIRMED DEFECT**; this does not prove unconditional ownership for ambiguous
-mixed-id legacy records.
+them by id against the latest row inside the write transaction. The
+outgoing-switch writer additionally requests the atomic dirty stamp because it
+is the last writer guaranteed to see the outgoing snapshot before incoming
+restoration changes the selector stream. Primary A5 verdict remains **CONFIRMED
+DEFECT**; this does not prove unconditional ownership for ambiguous mixed-id
+legacy records.

@@ -106,17 +106,24 @@ the normal cloud pull. An A to B switch is logout/reload/login, never an in-page
 identity mutation. B to A follows the same lifecycle and reopens A's unchanged
 partition.
 
-Cross-tab auth drift is fail-closed. Before any SessionSync cloud mutation or
-destructive pull, the authenticated Supabase user id must agree with the owner
-resolved by `WorkspaceDbService`. A stale A-bound tab observing B auth can
-neither upload/delete under B nor apply B's absence to A-local rows. The stale
-tab must be reloaded; this track adds no cross-tab coordination or recovery UI.
+Cross-tab auth drift is fail-closed at every SessionSync cloud boundary. Each
+operation captures the expected owner before I/O, checks the authenticated user
+and the narrow `WorkspaceDbService.assertOwner` immediately after the response,
+and rechecks before any local mutation or destructive consequence. This includes
+the Sessions page's direct `listSummaries`, `listFolders`, and `fetchPayload`
+calls, plus session/folder/playbook/lesson upserts, deletes, and pulls. A stale
+A-bound tab observing B auth can neither return B cloud data into A UI, report a
+cloud mutation as authoritative, nor apply B's response to A-local rows. The
+stale tab must be reloaded; this track adds no auth listener, cross-tab
+coordination, or recovery UI.
 
 ### O-5: Persistence clocks follow session identity, not symbol storage keys
 
 `persistMeta$` and `WorkspacesEffects.doSwitch` write whole `WorkspaceMeta`
 records while the NgRx snapshot intentionally omits sync clocks. Both writers
-therefore reconcile clocks by session id against the stored record:
+therefore use `WorkspaceDbService.updateMeta`: one IndexedDB readwrite
+transaction reads the latest row, reconciles clocks by session id, and writes
+the replacement without an async gap outside that transaction:
 
 - when the former active id is archived, its active clock pair moves onto that
   `SavedSession`, and its real outgoing snapshot is stamped dirty;
@@ -128,7 +135,8 @@ therefore reconcile clocks by session id against the stored record:
 
 `doSwitch` stamps a real active snapshot with
 `max(Date.now(), priorClient + 1, priorSynced + 1)` in the same `putMeta`.
-`markActiveDirty` uses the same monotonic formula, so equal or backward wall time
+`markActiveDirty` increments through that same atomic update method and monotonic
+formula, so equal/backward wall time and a stale debounced persistence attempt
 cannot make an edit clean. Scratch sessions are not newly marked dirty.
 
 ## Durable owner boundaries
@@ -151,12 +159,13 @@ membership semantics are unchanged within one owner.
 | Failure | Behavior |
 |---|---|
 | No auth session or owner lookup fails | User-owned store rejects; no fallback to quarantine/shared state |
-| Auth user differs from the DB-bound owner | SessionSync rejects before cloud mutation or destructive pull; stale tab requires reload |
+| Auth changes before or during cloud I/O, or differs from the DB-bound owner | SessionSync rejects before returning cloud data or applying any local consequence; stale tab requires reload |
 | Offline cold startup with a persisted session | Owner id comes from local Supabase session; that owner's local partition remains usable |
 | Owner cannot be resolved offline | Fail closed; data remains on disk for retry |
 | Pull fails before complete cloud ids exist | No adoption; normal pull catch leaves local state intact |
 | Server response is truncated or exact count is null | `assertCompletePull` rejects it; no destructive absence inference and no ownership proof |
 | Adoption is interrupted during copy/marker write | The owner-DB transaction aborts both; retry copies data and marker together; quarantine remains intact |
+| A live key exists when adoption's transaction runs | Transaction-local `get`/`add` skips it; the live row is untouched and the marker excludes that key |
 | Adoption marker is written but quarantine remains | Expected; quarantine is preservation evidence, not a move queue |
 | Upsert fails after dirty stamp | `activeSyncedAt` is unchanged, so the row remains dirty and retryable |
 | Logout sign-out call fails | Existing auth flow still dispatches `loggedOut`; hard reload clears in-memory user state |
@@ -191,10 +200,17 @@ targeted command returned 66/66 tests (exit 0).
 
 The fresh A5 mutation changed only `doSwitch`'s reconciliation call from
 `markActiveDirty=true` to `false`. The targeted meta-ownership command failed 4
-of 5 tests (exit 1): stable-id dirtiness, new-session provenance,
+of 6 tests with 2 passing (exit 1): stable-id dirtiness, new-session provenance,
 switch-session provenance, and subsequent persist preservation. Exact
-restoration was verified by `git diff --exit-code`; the command then returned
-5/5 tests (exit 0). The primary A5 verdict remains **CONFIRMED DEFECT**.
+restoration was verified by `git diff --exit-code HEAD`; the command then
+returned 6/6 tests (exit 0). The primary A5 verdict remains **CONFIRMED DEFECT**.
+
+The fresh in-flight-owner mutation removed only the post-I/O Supabase-user
+comparison while retaining the DB assertion. The targeted session-sync plus
+meta-ownership command failed 6 tests with 63 passing (exit 1): direct session
+and folder lists, direct payload fetch, session upsert/delete authority, and an
+A pull resolving after auth became B. Exact restoration was verified by
+`git diff --exit-code HEAD`; the command then returned 69/69 tests (exit 0).
 
 These probes are mutation evidence, not committed alternate behavior.
 
@@ -210,14 +226,11 @@ npm run lint
 npm run build
 ```
 
-Exact closure output is recorded in `PROGRESS.md`: app/spec tsc exit 0, lint exit
-0, and build exit 0. One isolated full rerun passed 186 files / 2455 tests, but
-the initial concurrent run and two later raw final-commit reruns timed out only
-the unrelated 25k-row candle-writer test at 5.012, 5.042, and 5.017 seconds.
-Targeted reruns passed 9/9 well below the limit. Closure is therefore
-`DONE_WITH_CONCERNS`, not an all-green claim. The known initial-bundle
-budget warning is accepted only if the build exits zero and introduces no new
-chunk type or Vitest sentinel.
+Exact closure output is recorded in `PROGRESS.md`: app/spec tsc exit 0; the raw
+full suite passed 186 files / 2465 tests (exit 0); lint exited 0; and build exited
+0. The initial bundle was 658.79 kB, 158.79 kB above the known-accepted 500 kB
+budget, with no Vitest sentinel or unexpected chunk type. The historical 25k-row
+candle timeout did not occur in this final sequential run. Closure is `DONE`.
 
 ## Residual risks and non-goals
 

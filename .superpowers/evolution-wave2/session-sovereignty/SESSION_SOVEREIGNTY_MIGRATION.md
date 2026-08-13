@@ -74,9 +74,13 @@ A's partition is neither read nor mutated. A local-only record cannot be
 uploaded as B because it is absent from B's local set.
 
 If another tab changes Supabase auth without this tab crossing the logout reload
-boundary, SessionSync compares auth owner to the `WorkspaceDbService` owner
-before mutation or destructive pull. A mismatch rejects without cloud calls or
-A-local mutation. That stale tab requires reload; no recovery UI or cross-tab
+boundary, every SessionSync cloud operation captures its expected owner before
+I/O and revalidates both current auth and `WorkspaceDbService` immediately after
+the response and before local consequences. Direct Sessions-page list/fetch
+calls reject instead of returning mixed-owner data; cloud writes/deletes reject
+instead of authorizing local synced stamps or pending-delete removal; pulls do
+not delete, materialize, adopt, reconstruct, or stamp A-local state from B data.
+That stale tab requires reload; no auth listener, recovery UI, or cross-tab
 protocol is introduced here.
 
 ### B to A
@@ -97,7 +101,10 @@ At persistence boundaries, clocks move with session ids: the former active pair
 moves to its archived `SavedSession`, a reopened archived pair becomes active,
 and a new active id never inherits the former pair. Real changed snapshots use a
 strictly monotonic client clock and remain flush-eligible. `markActiveDirty` uses
-the same maximum of wall time and both prior clocks plus one.
+the same maximum of wall time and both prior clocks plus one. Persistence and
+dirty marking both derive from the latest stored row inside one IndexedDB
+readwrite transaction, so a stale debounced persistence attempt cannot lower a
+newer durable dirty clock or erase trading eligibility.
 
 ### Remote-synced records
 
@@ -129,6 +136,9 @@ There is no global move transaction to leave half-complete:
 - interruption before copy leaves only quarantine, so the next pull retries;
 - interruption during copy or marker write aborts the whole owner transaction;
 - a retry writes both copy and marker atomically;
+- the transaction rechecks each live key with `get` and copies with `add`; a key
+  created after planning is never overwritten, and the marker names only copies
+  that actually succeeded;
 - interruption after commit is harmless because quarantine is intentionally retained;
 - interruption during cloud sync leaves dirty clocks/pending deletes in the
   same owner partition;
@@ -139,9 +149,11 @@ Recovery never starts by deleting either side.
 ## Verification and rollback
 
 Executable probes cover A to B, A to B to A, B to A, stale A-bound DB under B
-auth, dirty local-only isolation,
+auth, auth changing A to B during cloud I/O, direct list/fetch rejection, dirty
+local-only isolation,
 same-owner D1, no-owner fail-closed behavior, proof-only adoption, live-record
-non-overwrite, mixed-owner refusal, atomic adoption interruption/retry,
+non-overwrite at transaction time, mixed-owner refusal, atomic adoption
+interruption/retry, atomic clock reconciliation,
 second-owner non-claim, offline retry, and truncated/null-count refusal.
 
 Rollback must preserve all databases. Reverting to code that writes the shared

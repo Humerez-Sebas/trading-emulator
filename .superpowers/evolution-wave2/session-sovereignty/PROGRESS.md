@@ -5,11 +5,13 @@ Worktree `C:\Users\78701\Desktop\trading-emulator-session-sovereignty`
 
 ## STATUS
 
-Track A plus the required independent-review corrections: **COMPLETE.** Session clocks are
-identity-bound at persistence boundaries; dirty time is monotonic; auth/DB owner drift fails
-closed; O-7 requires all meaningful ids; adoption data+marker are atomic; null exact counts
-prove nothing. Nothing was pushed or merged; no Supabase, Vercel, dependency, lockfile,
-market-data worker, recovery UI, sibling worktree, or `develop` change was made.
+Track A plus the final bounded independent-review corrections: **COMPLETE / DONE.** Session
+clocks are identity-bound and transactionally reconciled; dirty time is monotonic; every
+cloud boundary captures and revalidates auth/DB owner before returning data or mutating local
+state; O-7 requires all meaningful ids; adoption performs transaction-local non-overwrite and
+marks only actual copies; null exact counts prove nothing. Nothing was pushed or merged; no
+Supabase, Vercel, dependency, lockfile, market-data worker, recovery UI, auth listener, sibling
+worktree, or `develop` change was made.
 
 Primary A5 verdict: **CONFIRMED DEFECT**.
 
@@ -18,6 +20,8 @@ Review-correction commits before docs:
 - `128b163` `fix(sync): fail closed on ambiguous ownership`
 - `02495e3` `refactor(sync): keep adoption transaction-only`
 - `f1e1312` `test(sync): pin atomic and exact-count boundaries`
+- `eb96ce7` `fix(sync): close final sovereignty races`
+- `6d174ed` `test(sync): cover every cloud owner boundary`
 
 The final closeout commit SHA cannot be embedded in its own contents without changing that
 SHA. The authoritative final SHA is `git rev-parse HEAD` after this artifact is committed and
@@ -25,22 +29,14 @@ is reported in the final response.
 
 `npm ci` already done in `emulador/` (exit 0) — do NOT redo it.
 
-Final gate status (run raw and unpiped from `emulador/`): **DONE_WITH_CONCERNS** because the
-mandatory full-suite gate remains load-flaky on one unrelated 25k-row worker test.
+Final gate status (run raw and unpiped, sequentially, from `emulador/`): **DONE**.
 - `npx tsc -p tsconfig.app.json --noEmit` → `APP_TSC_EXIT=0`
 - `npx tsc -p tsconfig.spec.json --noEmit` → `SPEC_TSC_EXIT=0`
-- first `npx ng test --watch=false`, run concurrently with build → `NG_TEST_EXIT=1`,
-  **185 files / 2454 passed, 1 timed out**; the 25k candle-writer test reached 5012 ms
-- diagnosis: targeted candle-writer rerun → exit 0, **1 file / 9 tests passed**
-- isolated `npx ng test --watch=false` rerun → `NG_TEST_EXIT=0`,
-  **186 files / 2455 tests passed**
-- exact-final-commit reruns: two further raw full runs each passed **185 files / 2454 tests**
-  and timed out only `candles-writer.spec.ts` at 5042 ms and 5017 ms (exit 1)
-- each diagnostic targeted run passed **9/9** in 1.72-2.04 seconds; no worker/test timeout
-  code was changed because that is outside the bounded review corrections
+- `npx ng test --watch=false` → `NG_TEST_EXIT=0`, **186 files / 2465 tests passed**;
+  the known load-sensitive 25k candle-writer timeout did not occur
 - `npm run lint` → `LINT_EXIT=0`, "All files pass linting."
-- `npm run build` → `BUILD_EXIT=0`; initial bundle **656.82 kB**, budget exceeded by
-  **156.82 kB** against 500.00 kB (known-accepted warning; no Vitest sentinel or unexpected
+- `npm run build` → `BUILD_EXIT=0`; initial bundle **658.79 kB**, budget exceeded by
+  **158.79 kB** against 500.00 kB (known-accepted warning; no Vitest sentinel or unexpected
   chunk type observed)
 
 Targeted TDD evidence:
@@ -53,6 +49,12 @@ Targeted TDD evidence:
   **5 failed / 50 passed**.
 - Review GREEN: workspace effects **43/43** and sync/storage/owner/playbook/lessons
   **154/154**; final focused exact-count/atomic set **104/104**.
+- Final bounded RED after adding the new regressions: focused command exit 1,
+  **8 failed / 109 passed (117)**. Intended failures: 6 owner/in-flight boundaries and 1
+  transaction-time adoption overwrite; the initial clock harness timed out and was corrected
+  before being accepted as evidence.
+- Final bounded GREEN: core focused set **117/117**; representative adjacent set including
+  workspace effects plus playbook/lessons **198/198**.
 
 Mandated post-implementation negative probe:
 - Mutation: removed only `activeClientUpdatedAt` from `doSwitch`'s outgoing `putMeta` while
@@ -67,12 +69,16 @@ Fresh closeout falsification:
   **7 failed / 59 passed**. Exact restoration via `git diff --exit-code`; rerun exit 0,
   **66/66 passed**.
 - A5 mutation: outgoing reconciliation dirty flag `true -> false`; targeted command exit 1,
-  **4 failed / 1 passed**. Exact restoration via `git diff --exit-code`; rerun exit 0,
-  **5/5 passed**.
+  **4 failed / 2 passed**. Exact restoration via `git diff --exit-code HEAD`; rerun exit 0,
+  **6/6 passed**.
+- In-flight owner mutation: removed only the post-I/O Supabase-user comparison while retaining
+  the DB assertion; targeted command exit 1, **6 failed / 63 passed**. Exact restoration via
+  `git diff --exit-code HEAD`; rerun exit 0, **69/69 passed**.
 
 Residual decisions:
-- Stale tabs fail closed at the auth/DB owner boundary and require reload. No auth-change
-  listener, broad cross-tab protocol, or recovery UI was added.
+- Stale tabs fail closed before and after every cloud I/O boundary and before local
+  consequences; direct Sessions-page list/fetch calls also reject. Reload is required. No
+  auth-change listener, broad cross-tab protocol, or recovery UI was added.
 - Mixed-owner, partially proven, and no-id legacy metas remain quarantined. No per-session
   extraction was implemented, so ownership is not claimed unconditionally.
 
