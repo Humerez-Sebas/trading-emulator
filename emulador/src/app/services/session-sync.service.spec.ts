@@ -894,6 +894,28 @@ describe('SessionSyncService — truncated cloud pull must not delete local data
     expect(recorder.deleteCalls.filter((c) => c.table === 'sessions')).toEqual([]);
   });
 
+  it('a null exact count cannot authorize D1 removal of a synced local session', async () => {
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: undefined,
+        sessions: [savedSession({ id: 'sess-unproven', clientUpdatedAt: 10, syncedAt: 10 })],
+      }),
+    );
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: null,
+      folderRows: [],
+      folderCount: 0,
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    expect((await db.getMeta('EURUSD'))?.sessions?.map((session) => session.id)).toEqual([
+      'sess-unproven',
+    ]);
+  });
+
   it('a DIRTY (unpushed) local session omitted from a truncated page is preserved AND pushed', async () => {
     // The unrecoverable case: syncedAt=1000 is what the cloud holds, but the
     // user has edited since (clientUpdatedAt=2000) and that delta exists ONLY
@@ -1643,5 +1665,31 @@ describe('Session Sovereignty V2 — legacy quarantine and evidence-based adopti
     // assertCompletePull throws before adoption runs: nothing claimed, nothing lost.
     expect(await db.listMetas()).toEqual([]);
     expect((await db.listQuarantinedMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+  });
+
+  it('a null exact count can never prove ownership for adoption', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+    const { client } = makeFakeClient({
+      summaryRows: [ownedSummaryRow('proven-session')],
+      summaryCount: null,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+
+    await makeService(client, db).pullAndMerge();
+
+    expect(await db.getMeta('EURUSD')).toBeUndefined();
+    expect((await db.getAdoptionMarker()).metaKeys).toEqual([]);
+    expect((await db.listQuarantinedMetas()).map((meta) => meta.symbol)).toEqual(['EURUSD']);
   });
 });

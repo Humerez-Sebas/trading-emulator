@@ -561,6 +561,7 @@ describe('WorkspaceDbService — sync bookkeeping (v6)', () => {
 describe('WorkspaceDbService — atomic quarantine adoption', () => {
   it('rolls back the copied meta when the marker write is interrupted, then retries both atomically', async () => {
     const meta = workspaceMeta({ symbol: 'EURUSD' });
+    const folder = { id: 'folder-1', name: 'Plan', order: 0 };
     const originalPut = IDBObjectStore.prototype.put;
     const putSpy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
       this: IDBObjectStore,
@@ -575,19 +576,27 @@ describe('WorkspaceDbService — atomic quarantine adoption', () => {
         : originalPut.call(this, value, key);
     });
     const atomicDb = svc as WorkspaceDbService & {
-      adoptQuarantined(claim: { metas?: WorkspaceMeta[] }): Promise<void>;
+      adoptQuarantined(claim: {
+        metas?: WorkspaceMeta[];
+        folders?: typeof folder[];
+      }): Promise<void>;
     };
 
     await expect(
-      Promise.resolve().then(() => atomicDb.adoptQuarantined({ metas: [meta] })),
+      Promise.resolve().then(() =>
+        atomicDb.adoptQuarantined({ metas: [meta], folders: [folder] }),
+      ),
     ).rejects.toThrow(/marker interrupted/);
     putSpy.mockRestore();
     expect(await svc.getMeta('EURUSD')).toBeUndefined();
+    expect(await svc.listFolders()).toEqual([]);
     expect((await svc.getAdoptionMarker()).metaKeys).toEqual([]);
 
-    await atomicDb.adoptQuarantined({ metas: [meta] });
+    await atomicDb.adoptQuarantined({ metas: [meta], folders: [folder] });
     expect(await svc.getMeta('EURUSD')).toEqual(meta);
+    expect(await svc.listFolders()).toEqual([folder]);
     expect((await svc.getAdoptionMarker()).metaKeys).toEqual(['EURUSD']);
+    expect((await svc.getAdoptionMarker()).folderKeys).toEqual(['folder-1']);
   });
 });
 
