@@ -2,7 +2,7 @@
 
 ## Verdict
 
-**Track C implementation is ready for final verification and re-review.** The RFC-004/RFC-005 raw-handle
+**Track C is independently accepted and all five fresh gates are green.** The RFC-004/RFC-005 raw-handle
 bridge is retired with no intentional behavior change. The historical bridge is classified
 as an **EXPIRED MIGRATION CONSTRAINT**: its migration purpose has ended, every live host
 operation has a narrow owner, and the backlog is zero before detector enablement.
@@ -155,9 +155,9 @@ clean.
 - Existing guard specs were rewired to narrow engine fakes without assertion changes.
 - Frozen scene registers the same three capability classes and remains non-interactive.
 
-## Final Gates
+## Historical Gates
 
-Final raw, unpiped results from `emulador/`:
+The first closeout attempt preserved these raw, unpiped results from `emulador/`:
 
 | Gate | Exit | Evidence |
 |---|---:|---|
@@ -194,6 +194,24 @@ and three Medium findings. Resolutions:
   facade lookup, and the earlier successful `npm ci` accurately.
 - The Low indexed-import-type bypass was also closed with `RuleTester` coverage.
 
+Review loops subsequently found and resolved the two-step domain barrel variants and the
+shared-bus structural payload path. Final independent review of head `b06fb62` returned
+`ACCEPTED`: zero Critical, High, or Medium findings. Its sole Low notes that the detector's
+four-handle set does not attempt to classify every mutable lightweight-charts interface;
+that is outside C-R2's required scope and remains an explicit detector limit.
+
+## Fresh Final Gates
+
+Final raw, unpiped results from `emulador/` at accepted implementation head `b06fb62`:
+
+| Gate | Exit | Evidence |
+|---|---:|---|
+| `npx tsc -p tsconfig.app.json --noEmit` | 0 | No diagnostics. |
+| `npx tsc -p tsconfig.spec.json --noEmit` | 0 | No diagnostics. |
+| `npx ng test --watch=false` | 0 | 185 files passed; 2450 tests passed. |
+| `npm run lint` | 0 | Local `RuleTester` suite ran first; Angular lint reported `All files pass linting.` |
+| `npm run build` | 0 | Initial total `651.83 kB`; only the known 500 kB budget warning (`151.83 kB` over). No unexpected or Vitest chunk type. |
+
 ## Residual Risk
 
 - The import detector does not perform general type-flow analysis or inspect runtime dynamic
@@ -205,5 +223,5 @@ and three Medium findings. Resolutions:
 - TypeScript `private` is compile-time privacy, not ECMAScript `#private`; runtime reflection
   can observe internal own properties. This is not public API, and the corrected test avoids
   claiming otherwise.
-- The historical full-suite timeout evidence above remains preserved. Fresh closeout gates
-  are recorded in the ledger and this report after they run.
+- The historical full-suite timeout evidence above is preserved separately from the fresh
+  green closeout suite.

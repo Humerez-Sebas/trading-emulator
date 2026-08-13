@@ -7,8 +7,8 @@ Checkpoint: `a736da843a4d35490fd93007d14e9da6ff4ad932`
 
 ## Status
 
-**TRACK C CLOSEOUT IN PROGRESS.** The historical five-gate evidence remains below. Final
-review findings C-R1 through C-R4 are implemented; fresh final gates and re-review remain.
+**TRACK C ACCEPTED.** C-R1 through C-R4 are resolved, independent review returned
+`ACCEPTED` with zero Critical/High/Medium findings, and all five fresh final gates are green.
 
 - [x] 22 production bridge call sites migrated to narrow contracts.
 - [x] `chartApi` and `seriesApi` deleted; no generic getter/handle replacement added.
@@ -65,7 +65,7 @@ a9ba615 chore(lint): enforce the chart handle boundary
 a34f3b6 style(chart): repair trade guard fixture indentation
 ```
 
-## Final Gates
+## Historical Gates
 
 ```text
 npx tsc -p tsconfig.app.json --noEmit   exit 0
@@ -111,3 +111,26 @@ remained unchanged. No dependency/lockfile mutation, push, merge or deploy occur
 - Import-type negative probe: temporary
   `import('lightweight-charts').IChartApi` in `chart.component.ts` made `npm run lint` fail
   with exactly one `engine-boundary/no-chart-handles` error; inverse restoration was green.
+
+## Final Acceptance
+
+- Independent review session: `ses_00402de38ffet2fHXAeapj5aSZ`.
+- Accepted implementation head: `b06fb62`.
+- Verdict: `ACCEPTED`, zero Critical/High/Medium findings.
+- One Low ruled no-fix: the detector intentionally enforces the four C-R2 raw-handle types,
+  not every mutable interface exported by lightweight-charts.
+
+Fresh raw gates from `emulador/`:
+
+```text
+npx tsc -p tsconfig.app.json --noEmit   exit 0, no diagnostics
+npx tsc -p tsconfig.spec.json --noEmit  exit 0, no diagnostics
+npx ng test --watch=false               exit 0
+  Test Files 185 passed (185)
+  Tests      2450 passed (2450)
+npm run lint                             exit 0
+  local RuleTester executed; All files pass linting
+npm run build                            exit 0, initial 651.83 kB
+  only known warning: 500 kB budget exceeded by 151.83 kB
+  no unexpected or Vitest chunk type
+```
