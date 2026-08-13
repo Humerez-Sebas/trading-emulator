@@ -423,14 +423,14 @@ describe('SessionSyncService — in-flight owner agreement', () => {
     await expect(pending).rejects.toThrow(/owner|propietario/i);
   });
 
-  it.each(['upsertSession', 'deleteSession'] as const)(
+  it.each(['upsertSession', 'deleteSession', 'upsertFolder', 'deleteFolder'] as const)(
     '%s does not report authoritative success when auth changes A to B in flight',
     async (method) => {
       let authOwner = OWNER;
       const response = deferred<FakeResult>();
       const started = deferred<void>();
       const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
-      if (method === 'upsertSession') {
+      if (method === 'upsertSession' || method === 'upsertFolder') {
         recorder.resolveUpsert = () => {
           started.resolve();
           return response.promise;
@@ -442,10 +442,19 @@ describe('SessionSyncService — in-flight owner agreement', () => {
         };
       }
       const service = makeService(client);
-      const pending =
-        method === 'upsertSession'
-          ? service.upsertSession(cleanRow())
-          : service.deleteSession('sess-1');
+      const pending = (() => {
+        if (method === 'upsertSession') return service.upsertSession(cleanRow());
+        if (method === 'deleteSession') return service.deleteSession('sess-1');
+        if (method === 'upsertFolder') {
+          return service.upsertFolder({
+            id: 'folder-1',
+            name: 'Plan',
+            sort: 0,
+            clientUpdatedAt: 1,
+          });
+        }
+        return service.deleteFolder('folder-1');
+      })();
       await started.promise;
 
       authOwner = OTHER_OWNER;

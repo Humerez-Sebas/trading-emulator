@@ -66,7 +66,11 @@ export class SessionSyncService {
   private async assertExpectedOwner(expectedOwnerId: string): Promise<void> {
     const { data } = await this.client.auth.getSession();
     if (data.session?.user?.id !== expectedOwnerId) throw new OwnerAgreementError();
-    await this.db.assertOwner(expectedOwnerId);
+    try {
+      await this.db.assertOwner(expectedOwnerId);
+    } catch {
+      throw new OwnerAgreementError();
+    }
   }
 
   /**
