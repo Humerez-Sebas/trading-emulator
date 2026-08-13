@@ -152,6 +152,11 @@ through the legacy `getMeta` surface, then runs debounced persistence. The new
 path never calls that stale surface; it reconciles against the real latest row
 inside the transaction. The durable client clock remains unchanged, remains
 strictly above `activeSyncedAt`, and the real trading position remains present.
+As a separate falsification after implementation, replacing only that atomic
+`persistMeta$` call with the former external `getMeta`/`putMeta` sequence made
+this test fail while 5 siblings passed (exit 1): the stale read surface was
+called once. Exact restoration via `git diff --exit-code HEAD` returned 6/6
+passing (exit 0).
 
 Deterministic real-reducer sequences prove immediate `newSession -> switchAsset`
 and `switchSession -> switchAsset`. They verify archived and active ids retain

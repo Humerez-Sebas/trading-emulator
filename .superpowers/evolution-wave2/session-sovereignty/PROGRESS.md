@@ -75,6 +75,10 @@ Fresh closeout falsification:
 - In-flight owner mutation: removed only the post-I/O Supabase-user comparison while retaining
   the DB assertion; targeted command exit 1, **6 failed / 63 passed**. Exact restoration via
   `git diff --exit-code HEAD`; rerun exit 0, **69/69 passed**.
+- Atomic persistence mutation: replaced only `persistMeta$`'s transaction-local `updateMeta`
+  with the former external `getMeta`/`putMeta` sequence; targeted command exit 1,
+  **1 failed / 5 passed**, because the controlled stale read was called once. Exact restoration
+  via `git diff --exit-code HEAD`; rerun exit 0, **6/6 passed**.
 
 Residual decisions:
 - Stale tabs fail closed before and after every cloud I/O boundary and before local
