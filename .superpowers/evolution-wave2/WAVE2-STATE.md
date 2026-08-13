@@ -134,11 +134,11 @@ canonical repo (never `.claude/worktrees/`).
 
 | Agent | Track | Worktree | Branch | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | INTERRUPTED → RESUMED |
-| B | Multi-symbol feasibility | `trading-emulator-multisymbol` | `agent/multisymbol-feasibility` | INTERRUPTED → RESUMED |
-| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | INTERRUPTED → RESUMED |
-| D | Unit semantics & UI contract | `trading-emulator-unit-semantics` | `agent/unit-semantics` | INTERRUPTED → RESUMED |
-| E | Clock authority | `trading-emulator-clock-authority` | `agent/clock-authority` | INTERRUPTED → RESUMED |
+| A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | **ACCEPTED** @ `2630294` |
+| B | Multi-symbol feasibility | `trading-emulator-multisymbol` | `agent/multisymbol-feasibility` | **VERIFIED RESEARCH** @ `3ae5935` |
+| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | **ACCEPTED** @ `66211cc` |
+| D | Unit semantics & UI contract | `trading-emulator-unit-semantics` | `agent/unit-semantics` | **VERIFIED** @ `1984e5d` |
+| E | Clock authority | `trading-emulator-clock-authority` | `agent/clock-authority` | **VERIFIED / OWNER-GATED** @ `cee6cff` |
 
 ### Interruption event — all five agents killed simultaneously
 
@@ -304,6 +304,55 @@ Branch disposition: **MERGE AS-IS.** The production delta is two comment/doc cor
 a module-private rename, guarded by 35 new cross-surface tests, with all four gates green. The
 vocabulary strings and the persisted rename are explicitly NOT in it and remain owner-gated.
 
+## FINAL INDEPENDENT VERIFICATION — AGENT A (session sovereignty)
+
+Branch `agent/session-sovereignty-v2`, final head
+`263029491b16c1cc87c3002fb339c47824759173`, worktree clean. Accepted implementation head:
+`498646b`; the final commit updates evidence only.
+
+The original account-switch defect and A5 trading-metadata race are fixed with owner-partitioned
+workspace/playbook/lesson databases, preserved shared market-data stores, read-only legacy
+quarantine, exact-count evidence-based adoption, hard document boundaries on owner changes,
+transaction-local revision guards, and monotonic complete active-payload clocks. Three bounded
+independent-review loops found and resolved stale pull consequences, active-trading revision
+coverage, stale active-id reconstruction, non-monotonic clocks, and external return-target issues.
+
+Independent reviewer verdict: **ACCEPTED**, zero Critical/High/Medium findings. Fresh closeout
+gates at `498646b`: app tsc 0; spec tsc 0; full suite 0 at **186 files / 2483 tests**; lint 0;
+build 0 at **661.05 kB**, only the known 500 kB budget warning, with no Vitest sentinel or
+unexpected chunk type. Restored mutations independently proved owner partitioning, A5 dirty
+stamps, exact-revision acknowledgement, direct-login hard boundaries, and v1 source retention.
+
+Branch disposition: **MERGE AS-IS**, subject to normal conflict resolution and fresh combined
+gates when the owner chooses integration. No Supabase migration, dependency, lockfile, recovery
+UI, cross-tab framework, push, PR, deployment, or `develop` mutation occurred.
+
+## FINAL INDEPENDENT VERIFICATION — AGENT C (engine boundary)
+
+Branch `agent/engine-boundary-restoration`, final head
+`66211cc4828f42ceea4b9289024bfab743ec7fcd`, worktree clean. Accepted implementation head:
+`b06fb62`; the final commit updates evidence only.
+
+The RFC-004/RFC-005 chart/series bridge is retired. `registerCapability` keeps construction
+inside the engine and returns `void`; `getCapability` exposes only mapped handle-free facades.
+Raw library pointer callbacks are copied into data-only `ChartPointerEvent` values. Hosts receive
+a subscribe-only event source on a bus physically distinct from the private capability bus.
+The local ESLint rule now covers named/namespace imports, dot/indexed TypeScript import types,
+direct and two-step re-exports including aliases, while allowing data-only types and legitimate
+domain ownership imports. Its `RuleTester` suite is part of `npm run lint`.
+
+Independent review required multiple bounded loops and ended **ACCEPTED** with zero
+Critical/High/Medium findings. The sole Low, intentionally ruled no-fix, is that the detector
+enforces the four C-R2 handle interfaces rather than attempting to classify every mutable API
+exported by lightweight-charts. Fresh final gates: app tsc 0; spec tsc 0; full suite 0 at
+**185 files / 2450 tests**; lint 0 including local rule tests; build 0 at **651.83 kB**, only
+the known budget warning, no unexpected/Vitest chunk type. Required generic-leak and prohibited
+import mutations failed, were inverse-restored, and returned green.
+
+Branch disposition: **MERGE AS-IS**, subject to normal conflict resolution and fresh combined
+gates when integrated. An earlier `npm ci` succeeded; package and lockfile contents remained
+unchanged. No push, PR, deployment, or `develop` mutation occurred.
+
 ## OWNER DECISIONS BINDING THIS WAVE
 
 - **O-1 / O-2** — no global 100× rescale; `pts` ambiguity is fixed with vocabulary, not
@@ -340,3 +389,10 @@ vocabulary strings and the persisted rename are explicitly NOT in it and remain 
   task briefs are committed in `WAVE2-CLOSEOUT-RESUME.md`,
   `TRACK-A-CLOSEOUT-BRIEF.md`, and `TRACK-C-CLOSEOUT-BRIEF.md`. No branch was merged or
   pushed, and completed tracks were not reopened.
+- **2026-08-13 final closeout** — Track A accepted at final head `2630294` (implementation
+  `498646b`) with 186 files / 2483 tests and all five gates green. Track C accepted at final
+  head `66211cc` (implementation `b06fb62`) with 185 files / 2450 tests and all five gates
+  green. Every specialist worktree and the integration worktree reconciled clean. `develop`
+  and `origin/develop` remained `a2ca53b`; canonical unrelated untracked Wave 1 evidence was
+  left untouched. No specialist branch was merged, pushed, deployed, rebased, or squashed.
+  Final synthesis and index were written on `agent/evolution-wave2-base` only.
