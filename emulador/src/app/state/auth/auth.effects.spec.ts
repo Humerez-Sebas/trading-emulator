@@ -187,6 +187,17 @@ describe('AuthEffects', () => {
       expect(await p).toEqual(AuthActions.authSuccess({ user: mockUser, returnUrl: null }));
       expect(assign).not.toHaveBeenCalled();
     });
+
+    it.each(['https://evil.example', '//evil.example'])(
+      'rejects external return target %s',
+      async (returnUrl) => {
+        auth.signIn.mockResolvedValue({ id: 'u2', email: 'b@example.com' });
+        const sub = effects.login$.subscribe();
+        actions$.next(AuthActions.login({ email: 'b@example.com', password: 'pass12', returnUrl }));
+        await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('/mercados'));
+        sub.unsubscribe();
+      },
+    );
   });
 
   describe('navigateAfterAuth$', () => {

@@ -1164,6 +1164,22 @@ describe('SesionesPageComponent', () => {
     );
   });
 
+  it('renameFolder advances beyond equal/backward wall time', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Nueva');
+    await settle();
+    vi.spyOn(Date, 'now').mockReturnValue(100);
+
+    await component.renameFolder(
+      folder({ id: 'f1', name: 'Vieja', clientUpdatedAt: 500, syncedAt: 700 }),
+    );
+
+    expect(putFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'f1', name: 'Nueva', clientUpdatedAt: 701 }),
+    );
+  });
+
   it('deleteFolder (confirmed) removes it', async () => {
     const deleteFolder = vi.fn().mockResolvedValue(undefined);
     create({ db: { deleteFolder } });
@@ -1291,6 +1307,19 @@ describe('SesionesPageComponent', () => {
       expect(byId.get('c')!.clientUpdatedAt).toBe(NOW);
       expect(byId.get('b')!.clientUpdatedAt).toBe(NOW);
       expect(byId.get('d')!.clientUpdatedAt).toBeUndefined(); // still last, order unchanged (4000)
+    });
+
+    it('bumps changed folders monotonically beyond prior clocks', () => {
+      const result = reorderFolders(
+        [
+          folder({ id: 'a', order: 1000, clientUpdatedAt: 500, syncedAt: 700 }),
+          folder({ id: 'b', order: 2000 }),
+        ],
+        'b',
+        'a',
+        100,
+      );
+      expect(result.find((f) => f.id === 'a')?.clientUpdatedAt).toBe(701);
     });
 
     it('does not mutate the input array or its folder objects', () => {

@@ -1439,6 +1439,30 @@ describe('SessionSyncService — pull consequences use current local revisions',
     expect(after?.trading?.positions[0]?.id).toBe('newer');
   });
 
+  it('does not clear changed active trading when persistence has not yet advanced its clock', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'old' })] },
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({
+      ...original,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'newer' })] },
+    });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.getMeta('EURUSD'))?.trading?.positions[0]?.id).toBe('newer');
+  });
+
   it('reconstructs the active id without replacing concurrent persistence', async () => {
     const db = await freshDb();
     const original = workspaceMeta({

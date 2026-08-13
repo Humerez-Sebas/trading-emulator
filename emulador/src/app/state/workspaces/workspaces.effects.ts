@@ -51,7 +51,9 @@ function reconcileSessionClocks(
   now: number,
   markActiveDirty: boolean,
 ): Pick<WorkspaceMeta, 'sessions' | 'activeClientUpdatedAt' | 'activeSyncedAt'> {
-  const existingSessions = new Map((existing?.sessions ?? []).map((session) => [session.id, session]));
+  const existingSessions = new Map(
+    (existing?.sessions ?? []).map((session) => [session.id, session]),
+  );
   let sessions = (meta.sessions ?? []).map((session) => {
     const stored = existingSessions.get(session.id);
     return stored
@@ -270,7 +272,10 @@ export class WorkspacesEffects {
                 // the snapshot) — reconcile them against the latest stored value
                 // inside the same transaction as this whole-record write.
                 const now = Date.now();
-                const clocks = reconcileSessionClocks(meta, existing, now, false);
+                const tradingChanged =
+                  existing?.activeSessionId === meta.activeSessionId &&
+                  JSON.stringify(existing?.trading) !== JSON.stringify(meta.trading);
+                const clocks = reconcileSessionClocks(meta, existing, now, tradingChanged);
                 return {
                   symbol: current!,
                   ...meta,

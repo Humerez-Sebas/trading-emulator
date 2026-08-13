@@ -124,7 +124,7 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     expect(outgoing!.activeClientUpdatedAt).toBeGreaterThan(outgoing!.activeSyncedAt!);
   });
 
-  it('CONTRAST: persistMeta$ preserves the very same clocks (so the asymmetry is real)', async () => {
+  it('persistMeta$ atomically marks changed real active trading dirty', async () => {
     const sub = effects.persistMeta$.subscribe();
     // persistMeta$ is debounced 300 ms off the snapshot selector; MockStore
     // replays the overridden value on subscribe, so waiting is enough.
@@ -132,7 +132,7 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     sub.unsubscribe();
 
     const stored = await db.getMeta(SYMBOL);
-    expect(stored!.activeClientUpdatedAt).toBe(111);
+    expect(stored!.activeClientUpdatedAt).toBeGreaterThan(111);
     expect(stored!.activeSyncedAt).toBe(110);
   });
 

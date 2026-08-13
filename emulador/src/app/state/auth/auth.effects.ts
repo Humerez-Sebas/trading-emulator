@@ -53,7 +53,11 @@ export class AuthEffects {
             from(this.auth.signIn(email, password)).pipe(
               mergeMap((user) => {
                 if (currentOwnerId && currentOwnerId !== user.id) {
-                  this.document.location.assign(returnUrl || '/mercados');
+                  const target =
+                    returnUrl?.startsWith('/') && !returnUrl.startsWith('//')
+                      ? returnUrl
+                      : '/mercados';
+                  this.document.location.assign(target);
                   return EMPTY;
                 }
                 return of(AuthActions.authSuccess({ user, returnUrl }));

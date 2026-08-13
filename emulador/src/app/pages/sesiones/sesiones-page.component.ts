@@ -116,6 +116,8 @@ export interface SessionCard {
   active: boolean;
   /** Folder the session belongs to (null = "Sin carpeta"). */
   folderId: string | null;
+  clientUpdatedAt?: number;
+  syncedAt?: number;
   /** Cumulative balance series (incl. initial) for the preview sparkline. */
   equity: number[];
   /** True for a cloud-only session not yet pulled into local storage. */
@@ -143,6 +145,10 @@ function newId(): string {
 
 /** Sparse step between reassigned folder `order` values (room to insert later without a full re-sort). */
 const FOLDER_ORDER_STEP = 1000;
+
+function nextClientClock(now: number, clientUpdatedAt?: number, syncedAt?: number): number {
+  return Math.max(now, (clientUpdatedAt ?? 0) + 1, (syncedAt ?? 0) + 1);
+}
 
 /**
  * Pure reorder helper for the folder sidebar's drag-drop. Given the current
@@ -173,7 +179,7 @@ export function reorderFolders(
   return reordered.map((f, i) => {
     const order = (i + 1) * FOLDER_ORDER_STEP;
     if (order === f.order) return f;
-    return { ...f, order, clientUpdatedAt: now };
+    return { ...f, order, clientUpdatedAt: nextClientClock(now, f.clientUpdatedAt, f.syncedAt) };
   });
 }
 
@@ -298,6 +304,8 @@ export class SesionesPageComponent {
           active: true,
           folderId: trading.folderId ?? null,
           equity: equityCurve(trading),
+          clientUpdatedAt: meta.activeClientUpdatedAt,
+          syncedAt: meta.activeSyncedAt,
         });
       }
       for (const s of sessions) {
@@ -315,6 +323,8 @@ export class SesionesPageComponent {
           active: false,
           folderId: s.trading.folderId ?? null,
           equity: equityCurve(s.trading),
+          clientUpdatedAt: s.clientUpdatedAt,
+          syncedAt: s.syncedAt,
         });
       }
     }
@@ -883,7 +893,11 @@ export class SesionesPageComponent {
       if (card.id === null) this.store.dispatch(TradingActions.setSessionName({ name }));
       else
         this.store.dispatch(
-          TradingActions.renameSession({ id: card.id, name, clientUpdatedAt: Date.now() }),
+          TradingActions.renameSession({
+            id: card.id,
+            name,
+            clientUpdatedAt: nextClientClock(Date.now(), card.clientUpdatedAt, card.syncedAt),
+          }),
         );
     } else {
       const meta = await this.db.getMeta(card.symbol);
@@ -898,7 +912,7 @@ export class SesionesPageComponent {
                 ...s,
                 name,
                 trading: { ...s.trading, sessionName: name },
-                clientUpdatedAt: Date.now(),
+                clientUpdatedAt: nextClientClock(Date.now(), s.clientUpdatedAt, s.syncedAt),
               }
             : s,
         );
@@ -1118,7 +1132,11 @@ export class SesionesPageComponent {
       maxLength: 40,
     });
     if (!name || name === folder.name) return;
-    await this.db.putFolder({ ...folder, name, clientUpdatedAt: Date.now() });
+    await this.db.putFolder({
+      ...folder,
+      name,
+      clientUpdatedAt: nextClientClock(Date.now(), folder.clientUpdatedAt, folder.syncedAt),
+    });
     await this.reloadFolders();
     await this.syncDirty();
     this.flash(`Carpeta renombrada a "${name}".`);
@@ -1161,7 +1179,11 @@ export class SesionesPageComponent {
     if (card.folderId === folderId) return;
     if (card.symbol === this.currentAsset()) {
       this.store.dispatch(
-        TradingActions.setSessionFolder({ id: card.id, folderId, clientUpdatedAt: Date.now() }),
+        TradingActions.setSessionFolder({
+          id: card.id,
+          folderId,
+          clientUpdatedAt: nextClientClock(Date.now(), card.clientUpdatedAt, card.syncedAt),
+        }),
       );
     } else {
       const meta = await this.db.getMeta(card.symbol);
@@ -1172,7 +1194,11 @@ export class SesionesPageComponent {
         // stamp the edited archived session's LWW clock so the move pushes
         meta.sessions = (meta.sessions ?? []).map((s) =>
           s.id === card.id
-            ? { ...s, trading: { ...s.trading, folderId }, clientUpdatedAt: Date.now() }
+            ? {
+                ...s,
+                trading: { ...s.trading, folderId },
+                clientUpdatedAt: nextClientClock(Date.now(), s.clientUpdatedAt, s.syncedAt),
+              }
             : s,
         );
       }

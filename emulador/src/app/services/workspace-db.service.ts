@@ -472,6 +472,7 @@ export class WorkspaceDbService {
     kind: 'active' | 'archived',
     clientUpdatedAt: number,
     syncedAt: number | undefined,
+    expectedTrading?: WorkspaceMeta['trading'],
   ): Promise<void> {
     await this.updateMeta(symbol, (current) => {
       if (!current) return undefined;
@@ -479,7 +480,8 @@ export class WorkspaceDbService {
         if (
           current.activeSessionId !== sessionId ||
           (current.activeClientUpdatedAt ?? 0) !== clientUpdatedAt ||
-          current.activeSyncedAt !== syncedAt
+          current.activeSyncedAt !== syncedAt ||
+          JSON.stringify(current.trading) !== JSON.stringify(expectedTrading)
         ) {
           return undefined;
         }
