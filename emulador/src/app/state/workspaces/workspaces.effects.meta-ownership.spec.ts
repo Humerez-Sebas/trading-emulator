@@ -3,17 +3,19 @@ import { TestBed } from '@angular/core/testing';
 import { provideMockActions } from '@ngrx/effects/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { Subject, firstValueFrom } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WorkspacesEffects } from './workspaces.effects';
 import { WorkspacesActions } from './workspaces.actions';
 import { selectCurrentAsset, selectWorkspaceMetaSnapshot } from '../selectors';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { SessionSyncService } from '../../services/session-sync.service';
+import type { SupabaseService } from '../../auth/supabase.service';
 import { fixedOwnerIdentity } from '../../services/owner-identity.service';
 import { ownerWorkspaceDbName } from '../../services/owner-scope';
 import { defaultTradingData } from '../trading/trading.models';
 import { createInitialLayoutState } from '../layout/layout.models';
-import { workspaceMeta } from '../../testing/fixtures';
+import { position, workspaceMeta } from '../../testing/fixtures';
 
 /**
  * A5 — who owns `WorkspaceMeta`'s sync clocks?
@@ -25,16 +27,13 @@ import { workspaceMeta } from '../../testing/fixtures';
  *
  *  - `persistMeta$` re-reads the stored record and re-applies
  *    `activeClientUpdatedAt`/`activeSyncedAt`, with a comment saying exactly why.
- *  - `doSwitch` step 1 (the outgoing asset's persist during `switchAsset`) does
- *    NOT. `MetaSnapshot` is `Omit<WorkspaceMeta,'symbol'|'lastModified'|
- *    'linkGroups'>`, so the clocks are part of its TYPE, but
- *    `selectWorkspaceMetaSnapshot` never produces those keys — the spread cannot
- *    carry what the object does not have.
+ *  - `doSwitch` step 1 (the outgoing asset's persist during `switchAsset`) must
+ *    do the same re-read because `selectWorkspaceMetaSnapshot` never produces
+ *    those keys — the spread cannot carry what the object does not have.
  *
- * The two tests below pin that asymmetry as OBSERVED BEHAVIOUR (see
- * TRADING_METADATA_OWNERSHIP_INVESTIGATION.md for the harm analysis and for why
- * the drop is deliberately left unfixed). If someone later "tidies" either
- * writer, one of these fails and the ledger gets re-read.
+ * The regression below pins the consequence: switching away from a real active
+ * session must leave its outgoing snapshot dirty and therefore eligible for the
+ * next `flushDirty`. The contrast keeps the known-good writer visible.
  */
 const OWNER = 'owner-meta-ownership';
 const SYMBOL = 'XAUUSD';
@@ -46,7 +45,7 @@ const metaSnap = {
   selectedTfs: undefined,
   currentTime: 0,
   drawings: [],
-  trading: defaultTradingData(),
+  trading: { ...defaultTradingData(), positions: [position()] },
   sessions: [],
   activeSessionId: 'sess-A',
   layout: createInitialLayoutState().workspace,
@@ -94,20 +93,28 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
 
   afterEach(() => {
     store.resetSelectors();
+    vi.restoreAllMocks();
   });
 
-  it('REPRODUCTION: switchAsset persists the outgoing meta WITHOUT its LWW clocks', async () => {
+  it('switchAsset keeps the outgoing real session dirty and eligible for flush', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(112);
     const done = firstValueFrom(effects.switch$);
     actions$.next(WorkspacesActions.switchAsset({ symbol: OTHER }));
     await done;
 
     const outgoing = await db.getMeta(SYMBOL);
     expect(outgoing).toBeDefined();
-    // The stable session id survives (it rides the NgRx snapshot)…
+
+    const sync = new SessionSyncService({} as SupabaseService, db);
+    const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
+    await sync.flushDirty();
+
+    expect(upsert).toHaveBeenCalledOnce();
     expect(outgoing!.activeSessionId).toBe('sess-A');
-    // …but both sync clocks are gone. This is the observed defect.
-    expect(outgoing!.activeClientUpdatedAt).toBeUndefined();
-    expect(outgoing!.activeSyncedAt).toBeUndefined();
+    expect(outgoing!.activeSyncedAt).toBe(110);
+    expect(outgoing!.activeClientUpdatedAt).toBe(112);
+    expect(outgoing!.activeClientUpdatedAt).toBeGreaterThan(111);
+    expect(outgoing!.activeClientUpdatedAt).toBeGreaterThan(outgoing!.activeSyncedAt!);
   });
 
   it('CONTRAST: persistMeta$ preserves the very same clocks (so the asymmetry is real)', async () => {

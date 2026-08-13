@@ -38,6 +38,7 @@ import {
   type LegacyDrawingItem,
 } from '../../services/drawings-migration';
 import { singlePanelLayoutFor } from '../../services/session-migration';
+import { isRealSession } from '../../services/session-sync.mapping';
 
 /**
  * All-or-nothing resolution of the (layout, panels) pair that should own a
@@ -303,6 +304,14 @@ export class WorkspacesEffects {
     // 1) persist the outgoing asset's meta (its series are already stored)
     if (current) {
       try {
+        const existing = await this.db.getMeta(current).catch(() => undefined);
+        const activeClientUpdatedAt = meta.trading && isRealSession(meta.trading)
+          ? Math.max(
+              Date.now(),
+              (existing?.activeClientUpdatedAt ?? 0) + 1,
+              (existing?.activeSyncedAt ?? 0) + 1,
+            )
+          : existing?.activeClientUpdatedAt;
         // RFC-011 Task 4 (folded audit fix): see persistMeta$'s comment — the
         // snapshot's linkGroups is a Record (runtime state); WorkspaceMeta
         // wants an array (wire-shape mirror).
@@ -311,6 +320,8 @@ export class WorkspacesEffects {
           ...meta,
           linkGroups: Object.values(meta.linkGroups),
           lastModified: Date.now(),
+          activeClientUpdatedAt,
+          activeSyncedAt: existing?.activeSyncedAt,
         });
       } catch {
         /* persistence is best-effort */
