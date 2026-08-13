@@ -261,19 +261,17 @@ export class WorkspacesEffects {
         filter(([, current]) => !!current),
         concatMap(([meta, current]) =>
           from(
-            (async () => {
-              // The stable activeSessionId now lives in NgRx state and is
-              // carried by selectWorkspaceMetaSnapshot (state owns it), so it
-              // is written straight from `meta`. The LWW clocks
-              // (activeClientUpdatedAt/activeSyncedAt) remain sync-only (NOT in
-               // the snapshot) — read the existing record first and reconcile
-               // them by session id, otherwise a transition would either
-               // inherit the former active clocks or erase archived clocks.
-              const existing = await this.db.getMeta(current!).catch(() => undefined);
-              const now = Date.now();
-              const clocks = reconcileSessionClocks(meta, existing, now, false);
-              await this.db
-                .putMeta({
+            this.db
+              .updateMeta(current!, (existing) => {
+                // The stable activeSessionId now lives in NgRx state and is
+                // carried by selectWorkspaceMetaSnapshot (state owns it), so it
+                // is written straight from `meta`. The LWW clocks
+                // (activeClientUpdatedAt/activeSyncedAt) remain sync-only (NOT in
+                // the snapshot) — reconcile them against the latest stored value
+                // inside the same transaction as this whole-record write.
+                const now = Date.now();
+                const clocks = reconcileSessionClocks(meta, existing, now, false);
+                return {
                   symbol: current!,
                   ...meta,
                   // RFC-011 Task 4 (folded audit fix): selectWorkspaceMetaSnapshot's
@@ -284,9 +282,9 @@ export class WorkspacesEffects {
                   linkGroups: Object.values(meta.linkGroups),
                   lastModified: now,
                   ...clocks,
-                })
-                .catch(() => undefined);
-            })(),
+                };
+              })
+              .catch(() => undefined),
           ),
         ),
       ),
@@ -361,18 +359,19 @@ export class WorkspacesEffects {
     // 1) persist the outgoing asset's meta (its series are already stored)
     if (current) {
       try {
-        const existing = await this.db.getMeta(current).catch(() => undefined);
-        const now = Date.now();
-        const clocks = reconcileSessionClocks(meta, existing, now, true);
-        // RFC-011 Task 4 (folded audit fix): see persistMeta$'s comment — the
-        // snapshot's linkGroups is a Record (runtime state); WorkspaceMeta
-        // wants an array (wire-shape mirror).
-        await this.db.putMeta({
-          symbol: current,
-          ...meta,
-          linkGroups: Object.values(meta.linkGroups),
-          lastModified: now,
-          ...clocks,
+        await this.db.updateMeta(current, (existing) => {
+          const now = Date.now();
+          const clocks = reconcileSessionClocks(meta, existing, now, true);
+          // RFC-011 Task 4 (folded audit fix): see persistMeta$'s comment — the
+          // snapshot's linkGroups is a Record (runtime state); WorkspaceMeta
+          // wants an array (wire-shape mirror).
+          return {
+            symbol: current,
+            ...meta,
+            linkGroups: Object.values(meta.linkGroups),
+            lastModified: now,
+            ...clocks,
+          };
         });
       } catch {
         /* persistence is best-effort */

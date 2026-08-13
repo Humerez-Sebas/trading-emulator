@@ -28,6 +28,12 @@ import type { PlaybookRule, PlaybookRuleStatus } from '../state/playbook/playboo
 import type { Lesson } from '../state/lessons/lessons.models';
 import type { SceneSpec } from '../domain/reflection/scene-spec';
 
+class OwnerAgreementError extends Error {
+  constructor() {
+    super('El propietario autenticado cambió; recarga la aplicación.');
+  }
+}
+
 /**
  * Supabase CRUD boundary for session sync (Task 8). Pure I/O — no merge/LWW
  * logic lives here (that's Task 9's `WorkspaceDbService`/sync orchestrator).
@@ -56,6 +62,13 @@ export class SessionSyncService {
     return id;
   }
 
+  /** Revalidates a captured owner after cloud I/O; a stale tab must reload. */
+  private async assertExpectedOwner(expectedOwnerId: string): Promise<void> {
+    const { data } = await this.client.auth.getSession();
+    if (data.session?.user?.id !== expectedOwnerId) throw new OwnerAgreementError();
+    await this.db.assertOwner(expectedOwnerId);
+  }
+
   /**
    * Lightweight session list for the Sessions UI — selects every column except
    * `payload`. Asks for the server's own exact count and refuses a truncated
@@ -64,12 +77,14 @@ export class SessionSyncService {
    * the cloud.
    */
   async listSummaries(): Promise<SessionSummary[]> {
+    const expectedOwnerId = await this.currentUserId();
     const { data, error, count } = await this.client
       .from('sessions')
       .select(
         'id,name,symbol,folder_id,client_updated_at,last_opened_at,required_datasets,trades_count,initial_balance,balance,cursor,schema_version,summary',
         { count: 'exact' },
       );
+    await this.assertExpectedOwner(expectedOwnerId);
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as Record<string, unknown>[];
     assertCompletePull('sessions', rows.length, count);
@@ -103,11 +118,13 @@ export class SessionSyncService {
    * `fromPayload`, which accept all three.
    */
   async fetchPayload(id: string): Promise<SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3> {
+    const expectedOwnerId = await this.currentUserId();
     const { data, error } = await this.client
       .from('sessions')
       .select('payload')
       .eq('id', id)
       .single();
+    await this.assertExpectedOwner(expectedOwnerId);
     if (error) throw new Error(error.message);
     return (data as { payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3 }).payload;
   }
@@ -143,12 +160,14 @@ export class SessionSyncService {
     };
 
     const { error } = await this.client.from('sessions').upsert(dbRow, { onConflict: 'id' });
+    await this.assertExpectedOwner(owner_id);
     if (error) throw new Error(error.message);
   }
 
   async deleteSession(id: string): Promise<void> {
-    await this.currentUserId();
+    const expectedOwnerId = await this.currentUserId();
     const { error } = await this.client.from('sessions').delete().eq('id', id);
+    await this.assertExpectedOwner(expectedOwnerId);
     if (error) throw new Error(error.message);
   }
 
@@ -158,9 +177,11 @@ export class SessionSyncService {
    * absence by the very same `mergeByLww` rule.
    */
   async listFolders(): Promise<CloudFolderRow[]> {
+    const expectedOwnerId = await this.currentUserId();
     const { data, error, count } = await this.client
       .from('folders')
       .select('id,name,sort,client_updated_at', { count: 'exact' });
+    await this.assertExpectedOwner(expectedOwnerId);
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as Record<string, unknown>[];
     assertCompletePull('folders', rows.length, count);
@@ -182,12 +203,14 @@ export class SessionSyncService {
       client_updated_at: new Date(row.clientUpdatedAt).toISOString(),
     };
     const { error } = await this.client.from('folders').upsert(dbRow, { onConflict: 'id' });
+    await this.assertExpectedOwner(owner_id);
     if (error) throw new Error(error.message);
   }
 
   async deleteFolder(id: string): Promise<void> {
-    await this.currentUserId();
+    const expectedOwnerId = await this.currentUserId();
     const { error } = await this.client.from('folders').delete().eq('id', id);
+    await this.assertExpectedOwner(expectedOwnerId);
     if (error) throw new Error(error.message);
   }
 
@@ -215,6 +238,7 @@ export class SessionSyncService {
       const { error } = await this.client
         .from('playbook_rules')
         .upsert(dbRow, { onConflict: 'id' });
+      await this.assertExpectedOwner(userId);
       if (error) throw new Error(error.message);
     }
   }
@@ -227,11 +251,13 @@ export class SessionSyncService {
    * column that wasn't actually selected.
    */
   async pullPlaybookRules(): Promise<PlaybookRule[]> {
+    const expectedOwnerId = await this.currentUserId();
     const { data, error } = await this.client
       .from('playbook_rules')
       .select(
         'id,user_id,title,statement,status,shortcut_slot,sort_order,amendments,created_at,client_updated_at',
       );
+    await this.assertExpectedOwner(expectedOwnerId);
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as DbPlaybookRuleRow[];
     return rows.map(dbRowToRule);
@@ -264,6 +290,7 @@ export class SessionSyncService {
     for (const lesson of lessons) {
       const dbRow = lessonToDbRow(lesson, userId);
       const { error } = await this.client.from('lessons').upsert(dbRow, { onConflict: 'id' });
+      await this.assertExpectedOwner(userId);
       if (error) throw new Error(error.message);
     }
   }
@@ -276,11 +303,13 @@ export class SessionSyncService {
    * wasn't actually selected.
    */
   async pullLessons(): Promise<Lesson[]> {
+    const expectedOwnerId = await this.currentUserId();
     const { data, error } = await this.client
       .from('lessons')
       .select(
         'id,user_id,what_happened,repeat_field,avoid,linked_rule_ids,evidence,trade_refs,session_ref,authored_at,client_updated_at',
       );
+    await this.assertExpectedOwner(expectedOwnerId);
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as DbLessonRow[];
     return rows.map(dbRowToLesson);
@@ -302,13 +331,16 @@ export class SessionSyncService {
     const pending = await this.db.listPendingDeletes();
     for (const { entity, id } of pending) {
       try {
+        const expectedOwnerId = await this.currentUserId();
         if (entity === 'session') {
           await this.deleteSession(id);
         } else {
           await this.deleteFolder(id);
         }
+        await this.assertExpectedOwner(expectedOwnerId);
         await this.db.removePendingDelete(id);
-      } catch {
+      } catch (error) {
+        if (error instanceof OwnerAgreementError) throw error;
         // Offline or transient failure — leave the pending-delete record in
         // place so it's retried on the next flush.
       }
@@ -326,15 +358,18 @@ export class SessionSyncService {
     for (const folder of folders) {
       if (!isDirty(folder.clientUpdatedAt, folder.syncedAt)) continue;
       try {
+        const expectedOwnerId = await this.currentUserId();
         await this.upsertFolder({
           id: folder.id,
           name: folder.name,
           sort: folder.order,
           clientUpdatedAt: folder.clientUpdatedAt!,
         });
+        await this.assertExpectedOwner(expectedOwnerId);
         folder.syncedAt = folder.clientUpdatedAt;
         await this.db.putFolder(folder);
-      } catch {
+      } catch (error) {
+        if (error instanceof OwnerAgreementError) throw error;
         // Offline/oversized/etc — stays dirty, retried next flush.
       }
     }
@@ -367,20 +402,26 @@ export class SessionSyncService {
             continue;
           }
           try {
+            const expectedOwnerId = await this.currentUserId();
             await this.upsertSession(row);
+            await this.assertExpectedOwner(expectedOwnerId);
             meta.activeSyncedAt = meta.activeClientUpdatedAt;
             metaChanged = true;
-          } catch {
+          } catch (error) {
+            if (error instanceof OwnerAgreementError) throw error;
             // stays dirty, retried next flush
           }
         } else {
           const saved = (meta.sessions ?? []).find((s) => s.id === row.id);
           if (!saved || !isDirty(saved.clientUpdatedAt, saved.syncedAt)) continue;
           try {
+            const expectedOwnerId = await this.currentUserId();
             await this.upsertSession(row);
+            await this.assertExpectedOwner(expectedOwnerId);
             saved.syncedAt = saved.clientUpdatedAt;
             metaChanged = true;
-          } catch {
+          } catch (error) {
+            if (error instanceof OwnerAgreementError) throw error;
             // stays dirty, retried next flush
           }
         }
@@ -403,16 +444,17 @@ export class SessionSyncService {
    * leaves local state intact and is retried on the next pull.
    */
   async pullAndMerge(): Promise<void> {
-    await this.currentUserId();
+    const expectedOwnerId = await this.currentUserId();
     await this.flushPendingDeletes();
 
-    await this.pullAndMergeFolders();
-    await this.pullAndMergeSessions();
+    await this.pullAndMergeFolders(expectedOwnerId);
+    await this.pullAndMergeSessions(expectedOwnerId);
 
     await this.flushDirty();
 
-    await this.reconstructActiveIds();
+    await this.reconstructActiveIds(expectedOwnerId);
 
+    await this.assertExpectedOwner(expectedOwnerId);
     await this.db.setLastPullAt(Date.now());
   }
 
@@ -435,7 +477,10 @@ export class SessionSyncService {
    * mis-claim is recoverable and O-7's "never auto-discard" holds without a
    * separate backup step.
    */
-  private async adoptQuarantinedFolders(provenIds: ReadonlySet<string>): Promise<void> {
+  private async adoptQuarantinedFolders(
+    provenIds: ReadonlySet<string>,
+    expectedOwnerId: string,
+  ): Promise<void> {
     const quarantined = await this.db.listQuarantinedFolders();
     if (!quarantined.length) return;
     const marker = await this.db.getAdoptionMarker();
@@ -449,11 +494,15 @@ export class SessionSyncService {
       new Set(marker.folderKeys),
     );
     if (!claimed.length) return;
+    await this.assertExpectedOwner(expectedOwnerId);
     await this.db.adoptQuarantined({ folders: claimed });
   }
 
   /** Sessions counterpart of {@link adoptQuarantinedFolders}; every id in the whole meta must be proven. */
-  private async adoptQuarantinedMetas(provenIds: ReadonlySet<string>): Promise<void> {
+  private async adoptQuarantinedMetas(
+    provenIds: ReadonlySet<string>,
+    expectedOwnerId: string,
+  ): Promise<void> {
     const quarantined = await this.db.listQuarantinedMetas();
     if (!quarantined.length) return;
     const marker = await this.db.getAdoptionMarker();
@@ -467,13 +516,18 @@ export class SessionSyncService {
       new Set(marker.metaKeys),
     );
     if (!claimed.length) return;
+    await this.assertExpectedOwner(expectedOwnerId);
     await this.db.adoptQuarantined({ metas: claimed });
   }
 
-  private async pullAndMergeFolders(): Promise<void> {
+  private async pullAndMergeFolders(expectedOwnerId: string): Promise<void> {
     try {
       const cloudRows = await this.listFolders();
-      await this.adoptQuarantinedFolders(new Set(cloudRows.map((c) => c.id)));
+      await this.assertExpectedOwner(expectedOwnerId);
+      await this.adoptQuarantinedFolders(
+        new Set(cloudRows.map((c) => c.id)),
+        expectedOwnerId,
+      );
       const localFolders = await this.db.listFolders();
       const local = localFolders.map((f) => ({
         id: f.id,
@@ -496,6 +550,7 @@ export class SessionSyncService {
           !toPushIds.includes(cloudFolder.id);
         const isCloudOnly = existing == null;
         if (isCloudWon || isCloudOnly) {
+          await this.assertExpectedOwner(expectedOwnerId);
           await this.db.putFolder({
             id: cloudFolder.id,
             name: cloudFolder.name,
@@ -507,6 +562,7 @@ export class SessionSyncService {
       }
 
       for (const id of toDeleteLocalIds) {
+        await this.assertExpectedOwner(expectedOwnerId);
         await this.db.deleteFolder(id);
       }
 
@@ -522,20 +578,27 @@ export class SessionSyncService {
         };
         try {
           await this.upsertFolder(row);
+          await this.assertExpectedOwner(expectedOwnerId);
           await this.db.putFolder({ ...local, syncedAt: row.clientUpdatedAt });
-        } catch {
+        } catch (error) {
+          if (error instanceof OwnerAgreementError) throw error;
           // stays dirty, retried by flushDirty/next pull
         }
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof OwnerAgreementError) throw error;
       // Offline or RLS failure — leave local folders untouched, retried next pull.
     }
   }
 
-  private async pullAndMergeSessions(): Promise<void> {
+  private async pullAndMergeSessions(expectedOwnerId: string): Promise<void> {
     try {
       const cloudSummaries = await this.listSummaries();
-      await this.adoptQuarantinedMetas(new Set(cloudSummaries.map((s) => s.id)));
+      await this.assertExpectedOwner(expectedOwnerId);
+      await this.adoptQuarantinedMetas(
+        new Set(cloudSummaries.map((s) => s.id)),
+        expectedOwnerId,
+      );
       const metas = await this.db.listMetas();
 
       interface LocalSessionItem {
@@ -603,23 +666,28 @@ export class SessionSyncService {
       // pulled lazily on open (see reconstructWorkspaces / fetchPayload).
       // We only need to make sure D1 removals above are persisted.
       for (const meta of changedMetas) {
+        await this.assertExpectedOwner(expectedOwnerId);
         await this.db.putMeta(meta);
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof OwnerAgreementError) throw error;
       // Offline or RLS failure — leave local sessions untouched, retried next pull.
     }
   }
 
   /** Stamp the active session's LWW clock so flushDirty will push it. Only for a real session. */
   async markActiveDirty(symbol: string): Promise<void> {
-    const meta = await this.db.getMeta(symbol);
-    if (!meta?.trading || !isRealSession(meta.trading)) return;
-    meta.activeClientUpdatedAt = Math.max(
-      Date.now(),
-      (meta.activeClientUpdatedAt ?? 0) + 1,
-      (meta.activeSyncedAt ?? 0) + 1,
-    );
-    await this.db.putMeta(meta);
+    await this.db.updateMeta(symbol, (meta) => {
+      if (!meta?.trading || !isRealSession(meta.trading)) return undefined;
+      return {
+        ...meta,
+        activeClientUpdatedAt: Math.max(
+          Date.now(),
+          (meta.activeClientUpdatedAt ?? 0) + 1,
+          (meta.activeSyncedAt ?? 0) + 1,
+        ),
+      };
+    });
   }
 
   /**
@@ -628,7 +696,7 @@ export class SessionSyncService {
    * clientUpdatedAt among that symbol's sessions). Does not fetch payloads —
    * those are pulled lazily on open.
    */
-  private async reconstructActiveIds(): Promise<void> {
+  private async reconstructActiveIds(expectedOwnerId?: string): Promise<void> {
     const metas = await this.db.listMetas();
     for (const meta of metas) {
       const candidates: { id: string; clientUpdatedAt: number }[] = [];
@@ -651,6 +719,7 @@ export class SessionSyncService {
         c.clientUpdatedAt > best.clientUpdatedAt ? c : best,
       );
       if (newest.id !== meta.activeSessionId) {
+        if (expectedOwnerId) await this.assertExpectedOwner(expectedOwnerId);
         meta.activeSessionId = newest.id;
         await this.db.putMeta(meta);
       }

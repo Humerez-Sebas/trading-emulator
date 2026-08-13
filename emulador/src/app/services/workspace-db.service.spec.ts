@@ -598,6 +598,21 @@ describe('WorkspaceDbService — atomic quarantine adoption', () => {
     expect((await svc.getAdoptionMarker()).metaKeys).toEqual(['EURUSD']);
     expect((await svc.getAdoptionMarker()).folderKeys).toEqual(['folder-1']);
   });
+
+  it('does not overwrite a live key present when the adoption transaction begins', async () => {
+    const live = workspaceMeta({ symbol: 'EURUSD', activeSessionId: 'live-session' });
+    const quarantined = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [],
+    });
+    await svc.putMeta(live);
+
+    await svc.adoptQuarantined({ metas: [quarantined] });
+
+    expect(await svc.getMeta('EURUSD')).toEqual(live);
+    expect((await svc.getAdoptionMarker()).metaKeys).toEqual([]);
+  });
 });
 
 describe('WorkspaceDbService — clearDatasetCandles (re-ingestion dedup)', () => {

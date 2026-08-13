@@ -42,6 +42,10 @@ const OWNER = 'owner-meta-ownership';
 const SYMBOL = 'XAUUSD';
 const OTHER = 'EURUSD';
 
+const syncClient = {
+  auth: { getSession: async () => ({ data: { session: { user: { id: OWNER } } } }) },
+};
+
 const metaSnap = {
   files: {},
   activeTf: null,
@@ -108,7 +112,7 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     const outgoing = await db.getMeta(SYMBOL);
     expect(outgoing).toBeDefined();
 
-    const sync = new SessionSyncService({} as SupabaseService, db);
+    const sync = new SessionSyncService({ client: syncClient } as SupabaseService, db);
     const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
     await sync.flushDirty();
 
@@ -163,7 +167,7 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     expect(outgoing!.activeClientUpdatedAt).toBe(50);
     expect(outgoing!.activeSyncedAt).toBeUndefined();
 
-    const sync = new SessionSyncService({} as SupabaseService, db);
+    const sync = new SessionSyncService({ client: syncClient } as SupabaseService, db);
     const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
     await sync.flushDirty();
     expect(upsert.mock.calls.map(([row]) => row.id).sort()).toEqual([
@@ -219,7 +223,7 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     expect(outgoing!.activeClientUpdatedAt).toBe(202);
     expect(outgoing!.activeSyncedAt).toBe(200);
 
-    const sync = new SessionSyncService({} as SupabaseService, db);
+    const sync = new SessionSyncService({ client: syncClient } as SupabaseService, db);
     const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
     await sync.flushDirty();
     expect(upsert.mock.calls.map(([row]) => row.id).sort()).toEqual(['sess-A', 'sess-B']);
@@ -254,5 +258,51 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     );
     expect(stored!.activeClientUpdatedAt).toBe(50);
     expect(stored!.activeSyncedAt).toBeUndefined();
+  });
+
+  it('a stale persistence attempt cannot erase a newer dirty stamp or trading eligibility', async () => {
+    TestBed.resetTestingModule();
+    actions$ = new Subject();
+    const initial = workspaceMeta({
+      symbol: SYMBOL,
+      activeSessionId: 'sess-A',
+      activeClientUpdatedAt: 111,
+      activeSyncedAt: 110,
+      trading: metaSnap.trading,
+    });
+    await db.putMeta(initial);
+    const stale = structuredClone(initial);
+    const raceDb = {
+      getMeta: vi.fn().mockResolvedValue(stale),
+      putMeta: db.putMeta.bind(db),
+      updateMeta: db.updateMeta.bind(db),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        WorkspacesEffects,
+        provideMockActions(() => actions$),
+        provideMockStore(),
+        { provide: WorkspaceDbService, useValue: raceDb },
+      ],
+    });
+    store = TestBed.inject(MockStore);
+    effects = TestBed.inject(WorkspacesEffects);
+    store.overrideSelector(selectCurrentAsset, SYMBOL);
+    store.overrideSelector(selectWorkspaceMetaSnapshot, metaSnap);
+    store.refreshState();
+    const sync = new SessionSyncService({ client: syncClient } as SupabaseService, raceDb as never);
+    await sync.markActiveDirty(SYMBOL);
+    const dirty = await db.getMeta(SYMBOL);
+
+    const sub = effects.persistMeta$.subscribe();
+    store.refreshState();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    sub.unsubscribe();
+
+    const stored = await db.getMeta(SYMBOL);
+    expect(raceDb.getMeta).not.toHaveBeenCalled();
+    expect(stored?.activeClientUpdatedAt).toBe(dirty?.activeClientUpdatedAt);
+    expect(stored!.activeClientUpdatedAt).toBeGreaterThan(stored!.activeSyncedAt!);
+    expect(stored?.trading?.positions).toHaveLength(1);
   });
 });

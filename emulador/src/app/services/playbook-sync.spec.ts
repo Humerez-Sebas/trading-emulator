@@ -286,7 +286,7 @@ describe('SessionSyncService.pullPlaybookRules', () => {
   it('maps every returned row via dbRowToRule', async () => {
     const row = dbRow({ id: 'cloud-1' });
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({
         select: () => Promise.resolve({ data: [row], error: null }),
       }),
@@ -301,7 +301,7 @@ describe('SessionSyncService.pullPlaybookRules', () => {
   it('selects user_id (D15.F review: the DbPlaybookRuleRow cast must be honest, not claim an unselected column)', async () => {
     let capturedCols: string | undefined;
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({
         select: (cols: string) => {
           capturedCols = cols;
@@ -319,7 +319,7 @@ describe('SessionSyncService.pullPlaybookRules', () => {
 
   it('throws Error(error.message) on a DB error', async () => {
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({ select: () => Promise.resolve({ data: null, error: { message: 'boom' } }) }),
     };
     const service = makeService(client);

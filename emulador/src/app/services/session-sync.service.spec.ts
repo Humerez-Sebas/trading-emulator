@@ -99,6 +99,19 @@ interface FakeResult {
   count?: number | null;
 }
 
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 class FakeQueryBuilder implements PromiseLike<FakeResult> {
   selectCols: string | undefined;
   selectOpts: { count?: string } | undefined;
@@ -172,10 +185,10 @@ interface Recorder {
   upsertCalls: { table: string; row: unknown; opts: unknown }[];
   deleteCalls: { table: string; eqCol: string | undefined; eqVal: unknown }[];
   callOrder: string[];
-  resolveSelect: (table: string, b: FakeQueryBuilder) => FakeResult;
-  resolveSingle: (table: string, b: FakeQueryBuilder) => FakeResult;
-  resolveUpsert: (table: string, b: FakeQueryBuilder) => FakeResult;
-  resolveDelete: (table: string, b: FakeQueryBuilder) => FakeResult;
+  resolveSelect: (table: string, b: FakeQueryBuilder) => FakeResult | Promise<FakeResult>;
+  resolveSingle: (table: string, b: FakeQueryBuilder) => FakeResult | Promise<FakeResult>;
+  resolveUpsert: (table: string, b: FakeQueryBuilder) => FakeResult | Promise<FakeResult>;
+  resolveDelete: (table: string, b: FakeQueryBuilder) => FakeResult | Promise<FakeResult>;
   /** Per-table one-shot "reject the next select" toggles (offline-resilience test). */
   rejectSelectOnce?: Record<string, () => boolean>;
 }
@@ -193,6 +206,7 @@ function makeFakeClient(opts: {
    */
   summaryCount?: number | null;
   folderCount?: number | null;
+  currentUserId?: () => string | null;
 }) {
   /** PostgREST only populates `count` when the caller asked for it. */
   const countFor = (b: FakeQueryBuilder, total: number | null | undefined, rows: unknown[]) =>
@@ -220,9 +234,12 @@ function makeFakeClient(opts: {
 
   const client = {
     auth: {
-      getSession: async () => ({
-        data: { session: opts.userId === null ? null : { user: { id: opts.userId ?? OWNER } } },
-      }),
+      getSession: async () => {
+        const userId = opts.currentUserId?.() ?? opts.userId;
+        return {
+          data: { session: userId === null ? null : { user: { id: userId ?? OWNER } } },
+        };
+      },
     },
     from: (table: string) => new FakeQueryBuilder(table, recorder),
   };
@@ -362,6 +379,81 @@ describe('SessionSyncService.fetchPayload', () => {
 
     expect(result).toEqual(payload);
   });
+});
+
+describe('SessionSyncService — in-flight owner agreement', () => {
+  it.each([
+    ['listSummaries', 'sessions'],
+    ['listFolders', 'folders'],
+  ] as const)('%s rejects cloud data when auth changes A to B during the request', async (method, table) => {
+    let authOwner = OWNER;
+    const response = deferred<FakeResult>();
+    const started = deferred<void>();
+    const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
+    const original = recorder.resolveSelect;
+    recorder.resolveSelect = (selectedTable, builder) => {
+      if (selectedTable !== table) return original(selectedTable, builder);
+      started.resolve();
+      return response.promise;
+    };
+    const pending = makeService(client)[method]();
+    await started.promise;
+
+    authOwner = OTHER_OWNER;
+    response.resolve({ data: [], error: null, count: 0 });
+
+    await expect(pending).rejects.toThrow(/owner|propietario/i);
+  });
+
+  it('fetchPayload rejects a payload when auth changes A to B during the request', async () => {
+    let authOwner = OWNER;
+    const response = deferred<FakeResult>();
+    const started = deferred<void>();
+    const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
+    recorder.resolveSingle = () => {
+      started.resolve();
+      return response.promise;
+    };
+    const pending = makeService(client).fetchPayload('sess-1');
+    await started.promise;
+
+    authOwner = OTHER_OWNER;
+    response.resolve({ data: { payload: cleanPayload() }, error: null });
+
+    await expect(pending).rejects.toThrow(/owner|propietario/i);
+  });
+
+  it.each(['upsertSession', 'deleteSession'] as const)(
+    '%s does not report authoritative success when auth changes A to B in flight',
+    async (method) => {
+      let authOwner = OWNER;
+      const response = deferred<FakeResult>();
+      const started = deferred<void>();
+      const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
+      if (method === 'upsertSession') {
+        recorder.resolveUpsert = () => {
+          started.resolve();
+          return response.promise;
+        };
+      } else {
+        recorder.resolveDelete = () => {
+          started.resolve();
+          return response.promise;
+        };
+      }
+      const service = makeService(client);
+      const pending =
+        method === 'upsertSession'
+          ? service.upsertSession(cleanRow())
+          : service.deleteSession('sess-1');
+      await started.promise;
+
+      authOwner = OTHER_OWNER;
+      response.resolve({ data: null, error: null });
+
+      await expect(pending).rejects.toThrow(/owner|propietario/i);
+    },
+  );
 });
 
 describe('SessionSyncService.upsertSession', () => {
@@ -1272,6 +1364,47 @@ describe('Session Sovereignty V2 — owner isolation across an account switch', 
     expect(await dbFor(OTHER_OWNER).listFolders()).toEqual([]);
 
     // not uploaded under B owner_id — the flushDirty half of the defect
+    expect(recorder.upsertCalls).toEqual([]);
+  });
+
+  it('an A pull whose sessions response resolves after auth becomes B leaves A local state untouched', async () => {
+    const dbA = dbFor(OWNER);
+    await dbA.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'A-active',
+        activeClientUpdatedAt: 10,
+        activeSyncedAt: 10,
+        trading: { ...defaultTradingData(), positions: [position()] },
+        sessions: [savedSession({ id: 'A-archived', clientUpdatedAt: 9, syncedAt: 9 })],
+      }),
+    );
+    let authOwner = OWNER;
+    const response = deferred<FakeResult>();
+    const started = deferred<void>();
+    const { client, recorder } = makeFakeClient({
+      currentUserId: () => authOwner,
+      folderRows: [],
+      folderCount: 0,
+    });
+    const original = recorder.resolveSelect;
+    recorder.resolveSelect = (table, builder) => {
+      if (table !== 'sessions') return original(table, builder);
+      started.resolve();
+      return response.promise;
+    };
+    const pending = makeService(client, dbA).pullAndMerge();
+    await started.promise;
+
+    authOwner = OTHER_OWNER;
+    response.resolve({ data: [], error: null, count: 0 });
+    await expect(pending).rejects.toThrow(/owner|propietario/i);
+
+    const after = await dbA.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('A-active');
+    expect(after?.trading?.positions).toHaveLength(1);
+    expect(after?.sessions?.map((session) => session.id)).toEqual(['A-archived']);
+    expect(await dbA.getLastPullAt()).toBeNull();
     expect(recorder.upsertCalls).toEqual([]);
   });
 

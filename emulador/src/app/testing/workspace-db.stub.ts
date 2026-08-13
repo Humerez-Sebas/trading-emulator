@@ -10,13 +10,21 @@ import { WorkspaceDbService } from '../services/workspace-db.service';
 export function workspaceDbStub(): Partial<
   Record<keyof WorkspaceDbService, ReturnType<typeof vi.fn>>
 > {
+  const getMeta = vi.fn().mockResolvedValue(undefined);
+  const putMeta = vi.fn().mockResolvedValue(undefined);
   return {
     list: vi.fn().mockResolvedValue([]),
     listMetas: vi.fn().mockResolvedValue([]),
     getWorkspace: vi.fn().mockResolvedValue(undefined),
-    getMeta: vi.fn().mockResolvedValue(undefined),
+    getMeta,
     getSeriesInfo: vi.fn().mockResolvedValue(null),
-    putMeta: vi.fn().mockResolvedValue(undefined),
+    putMeta,
+    updateMeta: vi.fn(
+      async (symbol: string, update: Parameters<WorkspaceDbService['updateMeta']>[1]) => {
+        const next = update(await getMeta(symbol));
+        if (next) await putMeta(next);
+      },
+    ),
     putSeries: vi.fn().mockResolvedValue(undefined),
     appendSeriesChunk: vi.fn().mockResolvedValue(undefined),
     remove: vi.fn().mockResolvedValue(undefined),

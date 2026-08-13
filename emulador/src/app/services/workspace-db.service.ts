@@ -253,6 +253,29 @@ export class WorkspaceDbService {
     return this.completed(tx);
   }
 
+  /** Atomically derives one meta record from the latest value stored for its symbol. */
+  async updateMeta(
+    symbol: string,
+    update: (current: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+  ): Promise<void> {
+    const { tx, store } = await this.userTx(META_STORE, 'readwrite');
+    const completion = this.completed(tx);
+    try {
+      const current = await this.request<WorkspaceMeta | undefined>(store.get(symbol));
+      const next = update(current);
+      if (next) store.put(next);
+    } catch (error) {
+      try {
+        tx.abort();
+      } catch {
+        // The transaction may already have aborted because of the failed request.
+      }
+      void completion.catch(() => undefined);
+      throw error;
+    }
+    await completion;
+  }
+
   async putSeries(symbol: string, tf: Timeframe, candles: Candle[]): Promise<void> {
     const db = await this.open();
     const tx = db.transaction(SERIES_STORE, 'readwrite');
@@ -599,17 +622,35 @@ export class WorkspaceDbService {
     const completion = this.completed(tx);
     try {
       const sync = tx.objectStore(SYNC_STORE);
+      const metaStore = tx.objectStore(META_STORE);
+      const folderStore = tx.objectStore(FOLDERS_STORE);
       const current = await this.request<AdoptionMarker | undefined>(
         sync.get(ADOPTION_MARKER_KEY),
       );
-      for (const meta of metas) tx.objectStore(META_STORE).put(meta);
-      for (const folder of folders) tx.objectStore(FOLDERS_STORE).put(folder);
+      const copiedMetaKeys: string[] = [];
+      const copiedFolderKeys: string[] = [];
+      for (const meta of metas) {
+        if ((await this.request<WorkspaceMeta | undefined>(metaStore.get(meta.symbol))) != null) {
+          continue;
+        }
+        await this.request(metaStore.add(meta));
+        copiedMetaKeys.push(meta.symbol);
+      }
+      for (const folder of folders) {
+        if ((await this.request<SessionFolder | undefined>(folderStore.get(folder.id))) != null) {
+          continue;
+        }
+        await this.request(folderStore.add(folder));
+        copiedFolderKeys.push(folder.id);
+      }
+      if (!copiedMetaKeys.length && !copiedFolderKeys.length) {
+        await completion;
+        return;
+      }
       sync.put({
         key: ADOPTION_MARKER_KEY,
-        metaKeys: [...new Set([...(current?.metaKeys ?? []), ...metas.map((meta) => meta.symbol)])],
-        folderKeys: [
-          ...new Set([...(current?.folderKeys ?? []), ...folders.map((folder) => folder.id)]),
-        ],
+        metaKeys: [...new Set([...(current?.metaKeys ?? []), ...copiedMetaKeys])],
+        folderKeys: [...new Set([...(current?.folderKeys ?? []), ...copiedFolderKeys])],
         updatedAt: Date.now(),
       } satisfies AdoptionMarker);
     } catch (error) {

@@ -371,7 +371,7 @@ describe('SessionSyncService.pullLessons', () => {
   it('maps every returned row via dbRowToLesson', async () => {
     const row = dbRow({ id: 'cloud-1' });
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({
         select: () => Promise.resolve({ data: [row], error: null }),
       }),
@@ -386,7 +386,7 @@ describe('SessionSyncService.pullLessons', () => {
   it('selects every DbLessonRow field (honest cast idiom)', async () => {
     let capturedCols: string | undefined;
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({
         select: (cols: string) => {
           capturedCols = cols;
@@ -419,7 +419,7 @@ describe('SessionSyncService.pullLessons', () => {
 
   it('throws Error(error.message) on a DB error', async () => {
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({ select: () => Promise.resolve({ data: null, error: { message: 'boom' } }) }),
     };
     const service = makeService(client);
