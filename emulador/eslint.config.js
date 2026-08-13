@@ -6,6 +6,7 @@ const angular = require('angular-eslint');
 // Local rule, plain ESLint AST — no new dependency. See the file header for
 // the law it encodes and the limits of what it proves.
 const selectorIsolation = require('./eslint-rules/require-reset-selectors');
+const engineBoundary = require('./eslint-rules/no-chart-handles');
 
 module.exports = defineConfig([
   {
@@ -35,6 +36,16 @@ module.exports = defineConfig([
           style: 'kebab-case',
         },
       ],
+    },
+  },
+  {
+    files: ['src/app/**/*.ts'],
+    ignores: ['src/app/domain/chart/**', '**/*.spec.ts'],
+    plugins: { 'engine-boundary': engineBoundary },
+    rules: {
+      // Raw lightweight-charts handles belong to the chart domain. Angular-side callers use
+      // narrow ChartEngine/Capability contracts; payload/data types remain legal.
+      'engine-boundary/no-chart-handles': 'error',
     },
   },
   {

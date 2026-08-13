@@ -16,9 +16,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
 // RFC-004/RFC-005: only PAYLOAD types remain — the branded time/range scalars and the
 // mouse-event param shape that the RFC-002 event bus carries. Every HANDLE type
-// (`IChartApi`, `ISeriesApi`, `IPriceLine`) and the `LineStyle` enum are gone: this
-// component no longer touches a lightweight-charts object. Enforced by the local
-// `engine-boundary/no-chart-handles` ESLint rule.
+// (`IChartApi`, `ISeriesApi`, `IPriceLine`, `ISeriesMarkersPluginApi`) is gone: this
+// component no longer touches a lightweight-charts object. Their imports (plus namespace
+// imports) are blocked outside domain/chart by `engine-boundary/no-chart-handles`.
 import { LogicalRange, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
 import { Candle, derivePointSize } from '../../models';
 import {
