@@ -331,3 +331,12 @@ vocabulary strings and the persisted rename are explicitly NOT in it and remain 
 - **2026-08-12** — drift check clean; Wave 1 evidence banked (`2f157fd`); three Wave 1
   branches integrated; four gates green at `894d72b`; landing arithmetic closed
   (`161e9f5`); five specialist worktrees created at the base SHA and dispatched.
+- **2026-08-13 closeout pause** — canonical drift check remained clean:
+  `develop == origin/develop == a2ca53b`; integration branch remained at `ac69adf` before
+  the pause-artifact commit. The two remaining untracked P0 specs were preserved as
+  `34a0a87` (A) and `a736da8` (C). Track A advanced to `4e25e3c` and Track C to
+  `1197ed4`; both worktrees were clean at pause. Neither is independently accepted yet:
+  final reviews found bounded correctness/enforcement gaps. Exact restart instructions and
+  task briefs are committed in `WAVE2-CLOSEOUT-RESUME.md`,
+  `TRACK-A-CLOSEOUT-BRIEF.md`, and `TRACK-C-CLOSEOUT-BRIEF.md`. No branch was merged or
+  pushed, and completed tracks were not reopened.
