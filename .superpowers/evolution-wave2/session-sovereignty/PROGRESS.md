@@ -53,8 +53,9 @@ Targeted TDD evidence:
   **8 failed / 109 passed (117)**. Intended failures: 6 owner/in-flight boundaries and 1
   transaction-time adoption overwrite; the initial clock harness timed out and was corrected
   before being accepted as evidence.
-- Final bounded GREEN: core focused set **117/117**; representative adjacent set including
-  workspace effects plus playbook/lessons **198/198**.
+- Final bounded GREEN: broader adjacent command containing all three core files plus workspace
+  effects and playbook/lessons passed **196/196**; after adding folder upsert/delete to the
+  owner-boundary matrix, the same representative command passed **198/198**.
 
 Mandated post-implementation negative probe:
 - Mutation: removed only `activeClientUpdatedAt` from `doSwitch`'s outgoing `putMeta` while
