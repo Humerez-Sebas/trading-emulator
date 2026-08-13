@@ -624,17 +624,4 @@ export class WorkspaceDbService {
     await completion;
   }
 
-  /** Records newly-claimed quarantine keys for this owner (append-only, deduped). */
-  async recordAdopted(claim: { metaKeys?: string[]; folderKeys?: string[] }): Promise<void> {
-    const current = await this.getAdoptionMarker();
-    const next: AdoptionMarker = {
-      key: ADOPTION_MARKER_KEY,
-      metaKeys: [...new Set([...current.metaKeys, ...(claim.metaKeys ?? [])])],
-      folderKeys: [...new Set([...current.folderKeys, ...(claim.folderKeys ?? [])])],
-      updatedAt: Date.now(),
-    };
-    const { tx, store } = await this.userTx(SYNC_STORE, 'readwrite');
-    store.put(next);
-    return this.completed(tx);
-  }
 }
