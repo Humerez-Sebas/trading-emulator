@@ -1,10 +1,13 @@
+import { DOCUMENT } from '@angular/common';
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { Actions, createEffect, ofType, ROOT_EFFECTS_INIT } from '@ngrx/effects';
-import { from, of } from 'rxjs';
-import { catchError, exhaustMap, map, tap } from 'rxjs/operators';
+import { Store } from '@ngrx/store';
+import { EMPTY, from, of } from 'rxjs';
+import { catchError, exhaustMap, map, mergeMap, tap, withLatestFrom } from 'rxjs/operators';
 import { SupabaseAuthService } from '../../auth/supabase-auth.service';
 import { AuthActions } from './auth.actions';
+import { authFeature } from './auth.reducer';
 
 /** User-facing message (Spanish) from a Supabase/auth error. */
 function describeError(e: unknown): string {
@@ -20,6 +23,8 @@ export class AuthEffects {
   private actions$ = inject(Actions);
   private auth = inject(SupabaseAuthService);
   private router = inject(Router);
+  private document = inject(DOCUMENT);
+  private store = inject(Store);
 
   init$ = createEffect(() =>
     this.actions$.pipe(
@@ -43,9 +48,16 @@ export class AuthEffects {
   login$ = createEffect(() =>
     this.actions$.pipe(
       ofType(AuthActions.login),
-      exhaustMap(({ email, password, returnUrl }) =>
+      withLatestFrom(this.store.select(authFeature.selectUser)),
+      exhaustMap(([{ email, password, returnUrl }, currentUser]) =>
         from(this.auth.signIn(email, password)).pipe(
-          map((user) => AuthActions.authSuccess({ user, returnUrl })),
+          mergeMap((user) => {
+            if (currentUser && currentUser.id !== user.id) {
+              this.document.location.assign(returnUrl || '/mercados');
+              return EMPTY;
+            }
+            return of(AuthActions.authSuccess({ user, returnUrl }));
+          }),
           catchError((e) => of(AuthActions.authFailure({ error: describeError(e) }))),
         ),
       ),

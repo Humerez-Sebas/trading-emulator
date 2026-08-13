@@ -967,6 +967,25 @@ describe('SessionSyncService — truncated cloud pull must not delete local data
     await expect(makeService(client).listFolders()).rejects.toThrow(/incompleta/i);
   });
 
+  it('listSummaries rejects when the response contains more rows than the exact count', async () => {
+    const { client } = makeFakeClient({
+      summaryRows: [summaryRow('a'), summaryRow('b')],
+      summaryCount: 1,
+    });
+    await expect(makeService(client).listSummaries()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('listFolders rejects when the response contains more rows than the exact count', async () => {
+    const { client } = makeFakeClient({
+      folderRows: [
+        { id: 'f1', name: 'A', sort: 0, client_updated_at: '2024-01-01T00:00:00.000Z' },
+        { id: 'f2', name: 'B', sort: 1, client_updated_at: '2024-01-01T00:00:00.000Z' },
+      ],
+      folderCount: 1,
+    });
+    await expect(makeService(client).listFolders()).rejects.toThrow(/incompleta/i);
+  });
+
   it('a synced local session OMITTED from a truncated page survives the pull', async () => {
     const meta = workspaceMeta({
       symbol: 'EURUSD',
@@ -1170,6 +1189,35 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     expect(updated?.activeSyncedAt).toBe(200);
   });
 
+  it('does not acknowledge or replace a newer active edit while its older upsert is delayed', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'B',
+      activeClientUpdatedAt: 200,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'uploaded' })] },
+    });
+    await db.putMeta(meta);
+    const upsert = deferred<FakeResult>();
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
+    recorder.resolveUpsert = () => upsert.promise;
+
+    const pending = makeService(client, db).flushDirty();
+    await vi.waitFor(() => expect(recorder.upsertCalls).toHaveLength(1));
+    await db.putMeta({
+      ...meta,
+      activeClientUpdatedAt: 300,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'newer' })] },
+    });
+    upsert.resolve({ data: null, error: null });
+    await pending;
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.activeClientUpdatedAt).toBe(300);
+    expect(updated?.activeSyncedAt).toBe(100);
+    expect(updated?.trading?.positions[0]?.id).toBe('newer');
+  });
+
   it('flushDirtySessions pushes a row whose payload includes layout/panels/linkGroups sourced from the meta (RFC-011 Task 4)', async () => {
     const { layout, panels } = singlePanelLayoutFor('EURUSD', 'M1');
     const linkGroups: LinkGroup[] = [
@@ -1211,6 +1259,44 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     expect(pushed.panels).toEqual(panels);
     expect(pushed.linkGroups).toEqual(linkGroups);
     expect(pushed.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_3);
+  });
+});
+
+describe('SessionSyncService.flushDirty — folder push', () => {
+  it('does not acknowledge or replace a newer folder edit while its older upsert is delayed', async () => {
+    const db = await freshDb();
+    await db.putFolder({
+      id: 'f1',
+      name: 'Uploaded',
+      order: 0,
+      clientUpdatedAt: 200,
+      syncedAt: 100,
+    });
+    const upsert = deferred<FakeResult>();
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
+    recorder.resolveUpsert = () => upsert.promise;
+
+    const pending = makeService(client, db).flushDirty();
+    await vi.waitFor(() => expect(recorder.upsertCalls).toHaveLength(1));
+    await db.putFolder({
+      id: 'f1',
+      name: 'Newer',
+      order: 7,
+      clientUpdatedAt: 300,
+      syncedAt: 100,
+    });
+    upsert.resolve({ data: null, error: null });
+    await pending;
+
+    expect(await db.listFolders()).toEqual([
+      {
+        id: 'f1',
+        name: 'Newer',
+        order: 7,
+        clientUpdatedAt: 300,
+        syncedAt: 100,
+      },
+    ]);
   });
 });
 

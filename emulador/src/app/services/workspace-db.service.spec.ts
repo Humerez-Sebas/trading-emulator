@@ -270,7 +270,22 @@ describe('WorkspaceDbService — v1 → v3 migration', () => {
     expect(await svc2.getMeta('GBPUSD')).toBeUndefined();
     expect(await svc2.getWorkspace('GBPUSD')).toBeUndefined();
 
-    // 'workspaces' store should be gone (its rows are now in meta + series)
+    // The original store is recovery evidence: the projection above omitted
+    // fields that newer workspace shapes carry, so O-7 forbids deleting it.
+    const raw = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    expect(Array.from(raw.objectStoreNames)).toContain('workspaces');
+    const preserved = await new Promise<unknown>((resolve, reject) => {
+      const req = raw.transaction('workspaces', 'readonly').objectStore('workspaces').get('GBPUSD');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    expect(preserved).toEqual(legacyWorkspace);
+    raw.close();
+
     const info = await svc2.getSeriesInfo('GBPUSD', 'H1');
     expect(info!.count).toBe(3);
   });

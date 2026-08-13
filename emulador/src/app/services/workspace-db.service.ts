@@ -181,7 +181,6 @@ export class WorkspaceDbService {
                     series!.put({ key: `${ws.symbol}|${tf}`, symbol: ws.symbol, tf, candles });
                   }
                 }
-                db.deleteObjectStore(LEGACY_STORE);
               };
             } catch {
               /* best effort: empty registry is acceptable */
@@ -408,6 +407,41 @@ export class WorkspaceDbService {
     const { tx, store } = await this.userTx(FOLDERS_STORE, 'readwrite');
     store.put(folder);
     return this.completed(tx);
+  }
+
+  /** Acknowledges only the exact folder revision that completed its cloud upsert. */
+  async acknowledgeFolderSynced(id: string, clientUpdatedAt: number): Promise<void> {
+    const { tx, store } = await this.userTx(FOLDERS_STORE, 'readwrite');
+    const completion = this.completed(tx);
+    const current = await this.request<SessionFolder | undefined>(store.get(id));
+    if (current?.clientUpdatedAt === clientUpdatedAt) {
+      store.put({ ...current, syncedAt: clientUpdatedAt });
+    }
+    await completion;
+  }
+
+  /** Acknowledges only the exact active or archived session revision that was uploaded. */
+  async acknowledgeSessionSynced(
+    symbol: string,
+    sessionId: string,
+    clientUpdatedAt: number,
+  ): Promise<void> {
+    await this.updateMeta(symbol, (current) => {
+      if (!current) return undefined;
+      if (
+        current.activeSessionId === sessionId &&
+        current.activeClientUpdatedAt === clientUpdatedAt
+      ) {
+        return { ...current, activeSyncedAt: clientUpdatedAt };
+      }
+      const index = (current.sessions ?? []).findIndex(
+        (session) => session.id === sessionId && session.clientUpdatedAt === clientUpdatedAt,
+      );
+      if (index < 0) return undefined;
+      const sessions = [...(current.sessions ?? [])];
+      sessions[index] = { ...sessions[index], syncedAt: clientUpdatedAt };
+      return { ...current, sessions };
+    });
   }
 
   async deleteFolder(id: string): Promise<void> {

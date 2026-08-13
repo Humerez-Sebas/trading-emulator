@@ -362,16 +362,16 @@ export class SessionSyncService {
     for (const folder of folders) {
       if (!isDirty(folder.clientUpdatedAt, folder.syncedAt)) continue;
       try {
+        const uploadedClientUpdatedAt = folder.clientUpdatedAt!;
         const expectedOwnerId = await this.currentUserId();
         await this.upsertFolder({
           id: folder.id,
           name: folder.name,
           sort: folder.order,
-          clientUpdatedAt: folder.clientUpdatedAt!,
+          clientUpdatedAt: uploadedClientUpdatedAt,
         });
         await this.assertExpectedOwner(expectedOwnerId);
-        folder.syncedAt = folder.clientUpdatedAt;
-        await this.db.putFolder(folder);
+        await this.db.acknowledgeFolderSynced(folder.id, uploadedClientUpdatedAt);
       } catch (error) {
         if (error instanceof OwnerAgreementError) throw error;
         // Offline/oversized/etc — stays dirty, retried next flush.
@@ -393,10 +393,13 @@ export class SessionSyncService {
         continue;
       }
 
-      let metaChanged = false;
       if (result.activeSessionId && !meta.activeSessionId) {
+        await this.db.updateMeta(meta.symbol, (current) =>
+          current && !current.activeSessionId
+            ? { ...current, activeSessionId: result.activeSessionId! }
+            : undefined,
+        );
         meta.activeSessionId = result.activeSessionId;
-        metaChanged = true;
       }
 
       for (const row of result.rows) {
@@ -406,11 +409,15 @@ export class SessionSyncService {
             continue;
           }
           try {
+            const uploadedClientUpdatedAt = meta.activeClientUpdatedAt!;
             const expectedOwnerId = await this.currentUserId();
             await this.upsertSession(row);
             await this.assertExpectedOwner(expectedOwnerId);
-            meta.activeSyncedAt = meta.activeClientUpdatedAt;
-            metaChanged = true;
+            await this.db.acknowledgeSessionSynced(
+              meta.symbol,
+              row.id,
+              uploadedClientUpdatedAt,
+            );
           } catch (error) {
             if (error instanceof OwnerAgreementError) throw error;
             // stays dirty, retried next flush
@@ -419,19 +426,21 @@ export class SessionSyncService {
           const saved = (meta.sessions ?? []).find((s) => s.id === row.id);
           if (!saved || !isDirty(saved.clientUpdatedAt, saved.syncedAt)) continue;
           try {
+            const uploadedClientUpdatedAt = saved.clientUpdatedAt!;
             const expectedOwnerId = await this.currentUserId();
             await this.upsertSession(row);
             await this.assertExpectedOwner(expectedOwnerId);
-            saved.syncedAt = saved.clientUpdatedAt;
-            metaChanged = true;
+            await this.db.acknowledgeSessionSynced(
+              meta.symbol,
+              row.id,
+              uploadedClientUpdatedAt,
+            );
           } catch (error) {
             if (error instanceof OwnerAgreementError) throw error;
             // stays dirty, retried next flush
           }
         }
       }
-
-      if (metaChanged) await this.db.putMeta(meta);
     }
   }
 
@@ -583,7 +592,7 @@ export class SessionSyncService {
         try {
           await this.upsertFolder(row);
           await this.assertExpectedOwner(expectedOwnerId);
-          await this.db.putFolder({ ...local, syncedAt: row.clientUpdatedAt });
+          await this.db.acknowledgeFolderSynced(local.id, row.clientUpdatedAt);
         } catch (error) {
           if (error instanceof OwnerAgreementError) throw error;
           // stays dirty, retried by flushDirty/next pull
@@ -759,7 +768,7 @@ function isDirty(clientUpdatedAt: number | undefined, syncedAt: number | undefin
  * destructive absence inference or quarantine adoption, so it also fails closed.
  */
 function assertCompletePull(entity: string, received: number, count: number | null): void {
-  if (count == null || received < count) {
+  if (count == null || received !== count) {
     throw new Error(
       `Respuesta incompleta del servidor (${entity}): ${received} de ${count ?? 'conteo desconocido'} filas.`,
     );

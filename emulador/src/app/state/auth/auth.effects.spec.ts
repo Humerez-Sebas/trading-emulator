@@ -1,14 +1,16 @@
+import { DOCUMENT } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { provideMockActions } from '@ngrx/effects/testing';
-import { provideMockStore } from '@ngrx/store/testing';
+import { MockStore, provideMockStore } from '@ngrx/store/testing';
 import { Subject, firstValueFrom } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthEffects } from './auth.effects';
 import { AuthActions } from './auth.actions';
 import { SupabaseAuthService } from '../../auth/supabase-auth.service';
 import { ROOT_EFFECTS_INIT } from '@ngrx/effects';
+import { authFeature } from './auth.reducer';
 
 describe('AuthEffects', () => {
   let actions$: Subject<any>;
@@ -18,6 +20,8 @@ describe('AuthEffects', () => {
     signOut: ReturnType<typeof vi.fn>;
   };
   let router: { navigateByUrl: ReturnType<typeof vi.fn> };
+  let assign: ReturnType<typeof vi.fn>;
+  let store: MockStore;
   let effects: AuthEffects;
 
   const mockUser = { id: 'u1', email: 'a@b.com' };
@@ -31,6 +35,7 @@ describe('AuthEffects', () => {
     };
 
     router = { navigateByUrl: vi.fn() };
+    assign = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -39,10 +44,15 @@ describe('AuthEffects', () => {
         provideMockStore(),
         { provide: SupabaseAuthService, useValue: auth },
         { provide: Router, useValue: router },
+        { provide: DOCUMENT, useValue: { location: { assign } } },
       ],
     });
+    store = TestBed.inject(MockStore);
+    store.overrideSelector(authFeature.selectUser, mockUser);
     effects = TestBed.inject(AuthEffects);
   });
+
+  afterEach(() => store.resetSelectors());
 
   describe('init$', () => {
     it('dispatches checkSession on ROOT_EFFECTS_INIT', async () => {
@@ -135,6 +145,29 @@ describe('AuthEffects', () => {
       expect(await p).toEqual(
         AuthActions.authFailure({ error: 'Algo salió mal, inténtalo de nuevo' }),
       );
+    });
+
+    it('A-authenticated direct login as B crosses a hard boundary before authSuccess', async () => {
+      auth.signIn.mockResolvedValue({ id: 'u2', email: 'b@example.com' });
+      const emitted: unknown[] = [];
+      const sub = effects.login$.subscribe((action) => emitted.push(action));
+
+      actions$.next(
+        AuthActions.login({ email: 'b@example.com', password: 'pass12', returnUrl: null }),
+      );
+      await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('/mercados'));
+
+      expect(emitted).toEqual([]);
+      sub.unsubscribe();
+    });
+
+    it('same-owner login emits authSuccess without a hard-navigation loop', async () => {
+      auth.signIn.mockResolvedValue(mockUser);
+      const p = firstValueFrom(effects.login$);
+      actions$.next(AuthActions.login({ email: 'a@b.com', password: 'pass12', returnUrl: null }));
+
+      expect(await p).toEqual(AuthActions.authSuccess({ user: mockUser, returnUrl: null }));
+      expect(assign).not.toHaveBeenCalled();
     });
   });
 
