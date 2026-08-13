@@ -173,3 +173,24 @@ legacy stores reintroduces the defect and cannot see newer owner-partition
 edits, so it is not a safe long-running rollback. Re-deploy the owner-aware build
 to recover owner partitions; use cloud pull for remotely synced data and retain
 quarantine for manual resolution of ambiguous local-only evidence.
+
+## Fresh review correction addendum (2026-08-13)
+
+The accepted closeout above is retained as history. A later independent review found four
+additional bounded consequence windows, corrected in implementation commit `704302a`:
+
+1. A cloud payload pending behind an R2 dataset download now retains its captured owner and must
+   re-pass the existing auth + workspace owner assertion before materialization, reload, and open.
+2. Playbook and lesson pull/hydrate/persist/push flows carry one expected owner across service and
+   local awaits. Owner-aware local DB calls reject before opening a different owner's partition,
+   and every store/cloud consequence is preceded by owner revalidation.
+3. Off-screen active rename and folder move use the same monotonic dirty-clock rule as other active
+   mutations and call the existing local-first flush, while archived clocks retain their behavior.
+4. The live Sessions-page materialize/rename/archive/delete/move writers derive from the latest
+   meta inside `updateMeta`. Newer dirty/ack revisions, active trading data, and unrelated sessions
+   survive stale page operations; stale destructive cards do not enqueue cloud deletes.
+
+Focused evidence: initial RED exit `1`, **14 failed / 112 passed** (including one draft test-harness
+resolver error corrected before production edits); focused GREEN exit `0`, **126/126**; broader
+affected GREEN exit `0`, **226/226**; app/spec TypeScript and lint exit `0`. This addendum records
+implementer correction evidence and does not assert independent acceptance.

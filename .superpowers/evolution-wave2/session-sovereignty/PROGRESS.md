@@ -329,6 +329,46 @@ stamp. Full causal evidence is in `TRADING_METADATA_OWNERSHIP_INVESTIGATION.md`.
 Track A is closed. Residual risks are documented in the RFC and migration artifact; they are
 not authorization for follow-on implementation in this track.
 
+## 2026-08-13 fresh independent-review corrections
+
+This continuation supersedes only the earlier "none" next-step statement; all prior history and
+acceptance evidence above remains preserved as historical evidence. A fresh independent review
+reported four bounded findings after accepted head `2630294`. They were corrected in
+`704302a` (`fix(sovereignty): close delayed consequence races`) without changing dependencies,
+lockfiles, Supabase, Vercel, market data, completed tracks, or the settled O-7 policy.
+
+Corrections:
+
+- Sessions-page cloud opens carry the captured owner through the R2 dataset wait and use the
+  existing auth + workspace owner assertion immediately before local materialization and again
+  before reload/open consequences. A controlled A-to-B download drift writes and opens nothing;
+  the same-owner path remains functional.
+- Playbook and lesson effects carry the auth trigger owner through pull, owner-bound local load,
+  local upsert, hydration, post-merge push, and synced-stamp consequences. Hydrate/persist/push
+  paths capture and revalidate the same owner. The existing owner-suffixed DB services accept an
+  optional expected owner and fail before opening a different partition.
+- Off-screen active rename and folder move now stamp `activeClientUpdatedAt` with the existing
+  monotonic clock rule, preserve `activeSyncedAt`, and invoke the existing local-first dirty flush.
+  Archived rename/move behavior remains clocked and flush-eligible.
+- Sessions-page materialize and off-screen rename/archive/delete/move now use
+  `WorkspaceDbService.updateMeta`. Controlled callbacks receive newer transaction-local rows and
+  prove dirty/ack clocks, active trading, and unrelated sessions survive; stale destructive cards
+  do not queue cloud deletion. The remaining page `getMeta(card.symbol)` calls are a read-only
+  export and the current-asset active-delete lookup, not page whole-record writers.
+
+TDD and verification evidence, raw and unpiped from `emulador/`:
+
+- RED command: `npx ng test --watch=false --include=src/app/pages/sesiones/sesiones-page.component.spec.ts --include=src/app/state/playbook/playbook.effects.spec.ts --include=src/app/state/lessons/lessons.effects.sync.spec.ts` -> exit `1`, **14 failed / 112 passed**. Thirteen failures were the intended missing owner/clock/transaction guarantees; one draft persistence case had a test-resolver timing error and was corrected before any production edit. No separate corrected-RED rerun was captured.
+- Focused GREEN of the same three files -> exit `0`, **3 files / 126 tests passed**.
+- Broader affected GREEN: the focused files plus lessons hydration, both owner DB services,
+  SessionSyncService, and Sessions-page journal buttons -> exit `0`, **8 files / 226 tests passed**.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- `npm run lint` -> exit `0`, `All files pass linting.`
+
+This is implementer evidence only. It does not claim a new independent acceptance. The controller
+will rerun the final five gates independently.
+
 ## RESUME BRIEF — CLOSED
 
 Mission completed: red-team hazard V2 and the confirmed outgoing-trading metadata defect are
