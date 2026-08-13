@@ -99,6 +99,8 @@ describe('SesionesPageComponent', () => {
   let syncStub: {
     listSummaries: ReturnType<typeof vi.fn>;
     fetchPayload: ReturnType<typeof vi.fn>;
+    captureOwner: ReturnType<typeof vi.fn>;
+    assertExpectedOwner: ReturnType<typeof vi.fn>;
     flushDirty: ReturnType<typeof vi.fn>;
     flushPendingDeletes: ReturnType<typeof vi.fn>;
   };
@@ -117,6 +119,8 @@ describe('SesionesPageComponent', () => {
       sync?: Partial<{
         listSummaries: ReturnType<typeof vi.fn>;
         fetchPayload: ReturnType<typeof vi.fn>;
+        captureOwner: ReturnType<typeof vi.fn>;
+        assertExpectedOwner: ReturnType<typeof vi.fn>;
         flushDirty: ReturnType<typeof vi.fn>;
         flushPendingDeletes: ReturnType<typeof vi.fn>;
       }>;
@@ -125,6 +129,21 @@ describe('SesionesPageComponent', () => {
   ) {
     dbStub = workspaceDbStub();
     if (opts.db) Object.assign(dbStub, opts.db);
+    if (opts.db && !opts.db.updateMeta) {
+      const getMeta = dbStub.getMeta as unknown as (
+        symbol: string,
+      ) => Promise<WorkspaceMeta | undefined>;
+      const putMeta = dbStub.putMeta as unknown as (meta: WorkspaceMeta) => Promise<void>;
+      dbStub.updateMeta = vi.fn(
+        async (
+          symbol: string,
+          update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+        ) => {
+          const next = update(await getMeta(symbol));
+          if (next) await putMeta(next);
+        },
+      );
+    }
     routerStub = { navigateByUrl: vi.fn().mockResolvedValue(undefined) };
     // Default: every dialog resolves to "cancelled" — tests opt in per case.
     dialogsStub = {
@@ -141,6 +160,8 @@ describe('SesionesPageComponent', () => {
     syncStub = {
       listSummaries: vi.fn().mockResolvedValue([]),
       fetchPayload: vi.fn().mockResolvedValue(undefined),
+      captureOwner: vi.fn().mockResolvedValue('owner-a'),
+      assertExpectedOwner: vi.fn().mockResolvedValue(undefined),
       flushDirty: vi.fn().mockResolvedValue(undefined),
       flushPendingDeletes: vi.fn().mockResolvedValue(undefined),
       ...opts.sync,
@@ -653,6 +674,52 @@ describe('SesionesPageComponent', () => {
         thenOpenSession: 'cloud-1',
       }),
     );
+    expect(syncStub.assertExpectedOwner).toHaveBeenCalledWith('owner-a');
+  });
+
+  it('open: owner drift during a cloud payload dataset download prevents materialization and open', async () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' as const }],
+    };
+    let owner = 'owner-a';
+    const updateMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: { updateMeta, listDatasets: vi.fn().mockResolvedValue([]) },
+      sync: {
+        fetchPayload: vi.fn().mockResolvedValue(payload),
+        captureOwner: vi.fn().mockResolvedValue('owner-a'),
+        assertExpectedOwner: vi.fn(async (expected: string) => {
+          if (owner !== expected) throw new Error('owner drift');
+        }),
+      },
+      onboarding: {
+        runJobs: vi.fn().mockImplementation(async () => {
+          owner = 'owner-b';
+        }),
+      },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+    await component.confirmDownload();
+
+    expect(updateMeta).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+    expect(component.downloadError()).toBe('owner drift');
   });
 
   it('open: a cloud-only card whose datasets are already cached opens directly, no modal', async () => {
@@ -901,6 +968,70 @@ describe('SesionesPageComponent', () => {
     expect(syncStub.flushDirty).toHaveBeenCalled();
   });
 
+  it('rename off-screen active advances the transactional dirty clock and flushes', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-1',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'Anterior' },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await component.rename(card({ symbol: 'EURUSD', id: null, active: true, name: 'Anterior' }));
+
+    expect(written?.trading?.sessionName).toBe('Nuevo');
+    expect(written?.activeClientUpdatedAt).toBeGreaterThan(500);
+    expect(written?.activeSyncedAt).toBe(500);
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('rename uses the transaction-local meta and preserves newer active revisions', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 800,
+      trading: { ...defaultTradingData(), balance: 12345 },
+      sessions: [savedSession({ id: 's1', clientUpdatedAt: 100, syncedAt: 100 })],
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(workspaceMeta({ symbol: 'EURUSD' })),
+        updateMeta,
+        listMetas: vi.fn().mockResolvedValue([]),
+      },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await component.rename(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(updateMeta).toHaveBeenCalledOnce();
+    expect(written?.activeClientUpdatedAt).toBe(900);
+    expect(written?.activeSyncedAt).toBe(800);
+    expect(written?.trading?.balance).toBe(12345);
+    expect(written?.sessions?.[0].name).toBe('Nuevo');
+  });
+
   it('rename off-screen archived does NOT flush when not authenticated', async () => {
     const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
     const getMeta = vi.fn().mockResolvedValue(meta);
@@ -1011,6 +1142,88 @@ describe('SesionesPageComponent', () => {
     expect(written.activeSyncedAt).toBeUndefined();
     expect(addPendingDelete).toHaveBeenCalledWith({ entity: 'session', id: 'cloud-active' });
     expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
+  });
+
+  it('remove archived uses the transaction-local meta without erasing newer active state', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeClientUpdatedAt: 901,
+      activeSyncedAt: 800,
+      trading: { ...defaultTradingData(), balance: 12000 },
+      sessions: [savedSession({ id: 's1' }), savedSession({ id: 'newer' })],
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(written?.sessions?.map((session) => session.id)).toEqual(['newer']);
+    expect(written?.activeClientUpdatedAt).toBe(901);
+    expect(written?.activeSyncedAt).toBe(800);
+    expect(written?.trading?.balance).toBe(12000);
+  });
+
+  it('remove ignores a stale archived card when that session has a newer revision', async () => {
+    const latestSession = savedSession({ id: 's1', clientUpdatedAt: 900, syncedAt: 800 });
+    const latest = workspaceMeta({ symbol: 'EURUSD', sessions: [latestSession] });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(latest);
+      },
+    );
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(
+      card({ symbol: 'EURUSD', id: 's1', clientUpdatedAt: 700, syncedAt: 700 }),
+    );
+
+    expect(written).toBeUndefined();
+    expect(dbStub.addPendingDelete).not.toHaveBeenCalled();
+  });
+
+  it('remove ignores a stale active card when active trading has a newer revision', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-1',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 800,
+      trading: { ...defaultTradingData(), balance: 12000 },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(latest);
+      },
+    );
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        active: true,
+        clientUpdatedAt: 700,
+        syncedAt: 700,
+      }),
+    );
+
+    expect(written).toBeUndefined();
+    expect(dbStub.addPendingDelete).not.toHaveBeenCalled();
   });
 
   it('remove ACTIVE current-asset session dispatches deleteActiveSession', async () => {
@@ -1474,6 +1687,62 @@ describe('SesionesPageComponent', () => {
     expect(edited.trading.folderId).toBe('f1');
     expect(edited.clientUpdatedAt).toEqual(expect.any(Number));
     expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('moveToFolder off-screen active advances the transactional dirty clock and flushes', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-1',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 700,
+      trading: { ...defaultTradingData(), folderId: null },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+
+    await component.moveToFolder(card({ symbol: 'EURUSD', id: null, active: true }), 'f1');
+
+    expect(written?.trading?.folderId).toBe('f1');
+    expect(written?.activeClientUpdatedAt).toBeGreaterThan(700);
+    expect(written?.activeSyncedAt).toBe(700);
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('moveToFolder keeps archived clock semantics while preserving newer active revisions', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeClientUpdatedAt: 1000,
+      activeSyncedAt: 950,
+      sessions: [savedSession({ id: 's1', clientUpdatedAt: 400, syncedAt: 400 })],
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+
+    await component.moveToFolder(card({ symbol: 'EURUSD', id: 's1' }), 'f1');
+
+    expect(written?.activeClientUpdatedAt).toBe(1000);
+    expect(written?.activeSyncedAt).toBe(950);
+    expect(written?.sessions?.[0].trading.folderId).toBe('f1');
+    expect(written?.sessions?.[0].clientUpdatedAt).toBeGreaterThan(400);
   });
 
   it('moveToFolder off-screen archived does NOT flush when not authenticated', async () => {

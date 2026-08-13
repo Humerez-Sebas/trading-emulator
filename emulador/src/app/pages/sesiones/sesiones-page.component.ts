@@ -78,6 +78,7 @@ type PendingDownload =
       kind: 'cloudOpen';
       card: SessionCard;
       payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3;
+      expectedOwnerId: string;
     };
 
 /** One row in the folder navigator sidebar. */
@@ -669,7 +670,7 @@ export class SesionesPageComponent {
       if (pending.kind === 'jsonImport') {
         await this.restoreSession(pending.session);
       } else {
-        await this.materializeAndOpen(pending.card, pending.payload);
+        await this.materializeAndOpen(pending.card, pending.payload, pending.expectedOwnerId);
       }
     } catch (e) {
       this.downloadError.set(
@@ -821,16 +822,17 @@ export class SesionesPageComponent {
   private async openCloudOnlySession(card: SessionCard): Promise<void> {
     if (!card.id) return;
     try {
+      const expectedOwnerId = await this.sync.captureOwner();
       const payload = await this.sync.fetchPayload(card.id);
       const missing = missingDatasets(payload.requiredDatasets, this.localDatasets());
       if (missing.length) {
-        this.pendingDownload.set({ kind: 'cloudOpen', card, payload });
+        this.pendingDownload.set({ kind: 'cloudOpen', card, payload, expectedOwnerId });
         this.downloadError.set('');
         this.downloadProgress.set(null);
         this.missing.set(missing);
         return;
       }
-      await this.materializeAndOpen(card, payload);
+      await this.materializeAndOpen(card, payload, expectedOwnerId);
     } catch (e) {
       this.importError.set((e as Error).message || 'No se pudo descargar la sesión desde la nube.');
     }
@@ -844,6 +846,7 @@ export class SesionesPageComponent {
   private async materializeAndOpen(
     card: SessionCard,
     payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3,
+    expectedOwnerId: string,
   ): Promise<void> {
     if (!card.id) return;
     const restored = fromPayload(payload, card.symbol);
@@ -859,24 +862,23 @@ export class SesionesPageComponent {
       clientUpdatedAt: card.createdAt,
       syncedAt: card.createdAt,
     };
-    const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
-    meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
-    // RFC-011 gap fix: the cloud payload is the ONLY live production cloud-pull
-    // path (reconstructWorkspaces is spec-only dead code) — it must carry the
-    // multi-panel layout/panels/linkGroups across devices, not just the
-    // trading/cursor fields, or a fresh device silently falls back to the
-    // single-panel default on open. `restored.*` always comes from
-    // `parseSessionPayload` (via `fromPayload`), so these are always present
-    // and already consistency-validated — no extra guarding needed.
-    meta.layout = restored.layout;
-    meta.panels = restored.panels;
-    meta.linkGroups = restored.linkGroups;
-    // V3's drawing set is already flat and owner-tagged (every panel's
-    // drawings included, not just card.symbol's), so it threads straight
-    // through with no per-symbol flattening.
-    meta.drawings = restored.drawings.items;
-    await this.db.putMeta(meta);
+    await this.sync.assertExpectedOwner(expectedOwnerId);
+    await this.db.updateMeta(card.symbol, (current) => {
+      const meta = current ?? emptyWorkspace(card.symbol);
+      const existing = meta.sessions?.find((saved) => saved.id === session.id);
+      if ((existing?.clientUpdatedAt ?? 0) > session.clientUpdatedAt!) return meta;
+      return {
+        ...meta,
+        sessions: [...(meta.sessions ?? []).filter((saved) => saved.id !== session.id), session],
+        layout: restored.layout,
+        panels: restored.panels,
+        linkGroups: restored.linkGroups,
+        drawings: restored.drawings.items,
+      };
+    });
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     await this.reload();
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });
   }
 
@@ -900,26 +902,37 @@ export class SesionesPageComponent {
           }),
         );
     } else {
-      const meta = await this.db.getMeta(card.symbol);
-      if (!meta) return;
-      if (card.id === null) {
-        if (meta.trading) meta.trading = { ...meta.trading, sessionName: name };
-      } else {
-        // stamp the edited archived session's LWW clock so the rename pushes
-        meta.sessions = (meta.sessions ?? []).map((s) =>
-          s.id === card.id
-            ? {
-                ...s,
-                name,
-                trading: { ...s.trading, sessionName: name },
-                clientUpdatedAt: nextClientClock(Date.now(), s.clientUpdatedAt, s.syncedAt),
-              }
-            : s,
-        );
-      }
-      await this.db.putMeta(meta);
+      let changed = false;
+      await this.db.updateMeta(card.symbol, (meta) => {
+        if (!meta) return undefined;
+        if (card.id === null) {
+          if (!meta.trading) return undefined;
+          changed = true;
+          return {
+            ...meta,
+            trading: { ...meta.trading, sessionName: name },
+            activeClientUpdatedAt: nextClientClock(
+              Date.now(),
+              meta.activeClientUpdatedAt,
+              meta.activeSyncedAt,
+            ),
+          };
+        }
+        const sessions = (meta.sessions ?? []).map((session) => {
+          if (session.id !== card.id) return session;
+          changed = true;
+          return {
+            ...session,
+            name,
+            trading: { ...session.trading, sessionName: name },
+            clientUpdatedAt: nextClientClock(Date.now(), session.clientUpdatedAt, session.syncedAt),
+          };
+        });
+        return changed ? { ...meta, sessions } : undefined;
+      });
+      if (!changed) return;
       await this.reload();
-      if (card.id !== null) await this.syncDirty();
+      await this.syncDirty();
     }
     this.flash(`Sesión renombrada a "${name}".`);
   }
@@ -934,29 +947,43 @@ export class SesionesPageComponent {
     if (card.symbol === this.currentAsset()) {
       this.store.dispatch(TradingActions.newSession({ currentCursor: this.currentTime() }));
     } else {
-      const meta = await this.db.getMeta(card.symbol);
-      const t = meta?.trading;
-      if (!meta || !t) return;
-      const real = t.orders.length > 0 || t.positions.length > 0 || t.history.length > 0;
-      if (real || t.sessionName !== null) {
-        meta.sessions = [
-          ...(meta.sessions ?? []),
-          {
-            id: meta.activeSessionId ?? newId(),
-            name: t.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
-            createdAt: Date.now(),
-            currentTime: meta.currentTime,
-            trading: { ...t },
-            clientUpdatedAt: meta.activeClientUpdatedAt,
-            syncedAt: meta.activeSyncedAt,
-          },
-        ];
-      }
-      meta.trading = defaultTradingData(t.initialBalance);
-      meta.activeSessionId = newId();
-      meta.activeClientUpdatedAt = undefined;
-      meta.activeSyncedAt = undefined;
-      await this.db.putMeta(meta);
+      let changed = false;
+      await this.db.updateMeta(card.symbol, (meta) => {
+        const t = meta?.trading;
+        if (!meta || !t) return undefined;
+        if (
+          card.clientUpdatedAt != null &&
+          (meta.activeClientUpdatedAt !== card.clientUpdatedAt ||
+            meta.activeSyncedAt !== card.syncedAt)
+        ) {
+          return undefined;
+        }
+        changed = true;
+        const real = t.orders.length > 0 || t.positions.length > 0 || t.history.length > 0;
+        return {
+          ...meta,
+          sessions:
+            real || t.sessionName !== null
+              ? [
+                  ...(meta.sessions ?? []),
+                  {
+                    id: meta.activeSessionId ?? newId(),
+                    name: t.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
+                    createdAt: Date.now(),
+                    currentTime: meta.currentTime,
+                    trading: { ...t },
+                    clientUpdatedAt: meta.activeClientUpdatedAt,
+                    syncedAt: meta.activeSyncedAt,
+                  },
+                ]
+              : meta.sessions,
+          trading: defaultTradingData(t.initialBalance),
+          activeSessionId: newId(),
+          activeClientUpdatedAt: undefined,
+          activeSyncedAt: undefined,
+        };
+      });
+      if (!changed) return;
       await this.reload();
     }
     this.flash('Sesión archivada.');
@@ -976,17 +1003,36 @@ export class SesionesPageComponent {
     // Active "Sesión en curso" (no archived id): reset the workspace to a fresh
     // empty session and propagate the cloud delete if it had been synced.
     if (card.id === null) {
-      const meta = await this.db.getMeta(card.symbol);
-      const oldId = meta?.activeSessionId;
-      const wasSynced = meta?.activeSyncedAt != null;
+      let oldId: string | null | undefined;
+      let wasSynced = false;
       if (card.symbol === this.currentAsset()) {
+        const meta = await this.db.getMeta(card.symbol);
+        oldId = meta?.activeSessionId;
+        wasSynced = meta?.activeSyncedAt != null;
         this.store.dispatch(TradingActions.deleteActiveSession());
-      } else if (meta) {
-        meta.trading = defaultTradingData(meta.trading?.initialBalance);
-        meta.activeSessionId = newId();
-        meta.activeClientUpdatedAt = undefined;
-        meta.activeSyncedAt = undefined;
-        await this.db.putMeta(meta);
+      } else {
+        let changed = false;
+        await this.db.updateMeta(card.symbol, (meta) => {
+          if (!meta) return undefined;
+          if (
+            card.clientUpdatedAt != null &&
+            (meta.activeClientUpdatedAt !== card.clientUpdatedAt ||
+              meta.activeSyncedAt !== card.syncedAt)
+          ) {
+            return undefined;
+          }
+          changed = true;
+          oldId = meta.activeSessionId;
+          wasSynced = meta.activeSyncedAt != null;
+          return {
+            ...meta,
+            trading: defaultTradingData(meta.trading?.initialBalance),
+            activeSessionId: newId(),
+            activeClientUpdatedAt: undefined,
+            activeSyncedAt: undefined,
+          };
+        });
+        if (!changed) return;
         await this.reload();
       }
       if (this.authStatus() === 'authenticated' && oldId && wasSynced) {
@@ -1003,10 +1049,25 @@ export class SesionesPageComponent {
     if (card.symbol === this.currentAsset()) {
       this.store.dispatch(TradingActions.deleteSession({ id: card.id }));
     } else {
-      const meta = await this.db.getMeta(card.symbol);
-      if (!meta) return;
-      meta.sessions = (meta.sessions ?? []).filter((s) => s.id !== card.id);
-      await this.db.putMeta(meta);
+      let changed = false;
+      await this.db.updateMeta(card.symbol, (meta) => {
+        const session = meta?.sessions?.find((saved) => saved.id === card.id);
+        if (
+          !meta ||
+          !session ||
+          (card.clientUpdatedAt != null &&
+            (session.clientUpdatedAt !== card.clientUpdatedAt ||
+              session.syncedAt !== card.syncedAt))
+        ) {
+          return undefined;
+        }
+        changed = true;
+        return {
+          ...meta,
+          sessions: (meta.sessions ?? []).filter((session) => session.id !== card.id),
+        };
+      });
+      if (!changed) return;
       await this.reload();
       if (this.authStatus() === 'authenticated') {
         try {
@@ -1186,25 +1247,36 @@ export class SesionesPageComponent {
         }),
       );
     } else {
-      const meta = await this.db.getMeta(card.symbol);
-      if (!meta) return;
-      if (card.id === null) {
-        if (meta.trading) meta.trading = { ...meta.trading, folderId };
-      } else {
-        // stamp the edited archived session's LWW clock so the move pushes
-        meta.sessions = (meta.sessions ?? []).map((s) =>
-          s.id === card.id
-            ? {
-                ...s,
-                trading: { ...s.trading, folderId },
-                clientUpdatedAt: nextClientClock(Date.now(), s.clientUpdatedAt, s.syncedAt),
-              }
-            : s,
-        );
-      }
-      await this.db.putMeta(meta);
+      let changed = false;
+      await this.db.updateMeta(card.symbol, (meta) => {
+        if (!meta) return undefined;
+        if (card.id === null) {
+          if (!meta.trading) return undefined;
+          changed = true;
+          return {
+            ...meta,
+            trading: { ...meta.trading, folderId },
+            activeClientUpdatedAt: nextClientClock(
+              Date.now(),
+              meta.activeClientUpdatedAt,
+              meta.activeSyncedAt,
+            ),
+          };
+        }
+        const sessions = (meta.sessions ?? []).map((session) => {
+          if (session.id !== card.id) return session;
+          changed = true;
+          return {
+            ...session,
+            trading: { ...session.trading, folderId },
+            clientUpdatedAt: nextClientClock(Date.now(), session.clientUpdatedAt, session.syncedAt),
+          };
+        });
+        return changed ? { ...meta, sessions } : undefined;
+      });
+      if (!changed) return;
       await this.reload();
-      if (card.id !== null) await this.syncDirty();
+      await this.syncDirty();
     }
     this.flash(folderId ? `Movida a "${this.folderName(folderId)}".` : 'Movida a "Sin carpeta".');
   }

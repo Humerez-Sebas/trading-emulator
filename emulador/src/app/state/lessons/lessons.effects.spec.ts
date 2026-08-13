@@ -12,6 +12,7 @@ import { LessonsDbService } from '../../services/lessons-db.service';
 import { fixedOwnerIdentity, OwnerIdentityService } from '../../services/owner-identity.service';
 import { ownerLessonsDbName } from '../../services/owner-scope';
 import { selectLessons } from './lessons.selectors';
+import { SessionSyncService } from '../../services/session-sync.service';
 
 function lesson(id: string, over: Partial<Lesson> = {}): Lesson {
   return {
@@ -45,6 +46,13 @@ describe('LessonsEffects', () => {
         // Session Sovereignty V2: LessonsDbService is per-owner, so the real
         // identity (which reads a Supabase session) is replaced by a fixed one.
         { provide: OwnerIdentityService, useValue: fixedOwnerIdentity('owner-test') },
+        {
+          provide: SessionSyncService,
+          useValue: {
+            captureOwner: () => Promise.resolve('owner-test'),
+            assertExpectedOwner: () => Promise.resolve(),
+          },
+        },
       ],
     }).compileComponents();
 
@@ -88,7 +96,7 @@ describe('LessonsEffects', () => {
     const sub = new Subscription();
     sub.add(effects.persist$.subscribe());
     actions$.next(LessonsActions.createLesson({ lesson: lesson('l3') }));
-    await Promise.resolve();
+    for (let i = 0; i < 6; i++) await Promise.resolve();
     const stored = await db.loadAll();
     expect(stored).toHaveLength(2);
     sub.unsubscribe();

@@ -63,7 +63,7 @@ export class SessionSyncService {
   }
 
   /** Revalidates a captured owner after cloud I/O; a stale tab must reload. */
-  private async assertExpectedOwner(expectedOwnerId: string): Promise<void> {
+  async assertExpectedOwner(expectedOwnerId: string): Promise<void> {
     const { data } = await this.client.auth.getSession();
     if (data.session?.user?.id !== expectedOwnerId) throw new OwnerAgreementError();
     try {
@@ -71,6 +71,11 @@ export class SessionSyncService {
     } catch {
       throw new OwnerAgreementError();
     }
+  }
+
+  /** Captures auth + workspace owner agreement for a caller with later async consequences. */
+  async captureOwner(): Promise<string> {
+    return this.currentUserId();
   }
 
   /**

@@ -31,9 +31,12 @@ export class PlaybookDbService {
 
   constructor(private readonly owner: OwnerIdentityService = inject(OwnerIdentityService)) {}
 
-  private async open(): Promise<IDBDatabase> {
+  private async open(expectedOwnerId?: string): Promise<IDBDatabase> {
     const ownerId = await this.owner.ownerId();
     if (!ownerId) throw new Error(NO_OWNER_MESSAGE);
+    if (expectedOwnerId && ownerId !== expectedOwnerId) {
+      throw new Error('El propietario autenticado no coincide con el playbook local.');
+    }
     if (this.dbPromise && this.dbOwnerId === ownerId) return this.dbPromise;
     if (this.dbPromise) {
       const stale = this.dbPromise;
@@ -68,8 +71,8 @@ export class PlaybookDbService {
     return db.transaction(STORE, mode).objectStore(STORE);
   }
 
-  async loadAll(): Promise<PlaybookRule[]> {
-    const db = await this.open();
+  async loadAll(expectedOwnerId?: string): Promise<PlaybookRule[]> {
+    const db = await this.open(expectedOwnerId);
     return new Promise((resolve, reject) => {
       const req = this.tx(db, 'readonly').getAll();
       req.onsuccess = () => resolve(req.result as PlaybookRule[]);
@@ -81,9 +84,9 @@ export class PlaybookDbService {
     return this.upsertMany([rule]);
   }
 
-  async upsertMany(rules: PlaybookRule[]): Promise<void> {
+  async upsertMany(rules: PlaybookRule[], expectedOwnerId?: string): Promise<void> {
     assertNoCandles(rules);
-    const db = await this.open();
+    const db = await this.open(expectedOwnerId);
     return new Promise((resolve, reject) => {
       const store = this.tx(db, 'readwrite');
       for (const r of rules) store.put(r);

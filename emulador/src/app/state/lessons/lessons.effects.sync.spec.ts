@@ -13,6 +13,7 @@ import { Lesson } from './lessons.models';
 import { selectLessons } from './lessons.selectors';
 import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
+import { OwnerIdentityService } from '../../services/owner-identity.service';
 
 // ---------------------------------------------------------------------------
 // RFC-016 Task 3: LessonsEffects cloud sync (pushDirty$/pullOnAuth$). Mirrors
@@ -49,23 +50,48 @@ function dispatchedAction(call: unknown[]): Action {
   return call[0] as Action;
 }
 
+async function settleEffects(): Promise<void> {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+}
+
 describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
   let actions$: Subject<any>;
   let store: MockStore;
   let effects: LessonsEffects;
-  let dbService: { loadAll: ReturnType<typeof vi.fn>; upsertMany: ReturnType<typeof vi.fn> };
+  let ownerId: string | null;
+  let ownerService: { ownerId: ReturnType<typeof vi.fn> };
+  let dbService: {
+    loadAll: ReturnType<typeof vi.fn>;
+    upsertMany: ReturnType<typeof vi.fn>;
+  };
   let syncService: {
+    captureOwner: ReturnType<typeof vi.fn>;
+    assertExpectedOwner: ReturnType<typeof vi.fn>;
     pushLessons: ReturnType<typeof vi.fn>;
     pullLessons: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
     actions$ = new Subject();
+    ownerId = 'owner-a';
+    ownerService = { ownerId: vi.fn(async () => ownerId) };
     dbService = {
-      loadAll: vi.fn().mockResolvedValue([]),
-      upsertMany: vi.fn().mockResolvedValue(undefined),
+      loadAll: vi.fn(async (expected?: string) => {
+        if (expected && ownerId !== expected) throw new Error('owner drift');
+        return [];
+      }),
+      upsertMany: vi.fn(async (_lessons: Lesson[], expected?: string) => {
+        if (expected && ownerId !== expected) throw new Error('owner drift');
+      }),
     };
     syncService = {
+      captureOwner: vi.fn(async () => {
+        if (!ownerId) throw new Error('no owner');
+        return ownerId;
+      }),
+      assertExpectedOwner: vi.fn(async (expected: string) => {
+        if (ownerId !== expected) throw new Error('owner drift');
+      }),
       pushLessons: vi.fn().mockResolvedValue(undefined),
       pullLessons: vi.fn().mockResolvedValue([]),
     };
@@ -76,6 +102,7 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
         provideMockStore(),
         { provide: LessonsDbService, useValue: dbService },
         { provide: SessionSyncService, useValue: syncService },
+        { provide: OwnerIdentityService, useValue: ownerService },
       ],
     });
     store = TestBed.inject(MockStore);
@@ -128,6 +155,7 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
 
       sub.unsubscribe();
 
+      await settleEffects();
       expect(dispatchSpy).toHaveBeenCalledWith(
         LessonsActions.lessonsSynced({ stamps: [{ id: 'a', syncedAt: 3000 }] }),
       );
@@ -211,6 +239,7 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
 
       sub.unsubscribe();
 
+      await settleEffects();
       const lessonsSyncedCall = dispatchSpy.mock.calls.find(
         (c) => dispatchedAction(c).type === LessonsActions.lessonsSynced.type,
       );
@@ -231,6 +260,35 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
       expect(finalLesson.syncedAt).toBe(500);
       expect(finalLesson.clientUpdatedAt! > finalLesson.syncedAt!).toBe(true); // still dirty
     });
+
+    it('does not stamp A lessons synced when the owner changes after the cloud push returns', async () => {
+      vi.useFakeTimers();
+      let resolvePush!: () => void;
+      syncService.pushLessons.mockImplementation(
+        () => new Promise<void>((resolve) => (resolvePush = resolve)),
+      );
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      setupAuthenticated([lesson('a', { clientUpdatedAt: 500, syncedAt: 100 })]);
+      const sub = effects.pushDirty$.subscribe();
+
+      actions$.next(
+        LessonsActions.updateLesson({ id: 'a', whatHappened: 't2', clientUpdatedAt: 500 }),
+      );
+      vi.advanceTimersByTime(2000);
+      await Promise.resolve();
+      await Promise.resolve();
+      resolvePush();
+      ownerId = 'owner-b';
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      expect(
+        dispatchSpy.mock.calls.some(
+          (call) => dispatchedAction(call).type === LessonsActions.lessonsSynced.type,
+        ),
+      ).toBe(false);
+    });
   });
 
   describe('pullOnAuth$', () => {
@@ -247,7 +305,7 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
       const dispatchSpy = vi.spyOn(store, 'dispatch');
 
       const sub = effects.pullOnAuth$.subscribe();
-      actions$.next(AuthActions.sessionResolved({ user: { id: 'u1', email: 'a@b.com' } }));
+      actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
 
       await Promise.resolve();
       await Promise.resolve();
@@ -257,10 +315,11 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
 
       sub.unsubscribe();
 
+      await settleEffects();
       // remote-missing local-newer row is NOT written locally (already there);
       // only the cloud-only insert is.
       expect(dbService.upsertMany).toHaveBeenCalledTimes(1);
-      expect(dbService.upsertMany).toHaveBeenCalledWith([cloudOnly]);
+      expect(dbService.upsertMany).toHaveBeenCalledWith([cloudOnly], 'owner-a');
 
       const hydratedCall = dispatchSpy.mock.calls.find(
         (c) => dispatchedAction(c).type === LessonsActions.hydrated.type,
@@ -302,7 +361,7 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
       const sub = effects.pullOnAuth$.subscribe();
       await expect(
         (async () => {
-          actions$.next(AuthActions.sessionResolved({ user: { id: 'u1', email: 'a@b.com' } }));
+          actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
           await Promise.resolve();
           await Promise.resolve();
           await Promise.resolve();
@@ -312,6 +371,56 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
       sub.unsubscribe();
 
       expect(dispatchSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not load, persist, hydrate, or push A pull results after owner drift', async () => {
+      let resolvePull!: (lessons: Lesson[]) => void;
+      syncService.pullLessons.mockImplementation(
+        () => new Promise((resolve) => (resolvePull = resolve)),
+      );
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      const sub = effects.pullOnAuth$.subscribe();
+
+      actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
+      resolvePull([lesson('remote-a')]);
+      ownerId = 'owner-b';
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      expect(dbService.loadAll).not.toHaveBeenCalled();
+      expect(dbService.upsertMany).not.toHaveBeenCalled();
+      expect(syncService.pushLessons).not.toHaveBeenCalled();
+      expect(
+        dispatchSpy.mock.calls.some(
+          (call) => dispatchedAction(call).type === LessonsActions.hydrated.type,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not persist or hydrate A merge after owner drift during local load', async () => {
+      let resolveLoad!: (lessons: Lesson[]) => void;
+      dbService.loadAll.mockImplementation(() => new Promise((resolve) => (resolveLoad = resolve)));
+      syncService.pullLessons.mockResolvedValue([lesson('remote-a')]);
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      const sub = effects.pullOnAuth$.subscribe();
+
+      actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
+      await Promise.resolve();
+      await Promise.resolve();
+      resolveLoad([]);
+      ownerId = 'owner-b';
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      expect(dbService.upsertMany).not.toHaveBeenCalled();
+      expect(syncService.pushLessons).not.toHaveBeenCalled();
+      expect(
+        dispatchSpy.mock.calls.some(
+          (call) => dispatchedAction(call).type === LessonsActions.hydrated.type,
+        ),
+      ).toBe(false);
     });
   });
 });
