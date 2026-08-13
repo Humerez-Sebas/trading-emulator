@@ -1153,14 +1153,13 @@ describe('WorkspacesEffects', () => {
       expect(db.putMeta).not.toHaveBeenCalled();
     });
 
-    it('activeSessionId flows from the snapshot; the two sync clocks are preserved from the existing record', async () => {
+    it('a genuinely new activeSessionId does not inherit the existing active clocks', async () => {
       vi.useFakeTimers();
       setupTestBed();
       // The stable activeSessionId now lives in NgRx state and is carried by
       // selectWorkspaceMetaSnapshot, so persistMeta$ writes it straight from
-      // the snapshot. The LWW clocks (activeClientUpdatedAt/activeSyncedAt)
-      // remain sync-only (NOT in the snapshot), so they must still be read
-      // back from the existing record instead of being clobbered to undefined.
+      // the snapshot. The LWW clocks belong to session identity, so a new id
+      // must not inherit the former active session's provenance.
       db.getMeta!.mockResolvedValue({
         symbol: SYMBOL,
         activeSessionId: 'stale-existing-id',
@@ -1188,9 +1187,8 @@ describe('WorkspacesEffects', () => {
           symbol: SYMBOL,
           // snapshot wins for the stable id (state owns it now)
           activeSessionId: 'sess-from-snapshot',
-          // clocks still preserved from the existing record
-          activeClientUpdatedAt: 555,
-          activeSyncedAt: 555,
+          activeClientUpdatedAt: undefined,
+          activeSyncedAt: undefined,
         }),
       );
     });

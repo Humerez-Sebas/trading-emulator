@@ -40,6 +40,62 @@ import {
 import { singlePanelLayoutFor } from '../../services/session-migration';
 import { isRealSession } from '../../services/session-sync.mapping';
 
+function nextClock(now: number, clientUpdatedAt?: number, syncedAt?: number): number {
+  return Math.max(now, (clientUpdatedAt ?? 0) + 1, (syncedAt ?? 0) + 1);
+}
+
+/** Rebinds the meta-level active clocks when reducer state changes session identity. */
+function reconcileSessionClocks(
+  meta: MetaSnapshot,
+  existing: WorkspaceMeta | undefined,
+  now: number,
+  markActiveDirty: boolean,
+): Pick<WorkspaceMeta, 'sessions' | 'activeClientUpdatedAt' | 'activeSyncedAt'> {
+  const existingSessions = new Map((existing?.sessions ?? []).map((session) => [session.id, session]));
+  let sessions = (meta.sessions ?? []).map((session) => {
+    const stored = existingSessions.get(session.id);
+    return stored
+      ? {
+          ...session,
+          clientUpdatedAt: session.clientUpdatedAt ?? stored.clientUpdatedAt,
+          syncedAt: session.syncedAt ?? stored.syncedAt,
+        }
+      : session;
+  });
+  const identityChanged = existing?.activeSessionId !== meta.activeSessionId;
+
+  if (identityChanged && existing?.activeSessionId) {
+    sessions = sessions.map((session) =>
+      session.id === existing.activeSessionId
+        ? {
+            ...session,
+            clientUpdatedAt: isRealSession(session.trading)
+              ? nextClock(now, existing.activeClientUpdatedAt, existing.activeSyncedAt)
+              : existing.activeClientUpdatedAt,
+            syncedAt: existing.activeSyncedAt,
+          }
+        : session,
+    );
+  }
+
+  const previousActive = identityChanged
+    ? existing?.sessions?.find((session) => session.id === meta.activeSessionId)
+    : undefined;
+  const activeClientUpdatedAt = identityChanged
+    ? previousActive?.clientUpdatedAt
+    : existing?.activeClientUpdatedAt;
+  const activeSyncedAt = identityChanged ? previousActive?.syncedAt : existing?.activeSyncedAt;
+
+  return {
+    sessions,
+    activeClientUpdatedAt:
+      markActiveDirty && meta.trading && isRealSession(meta.trading)
+        ? nextClock(now, activeClientUpdatedAt, activeSyncedAt)
+        : activeClientUpdatedAt,
+    activeSyncedAt,
+  };
+}
+
 /**
  * All-or-nothing resolution of the (layout, panels) pair that should own a
  * symbol's drawings: both fields present -> those, verbatim; otherwise the
@@ -214,6 +270,8 @@ export class WorkspacesEffects {
               // them, otherwise every persist here would clobber them with
               // undefined, breaking the dirty check on the next sync.
               const existing = await this.db.getMeta(current!).catch(() => undefined);
+              const now = Date.now();
+              const clocks = reconcileSessionClocks(meta, existing, now, false);
               await this.db
                 .putMeta({
                   symbol: current!,
@@ -224,9 +282,8 @@ export class WorkspacesEffects {
                   // an ARRAY (the local mirror of the wire/SessionPayloadV2 shape).
                   // Converting explicitly here keeps the Record out of IndexedDB.
                   linkGroups: Object.values(meta.linkGroups),
-                  lastModified: Date.now(),
-                  activeClientUpdatedAt: existing?.activeClientUpdatedAt,
-                  activeSyncedAt: existing?.activeSyncedAt,
+                  lastModified: now,
+                  ...clocks,
                 })
                 .catch(() => undefined);
             })(),
@@ -305,13 +362,8 @@ export class WorkspacesEffects {
     if (current) {
       try {
         const existing = await this.db.getMeta(current).catch(() => undefined);
-        const activeClientUpdatedAt = meta.trading && isRealSession(meta.trading)
-          ? Math.max(
-              Date.now(),
-              (existing?.activeClientUpdatedAt ?? 0) + 1,
-              (existing?.activeSyncedAt ?? 0) + 1,
-            )
-          : existing?.activeClientUpdatedAt;
+        const now = Date.now();
+        const clocks = reconcileSessionClocks(meta, existing, now, true);
         // RFC-011 Task 4 (folded audit fix): see persistMeta$'s comment — the
         // snapshot's linkGroups is a Record (runtime state); WorkspaceMeta
         // wants an array (wire-shape mirror).
@@ -319,9 +371,8 @@ export class WorkspacesEffects {
           symbol: current,
           ...meta,
           linkGroups: Object.values(meta.linkGroups),
-          lastModified: Date.now(),
-          activeClientUpdatedAt,
-          activeSyncedAt: existing?.activeSyncedAt,
+          lastModified: now,
+          ...clocks,
         });
       } catch {
         /* persistence is best-effort */
