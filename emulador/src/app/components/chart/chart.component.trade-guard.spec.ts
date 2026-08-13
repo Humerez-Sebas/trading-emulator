@@ -155,13 +155,13 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
     it('handleContextMenu offers no order options (menu still opens)', () => {
       const { component } = setup(mismatchedDescriptor, 'US30');
       component.engine = {
-      priceForY: () => 90,
-      // `handleContextMenu` asks the trading capability for a closed trade box under
-      // the cursor (pre-existing call). Returning undefined reproduces exactly what
-      // happened when `engine` itself was undefined here: no box, `boxId: null`.
-      getCapability: () => undefined,
-      destroy: () => {},
-    };
+        priceForY: () => 90,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.handleContextMenu({ clientX: 10, clientY: 10 } as unknown as MouseEvent);
 
       // the menu itself still opens (Fit / "Ir a fecha…" / "Programar fin…" are not
@@ -191,13 +191,13 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
       const { component } = setup(mismatchedDescriptor, 'US30');
       const dispatch = vi.spyOn(store, 'dispatch');
       component.engine = {
-      priceForY: () => 95,
-      // `handleContextMenu` asks the trading capability for a closed trade box under
-      // the cursor (pre-existing call). Returning undefined reproduces exactly what
-      // happened when `engine` itself was undefined here: no box, `boxId: null`.
-      getCapability: () => undefined,
-      destroy: () => {},
-    };
+        priceForY: () => 95,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.lineDrag = { id: 'p1', target: 'position', field: 'sl' };
       component.lastTradeView = {
         positions: [
@@ -246,13 +246,13 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
     it('offers no order options', () => {
       const { component } = setup(null, 'US30');
       component.engine = {
-      priceForY: () => 90,
-      // `handleContextMenu` asks the trading capability for a closed trade box under
-      // the cursor (pre-existing call). Returning undefined reproduces exactly what
-      // happened when `engine` itself was undefined here: no box, `boxId: null`.
-      getCapability: () => undefined,
-      destroy: () => {},
-    };
+        priceForY: () => 90,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.handleContextMenu({ clientX: 10, clientY: 10 } as unknown as MouseEvent);
 
       expect(component.menu()!.options).toEqual([]);
@@ -280,13 +280,13 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
     it('handleContextMenu offers no order options', () => {
       const { component } = setup(hiddenDescriptor, 'US30');
       component.engine = {
-      priceForY: () => 90,
-      // `handleContextMenu` asks the trading capability for a closed trade box under
-      // the cursor (pre-existing call). Returning undefined reproduces exactly what
-      // happened when `engine` itself was undefined here: no box, `boxId: null`.
-      getCapability: () => undefined,
-      destroy: () => {},
-    };
+        priceForY: () => 90,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.handleContextMenu({ clientX: 10, clientY: 10 } as unknown as MouseEvent);
 
       expect(component.menu()).not.toBeNull();
@@ -314,13 +314,13 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
       const { component } = setup(hiddenDescriptor, 'US30');
       const dispatch = vi.spyOn(store, 'dispatch');
       component.engine = {
-      priceForY: () => 95,
-      // `handleContextMenu` asks the trading capability for a closed trade box under
-      // the cursor (pre-existing call). Returning undefined reproduces exactly what
-      // happened when `engine` itself was undefined here: no box, `boxId: null`.
-      getCapability: () => undefined,
-      destroy: () => {},
-    };
+        priceForY: () => 95,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.lineDrag = { id: 'p1', target: 'position', field: 'sl' };
       component.lastTradeView = {
         positions: [
