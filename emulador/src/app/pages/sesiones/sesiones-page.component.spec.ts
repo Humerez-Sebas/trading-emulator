@@ -24,6 +24,7 @@ import { SessionService } from '../../services/session.service';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { SessionSummary } from '../../services/session-sync.models';
 import { singlePanelLayoutFor } from '../../services/session-migration';
+import { layoutFeature } from '../../state/layout/layout.reducer';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { DataOnboardingService } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
@@ -256,6 +257,56 @@ describe('SesionesPageComponent', () => {
         });
         return committed;
       });
+    }
+    if (opts.db && !opts.db.promoteSessionIfUnchanged) {
+      const updateMetaIfUnchanged = dbStub.updateMetaIfUnchanged as unknown as (
+        symbol: string,
+        expected: WorkspaceMeta | undefined,
+        update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+      ) => Promise<boolean>;
+      dbStub.promoteSessionIfUnchanged = vi.fn(async (symbol, expected, materialized) =>
+        updateMetaIfUnchanged(symbol, expected, (current) => {
+          const meta = current ?? workspaceMeta({ symbol, sessions: [] });
+          const active = meta.trading;
+          const keepActive =
+            active != null &&
+            (active.orders.length > 0 ||
+              active.positions.length > 0 ||
+              active.history.length > 0 ||
+              active.sessionName != null ||
+              active.sessionEnded);
+          const sessions = (meta.sessions ?? []).filter(
+            (session) => session.id !== materialized.session.id,
+          );
+          if (keepActive && meta.activeSessionId) {
+            sessions.push({
+              id: meta.activeSessionId,
+              name: active.sessionName ?? `Sesión ${sessions.length + 1}`,
+              createdAt: materialized.archivedAt,
+              currentTime: meta.currentTime,
+              trading: active,
+              clientUpdatedAt: meta.activeClientUpdatedAt,
+              syncedAt: meta.activeSyncedAt,
+            });
+          }
+          return {
+            ...meta,
+            activeTf: materialized.activeTf,
+            selectedTfs: materialized.selectedTfs,
+            currentTime: materialized.session.currentTime,
+            drawings: materialized.drawings,
+            trading: materialized.session.trading,
+            sessions,
+            activeSessionId: materialized.session.id,
+            activeClientUpdatedAt: materialized.session.clientUpdatedAt,
+            activeSyncedAt: materialized.session.syncedAt,
+            layout: materialized.layout,
+            panels: materialized.panels,
+            linkGroups: materialized.linkGroups,
+            lastModified: materialized.archivedAt,
+          };
+        }),
+      );
     }
     routerStub = { navigateByUrl: vi.fn().mockResolvedValue(undefined) };
     // Default: every dialog resolves to "cancelled" — tests opt in per case.
@@ -643,7 +694,7 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({
         type: WorkspacesActions.switchAsset.type,
         symbol: 'XAUUSD',
-        thenOpenSession: 'cloud-1',
+        thenOpenSession: undefined,
       }),
     );
   });
@@ -684,10 +735,9 @@ describe('SesionesPageComponent', () => {
 
     expect(putMeta).toHaveBeenCalled();
     const metaArg = putMeta.mock.calls[0][0];
-    const session = metaArg.sessions.find((s: { id: string }) => s.id === 'cloud-1');
-    expect(session).toBeTruthy();
-    expect(session.clientUpdatedAt).toBe(cloudUpdatedAtMs);
-    expect(session.syncedAt).toBe(cloudUpdatedAtMs);
+    expect(metaArg.activeSessionId).toBe('cloud-1');
+    expect(metaArg.activeClientUpdatedAt).toBe(cloudUpdatedAtMs);
+    expect(metaArg.activeSyncedAt).toBe(cloudUpdatedAtMs);
   });
 
   it('open: a cloud-only card surfaces a Spanish error when the fetch fails (no restore dispatch)', async () => {
@@ -784,7 +834,7 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({
         type: WorkspacesActions.switchAsset.type,
         symbol: 'XAUUSD',
-        thenOpenSession: 'cloud-1',
+        thenOpenSession: undefined,
       }),
     );
     expect(syncStub.assertExpectedOwner).toHaveBeenCalledWith('owner-a');
@@ -901,7 +951,7 @@ describe('SesionesPageComponent', () => {
     );
   });
 
-  it('open: successful delayed materialization preserves active identity and dirty clocks', async () => {
+  it('open: successful delayed materialization archives the prior dirty active revision coherently', async () => {
     const payload = {
       schemaVersion: 1 as const,
       trading: { ...defaultTradingData(), sessionName: 'Cloud' },
@@ -945,20 +995,122 @@ describe('SesionesPageComponent', () => {
     );
     await component.confirmDownload();
 
-    expect(latest.activeSessionId).toBe('active-local');
-    expect(latest.activeClientUpdatedAt).toBe(200);
-    expect(latest.activeSyncedAt).toBe(100);
-    expect(latest.activeClientUpdatedAt! > latest.activeSyncedAt!).toBe(true);
-    expect(latest.trading?.sessionName).toBe('Local dirty');
-    expect(latest.sessions?.find((session) => session.id === 'cloud-1')).toEqual(
-      expect.objectContaining({ clientUpdatedAt: 500, syncedAt: 500 }),
+    expect(latest.activeSessionId).toBe('cloud-1');
+    expect(latest.activeClientUpdatedAt).toBe(500);
+    expect(latest.activeSyncedAt).toBe(500);
+    expect(latest.trading?.sessionName).toBe('Cloud');
+    expect(latest.sessions?.find((session) => session.id === 'active-local')).toEqual(
+      expect.objectContaining({
+        clientUpdatedAt: 200,
+        syncedAt: 100,
+        trading: expect.objectContaining({ sessionName: 'Local dirty', balance: 12000 }),
+      }),
     );
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: WorkspacesActions.switchAsset.type,
         symbol: 'EURUSD',
-        thenOpenSession: 'cloud-1',
+        thenOpenSession: undefined,
       }),
+    );
+  });
+
+  it('open: same-symbol cloud B really hydrates B while A is archived without a mixed aggregate', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const bView = singlePanelLayoutFor('EURUSD', 'H1');
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+      layout: aView.layout,
+      panels: aView.panels,
+      linkGroups: [],
+      drawings: [],
+    });
+    const payload = {
+      schemaVersion: 2 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      replayResolution: null,
+      drawings: { EURUSD: { version: 1 as const, items: [] } },
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+      layout: bView.layout,
+      panels: bView.panels,
+      linkGroups: [],
+    };
+    let latest = activeA;
+    const updateMetaIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        expected: WorkspaceMeta,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        if (JSON.stringify(latest) !== JSON.stringify(expected)) return false;
+        const next = update(latest);
+        if (!next) return false;
+        latest = next;
+        return true;
+      },
+    );
+    const getWorkspace = vi.fn(async () => ({ ...latest, series: {} }));
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        getWorkspace,
+        updateMetaIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+
+    expect(latest.activeSessionId).toBe('cloud-b');
+    expect(latest.activeClientUpdatedAt).toBe(900);
+    expect(latest.activeSyncedAt).toBe(900);
+    expect(latest.trading).toEqual(expect.objectContaining({ sessionName: 'B', balance: 12000 }));
+    expect(latest.layout).toEqual(bView.layout);
+    expect(latest.sessions).toEqual([
+      expect.objectContaining({
+        id: 'active-a',
+        clientUpdatedAt: 700,
+        syncedAt: 650,
+        trading: expect.objectContaining({ sessionName: 'A', balance: 11000 }),
+      }),
+    ]);
+
+    const restoredAction = dispatch.mock.calls
+      .map((call: unknown[]) => call[0] as { type: string })
+      .find(
+        (action: { type: string }) => action.type === WorkspacesActions.workspaceRestored.type,
+      ) as
+      | ReturnType<typeof WorkspacesActions.workspaceRestored>
+      | undefined;
+    expect(restoredAction).toBeDefined();
+    const trading = tradingFeature.reducer(undefined, restoredAction!);
+    const layout = layoutFeature.reducer(undefined, restoredAction!);
+    expect(trading.activeSessionId).toBe('cloud-b');
+    expect(trading.sessionName).toBe('B');
+    expect(trading.balance).toBe(12000);
+    expect(layout.workspace).toEqual(bView.layout);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.switchSession.type }),
     );
   });
 
@@ -1008,7 +1160,7 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({
         type: WorkspacesActions.switchAsset.type,
         symbol: 'XAUUSD',
-        thenOpenSession: 'cloud-1',
+        thenOpenSession: undefined,
       }),
     );
   });

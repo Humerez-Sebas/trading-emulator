@@ -891,24 +891,43 @@ export class SesionesPageComponent {
       syncedAt: card.createdAt,
     };
     await this.sync.assertExpectedOwner(expectedOwnerId);
-    const committed = await this.db.updateMetaIfUnchanged(card.symbol, expectedMeta, (current) => {
-      const meta = current ?? emptyWorkspace(card.symbol);
-      const existing = meta.sessions?.find((saved) => saved.id === session.id);
-      if ((existing?.clientUpdatedAt ?? 0) > session.clientUpdatedAt!) return undefined;
-      return {
-        ...meta,
-        sessions: [...(meta.sessions ?? []).filter((saved) => saved.id !== session.id), session],
-        layout: restored.layout,
-        panels: restored.panels,
-        linkGroups: restored.linkGroups,
-        drawings: restored.drawings.items,
-      };
+    const committed = await this.db.promoteSessionIfUnchanged(card.symbol, expectedMeta, {
+      session,
+      activeTf: restored.activeTf,
+      selectedTfs: restored.selectedTfs,
+      drawings: restored.drawings.items,
+      layout: restored.layout,
+      panels: restored.panels,
+      linkGroups: restored.linkGroups,
+      archivedAt: Date.now(),
     });
     if (!committed) return;
     await this.sync.assertExpectedOwner(expectedOwnerId);
+    if (card.symbol === this.currentAsset()) {
+      if (
+        (expectedMeta?.activeSessionId ?? null) !== (this.liveActiveSessionId() ?? null)
+      ) {
+        return;
+      }
+      const workspace = await this.db.getWorkspace(card.symbol);
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      if (
+        !workspace ||
+        workspace.activeSessionId !== session.id ||
+        workspace.activeClientUpdatedAt !== session.clientUpdatedAt ||
+        workspace.activeSyncedAt !== session.syncedAt
+      ) {
+        return;
+      }
+      this.store.dispatch(WorkspacesActions.workspaceRestored({ workspace }));
+      await this.reload();
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      await this.router.navigateByUrl('/');
+      return;
+    }
     await this.reload();
     await this.sync.assertExpectedOwner(expectedOwnerId);
-    await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });
+    await this.dispatchOpen({ ...card, id: null, cloudOnly: false, needsDownload: false });
   }
 
   async rename(card: SessionCard): Promise<void> {

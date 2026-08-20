@@ -1,7 +1,11 @@
 /* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
 import { inject, Injectable } from '@angular/core';
 import { Candle, Timeframe } from '../models';
-import { defaultTradingData, SessionFolder } from '../state/trading/trading.models';
+import {
+  defaultTradingData,
+  SavedSession,
+  SessionFolder,
+} from '../state/trading/trading.models';
 import { AssetMeta, Workspace, WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import {
   ADOPTION_MARKER_KEY,
@@ -53,6 +57,17 @@ export interface SessionRevision {
 export interface DeletedSessionResult {
   deletedId: string;
   replacementActiveSessionId?: string;
+}
+
+export interface MaterializedSessionAggregate {
+  session: SavedSession;
+  activeTf: WorkspaceMeta['activeTf'];
+  selectedTfs: WorkspaceMeta['selectedTfs'];
+  drawings: WorkspaceMeta['drawings'];
+  layout: NonNullable<WorkspaceMeta['layout']>;
+  panels: NonNullable<WorkspaceMeta['panels']>;
+  linkGroups: NonNullable<WorkspaceMeta['linkGroups']>;
+  archivedAt: number;
 }
 
 function matchesSessionRevision(current: WorkspaceMeta, expected: SessionRevision): boolean {
@@ -401,6 +416,64 @@ export class WorkspaceDbService {
     }
     await completion;
     return result;
+  }
+
+  /** Atomically archives the current aggregate and promotes one cloud session as active. */
+  async promoteSessionIfUnchanged(
+    symbol: string,
+    expected: WorkspaceMeta | undefined,
+    materialized: MaterializedSessionAggregate,
+  ): Promise<boolean> {
+    return this.updateMetaIfUnchanged(symbol, expected, (current) => {
+      const meta = current ?? {
+        symbol,
+        files: {},
+        activeTf: null,
+        currentTime: 0,
+        drawings: [],
+        sessions: [],
+        lastModified: materialized.archivedAt,
+      };
+      const active = meta.trading;
+      const keepActive =
+        active != null &&
+        (active.orders.length > 0 ||
+          active.positions.length > 0 ||
+          active.history.length > 0 ||
+          active.sessionName != null ||
+          active.sessionEnded);
+      const sessions = (meta.sessions ?? []).filter(
+        (session) => session.id !== materialized.session.id,
+      );
+      if (keepActive && meta.activeSessionId) {
+        sessions.push({
+          id: meta.activeSessionId,
+          name: active.sessionName ?? `Sesión ${sessions.length + 1}`,
+          createdAt: materialized.archivedAt,
+          currentTime: meta.currentTime,
+          trading: active,
+          clientUpdatedAt: meta.activeClientUpdatedAt,
+          syncedAt: meta.activeSyncedAt,
+        });
+      }
+
+      return {
+        ...meta,
+        activeTf: materialized.activeTf,
+        selectedTfs: materialized.selectedTfs,
+        currentTime: materialized.session.currentTime,
+        drawings: materialized.drawings,
+        trading: materialized.session.trading,
+        sessions,
+        activeSessionId: materialized.session.id,
+        activeClientUpdatedAt: materialized.session.clientUpdatedAt,
+        activeSyncedAt: materialized.session.syncedAt,
+        layout: materialized.layout,
+        panels: materialized.panels,
+        linkGroups: materialized.linkGroups,
+        lastModified: materialized.archivedAt,
+      };
+    });
   }
 
   async putSeries(symbol: string, tf: Timeframe, candles: Candle[]): Promise<void> {

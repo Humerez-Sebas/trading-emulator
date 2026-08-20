@@ -49,6 +49,7 @@ export function workspaceDbStub(): Partial<
       return committed;
     }),
     deleteSessionIfUnchanged: vi.fn().mockResolvedValue(null),
+    promoteSessionIfUnchanged: vi.fn().mockResolvedValue(false),
     putSeries: vi.fn().mockResolvedValue(undefined),
     appendSeriesChunk: vi.fn().mockResolvedValue(undefined),
     remove: vi.fn().mockResolvedValue(undefined),

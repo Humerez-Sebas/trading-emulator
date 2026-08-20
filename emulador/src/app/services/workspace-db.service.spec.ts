@@ -329,6 +329,85 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
     expect(await svc.getMeta('EURUSD')).toEqual(activeB);
     expect(await svc.listPendingDeletes()).toEqual([]);
   });
+
+  it('promotes cloud B as one coherent aggregate while archiving A with A identity and clocks', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const bView = singlePanelLayoutFor('EURUSD', 'H1');
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+      layout: aView.layout,
+      panels: aView.panels,
+      drawings: [],
+    });
+    const cloudB = savedSession({
+      id: 'cloud-b',
+      name: 'B',
+      createdAt: 900,
+      currentTime: 200,
+      clientUpdatedAt: 900,
+      syncedAt: 900,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    await svc.putMeta(activeA);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        promoteSessionIfUnchanged(
+          symbol: string,
+          expected: WorkspaceMeta | undefined,
+          materialized: {
+            session: typeof cloudB;
+            activeTf: 'H1';
+            selectedTfs: ['H1'];
+            drawings: [];
+            layout: typeof bView.layout;
+            panels: typeof bView.panels;
+            linkGroups: [];
+            archivedAt: number;
+          },
+        ): Promise<boolean>;
+      }
+    ).promoteSessionIfUnchanged('EURUSD', activeA, {
+      session: cloudB,
+      activeTf: 'H1',
+      selectedTfs: ['H1'],
+      drawings: [],
+      layout: bView.layout,
+      panels: bView.panels,
+      linkGroups: [],
+      archivedAt: 1000,
+    });
+
+    const promoted = await svc.getMeta('EURUSD');
+    expect(committed).toBe(true);
+    expect(promoted).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'cloud-b',
+        activeClientUpdatedAt: 900,
+        activeSyncedAt: 900,
+        currentTime: 200,
+        trading: expect.objectContaining({ sessionName: 'B', balance: 12000 }),
+        layout: bView.layout,
+        panels: bView.panels,
+      }),
+    );
+    expect(promoted?.sessions).toEqual([
+      expect.objectContaining({
+        id: 'active-a',
+        name: 'A',
+        currentTime: 100,
+        clientUpdatedAt: 700,
+        syncedAt: 650,
+        trading: expect.objectContaining({ sessionName: 'A', balance: 11000 }),
+      }),
+    ]);
+    expect(JSON.stringify(promoted)).not.toMatch(/"candles"|"series"|"ohlc"|"parquet"/i);
+  });
 });
 
 describe('WorkspaceDbService — putSeries / getWorkspace', () => {
