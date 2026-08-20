@@ -606,6 +606,19 @@ describe('WorkspaceDbService — session folders (v3)', () => {
     expect(await svc.listFolders()).toEqual([newer]);
   });
 
+  it('rename replacement cannot recreate an absent unclocked folder', async () => {
+    const absent = { id: 'missing', name: 'Missing', order: 0 };
+
+    const committed = await svc.replaceFolderIfUnchanged(absent, {
+      ...absent,
+      name: 'Phantom rename',
+      clientUpdatedAt: 1,
+    });
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([]);
+  });
+
   it('a stale reorder cannot overwrite a newer exact folder revision', async () => {
     const captured = {
       id: 'f1',
@@ -662,6 +675,20 @@ describe('WorkspaceDbService — session folders (v3)', () => {
     expect(new Set(stored.map((folder) => folder.order)).size).toBe(stored.length);
   });
 
+  it('batch reorder writes zero rows when an unclocked participant is absent', async () => {
+    const present = { id: 'a', name: 'A', order: 1000 };
+    const absent = { id: 'b', name: 'B', order: 2000 };
+    await svc.putFolder(present);
+
+    const committed = await svc.replaceFoldersIfUnchanged([
+      { expected: present, next: { ...present, order: 2000, clientUpdatedAt: 1 } },
+      { expected: absent, next: { ...absent, order: 1000, clientUpdatedAt: 1 } },
+    ]);
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([present]);
+  });
+
   it('batch reorder commits every participating folder together on exact revisions', async () => {
     const captured = [
       { id: 'a', name: 'A', order: 1000, clientUpdatedAt: 100, syncedAt: 100 },
@@ -712,6 +739,14 @@ describe('WorkspaceDbService — session folders (v3)', () => {
 
     expect(committed).toBe(false);
     expect(await svc.listFolders()).toEqual([newer]);
+    expect(await svc.listPendingDeletes()).toEqual([]);
+  });
+
+  it('delete cannot enqueue a phantom cloud deletion for an absent unclocked folder', async () => {
+    const absent = { id: 'missing', name: 'Missing', order: 0 };
+
+    expect(await svc.deleteFolderIfUnchanged(absent, true)).toBe(false);
+    expect(await svc.listFolders()).toEqual([]);
     expect(await svc.listPendingDeletes()).toEqual([]);
   });
 

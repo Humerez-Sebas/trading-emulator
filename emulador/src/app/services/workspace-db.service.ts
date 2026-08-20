@@ -635,8 +635,9 @@ export class WorkspaceDbService {
     const completion = this.completed(tx);
     const current = await this.request<SessionFolder | undefined>(store.get(id));
     const unchanged = expected
-      ? current?.clientUpdatedAt === expected.clientUpdatedAt &&
-        current?.syncedAt === expected.syncedAt
+      ? current !== undefined &&
+        current.clientUpdatedAt === expected.clientUpdatedAt &&
+        current.syncedAt === expected.syncedAt
       : current == null;
     let committed = false;
     if (unchanged) {
@@ -670,8 +671,9 @@ export class WorkspaceDbService {
     );
     const exact = changes.every(
       ({ expected }, index) =>
-        current[index]?.clientUpdatedAt === expected.clientUpdatedAt &&
-        current[index]?.syncedAt === expected.syncedAt,
+        current[index] !== undefined &&
+        current[index].clientUpdatedAt === expected.clientUpdatedAt &&
+        current[index].syncedAt === expected.syncedAt,
     );
     if (exact) {
       for (const { next } of changes) store.put(next);
@@ -775,8 +777,9 @@ export class WorkspaceDbService {
     const folders = tx.objectStore(FOLDERS_STORE);
     const current = await this.request<SessionFolder | undefined>(folders.get(expected.id));
     if (
-      current?.clientUpdatedAt !== expected.clientUpdatedAt ||
-      current?.syncedAt !== expected.syncedAt
+      current === undefined ||
+      current.clientUpdatedAt !== expected.clientUpdatedAt ||
+      current.syncedAt !== expected.syncedAt
     ) {
       await completion;
       return false;
