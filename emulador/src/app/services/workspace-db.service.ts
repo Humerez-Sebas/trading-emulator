@@ -80,7 +80,9 @@ function matchesSessionRevision(current: WorkspaceMeta, expected: SessionRevisio
   }
   const saved = (current.sessions ?? []).find((session) => session.id === expected.id);
   return (
-    saved?.clientUpdatedAt === expected.clientUpdatedAt && saved?.syncedAt === expected.syncedAt
+    saved !== undefined &&
+    saved.clientUpdatedAt === expected.clientUpdatedAt &&
+    saved.syncedAt === expected.syncedAt
   );
 }
 

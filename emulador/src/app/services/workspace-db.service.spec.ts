@@ -228,6 +228,55 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
     expect((await svc.getMeta('EURUSD'))?.sessions?.[0].name).toBe('Renamed');
   });
 
+  it('rejects an unclocked archived mutation when the saved row is absent', async () => {
+    const current = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      trading: { ...defaultTradingData(), sessionName: 'B' },
+      sessions: [],
+    });
+    await svc.putMeta(current);
+
+    const committed = await svc.replaceSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'archived',
+        id: 'missing-a',
+        clientUpdatedAt: undefined,
+        syncedAt: undefined,
+      },
+      (meta) => ({ ...meta, trading: { ...meta.trading!, sessionName: 'Wrong' } }),
+    );
+
+    expect(committed).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(current);
+  });
+
+  it('does not delete or enqueue an absent unclocked archived row whose id became active', async () => {
+    const active = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'same-id',
+      trading: { ...defaultTradingData(), sessionName: 'Current B', balance: 12000 },
+      sessions: [],
+    });
+    await svc.putMeta(active);
+
+    const result = await svc.deleteSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'archived',
+        id: 'same-id',
+        clientUpdatedAt: undefined,
+        syncedAt: undefined,
+      },
+      true,
+    );
+
+    expect(result).toBeNull();
+    expect(await svc.getMeta('EURUSD')).toEqual(active);
+    expect(await svc.listPendingDeletes()).toEqual([]);
+  });
+
   it('active delete resets and queues the exact captured id in one transaction', async () => {
     const exact = workspaceMeta({
       symbol: 'EURUSD',
