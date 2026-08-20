@@ -474,3 +474,64 @@ TDD evidence, raw and unpiped from `emulador/`:
 
 Per the bounded correction brief, no broad unrelated suite/build, push, merge, reset, rebase,
 squash, install, deployment, or remote service operation was run.
+
+## 2026-08-20 fresh three-finding review continuation
+
+The historical acceptance statements remain historical. A new review of rejected head `8e90c33`
+reported three additional findings. This continuation fixes only those findings and does not claim
+independent acceptance or final gates. No dependency, lockfile, Supabase, Vercel, framework,
+worktree, push, merge, reset, rebase, or squash operation was performed.
+
+Implementation commits:
+
+- `102c40e` `fix(sessions): commit card actions by exact revision`
+- `57cc455` `fix(sessions): promote cloud aggregate coherently`
+- `5f28584` `fix(folders): commit reorder as one transaction`
+- `af1c8c1` `chore(sessions): remove obsolete import`
+
+Corrections:
+
+- Current-asset and off-screen session rename/archive/delete/move now commit through exact
+  active/archived id + `clientUpdatedAt` + `syncedAt` revision transactions. Active delete reads,
+  resets, and queues the captured id in one owner-DB `meta` + `sync` transaction, returning the
+  replacement identity used by NgRx. A controlled A-to-B handoff while delete awaited owner/DB
+  access left B byte-for-byte unchanged and queued no id.
+- Cloud materialization atomically archives A with A trading/id/clocks and promotes B with B
+  trading/view/id/clocks. Same-symbol open fetches the complete workspace and dispatches the
+  existing `workspaceRestored` hydration action; real trading/layout reducers proved B opens and
+  no `switchSession` no-op is relied upon. The fake-indexeddb aggregate proof also checks that the
+  persisted meta remains candle-free.
+- Folder reorder uses one `replaceFoldersIfUnchanged` readwrite transaction. It reads and validates
+  every participating exact revision before issuing any write. One concurrent row change produces
+  zero reordered rows and preserves unique order values; the exact case commits all rows. The page
+  updates its signal and flushes dirty state only after the whole batch commits.
+
+TDD evidence, raw and unpiped from `emulador/`:
+
+- Exact session transactions RED: WorkspaceDbService exit `1`, **4 failed / 54 passed (58)**.
+  GREEN: exit `0`, **58/58**. Sessions page RED: exit `1`, **5 failed / 102 passed (107)**;
+  GREEN: exit `0`, **107/107**. Reducer draft first failed compilation because the wished-for
+  committed-delete action still had the old zero-argument signature; corrected RED exit `1`,
+  **2 failed / 62 passed (64)**, then GREEN exit `0`, **64/64**. Affected command passed
+  **5 files / 279 tests**.
+- Aggregate materialization drafts first failed compilation on one implicit-any test predicate
+  (twice because service/page commands ran in parallel); no production edit preceded the corrected
+  RED. Accepted REDs: WorkspaceDbService exit `1`, **1 failed / 58 passed (59)**; Sessions page
+  exit `1`, **1 failed / 107 passed (108)**. GREEN: **59/59** and **108/108**. Affected command
+  passed **7 files / 343 tests**.
+- Batch reorder RED: WorkspaceDbService exit `1`, **2 failed / 59 passed (61)**; GREEN **61/61**.
+  Sessions page RED exit `1`, **2 failed / 106 passed (108)**; after implementation one obsolete
+  per-row assertion remained (**1 failed / 107 passed**) and was changed to assert the batch call;
+  final GREEN **108/108**. Affected command passed **3 files / 245 tests**.
+
+Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
+
+- Aggregate affected command (13 explicit files) -> exit `0`, **13 files / 451 tests passed**.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- First `npm run lint` -> exit `1`, one unused `emptyWorkspace` import. After removing only that
+  obsolete import, all four commands were rerun fresh: affected **451/451**, app/spec tsc exit `0`,
+  and `npm run lint` exit `0` with `All files pass linting.`
+
+No full repository test suite or build was run in this continuation; the evidence above is the
+requested affected suite plus app/spec tsc and lint, not final-gate evidence.

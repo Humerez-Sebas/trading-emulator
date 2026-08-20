@@ -218,3 +218,28 @@ Implementation heads are `1d35601`, `a61c57c`, `46e1c3d`, `3df3d7b`, and the tes
 cleanup `75f846c`. Fresh bounded evidence: affected tests **8 files / 287 passed**, app/spec tsc
 exit `0`, lint exit `0`; the required repository test gate passed **186 files / 2515 tests**.
 This is implementer evidence only, not independent acceptance.
+
+## Fresh three-finding correction addendum (2026-08-20)
+
+The migration layout and O-7 policy are unchanged. Three later findings were corrected from rejected
+head `8e90c33`:
+
+1. Session-page mutation consequences now require the exact captured active/archived id and both
+   revision clocks inside the owner-DB transaction that writes the consequence. Active delete also
+   resets and records the pending cloud deletion in that same transaction, returning the exact
+   deleted/replacement identities to the current-asset reducer path. An A-to-B replacement during
+   an await cannot reset or enqueue B.
+2. Cloud B is no longer stored as B view fields over active A identity/trading. One exact transaction
+   archives A with A trading/id/clocks and promotes B with B trading/view/id/clocks. Same-symbol open
+   hydrates the promoted full workspace through `workspaceRestored`, so B actually becomes active;
+   the persistence proof remains candle-free.
+3. A folder reorder is one all-or-nothing `folders` transaction. Every changed participant is read
+   and exact-revision validated before any row is written. A mismatch leaves every order untouched;
+   an exact set commits every row, and dirty sync runs only after full commit.
+
+Implementation heads: `102c40e`, `57cc455`, `5f28584`, plus lint-only import cleanup `af1c8c1`.
+Focused accepted RED/GREEN counts were session service **4/58 -> 58/58**, session page
+**5/107 -> 107/107**, reducer **2/64 -> 64/64**; materialization service **1/59 -> 59/59**
+and page **1/108 -> 108/108**; reorder service **2/61 -> 61/61** and page
+**2/108 -> 108/108**. Fresh affected evidence passed **13 files / 451 tests**; app/spec tsc and
+lint exited `0`. No full suite/build or independent acceptance is claimed.
