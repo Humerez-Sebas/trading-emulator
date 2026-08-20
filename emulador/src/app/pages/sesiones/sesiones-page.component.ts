@@ -49,6 +49,7 @@ import {
   selectTradingData,
 } from '../../state/selectors';
 import { marketFeature } from '../../state/market/market.reducer';
+import { MarketActions } from '../../state/market/market.actions';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { SavedSession, SessionFolder, TradingData } from '../../state/trading/trading.models';
 import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
@@ -886,6 +887,9 @@ export class SesionesPageComponent {
       name: card.name,
       createdAt: card.createdAt,
       currentTime: restored.cursor,
+      customTfMinutes: restored.customTfMinutes,
+      playbackSpeed: restored.playbackSpeed,
+      replayResolution: restored.replayResolution,
       trading: restored.trading,
       clientUpdatedAt: card.createdAt,
       syncedAt: card.createdAt,
@@ -920,6 +924,15 @@ export class SesionesPageComponent {
         return;
       }
       this.store.dispatch(WorkspacesActions.workspaceRestored({ workspace }));
+      if (restored.customTfMinutes != null) {
+        this.store.dispatch(
+          MarketActions.changeCustomTimeframe({ minutes: restored.customTfMinutes }),
+        );
+      }
+      this.store.dispatch(ReplayActions.changeSpeed({ msPerCandle: restored.playbackSpeed }));
+      this.store.dispatch(
+        ReplayActions.setReplayResolution({ minutes: restored.replayResolution }),
+      );
       await this.reload();
       await this.sync.assertExpectedOwner(expectedOwnerId);
       await this.router.navigateByUrl('/');
@@ -996,6 +1009,9 @@ export class SesionesPageComponent {
     if (current && !this.currentRevisionStillMatches(revision)) return;
     const intendedTrading = current ? this.liveTrading() : undefined;
     const intendedCurrentTime = current ? this.currentTime() : undefined;
+    const intendedCustomTfMinutes = current ? this.liveCustomTf() : undefined;
+    const intendedPlaybackSpeed = current ? this.livePlaybackSpeed() : undefined;
+    const intendedReplayResolution = current ? this.liveReplayResolution() : undefined;
     const replacementActiveSessionId = newId();
     let archivedClientUpdatedAt = revision.clientUpdatedAt;
     const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
@@ -1023,6 +1039,11 @@ export class SesionesPageComponent {
                   name: trading.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
                   createdAt: Date.now(),
                   currentTime,
+                  customTfMinutes: current ? intendedCustomTfMinutes : meta.customTfMinutes,
+                  playbackSpeed: current ? intendedPlaybackSpeed : meta.playbackSpeed,
+                  replayResolution: current
+                    ? intendedReplayResolution
+                    : meta.replayResolution,
                   trading: { ...trading },
                   clientUpdatedAt: archivedClientUpdatedAt,
                   syncedAt: revision.syncedAt,

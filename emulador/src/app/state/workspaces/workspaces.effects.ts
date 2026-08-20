@@ -71,6 +71,9 @@ function reconcileSessionClocks(
       session.id === existing.activeSessionId
         ? {
             ...session,
+            customTfMinutes: session.customTfMinutes ?? existing.customTfMinutes,
+            playbackSpeed: session.playbackSpeed ?? existing.playbackSpeed,
+            replayResolution: session.replayResolution ?? existing.replayResolution,
             clientUpdatedAt: isRealSession(session.trading)
               ? nextClock(now, existing.activeClientUpdatedAt, existing.activeSyncedAt)
               : existing.activeClientUpdatedAt,
@@ -298,6 +301,9 @@ export class WorkspacesEffects {
                 return {
                   symbol: current!,
                   ...meta,
+                  customTfMinutes: existing?.customTfMinutes,
+                  playbackSpeed: existing?.playbackSpeed,
+                  replayResolution: existing?.replayResolution,
                   // RFC-011 Task 4 (folded audit fix): selectWorkspaceMetaSnapshot's
                   // `linkGroups` is linkGroupsFeature's runtime Record<string,
                   // LinkGroup> (state), but WorkspaceMeta.linkGroups is declared as
@@ -392,6 +398,9 @@ export class WorkspacesEffects {
           return {
             symbol: current,
             ...meta,
+            customTfMinutes: meta.customTfMinutes ?? existing?.customTfMinutes,
+            playbackSpeed: meta.playbackSpeed ?? existing?.playbackSpeed,
+            replayResolution: meta.replayResolution ?? existing?.replayResolution,
             linkGroups: Object.values(meta.linkGroups),
             lastModified: now,
             ...clocks,

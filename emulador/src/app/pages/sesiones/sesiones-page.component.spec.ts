@@ -7,6 +7,7 @@ import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { ReplayActions } from '../../state/replay/replay.actions';
+import { MarketActions } from '../../state/market/market.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import {
   selectCurrentAsset,
@@ -25,6 +26,9 @@ import { SessionSyncService } from '../../services/session-sync.service';
 import { SessionSummary } from '../../services/session-sync.models';
 import { singlePanelLayoutFor } from '../../services/session-migration';
 import { layoutFeature } from '../../state/layout/layout.reducer';
+import { marketFeature } from '../../state/market/market.reducer';
+import { replayFeature } from '../../state/replay/replay.reducer';
+import { workspacesFeature } from '../../state/workspaces/workspaces.reducer';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { DataOnboardingService } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
@@ -284,6 +288,9 @@ describe('SesionesPageComponent', () => {
               name: active.sessionName ?? `Sesión ${sessions.length + 1}`,
               createdAt: materialized.archivedAt,
               currentTime: meta.currentTime,
+              customTfMinutes: meta.customTfMinutes,
+              playbackSpeed: meta.playbackSpeed,
+              replayResolution: meta.replayResolution,
               trading: active,
               clientUpdatedAt: meta.activeClientUpdatedAt,
               syncedAt: meta.activeSyncedAt,
@@ -294,6 +301,9 @@ describe('SesionesPageComponent', () => {
             activeTf: materialized.activeTf,
             selectedTfs: materialized.selectedTfs,
             currentTime: materialized.session.currentTime,
+            customTfMinutes: materialized.session.customTfMinutes,
+            playbackSpeed: materialized.session.playbackSpeed,
+            replayResolution: materialized.session.replayResolution,
             drawings: materialized.drawings,
             trading: materialized.session.trading,
             sessions,
@@ -1035,9 +1045,9 @@ describe('SesionesPageComponent', () => {
       trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
       currentTime: 200,
       activeTf: 'H1' as const,
-      customTfMinutes: null,
-      playbackSpeed: 1,
-      replayResolution: null,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
       drawings: { EURUSD: { version: 1 as const, items: [] } },
       notes: [],
       selectedTfs: ['H1' as const],
@@ -1086,6 +1096,13 @@ describe('SesionesPageComponent', () => {
     expect(latest.activeSyncedAt).toBe(900);
     expect(latest.trading).toEqual(expect.objectContaining({ sessionName: 'B', balance: 12000 }));
     expect(latest.layout).toEqual(bView.layout);
+    expect(latest).toEqual(
+      expect.objectContaining({
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      }),
+    );
     expect(latest.sessions).toEqual([
       expect.objectContaining({
         id: 'active-a',
@@ -1095,20 +1112,37 @@ describe('SesionesPageComponent', () => {
       }),
     ]);
 
-    const restoredAction = dispatch.mock.calls
-      .map((call: unknown[]) => call[0] as { type: string })
+    const dispatchedActions = dispatch.mock.calls.map(
+      (call: unknown[]) => call[0] as { type: string },
+    );
+    const restoredAction = dispatchedActions
       .find(
         (action: { type: string }) => action.type === WorkspacesActions.workspaceRestored.type,
       ) as
       | ReturnType<typeof WorkspacesActions.workspaceRestored>
       | undefined;
     expect(restoredAction).toBeDefined();
-    const trading = tradingFeature.reducer(undefined, restoredAction!);
-    const layout = layoutFeature.reducer(undefined, restoredAction!);
+    const trading = dispatchedActions.reduce(tradingFeature.reducer, undefined);
+    const layout = dispatchedActions.reduce(layoutFeature.reducer, undefined);
+    const marketBefore = marketFeature.reducer(
+      undefined,
+      MarketActions.changeCustomTimeframe({ minutes: 90 }),
+    );
+    const market = dispatchedActions.reduce(marketFeature.reducer, marketBefore);
+    const replayBefore = replayFeature.reducer(
+      replayFeature.reducer(undefined, ReplayActions.changeSpeed({ msPerCandle: 1000 })),
+      ReplayActions.setReplayResolution({ minutes: 15 }),
+    );
+    const replay = dispatchedActions.reduce(replayFeature.reducer, replayBefore);
+    const workspaces = dispatchedActions.reduce(workspacesFeature.reducer, undefined);
     expect(trading.activeSessionId).toBe('cloud-b');
     expect(trading.sessionName).toBe('B');
     expect(trading.balance).toBe(12000);
     expect(layout.workspace).toEqual(bView.layout);
+    expect(market.customTf).toBe(45);
+    expect(replay.msPerCandle).toBe(250);
+    expect(replay.resolutionMinutes).toBe(5);
+    expect(workspaces.current).toBe('EURUSD');
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: TradingActions.switchSession.type }),
     );

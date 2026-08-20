@@ -1026,9 +1026,7 @@ function inferRange(trading: TradingData, currentTime: number): [number, number]
 /**
  * Builds the `FlattenInput` for one symbol's meta (for `flushDirty`). The
  * active session's view (cursor/drawings/ranges) is reassembled from fields
- * persisted on the meta; `customTfMinutes`, `playbackSpeed` and `notes` are
- * NOT persisted locally today, so they're defaulted here (known fidelity
- * boundary — see Task 9 report).
+ * persisted on the meta; `notes` are not persisted locally today.
  *
  * RFC-011 Task 4: `WorkspaceMeta` now carries `layout`/`panels`/`linkGroups`
  * (see workspaces.models.ts). They are read straight off the meta when
@@ -1051,8 +1049,9 @@ function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
     view: {
       cursor: meta.currentTime,
       activeTf: meta.activeTf,
-      customTfMinutes: null,
-      playbackSpeed: 1,
+      customTfMinutes: meta.customTfMinutes ?? null,
+      playbackSpeed: meta.playbackSpeed ?? 1,
+      replayResolution: meta.replayResolution ?? null,
       drawings: { version: 2, items: meta.drawings ?? [] },
       notes: [],
       selectedTfs: meta.selectedTfs ?? [],
