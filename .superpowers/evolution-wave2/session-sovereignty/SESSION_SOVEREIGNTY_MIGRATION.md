@@ -194,3 +194,26 @@ Focused evidence: initial RED exit `1`, **14 failed / 112 passed** (including on
 resolver error corrected before production edits); focused GREEN exit `0`, **126/126**; broader
 affected GREEN exit `0`, **226/226**; app/spec TypeScript and lint exit `0`. This addendum records
 implementer correction evidence and does not assert independent acceptance.
+
+## Bounded correction addendum (2026-08-20)
+
+The earlier closeout and review evidence remain historical. Four later findings were corrected
+without changing the migration layout or O-7:
+
+1. Local playbook/lesson edits use the memoized owner identity for owner-partition persistence, so
+   token expiry or offline live-auth failure does not discard new private knowledge. Cloud
+   operations still require live owner capture and revalidation.
+2. Every Sessions-page active-card writer binds the consequence to the card's active cloud id and
+   exact clocks. Replacement active session B is untouched by a stale A card, and B's id is never
+   added to pending cloud deletion.
+3. Folder rename/reorder are exact-revision writes. Folder delete checks the same revision and
+   atomically commits both local removal and its pending cloud deletion; a concurrent newer folder
+   causes neither consequence. Existing cloud LWW and exact acknowledgement remain unchanged.
+4. Cloud materialization captures the complete owner meta before delayed fetch/download and uses an
+   exact transaction-local compare before write/open. Same-owner layout, panels, link groups,
+   drawings, trading, active identity, or clock changes survive; successful materialization
+   preserves internally consistent active clocks and dirty eligibility.
+
+Implementation heads are `1d35601`, `a61c57c`, `46e1c3d`, `3df3d7b`, and the test-harness lint
+cleanup `75f846c`. Fresh bounded evidence: affected tests **8 files / 287 passed**, app/spec tsc
+exit `0`, lint exit `0`. This is implementer evidence only, not independent acceptance.

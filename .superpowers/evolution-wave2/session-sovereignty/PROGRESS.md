@@ -418,3 +418,57 @@ teardown helpers, `listMetas()`→`listDatasets()` for shared-schema warmup).
 - `rawDb()`/`seedCandles()` in `workspace-db.service.spec.ts` used `listMetas()` to force the
   SHARED schema open; that now opens the per-owner DB, so they must use `listDatasets()`.
 - `candles-writer.spec.ts` had the same problem in `resetAndInitSchema()`.
+
+## 2026-08-20 bounded Track A correction continuation
+
+The historical acceptance and 2026-08-13 evidence above remain unchanged. A fresh independent
+review of clean head `6d0a0b0` reported four additional bounded findings. This continuation fixes
+only those findings; it does not claim independent acceptance and does not alter O-7, dependencies,
+lockfiles, Supabase, Vercel, cross-tab behavior, recovery policy, or another worktree.
+
+Implementation commits:
+
+- `1d35601` `fix(sovereignty): keep local knowledge persistence offline`
+- `a61c57c` `fix(sessions): bind active card actions to identity`
+- `46e1c3d` `fix(sessions): guard folder writes by exact revision`
+- `3df3d7b` `fix(sessions): reject stale delayed materialization`
+- `75f846c` `test(sessions): clean folder race harness`
+
+Corrections:
+
+- Local playbook/lesson persistence resolves the document-lifetime `OwnerIdentityService` and
+  writes its owner partition without requiring live Supabase auth. Cloud pull/push, hydration,
+  synced stamps, and other cloud consequences retain live owner capture/revalidation.
+- Active rename/archive/delete/move require exact active `syncId` plus captured clocks inside the
+  off-screen meta transaction; current-asset consequences also reject a replaced live id. A stale
+  A card cannot mutate/reset/archive/move B or queue B's cloud deletion.
+- Folder rename/reorder use the existing exact-revision folder transaction and inspect its commit
+  result. Folder delete atomically checks the captured revision, removes the folder, and queues the
+  pending cloud deletion in one owner-DB transaction.
+- Cloud materialization captures the complete owner meta before fetch/download and commits through
+  `updateMetaIfUnchanged`; a same-owner edit during the delay survives and prevents open. A success
+  preserves active identity/trading/clocks, including a dirty `activeClientUpdatedAt > syncedAt`,
+  while the downloaded saved row starts at equal client/synced cloud clocks.
+
+TDD evidence, raw and unpiped from `emulador/`:
+
+- Local persistence RED: playbook + lesson effects exit `1`, **2 failed / 35 passed (37)**. GREEN:
+  exit `0`, **37/37**.
+- Active-card identity RED: Sessions page exit `1`, **4 failed / 93 passed (97)**. GREEN: exit `0`,
+  **97/97**.
+- Folder writer draft initially failed compilation on two nullable test-harness reads; after fixing
+  only the harness, accepted RED exit `1`, **6 failed / 145 passed (151)**. GREEN after the exact
+  success case: exit `0`, **152/152**.
+- Delayed materialization page RED: exit `1`, **1 failed / 101 passed (102)**. The real
+  `WorkspaceDbService.updateMetaIfUnchanged` RED then exited `1`, **2 failed / 52 passed (54)**.
+  Combined GREEN: exit `0`, **156/156**.
+- Fresh final affected command (Sessions page, WorkspaceDbService, SessionSyncService, playbook and
+  lesson effects, and both owner DB services): exit `0`, **8 files / 287 tests passed**.
+- Fresh `npx tsc -p tsconfig.app.json --noEmit`: exit `0`, no output.
+- Fresh `npx tsc -p tsconfig.spec.json --noEmit`: exit `0`, no output.
+- First lint run exposed one unused test mock parameter and exited `1`; after removing only that
+  parameter, focused Sessions page GREEN was **102/102** and fresh `npm run lint` exited `0` with
+  `All files pass linting.`
+
+Per the bounded correction brief, no broad unrelated suite/build, push, merge, reset, rebase,
+squash, install, deployment, or remote service operation was run.
