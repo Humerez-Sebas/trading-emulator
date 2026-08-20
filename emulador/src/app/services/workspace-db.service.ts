@@ -301,6 +301,22 @@ export class WorkspaceDbService {
     await completion;
   }
 
+  /** Applies a meta consequence only if the complete captured revision is still current. */
+  async updateMetaIfUnchanged(
+    symbol: string,
+    expected: WorkspaceMeta | undefined,
+    update: (current: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+  ): Promise<boolean> {
+    let committed = false;
+    await this.updateMeta(symbol, (current) => {
+      if (JSON.stringify(current) !== JSON.stringify(expected)) return undefined;
+      const next = update(current);
+      committed = next !== undefined;
+      return next;
+    });
+    return committed;
+  }
+
   async putSeries(symbol: string, tf: Timeframe, candles: Candle[]): Promise<void> {
     const db = await this.open();
     const tx = db.transaction(SERIES_STORE, 'readwrite');

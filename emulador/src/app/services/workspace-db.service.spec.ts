@@ -84,6 +84,66 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
     expect(read?.panels).toBeUndefined();
     expect(read?.linkGroups).toBeUndefined();
   });
+
+  it('an exact-meta transaction rejects a delayed materialization after a newer write', async () => {
+    const captured = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-local',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'Captured' },
+    });
+    const newer = {
+      ...captured,
+      activeClientUpdatedAt: 101,
+      trading: { ...captured.trading!, sessionName: 'Newer' },
+    };
+    await svc.putMeta(captured);
+    await svc.putMeta(newer);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        updateMetaIfUnchanged(
+          symbol: string,
+          expected: WorkspaceMeta | undefined,
+          update: (current: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+        ): Promise<boolean>;
+      }
+    ).updateMetaIfUnchanged('EURUSD', captured, (current) => ({
+      ...current!,
+      drawings: [],
+    }));
+
+    expect(committed).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(newer);
+  });
+
+  it('an exact-meta transaction commits when the captured revision is still current', async () => {
+    const captured = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-local',
+      activeClientUpdatedAt: 200,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'Dirty' },
+    });
+    await svc.putMeta(captured);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        updateMetaIfUnchanged(
+          symbol: string,
+          expected: WorkspaceMeta | undefined,
+          update: (current: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+        ): Promise<boolean>;
+      }
+    ).updateMetaIfUnchanged('EURUSD', captured, (current) => ({
+      ...current!,
+      drawings: [],
+    }));
+
+    expect(committed).toBe(true);
+    expect(await svc.getMeta('EURUSD')).toEqual(captured);
+  });
 });
 
 describe('WorkspaceDbService — putSeries / getWorkspace', () => {

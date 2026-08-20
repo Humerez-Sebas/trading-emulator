@@ -79,6 +79,7 @@ type PendingDownload =
       card: SessionCard;
       payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3;
       expectedOwnerId: string;
+      expectedMeta: WorkspaceMeta | undefined;
     };
 
 /** One row in the folder navigator sidebar. */
@@ -678,7 +679,12 @@ export class SesionesPageComponent {
       if (pending.kind === 'jsonImport') {
         await this.restoreSession(pending.session);
       } else {
-        await this.materializeAndOpen(pending.card, pending.payload, pending.expectedOwnerId);
+        await this.materializeAndOpen(
+          pending.card,
+          pending.payload,
+          pending.expectedOwnerId,
+          pending.expectedMeta,
+        );
       }
     } catch (e) {
       this.downloadError.set(
@@ -831,16 +837,18 @@ export class SesionesPageComponent {
     if (!card.id) return;
     try {
       const expectedOwnerId = await this.sync.captureOwner();
+      const expectedMeta = await this.db.getMeta(card.symbol);
+      await this.sync.assertExpectedOwner(expectedOwnerId);
       const payload = await this.sync.fetchPayload(card.id);
       const missing = missingDatasets(payload.requiredDatasets, this.localDatasets());
       if (missing.length) {
-        this.pendingDownload.set({ kind: 'cloudOpen', card, payload, expectedOwnerId });
+        this.pendingDownload.set({ kind: 'cloudOpen', card, payload, expectedOwnerId, expectedMeta });
         this.downloadError.set('');
         this.downloadProgress.set(null);
         this.missing.set(missing);
         return;
       }
-      await this.materializeAndOpen(card, payload, expectedOwnerId);
+      await this.materializeAndOpen(card, payload, expectedOwnerId, expectedMeta);
     } catch (e) {
       this.importError.set((e as Error).message || 'No se pudo descargar la sesión desde la nube.');
     }
@@ -855,6 +863,7 @@ export class SesionesPageComponent {
     card: SessionCard,
     payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3,
     expectedOwnerId: string,
+    expectedMeta: WorkspaceMeta | undefined,
   ): Promise<void> {
     if (!card.id) return;
     const restored = fromPayload(payload, card.symbol);
@@ -871,10 +880,10 @@ export class SesionesPageComponent {
       syncedAt: card.createdAt,
     };
     await this.sync.assertExpectedOwner(expectedOwnerId);
-    await this.db.updateMeta(card.symbol, (current) => {
+    const committed = await this.db.updateMetaIfUnchanged(card.symbol, expectedMeta, (current) => {
       const meta = current ?? emptyWorkspace(card.symbol);
       const existing = meta.sessions?.find((saved) => saved.id === session.id);
-      if ((existing?.clientUpdatedAt ?? 0) > session.clientUpdatedAt!) return meta;
+      if ((existing?.clientUpdatedAt ?? 0) > session.clientUpdatedAt!) return undefined;
       return {
         ...meta,
         sessions: [...(meta.sessions ?? []).filter((saved) => saved.id !== session.id), session],
@@ -884,6 +893,7 @@ export class SesionesPageComponent {
         drawings: restored.drawings.items,
       };
     });
+    if (!committed) return;
     await this.sync.assertExpectedOwner(expectedOwnerId);
     await this.reload();
     await this.sync.assertExpectedOwner(expectedOwnerId);

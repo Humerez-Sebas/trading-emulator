@@ -165,6 +165,22 @@ describe('SesionesPageComponent', () => {
         },
       );
     }
+    if (opts.db && !opts.db.updateMetaIfUnchanged) {
+      const updateMeta = dbStub.updateMeta as unknown as (
+        symbol: string,
+        update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+      ) => Promise<void>;
+      dbStub.updateMetaIfUnchanged = vi.fn(async (symbol, expected, update) => {
+        let committed = false;
+        await updateMeta(symbol, (current) => {
+          if (JSON.stringify(current) !== JSON.stringify(expected)) return undefined;
+          const next = update(current);
+          committed = next !== undefined;
+          return next;
+        });
+        return committed;
+      });
+    }
     routerStub = { navigateByUrl: vi.fn().mockResolvedValue(undefined) };
     // Default: every dialog resolves to "cancelled" — tests opt in per case.
     dialogsStub = {
@@ -741,6 +757,133 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
     );
     expect(component.downloadError()).toBe('owner drift');
+  });
+
+  it('open: a same-owner workspace revision created during download survives and stale payload does not open', async () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'EURUSD', timeframe: 'H1' as const }],
+    };
+    const initialLayout = singlePanelLayoutFor('EURUSD', 'M1');
+    const newerLayout = singlePanelLayoutFor('EURUSD', 'H1');
+    let latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-local',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'Before' },
+      layout: initialLayout.layout,
+      panels: initialLayout.panels,
+      linkGroups: [],
+    });
+    const getMeta = vi.fn(async () => latest);
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        const next = update(latest);
+        if (next) latest = next;
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: { getMeta, updateMeta, listDatasets: vi.fn().mockResolvedValue([]) },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+      onboarding: {
+        runJobs: vi.fn().mockImplementation(async () => {
+          latest = {
+            ...latest,
+            activeClientUpdatedAt: 101,
+            trading: { ...latest.trading!, sessionName: 'Newer', balance: 12000 },
+            layout: newerLayout.layout,
+            panels: newerLayout.panels,
+          };
+        }),
+      },
+    });
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-1', cloudOnly: true, createdAt: 500 }),
+    );
+    await component.confirmDownload();
+
+    expect(latest.activeClientUpdatedAt).toBe(101);
+    expect(latest.trading?.sessionName).toBe('Newer');
+    expect(latest.layout).toEqual(newerLayout.layout);
+    expect(latest.sessions).toEqual([]);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+  });
+
+  it('open: successful delayed materialization preserves active identity and dirty clocks', async () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'Cloud' },
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'EURUSD', timeframe: 'H1' as const }],
+    };
+    let latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-local',
+      activeClientUpdatedAt: 200,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'Local dirty', balance: 12000 },
+    });
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        const next = update(latest);
+        if (next) latest = next;
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn(async () => latest),
+        updateMeta,
+        listDatasets: vi.fn().mockResolvedValue([]),
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-1', cloudOnly: true, createdAt: 500 }),
+    );
+    await component.confirmDownload();
+
+    expect(latest.activeSessionId).toBe('active-local');
+    expect(latest.activeClientUpdatedAt).toBe(200);
+    expect(latest.activeSyncedAt).toBe(100);
+    expect(latest.activeClientUpdatedAt! > latest.activeSyncedAt!).toBe(true);
+    expect(latest.trading?.sessionName).toBe('Local dirty');
+    expect(latest.sessions?.find((session) => session.id === 'cloud-1')).toEqual(
+      expect.objectContaining({ clientUpdatedAt: 500, syncedAt: 500 }),
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'EURUSD',
+        thenOpenSession: 'cloud-1',
+      }),
+    );
   });
 
   it('open: a cloud-only card whose datasets are already cached opens directly, no modal', async () => {

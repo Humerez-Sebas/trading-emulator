@@ -12,6 +12,12 @@ export function workspaceDbStub(): Partial<
 > {
   const getMeta = vi.fn().mockResolvedValue(undefined);
   const putMeta = vi.fn().mockResolvedValue(undefined);
+  const updateMeta = vi.fn(
+    async (symbol: string, update: Parameters<WorkspaceDbService['updateMeta']>[1]) => {
+      const next = update(await getMeta(symbol));
+      if (next) await putMeta(next);
+    },
+  );
   const putFolder = vi.fn().mockResolvedValue(undefined);
   const deleteFolder = vi.fn().mockResolvedValue(undefined);
   const addPendingDelete = vi.fn().mockResolvedValue(undefined);
@@ -22,12 +28,17 @@ export function workspaceDbStub(): Partial<
     getMeta,
     getSeriesInfo: vi.fn().mockResolvedValue(null),
     putMeta,
-    updateMeta: vi.fn(
-      async (symbol: string, update: Parameters<WorkspaceDbService['updateMeta']>[1]) => {
-        const next = update(await getMeta(symbol));
-        if (next) await putMeta(next);
-      },
-    ),
+    updateMeta,
+    updateMetaIfUnchanged: vi.fn(async (symbol, expected, update) => {
+      let committed = false;
+      await updateMeta(symbol, (current) => {
+        if (JSON.stringify(current) !== JSON.stringify(expected)) return undefined;
+        const next = update(current);
+        committed = next !== undefined;
+        return next;
+      });
+      return committed;
+    }),
     putSeries: vi.fn().mockResolvedValue(undefined),
     appendSeriesChunk: vi.fn().mockResolvedValue(undefined),
     remove: vi.fn().mockResolvedValue(undefined),
