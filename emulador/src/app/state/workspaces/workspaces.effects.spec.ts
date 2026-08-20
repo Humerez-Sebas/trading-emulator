@@ -15,9 +15,10 @@ import { ReplayActions } from '../replay/replay.actions';
 import { TradingActions } from '../trading/trading.actions';
 import { DrawingsActions } from '../drawings/drawings.actions';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
-import { series, closed, workspace } from '../../testing/fixtures';
+import { series, closed, savedSession, workspace, workspaceMeta } from '../../testing/fixtures';
 import { emptyWorkspace } from './workspaces.models';
-import { defaultTradingData } from '../trading/trading.models';
+import { defaultTradingData, pickTradingData } from '../trading/trading.models';
+import { tradingFeature } from '../trading/trading.reducer';
 import { createInitialLayoutState } from '../layout/layout.models';
 import { LayoutActions } from '../layout/layout.actions';
 import { LinkGroupsActions } from '../link-groups/link-groups.actions';
@@ -1191,6 +1192,61 @@ describe('WorkspacesEffects', () => {
           activeSyncedAt: undefined,
         }),
       );
+    });
+
+    it('persists current B without resurrecting A after committed active deletion interleaves', async () => {
+      vi.useFakeTimers();
+      const archivedA = savedSession({ id: 'active-a', name: 'A' });
+      const currentB = tradingFeature.reducer(
+        {
+          ...defaultTradingData(),
+          sessionName: 'B',
+          balance: 12000,
+          summaryOpen: false,
+          savedSessions: [archivedA],
+          activeSessionId: 'active-b',
+        },
+        {
+          type: TradingActions.deleteActiveSessionCommitted.type,
+          deletedId: 'active-a',
+          replacementActiveSessionId: 'db-replacement',
+        } as never,
+      );
+      let durable = workspaceMeta({
+        symbol: SYMBOL,
+        activeSessionId: 'db-replacement',
+        sessions: [],
+      });
+      const updateMeta = vi.fn(
+        async (
+          _symbol: string,
+          update: (current: typeof durable) => typeof durable | undefined,
+        ) => {
+          durable = update(durable) ?? durable;
+        },
+      );
+      setupTestBed({ updateMeta });
+      store.overrideSelector(selectCurrentAsset, SYMBOL);
+      store.overrideSelector(selectWorkspaceMetaSnapshot, {
+        ...metaSnap,
+        trading: pickTradingData(currentB),
+        sessions: currentB.savedSessions,
+        activeSessionId: currentB.activeSessionId,
+      });
+      store.refreshState();
+
+      const sub = effects.persistMeta$.subscribe();
+      store.refreshState();
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+      await Promise.resolve();
+      sub.unsubscribe();
+      vi.useRealTimers();
+
+      expect(durable.activeSessionId).toBe('active-b');
+      expect(durable.trading?.sessionName).toBe('B');
+      expect(durable.trading?.balance).toBe(12000);
+      expect(durable.sessions).toEqual([]);
     });
   });
 });

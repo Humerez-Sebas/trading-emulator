@@ -1075,14 +1075,17 @@ export class SesionesPageComponent {
     );
     if (!deleted) return;
     if (card.symbol === this.currentAsset()) {
-      if (!this.currentRevisionStillMatches(revision)) return;
-      this.store.dispatch(
-        revision.kind === 'active'
-          ? TradingActions.deleteActiveSessionCommitted({
-              replacementActiveSessionId: deleted.replacementActiveSessionId!,
-            })
-          : TradingActions.deleteSession({ id: revision.id }),
-      );
+      if (revision.kind === 'active') {
+        this.store.dispatch(
+          TradingActions.deleteActiveSessionCommitted({
+            deletedId: deleted.deletedId,
+            replacementActiveSessionId: deleted.replacementActiveSessionId!,
+          }),
+        );
+      } else {
+        if (!this.currentRevisionStillMatches(revision)) return;
+        this.store.dispatch(TradingActions.deleteSession({ id: revision.id }));
+      }
     } else {
       await this.reload();
     }

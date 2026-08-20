@@ -661,11 +661,41 @@ describe('trading reducer: deleteActiveSession', () => {
       state({ activeSessionId: 'old-active', history: [closed()] }),
       {
         type: TradingActions.deleteActiveSessionCommitted.type,
+        deletedId: 'old-active',
         replacementActiveSessionId: 'active-next',
       } as never,
     );
 
     expect(next.activeSessionId).toBe('active-next');
+  });
+
+  it('removes committed A from archives without resetting current B', () => {
+    const archivedA = {
+      id: 'active-a',
+      name: 'A',
+      createdAt: 1,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    };
+    const currentB = state({
+      activeSessionId: 'active-b',
+      sessionName: 'B',
+      balance: 12000,
+      history: [closed({ id: 'b-trade', profit: 2000 })],
+      savedSessions: [archivedA],
+    });
+
+    const next = reducer(currentB, {
+      type: TradingActions.deleteActiveSessionCommitted.type,
+      deletedId: 'active-a',
+      replacementActiveSessionId: 'db-replacement',
+    } as never);
+
+    expect(next.activeSessionId).toBe('active-b');
+    expect(next.sessionName).toBe('B');
+    expect(next.balance).toBe(12000);
+    expect(next.history).toEqual(currentB.history);
+    expect(next.savedSessions).toEqual([]);
   });
 });
 

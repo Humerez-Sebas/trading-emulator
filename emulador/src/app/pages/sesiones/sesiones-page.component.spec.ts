@@ -1862,10 +1862,54 @@ describe('SesionesPageComponent', () => {
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: TradingActions.deleteActiveSessionCommitted.type,
+        deletedId: 'active-a',
         replacementActiveSessionId: 'active-next',
       }),
     );
     expect(syncStub.flushPendingDeletes).toHaveBeenCalledOnce();
+  });
+
+  it('remove dispatches committed A after NgRx switches to B during the DB await', async () => {
+    let release!: (result: { deletedId: string; replacementActiveSessionId: string }) => void;
+    const deleteSessionIfUnchanged = vi.fn(
+      () =>
+        new Promise<{ deletedId: string; replacementActiveSessionId: string }>((resolve) => {
+          release = resolve;
+        }),
+    );
+    create({
+      currentAsset: 'XAUUSD',
+      authStatus: 'authenticated',
+      db: { deleteSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    const removing = component.remove(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 600,
+        syncedAt: 500,
+      }),
+    );
+    await Promise.resolve();
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-b');
+    store.refreshState();
+    release({ deletedId: 'active-a', replacementActiveSessionId: 'db-replacement' });
+    await removing;
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.deleteActiveSessionCommitted.type,
+        deletedId: 'active-a',
+        replacementActiveSessionId: 'db-replacement',
+      }),
+    );
   });
 
   it('remove ACTIVE current-asset session dispatches deleteActiveSession', async () => {
@@ -1903,6 +1947,7 @@ describe('SesionesPageComponent', () => {
 
     expect(dispatch).toHaveBeenCalledWith(
       TradingActions.deleteActiveSessionCommitted({
+        deletedId: 'a1',
         replacementActiveSessionId: 'replacement-active',
       }),
     );

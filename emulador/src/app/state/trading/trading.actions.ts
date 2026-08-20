@@ -94,7 +94,10 @@ export const TradingActions = createActionGroup({
     'Delete Session': props<{ id: string }>(),
     /** Deletes the ACTIVE/in-progress session: resets it to a fresh empty session (no archive). */
     'Delete Active Session': emptyProps(),
-    'Delete Active Session Committed': props<{ replacementActiveSessionId: string }>(),
+    'Delete Active Session Committed': props<{
+      deletedId: string;
+      replacementActiveSessionId: string;
+    }>(),
     /**
      * Renames an ARCHIVED session (the active one uses Set Session Name).
      * `clientUpdatedAt` (epoch ms, from the dispatcher) stamps the edited

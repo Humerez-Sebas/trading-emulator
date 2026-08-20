@@ -412,13 +412,17 @@ export const tradingFeature = createFeature({
     ),
     on(
       TradingActions.deleteActiveSessionCommitted,
-      (state, { replacementActiveSessionId }): TradingState => ({
-        ...defaultTradingData(state.initialBalance),
-        riskPct: state.riskPct,
-        summaryOpen: false,
-        savedSessions: state.savedSessions,
-        activeSessionId: replacementActiveSessionId,
-      }),
+      (state, { deletedId, replacementActiveSessionId }): TradingState => {
+        const savedSessions = state.savedSessions.filter((session) => session.id !== deletedId);
+        if (state.activeSessionId !== deletedId) return { ...state, savedSessions };
+        return {
+          ...defaultTradingData(state.initialBalance),
+          riskPct: state.riskPct,
+          summaryOpen: false,
+          savedSessions,
+          activeSessionId: replacementActiveSessionId,
+        };
+      },
     ),
     on(TradingActions.renameSession, (state, { id, name, clientUpdatedAt }): TradingState => {
       const trimmed = name.trim();
