@@ -464,6 +464,8 @@ TDD evidence, raw and unpiped from `emulador/`:
   Combined GREEN: exit `0`, **156/156**.
 - Fresh final affected command (Sessions page, WorkspaceDbService, SessionSyncService, playbook and
   lesson effects, and both owner DB services): exit `0`, **8 files / 287 tests passed**.
+- Fresh required repository test gate `npx ng test --watch=false`: exit `0`,
+  **186 files / 2515 tests passed**.
 - Fresh `npx tsc -p tsconfig.app.json --noEmit`: exit `0`, no output.
 - Fresh `npx tsc -p tsconfig.spec.json --noEmit`: exit `0`, no output.
 - First lint run exposed one unused test mock parameter and exited `1`; after removing only that

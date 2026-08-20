@@ -216,4 +216,5 @@ without changing the migration layout or O-7:
 
 Implementation heads are `1d35601`, `a61c57c`, `46e1c3d`, `3df3d7b`, and the test-harness lint
 cleanup `75f846c`. Fresh bounded evidence: affected tests **8 files / 287 passed**, app/spec tsc
-exit `0`, lint exit `0`. This is implementer evidence only, not independent acceptance.
+exit `0`, lint exit `0`; the required repository test gate passed **186 files / 2515 tests**.
+This is implementer evidence only, not independent acceptance.
