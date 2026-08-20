@@ -243,3 +243,28 @@ Focused accepted RED/GREEN counts were session service **4/58 -> 58/58**, sessio
 and page **1/108 -> 108/108**; reorder service **2/61 -> 61/61** and page
 **2/108 -> 108/108**. Fresh affected evidence passed **13 files / 451 tests**; app/spec tsc and
 lint exited `0`. No full suite/build or independent acceptance is claimed.
+
+## Fresh four-finding correction addendum (2026-08-20)
+
+The migration layout and O-7 policy are unchanged. Four Medium findings were corrected from
+rejected head `e1be2a5`:
+
+1. Current-active archive captures A's intended payload before any await and writes only while both
+   durable exact id/clocks and live identity still name A. A captured payload newer than durable A
+   receives a monotonic dirty clock and remains flush-eligible; later edits or an A-to-B transition
+   cannot be read under stale clean-A provenance.
+2. Archived exact matching requires row existence. Equal `undefined` clocks on an absent card no
+   longer authorize rename, move, or delete, and the real delete transaction cannot enqueue the id
+   when that same id became active.
+3. A committed active delete carries deleted A into an identity-specific reducer consequence. It
+   removes archived A without resetting current B, and the subsequent workspace persistence write
+   cannot restore A to IndexedDB.
+4. Same-symbol cloud opening preserves B custom timeframe, replay speed as milliseconds per candle,
+   and replay resolution through local materialization and existing hydration actions. The folded
+   market/replay/trading/layout/workspace reducer view is coherently B.
+
+Implementation heads: `56e6a09`, `034123d`, `c56ef25`, and `3fa21e5`. Accepted focused RED/GREEN
+counts were archive **2/110 -> 110/110**, archived existence **2/63 -> 63/63**, committed delete
+**4/215 -> 215/215**, and replay settings **1/111 -> 111/111**. Fresh affected evidence passed
+**10 files / 464 tests**; app/spec tsc and lint exited `0`. No full suite/build or independent
+acceptance is claimed.

@@ -535,3 +535,54 @@ Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
 
 No full repository test suite or build was run in this continuation; the evidence above is the
 requested affected suite plus app/spec tsc and lint, not final-gate evidence.
+
+## 2026-08-20 fresh four-finding review continuation
+
+The historical acceptance statements remain historical. A new review of rejected head `e1be2a5`
+reported four Medium findings. This continuation fixes only those findings and does not claim
+independent acceptance or full final gates. No dependency, lockfile, Supabase, Vercel, framework,
+other-worktree, remote, push, merge, reset, rebase, or squash operation was performed.
+
+Implementation commits:
+
+- `56e6a09` `fix(sessions): archive captured active revision`
+- `034123d` `fix(sessions): require archived row revision`
+- `c56ef25` `fix(sessions): reconcile committed active delete`
+- `3fa21e5` `fix(sessions): restore cloud replay settings`
+
+Corrections:
+
+- Current-active archive captures A identity, trading payload, cursor, and replay settings before
+  IndexedDB access; the transaction callback rechecks the live A identity and the durable exact
+  id/clocks before writing. A payload that differs from durable A receives a monotonic
+  `clientUpdatedAt > syncedAt`, and that exact dirty clock is dispatched with the archived state.
+- Archived revision matching now requires a saved row to exist before exact clocks can match.
+  An absent unclocked row cannot authorize rename/move/delete, including when its id is now active,
+  and the real `meta + sync` delete transaction enqueues nothing.
+- Committed active deletion dispatches an identity-specific consequence carrying deleted A. The
+  reducer resets only if A remains active; if B became active, it removes archived A and preserves
+  B byte-for-byte. The persistence-effect interleave writes B without A, so A cannot be resurrected.
+- Same-symbol cloud materialization carries B `customTfMinutes`, millisecond-per-candle
+  `playbackSpeed`, and `replayResolution` through `SavedSession`/`WorkspaceMeta`, then uses the
+  existing market/replay actions. Real market, replay, trading, layout, and workspace reducers prove
+  the resulting view is one coherent B aggregate rather than B trading over A replay settings.
+
+TDD evidence, raw and unpiped from `emulador/`:
+
+- Archive RED: Sessions page exit `1`, **2 failed / 108 passed (110)**. GREEN after the intended
+  dirty-clock assertion was updated: exit `0`, **110/110**.
+- Archived absent-row RED: WorkspaceDbService exit `1`, **2 failed / 61 passed (63)**. GREEN:
+  exit `0`, **63/63**.
+- Committed-delete interleave RED: component/reducer/effect command exit `1`, **4 failed / 211 passed
+  (215)**. GREEN: exit `0`, **3 files / 215 tests passed**.
+- Replay-settings RED: Sessions page exit `1`, **1 failed / 110 passed (111)**. GREEN: **111/111**;
+  focused affected expansion passed **8 files / 397 tests**.
+
+Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
+
+- Aggregate affected command (10 explicit files) -> exit `0`, **10 files / 464 tests passed**.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- `npm run lint` -> exit `0`, `All files pass linting.`
+
+No full repository test suite or build was run; this is bounded implementer evidence only.
