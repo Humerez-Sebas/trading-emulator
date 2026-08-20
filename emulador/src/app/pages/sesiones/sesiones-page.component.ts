@@ -47,6 +47,7 @@ import {
   selectResolutionMinutes,
   selectSavedSessions,
   selectTradingData,
+  selectWorkspaceMetaSnapshot,
 } from '../../state/selectors';
 import { marketFeature } from '../../state/market/market.reducer';
 import { MarketActions } from '../../state/market/market.actions';
@@ -81,6 +82,7 @@ type PendingDownload =
       payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3;
       expectedOwnerId: string;
       expectedMeta: WorkspaceMeta | undefined;
+      expectedLiveAggregate: string | null;
     };
 
 /** One row in the folder navigator sidebar. */
@@ -282,6 +284,24 @@ export class SesionesPageComponent {
   private liveReplayResolution = this.store.selectSignal(selectResolutionMinutes);
   private liveDrawings = this.store.selectSignal(selectAllDrawings);
   private liveLoadedTfs = this.store.selectSignal(selectLoadedTfs);
+  private liveWorkspaceAggregate = this.store.selectSignal(selectWorkspaceMetaSnapshot);
+
+  private serializeLiveAggregate(): string {
+    return JSON.stringify({
+      workspace: this.liveWorkspaceAggregate(),
+      activeSessionId: this.liveActiveSessionId(),
+      trading: this.liveTrading(),
+      currentTime: this.currentTime(),
+      customTfMinutes: this.liveCustomTf(),
+      playbackSpeed: this.livePlaybackSpeed(),
+      replayResolution: this.liveReplayResolution(),
+    });
+  }
+
+  private liveAggregateStillMatches(symbol: string, expected: string | null): boolean {
+    if (symbol !== this.currentAsset()) return expected === null;
+    return expected !== null && this.serializeLiveAggregate() === expected;
+  }
 
   /** Flat list of every session as a card (live state wins for the open asset). */
   private allCards = computed<SessionCard[]>(() => {
@@ -696,6 +716,7 @@ export class SesionesPageComponent {
           pending.payload,
           pending.expectedOwnerId,
           pending.expectedMeta,
+          pending.expectedLiveAggregate,
         );
       }
     } catch (e) {
@@ -848,19 +869,34 @@ export class SesionesPageComponent {
   private async openCloudOnlySession(card: SessionCard): Promise<void> {
     if (!card.id) return;
     try {
+      const expectedLiveAggregate =
+        card.symbol === this.currentAsset() ? this.serializeLiveAggregate() : null;
       const expectedOwnerId = await this.sync.captureOwner();
       const expectedMeta = await this.db.getMeta(card.symbol);
       await this.sync.assertExpectedOwner(expectedOwnerId);
       const payload = await this.sync.fetchPayload(card.id);
       const missing = missingDatasets(payload.requiredDatasets, this.localDatasets());
       if (missing.length) {
-        this.pendingDownload.set({ kind: 'cloudOpen', card, payload, expectedOwnerId, expectedMeta });
+        this.pendingDownload.set({
+          kind: 'cloudOpen',
+          card,
+          payload,
+          expectedOwnerId,
+          expectedMeta,
+          expectedLiveAggregate,
+        });
         this.downloadError.set('');
         this.downloadProgress.set(null);
         this.missing.set(missing);
         return;
       }
-      await this.materializeAndOpen(card, payload, expectedOwnerId, expectedMeta);
+      await this.materializeAndOpen(
+        card,
+        payload,
+        expectedOwnerId,
+        expectedMeta,
+        expectedLiveAggregate,
+      );
     } catch (e) {
       this.importError.set((e as Error).message || 'No se pudo descargar la sesión desde la nube.');
     }
@@ -876,6 +912,7 @@ export class SesionesPageComponent {
     payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3,
     expectedOwnerId: string,
     expectedMeta: WorkspaceMeta | undefined,
+    expectedLiveAggregate: string | null,
   ): Promise<void> {
     if (!card.id) return;
     const restored = fromPayload(payload, card.symbol);
@@ -895,6 +932,7 @@ export class SesionesPageComponent {
       syncedAt: card.createdAt,
     };
     await this.sync.assertExpectedOwner(expectedOwnerId);
+    if (!this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)) return;
     const committed = await this.db.promoteSessionIfUnchanged(card.symbol, expectedMeta, {
       session,
       activeTf: restored.activeTf,

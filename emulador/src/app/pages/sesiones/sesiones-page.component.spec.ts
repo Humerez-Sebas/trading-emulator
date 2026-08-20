@@ -16,6 +16,7 @@ import {
   selectResolutionMinutes,
   selectTradingData,
   selectSavedSessions,
+  selectWorkspaceMetaSnapshot,
 } from '../../state/selectors';
 import { authFeature } from '../../state/auth/auth.reducer';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
@@ -362,6 +363,20 @@ describe('SesionesPageComponent', () => {
     store.overrideSelector(selectCurrentTime, opts.currentTime ?? 0);
     store.overrideSelector(selectTradingData, opts.liveTrading ?? defaultTradingData());
     store.overrideSelector(selectSavedSessions, opts.liveSessions ?? []);
+    const view = singlePanelLayoutFor(opts.currentAsset ?? '', 'M1');
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      files: {},
+      activeTf: null,
+      selectedTfs: undefined,
+      currentTime: opts.currentTime ?? 0,
+      drawings: [],
+      trading: opts.liveTrading ?? defaultTradingData(),
+      sessions: opts.liveSessions ?? [],
+      activeSessionId: null,
+      layout: view.layout,
+      panels: view.panels,
+      linkGroups: {},
+    });
     store.overrideSelector(authFeature.selectStatus, opts.authStatus ?? 'anonymous');
     store.refreshState();
 
@@ -1025,6 +1040,72 @@ describe('SesionesPageComponent', () => {
         thenOpenSession: undefined,
       }),
     );
+  });
+
+  it('open: same-symbol materialization rejects an unpersisted same-id live A edit', async () => {
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    let resolvePayload!: (value: typeof payload) => void;
+    const fetchPayload = vi.fn(
+      () => new Promise<typeof payload>((resolve) => (resolvePayload = resolve)),
+    );
+    let durable = activeA;
+    const promoteSessionIfUnchanged = vi.fn(async () => {
+      durable = { ...durable, activeSessionId: 'cloud-b', trading: payload.trading };
+      return true;
+    });
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        getMeta: vi.fn(async () => durable),
+        promoteSessionIfUnchanged,
+      },
+      sync: { fetchPayload },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(fetchPayload).toHaveBeenCalledOnce());
+    store.overrideSelector(selectTradingData, {
+      ...activeA.trading!,
+      sessionName: 'A edited live',
+      balance: 13000,
+    });
+    store.refreshState();
+    resolvePayload(payload);
+    await opening;
+
+    expect(promoteSessionIfUnchanged).not.toHaveBeenCalled();
+    expect(durable).toEqual(activeA);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+    expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
   });
 
   it('open: same-symbol cloud B really hydrates B while A is archived without a mixed aggregate', async () => {
