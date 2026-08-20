@@ -151,6 +151,14 @@ function nextClientClock(now: number, clientUpdatedAt?: number, syncedAt?: numbe
   return Math.max(now, (clientUpdatedAt ?? 0) + 1, (syncedAt ?? 0) + 1);
 }
 
+function matchesActiveCard(meta: WorkspaceMeta, card: SessionCard): boolean {
+  return (
+    (meta.activeSessionId ?? null) === (card.syncId ?? null) &&
+    meta.activeClientUpdatedAt === card.clientUpdatedAt &&
+    meta.activeSyncedAt === card.syncedAt
+  );
+}
+
 /**
  * Pure reorder helper for the folder sidebar's drag-drop. Given the current
  * folder order and a drag of `draggedId` onto `targetId`, returns a NEW array
@@ -892,8 +900,10 @@ export class SesionesPageComponent {
     });
     if (!name || name === card.name) return;
     if (card.symbol === this.currentAsset()) {
-      if (card.id === null) this.store.dispatch(TradingActions.setSessionName({ name }));
-      else
+      if (card.id === null) {
+        if ((card.syncId ?? null) !== (this.liveActiveSessionId() ?? null)) return;
+        this.store.dispatch(TradingActions.setSessionName({ name }));
+      } else {
         this.store.dispatch(
           TradingActions.renameSession({
             id: card.id,
@@ -901,12 +911,13 @@ export class SesionesPageComponent {
             clientUpdatedAt: nextClientClock(Date.now(), card.clientUpdatedAt, card.syncedAt),
           }),
         );
+      }
     } else {
       let changed = false;
       await this.db.updateMeta(card.symbol, (meta) => {
         if (!meta) return undefined;
         if (card.id === null) {
-          if (!meta.trading) return undefined;
+          if (!meta.trading || !matchesActiveCard(meta, card)) return undefined;
           changed = true;
           return {
             ...meta,
@@ -945,19 +956,14 @@ export class SesionesPageComponent {
   async archive(card: SessionCard): Promise<void> {
     if (!card.active) return;
     if (card.symbol === this.currentAsset()) {
+      if ((card.syncId ?? null) !== (this.liveActiveSessionId() ?? null)) return;
       this.store.dispatch(TradingActions.newSession({ currentCursor: this.currentTime() }));
     } else {
       let changed = false;
       await this.db.updateMeta(card.symbol, (meta) => {
         const t = meta?.trading;
         if (!meta || !t) return undefined;
-        if (
-          card.clientUpdatedAt != null &&
-          (meta.activeClientUpdatedAt !== card.clientUpdatedAt ||
-            meta.activeSyncedAt !== card.syncedAt)
-        ) {
-          return undefined;
-        }
+        if (!matchesActiveCard(meta, card)) return undefined;
         changed = true;
         const real = t.orders.length > 0 || t.positions.length > 0 || t.history.length > 0;
         return {
@@ -1006,6 +1012,7 @@ export class SesionesPageComponent {
       let oldId: string | null | undefined;
       let wasSynced = false;
       if (card.symbol === this.currentAsset()) {
+        if ((card.syncId ?? null) !== (this.liveActiveSessionId() ?? null)) return;
         const meta = await this.db.getMeta(card.symbol);
         oldId = meta?.activeSessionId;
         wasSynced = meta?.activeSyncedAt != null;
@@ -1014,13 +1021,7 @@ export class SesionesPageComponent {
         let changed = false;
         await this.db.updateMeta(card.symbol, (meta) => {
           if (!meta) return undefined;
-          if (
-            card.clientUpdatedAt != null &&
-            (meta.activeClientUpdatedAt !== card.clientUpdatedAt ||
-              meta.activeSyncedAt !== card.syncedAt)
-          ) {
-            return undefined;
-          }
+          if (!matchesActiveCard(meta, card)) return undefined;
           changed = true;
           oldId = meta.activeSessionId;
           wasSynced = meta.activeSyncedAt != null;
@@ -1239,6 +1240,12 @@ export class SesionesPageComponent {
   async moveToFolder(card: SessionCard, folderId: string | null): Promise<void> {
     if (card.folderId === folderId) return;
     if (card.symbol === this.currentAsset()) {
+      if (
+        card.id === null &&
+        (card.syncId ?? null) !== (this.liveActiveSessionId() ?? null)
+      ) {
+        return;
+      }
       this.store.dispatch(
         TradingActions.setSessionFolder({
           id: card.id,
@@ -1251,7 +1258,7 @@ export class SesionesPageComponent {
       await this.db.updateMeta(card.symbol, (meta) => {
         if (!meta) return undefined;
         if (card.id === null) {
-          if (!meta.trading) return undefined;
+          if (!meta.trading || !matchesActiveCard(meta, card)) return undefined;
           changed = true;
           return {
             ...meta,

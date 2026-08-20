@@ -990,7 +990,17 @@ describe('SesionesPageComponent', () => {
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
 
-    await component.rename(card({ symbol: 'EURUSD', id: null, active: true, name: 'Anterior' }));
+    await component.rename(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-1',
+        active: true,
+        name: 'Anterior',
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+    );
 
     expect(written?.trading?.sessionName).toBe('Nuevo');
     expect(written?.activeClientUpdatedAt).toBeGreaterThan(500);
@@ -1030,6 +1040,43 @@ describe('SesionesPageComponent', () => {
     expect(written?.activeSyncedAt).toBe(800);
     expect(written?.trading?.balance).toBe(12345);
     expect(written?.sessions?.[0].name).toBe('Nuevo');
+  });
+
+  it('rename does not let a pending active card A rename replacement B with equal clocks', async () => {
+    const replacement = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'B' },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(replacement);
+      },
+    );
+    let resolvePrompt!: (name: string) => void;
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    dialogsStub.prompt.mockImplementation(() => new Promise((resolve) => (resolvePrompt = resolve)));
+    await settle();
+
+    const renaming = component.rename(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        name: 'A',
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+    );
+    resolvePrompt('Renamed A');
+    await renaming;
+
+    expect(written).toBeUndefined();
+    expect(replacement.trading?.sessionName).toBe('B');
   });
 
   it('rename off-screen archived does NOT flush when not authenticated', async () => {
@@ -1130,7 +1177,15 @@ describe('SesionesPageComponent', () => {
     dialogsStub.deleteSession.mockResolvedValue(true);
     await settle();
 
-    await component.remove(card({ symbol: 'EURUSD', id: null, active: true }));
+    await component.remove(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'cloud-active',
+        active: true,
+        syncedAt: 123,
+      }),
+    );
 
     const written = putMeta.mock.calls.at(-1)![0] as {
       trading: TradingData;
@@ -1224,6 +1279,52 @@ describe('SesionesPageComponent', () => {
 
     expect(written).toBeUndefined();
     expect(dbStub.addPendingDelete).not.toHaveBeenCalled();
+  });
+
+  it('remove does not let pending active card A reset or queue replacement B with equal clocks', async () => {
+    const replacement = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(replacement);
+      },
+    );
+    let resolveDelete!: (confirmed: boolean) => void;
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockImplementation(
+      () => new Promise((resolve) => (resolveDelete = resolve)),
+    );
+    await settle();
+
+    const removing = component.remove(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+    );
+    resolveDelete(true);
+    await removing;
+
+    expect(written).toBeUndefined();
+    expect(replacement.trading?.sessionName).toBe('B');
+    expect(dbStub.addPendingDelete).not.toHaveBeenCalledWith({
+      entity: 'session',
+      id: 'active-b',
+    });
   });
 
   it('remove ACTIVE current-asset session dispatches deleteActiveSession', async () => {
@@ -1710,12 +1811,55 @@ describe('SesionesPageComponent', () => {
     });
     await settle();
 
-    await component.moveToFolder(card({ symbol: 'EURUSD', id: null, active: true }), 'f1');
+    await component.moveToFolder(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-1',
+        active: true,
+        clientUpdatedAt: 700,
+        syncedAt: 700,
+      }),
+      'f1',
+    );
 
     expect(written?.trading?.folderId).toBe('f1');
     expect(written?.activeClientUpdatedAt).toBeGreaterThan(700);
     expect(written?.activeSyncedAt).toBe(700);
     expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('moveToFolder does not let active card A move replacement B with equal clocks', async () => {
+    const replacement = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'B', folderId: null },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(replacement);
+      },
+    );
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    await settle();
+
+    await component.moveToFolder(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+      'f1',
+    );
+
+    expect(written).toBeUndefined();
+    expect(replacement.trading?.folderId).toBeNull();
   });
 
   it('moveToFolder keeps archived clock semantics while preserving newer active revisions', async () => {
@@ -2063,7 +2207,15 @@ describe('SesionesPageComponent', () => {
       },
     });
     await settle();
-    await component.archive(card({ symbol: 'EURUSD', id: null, active: true }));
+    await component.archive(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'eur-active',
+        active: true,
+        syncedAt: 7,
+      }),
+    );
     const written = putMeta.mock.calls.at(-1)![0] as {
       sessions: { id: string }[];
       trading: TradingData;
@@ -2073,6 +2225,39 @@ describe('SesionesPageComponent', () => {
     expect(written.sessions[0].id).toBe('eur-active');
     expect(written.trading.history).toEqual([]);
     expect(written.activeSessionId).not.toBe('eur-active');
+  });
+
+  it('archive does not let active card A archive replacement B with equal clocks', async () => {
+    const replacement = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(replacement);
+      },
+    );
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    await settle();
+
+    await component.archive(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+    );
+
+    expect(written).toBeUndefined();
+    expect(replacement.activeSessionId).toBe('active-b');
+    expect(replacement.trading?.sessionName).toBe('B');
   });
 
   beforeEach(() => {
