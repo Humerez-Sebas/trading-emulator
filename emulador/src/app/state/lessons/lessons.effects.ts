@@ -24,6 +24,7 @@ import {
 } from '../../services/session-sync.service';
 import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
+import { OwnerIdentityService } from '../../services/owner-identity.service';
 
 @Injectable()
 export class LessonsEffects {
@@ -31,6 +32,7 @@ export class LessonsEffects {
   private store = inject(Store);
   private db = inject(LessonsDbService);
   private sync = inject(SessionSyncService);
+  private owner = inject(OwnerIdentityService);
 
   /**
    * Bootstrap hydration: dispatch LessonsActions.hydrate on app initialization
@@ -192,8 +194,8 @@ export class LessonsEffects {
   }
 
   private async persistLessons(lessons: Lesson[]): Promise<void> {
-    const expectedOwnerId = await this.sync.captureOwner();
-    await this.sync.assertExpectedOwner(expectedOwnerId);
+    const expectedOwnerId = await this.owner.ownerId();
+    if (!expectedOwnerId) return;
     await this.db.upsertMany(lessons, expectedOwnerId);
   }
 }

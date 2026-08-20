@@ -114,6 +114,29 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
     vi.useRealTimers();
   });
 
+  describe('persist$', () => {
+    it('persists to the memoized owner partition when the token expires offline', async () => {
+      const currentLessons = [lesson('offline', { clientUpdatedAt: 100 })];
+      store.overrideSelector(selectLessons, currentLessons);
+      syncService.captureOwner.mockRejectedValue(new Error('token expired offline'));
+      const sub = effects.persist$.subscribe();
+
+      actions$.next(
+        LessonsActions.updateLesson({
+          id: 'offline',
+          whatHappened: 'updated',
+          clientUpdatedAt: 100,
+        }),
+      );
+      await settleEffects();
+
+      sub.unsubscribe();
+      expect(ownerService.ownerId).toHaveBeenCalled();
+      expect(syncService.captureOwner).not.toHaveBeenCalled();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentLessons, 'owner-a');
+    });
+  });
+
   describe('pushDirty$', () => {
     function setupAuthenticated(lessons: Lesson[]): void {
       store.overrideSelector(selectLessons, lessons);

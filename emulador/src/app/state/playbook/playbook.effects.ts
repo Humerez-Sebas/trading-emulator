@@ -24,6 +24,7 @@ import { PlaybookActions } from './playbook.actions';
 import { selectPlaybookRules } from './playbook.selectors';
 import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
+import { OwnerIdentityService } from '../../services/owner-identity.service';
 
 @Injectable()
 export class PlaybookEffects {
@@ -31,6 +32,7 @@ export class PlaybookEffects {
   private store = inject(Store);
   private db = inject(PlaybookDbService);
   private sync = inject(SessionSyncService);
+  private owner = inject(OwnerIdentityService);
 
   /**
    * Bootstrap hydration: dispatch PlaybookActions.hydrate on app initialization,
@@ -200,8 +202,8 @@ export class PlaybookEffects {
   }
 
   private async persistRules(rules: PlaybookRule[]): Promise<void> {
-    const expectedOwnerId = await this.sync.captureOwner();
-    await this.sync.assertExpectedOwner(expectedOwnerId);
+    const expectedOwnerId = await this.owner.ownerId();
+    if (!expectedOwnerId) return;
     await this.db.upsertMany(rules, expectedOwnerId);
   }
 }

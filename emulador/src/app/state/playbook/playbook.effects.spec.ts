@@ -265,25 +265,48 @@ describe('PlaybookEffects', () => {
       expect(dbService.upsertMany).toHaveBeenCalledTimes(2);
     });
 
-    it('does not persist A rules when owner validation observes B', async () => {
-      let resolveCapture!: (owner: string) => void;
-      syncService.captureOwner.mockImplementationOnce(
-        () => new Promise((resolve) => (resolveCapture = resolve)),
+    it('persists to the memoized owner partition when live auth is unavailable', async () => {
+      const currentRules = [rule('offline', { clientUpdatedAt: 100 })];
+      store.overrideSelector(selectPlaybookRules, currentRules);
+      syncService.captureOwner.mockRejectedValue(new Error('token expired offline'));
+      const sub = effects.persist$.subscribe();
+
+      actions$.next(
+        PlaybookActions.updateRule({ id: 'offline', title: 'updated', clientUpdatedAt: 100 }),
       );
+      await settleEffects();
+
+      sub.unsubscribe();
+      expect(ownerService.ownerId).toHaveBeenCalled();
+      expect(syncService.captureOwner).not.toHaveBeenCalled();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
+    });
+
+    it('does not persist A rules when owner validation observes B', async () => {
+      let resolveOwner!: (owner: string) => void;
+      let persisted = false;
+      ownerService.ownerId.mockImplementationOnce(
+        () => new Promise((resolve) => (resolveOwner = resolve)),
+      );
+      dbService.upsertMany.mockImplementationOnce(async (_rules, expected?: string) => {
+        if (expected && ownerId !== expected) throw new Error('owner drift');
+        persisted = true;
+      });
       store.overrideSelector(selectPlaybookRules, [rule('a')]);
       const sub = effects.persist$.subscribe();
 
       actions$.next(
         PlaybookActions.updateRule({ id: 'a', title: 'updated', clientUpdatedAt: 100 }),
       );
+      await Promise.resolve();
       ownerId = 'owner-b';
-      resolveCapture('owner-a');
+      resolveOwner('owner-a');
       await Promise.resolve();
       await Promise.resolve();
 
       sub.unsubscribe();
       await settleEffects();
-      expect(dbService.upsertMany).not.toHaveBeenCalled();
+      expect(persisted).toBe(false);
     });
   });
 
