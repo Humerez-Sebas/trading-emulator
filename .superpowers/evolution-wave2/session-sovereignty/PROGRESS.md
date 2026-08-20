@@ -586,3 +586,55 @@ Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
 - `npm run lint` -> exit `0`, `All files pass linting.`
 
 No full repository test suite or build was run; this is bounded implementer evidence only.
+
+## 2026-08-20 fresh three-finding review continuation from `a9da9c3`
+
+The historical acceptance statements remain historical. A new review of rejected clean head
+`a9da9c3` reported three Medium findings. This continuation fixes only those findings and does not
+claim independent acceptance or full final gates. No dependency, lockfile, Supabase, Vercel,
+framework, other-worktree, remote, push, merge, reset, rebase, or squash operation was performed.
+
+Implementation commits:
+
+- `481a3d5` `fix(sessions): preserve archived replay view`
+- `66d8526` `fix(folders): reject absent exact revisions`
+- `985534f` `fix(sessions): revalidate live aggregate before promotion`
+
+Corrections:
+
+- Current-active archive compares the captured custom timeframe, millisecond playback speed, and
+  replay resolution together with trading/cursor before assigning a monotonic dirty revision. The
+  committed action and trading reducer preserve those exact fields on `SavedSession`; workspace
+  clock reconciliation distinguishes captured `null` from absent legacy fields; archived flattening
+  now supplies a coherent view instead of the default. The reducer-to-owner-IndexedDB-to-flush proof
+  observed exact `45 / 250 / 5`, dirty `201 > 200`, and a candle-free cloud payload.
+- Folder replacement, all-or-nothing reorder participant validation, and atomic delete-plus-queue now
+  require the current row itself to exist before comparing clocks. Real fake-indexeddb probes prove
+  an absent legacy/unclocked row cannot be recreated, cannot cause any batch participant write, and
+  cannot enqueue a phantom cloud deletion.
+- Same-symbol cloud open captures the complete relevant live aggregate before owner/meta/payload or
+  dataset delay and revalidates it immediately before durable promotion. A deterministic same-id A
+  trading mutation with unchanged durable A now causes no promotion, hydration, or navigation; the
+  existing coherent B success proof remains green.
+
+TDD evidence, raw and unpiped from `emulador/`:
+
+- Archived view draft first failed compilation because two selector imports were missing; after
+  correcting only the test imports, the valid RED exited `1`, **3 failed / 182 passed (185)**. Focused
+  GREEN passed **3 files / 185 tests**; affected expansion passed **5 files / 293 tests**.
+- Folder absence RED exited `1`, **3 failed / 63 passed (66)**. GREEN passed **66/66**; affected
+  expansion passed **3 files / 254 tests**.
+- Delayed same-id live mutation RED exited `1`, **1 failed / 112 passed (113)**. The first post-fix
+  run exposed that the page test harness had no value for the newly-read aggregate selector; after
+  adding only that existing-selector override, GREEN passed **113/113** and the page plus real DB
+  expansion passed **2 files / 179 tests**.
+
+Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
+
+- Aggregate affected command (9 explicit files) -> exit `0`, **9 files / 476 tests passed**.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- `npm run lint` -> exit `0`, `All files pass linting.`
+
+No full repository test suite or build was run; this is bounded implementer evidence only and makes
+no acceptance claim.

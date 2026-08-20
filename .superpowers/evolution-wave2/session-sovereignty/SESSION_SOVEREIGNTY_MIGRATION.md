@@ -268,3 +268,24 @@ counts were archive **2/110 -> 110/110**, archived existence **2/63 -> 63/63**, 
 **4/215 -> 215/215**, and replay settings **1/111 -> 111/111**. Fresh affected evidence passed
 **10 files / 464 tests**; app/spec tsc and lint exited `0`. No full suite/build or independent
 acceptance is claimed.
+
+## Fresh three-finding correction addendum from `a9da9c3` (2026-08-20)
+
+The migration layout and O-7 policy are unchanged. Three later Medium findings were corrected from
+rejected clean head `a9da9c3`:
+
+1. Archive treats custom timeframe, millisecond playback speed, and replay resolution as part of the
+   captured active payload. Settings-only differences receive a monotonic dirty clock, survive the
+   trading action/reducer and workspace writer, and flatten with an archived view rather than legacy
+   defaults. The cloud proof carries exact values and remains candle-free.
+2. Every folder exact-revision writer requires row existence before clock equality. Missing unclocked
+   rows authorize neither rename replacement, any participant of a batch reorder, nor atomic local
+   delete/pending-cloud-delete enqueue.
+3. Delayed same-symbol materialization captures the live NgRx aggregate before I/O and compares it
+   immediately before promotion. Same-id trading/cursor/replay/layout change fails closed while
+   durable A stays unchanged; unchanged A can still promote and open coherent B.
+
+Implementation heads: `481a3d5`, `66d8526`, and `985534f`. Observed RED/GREEN counts were archived
+view **3/185 -> 185/185**, folder absence **3/66 -> 66/66**, and delayed same-id live mutation
+**1/113 -> 113/113**. Fresh affected evidence passed **9 files / 476 tests**; app/spec tsc and lint
+exited `0`. No full suite/build or independent acceptance is claimed.
