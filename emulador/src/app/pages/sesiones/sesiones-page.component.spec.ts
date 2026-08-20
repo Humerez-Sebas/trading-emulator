@@ -2946,11 +2946,13 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({
         type: TradingActions.newSession.type,
         currentCursor: 500,
-        archivedClientUpdatedAt: 10,
+        archivedClientUpdatedAt: expect.any(Number),
         archivedSyncedAt: 9,
         replacementActiveSessionId: expect.any(String),
       }),
     );
+    const action = dispatch.mock.calls.at(-1)?.[0] as ReturnType<typeof TradingActions.newSession>;
+    expect(action.archivedClientUpdatedAt).toBeGreaterThan(10);
   });
 
   it('archive on an off-screen active card moves it into meta.sessions (keeps cloud id) and resets', async () => {
@@ -3053,6 +3055,134 @@ describe('SesionesPageComponent', () => {
       },
       expect.any(Function),
     );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.newSession.type }),
+    );
+  });
+
+  it('archive captures a live edit before persistence and gives the archived payload a dirty clock', async () => {
+    const durable = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 400,
+      trading: { ...defaultTradingData(), sessionName: 'Durable A', balance: 10000 },
+    });
+    let latest = durable;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => (release = resolve));
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        await waiting;
+        const next = update(latest);
+        if (!next) return false;
+        latest = next;
+        return true;
+      },
+    );
+    const capturedEdit = { ...defaultTradingData(), sessionName: 'Captured A', balance: 11000 };
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      liveTrading: capturedEdit,
+      db: { replaceSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const archiving = component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+    store.overrideSelector(selectTradingData, {
+      ...capturedEdit,
+      sessionName: 'Later A edit',
+      balance: 12000,
+    });
+    store.refreshState();
+    release();
+    await archiving;
+
+    const archived = latest.sessions?.find((session) => session.id === 'active-a');
+    expect(archived?.trading).toEqual(capturedEdit);
+    expect(archived?.currentTime).toBe(500);
+    expect(archived?.clientUpdatedAt).toBeGreaterThan(100);
+    expect(archived?.syncedAt).toBe(100);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.newSession.type,
+        archivedClientUpdatedAt: archived?.clientUpdatedAt,
+        archivedSyncedAt: 100,
+      }),
+    );
+  });
+
+  it('archive rejects an A-to-B live transition while persistence is awaiting', async () => {
+    const durableA = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    });
+    let latest = durableA;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => (release = resolve));
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        await waiting;
+        const next = update(latest);
+        if (!next) return false;
+        latest = next;
+        return true;
+      },
+    );
+    create({
+      currentAsset: 'NAS100',
+      liveTrading: durableA.trading,
+      db: { replaceSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const archiving = component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-b');
+    store.overrideSelector(selectTradingData, {
+      ...defaultTradingData(),
+      sessionName: 'B',
+      balance: 12000,
+    });
+    store.refreshState();
+    release();
+    await archiving;
+
+    expect(latest).toEqual(durableA);
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: TradingActions.newSession.type }),
     );

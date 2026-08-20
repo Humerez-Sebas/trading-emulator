@@ -993,10 +993,23 @@ export class SesionesPageComponent {
     const revision = this.sessionRevision(card);
     if (!revision || revision.kind !== 'active') return;
     const current = card.symbol === this.currentAsset();
+    if (current && !this.currentRevisionStillMatches(revision)) return;
+    const intendedTrading = current ? this.liveTrading() : undefined;
+    const intendedCurrentTime = current ? this.currentTime() : undefined;
     const replacementActiveSessionId = newId();
+    let archivedClientUpdatedAt = revision.clientUpdatedAt;
     const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
-      const trading = current ? this.liveTrading() : meta.trading;
+      if (current && !this.currentRevisionStillMatches(revision)) return undefined;
+      const trading = intendedTrading ?? meta.trading;
       if (!trading) return undefined;
+      const currentTime = intendedCurrentTime ?? meta.currentTime;
+      const payloadChanged =
+        current &&
+        JSON.stringify({ trading, currentTime }) !==
+          JSON.stringify({ trading: meta.trading, currentTime: meta.currentTime });
+      archivedClientUpdatedAt = payloadChanged
+        ? nextClientClock(Date.now(), revision.clientUpdatedAt, revision.syncedAt)
+        : revision.clientUpdatedAt;
       const real =
         trading.orders.length > 0 || trading.positions.length > 0 || trading.history.length > 0;
       return {
@@ -1009,9 +1022,9 @@ export class SesionesPageComponent {
                   id: revision.id,
                   name: trading.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
                   createdAt: Date.now(),
-                  currentTime: current ? this.currentTime() : meta.currentTime,
+                  currentTime,
                   trading: { ...trading },
-                  clientUpdatedAt: revision.clientUpdatedAt,
+                  clientUpdatedAt: archivedClientUpdatedAt,
                   syncedAt: revision.syncedAt,
                 },
               ]
@@ -1029,7 +1042,7 @@ export class SesionesPageComponent {
         TradingActions.newSession({
           currentCursor: this.currentTime(),
           replacementActiveSessionId,
-          archivedClientUpdatedAt: revision.clientUpdatedAt,
+          archivedClientUpdatedAt,
           archivedSyncedAt: revision.syncedAt,
         }),
       );
