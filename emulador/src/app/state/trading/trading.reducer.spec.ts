@@ -824,6 +824,28 @@ describe('trading reducer: stable activeSessionId (Part A)', () => {
     );
   });
 
+  it('archives the replay settings captured by the committed new-session action', () => {
+    const s = state({ history: [closed()], activeSessionId: 'active-id-1' });
+    const next = reducer(
+      s,
+      TradingActions.newSession({
+        currentCursor: 100,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      } as never),
+    );
+
+    expect(next.savedSessions[0]).toEqual(
+      expect.objectContaining({
+        currentTime: 100,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      }),
+    );
+  });
+
   it('archiveActive mints a NEW id when activeSessionId is null', () => {
     const s = state({ history: [closed()], activeSessionId: null });
     const next = reducer(s, TradingActions.newSession({ currentCursor: 100 }));

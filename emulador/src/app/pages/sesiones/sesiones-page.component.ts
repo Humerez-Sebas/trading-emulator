@@ -1021,8 +1021,20 @@ export class SesionesPageComponent {
       const currentTime = intendedCurrentTime ?? meta.currentTime;
       const payloadChanged =
         current &&
-        JSON.stringify({ trading, currentTime }) !==
-          JSON.stringify({ trading: meta.trading, currentTime: meta.currentTime });
+        JSON.stringify({
+          trading,
+          currentTime,
+          customTfMinutes: intendedCustomTfMinutes,
+          playbackSpeed: intendedPlaybackSpeed,
+          replayResolution: intendedReplayResolution,
+        }) !==
+          JSON.stringify({
+            trading: meta.trading,
+            currentTime: meta.currentTime,
+            customTfMinutes: meta.customTfMinutes,
+            playbackSpeed: meta.playbackSpeed,
+            replayResolution: meta.replayResolution,
+          });
       archivedClientUpdatedAt = payloadChanged
         ? nextClientClock(Date.now(), revision.clientUpdatedAt, revision.syncedAt)
         : revision.clientUpdatedAt;
@@ -1061,10 +1073,13 @@ export class SesionesPageComponent {
       if (!this.currentRevisionStillMatches(revision)) return;
       this.store.dispatch(
         TradingActions.newSession({
-          currentCursor: this.currentTime(),
+          currentCursor: intendedCurrentTime!,
           replacementActiveSessionId,
           archivedClientUpdatedAt,
           archivedSyncedAt: revision.syncedAt,
+          customTfMinutes: intendedCustomTfMinutes,
+          playbackSpeed: intendedPlaybackSpeed,
+          replayResolution: intendedReplayResolution,
         }),
       );
     } else {

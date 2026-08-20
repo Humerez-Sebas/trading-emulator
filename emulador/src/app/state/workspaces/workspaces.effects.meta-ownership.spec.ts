@@ -176,6 +176,78 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     ]);
   });
 
+  it('persists and flushes a settings-only archive with its exact dirty view', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(201);
+    const trading = { ...defaultTradingData(), sessionName: 'A' };
+    await db.putMeta(
+      workspaceMeta({
+        symbol: SYMBOL,
+        activeSessionId: 'sess-A',
+        activeClientUpdatedAt: 200,
+        activeSyncedAt: 200,
+        currentTime: 500,
+        customTfMinutes: 15,
+        playbackSpeed: 1000,
+        replayResolution: null,
+        trading,
+      }),
+    );
+    const reduced = tradingFeature.reducer(
+      tradingState({ ...trading, activeSessionId: 'sess-A' }),
+      TradingActions.newSession({
+        currentCursor: 500,
+        replacementActiveSessionId: 'sess-B',
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      } as never),
+    );
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      ...metaSnap,
+      currentTime: 500,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      trading: pickTradingData(reduced),
+      sessions: reduced.savedSessions,
+      activeSessionId: reduced.activeSessionId,
+    });
+    store.refreshState();
+
+    const switched = firstValueFrom(effects.switch$);
+    actions$.next(WorkspacesActions.switchAsset({ symbol: OTHER }));
+    await switched;
+
+    const stored = await db.getMeta(SYMBOL);
+    const archived = stored?.sessions?.find((session) => session.id === 'sess-A');
+    expect(archived).toEqual(
+      expect.objectContaining({
+        currentTime: 500,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+        clientUpdatedAt: 201,
+        syncedAt: 200,
+      }),
+    );
+    expect(archived!.clientUpdatedAt).toBeGreaterThan(archived!.syncedAt!);
+
+    const sync = new SessionSyncService({ client: syncClient } as SupabaseService, db);
+    const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
+    await sync.flushDirty();
+
+    const row = upsert.mock.calls.map(([candidate]) => candidate).find(({ id }) => id === 'sess-A');
+    expect(row?.payload).toEqual(
+      expect.objectContaining({
+        currentTime: 500,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      }),
+    );
+    expect(JSON.stringify(row?.payload)).not.toContain('candles');
+  });
+
   it('switchSession then switchAsset moves each session own clocks with its identity', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(50);
     const archivedB = savedSession({

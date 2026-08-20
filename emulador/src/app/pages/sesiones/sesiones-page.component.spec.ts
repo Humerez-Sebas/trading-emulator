@@ -12,6 +12,8 @@ import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import {
   selectCurrentAsset,
   selectCurrentTime,
+  selectMsPerCandle,
+  selectResolutionMinutes,
   selectTradingData,
   selectSavedSessions,
 } from '../../state/selectors';
@@ -3204,6 +3206,77 @@ describe('SesionesPageComponent', () => {
         type: TradingActions.newSession.type,
         archivedClientUpdatedAt: archived?.clientUpdatedAt,
         archivedSyncedAt: 100,
+      }),
+    );
+  });
+
+  it('archive treats replay-settings-only changes as a dirty captured payload', async () => {
+    const trading = { ...defaultTradingData(), sessionName: 'A' };
+    const durable = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 500,
+      customTfMinutes: 15,
+      playbackSpeed: 1000,
+      replayResolution: null,
+      trading,
+    });
+    let latest = durable;
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        latest = update(latest) ?? latest;
+        return latest !== durable;
+      },
+    );
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      liveTrading: trading,
+      db: { replaceSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.overrideSelector(marketFeature.selectCustomTf, 45);
+    store.overrideSelector(selectMsPerCandle, 250);
+    store.overrideSelector(selectResolutionMinutes, 5);
+    store.refreshState();
+    await settle();
+
+    await component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+
+    const archived = latest.sessions?.find((session) => session.id === 'active-a');
+    expect(archived).toEqual(
+      expect.objectContaining({
+        currentTime: 500,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+        syncedAt: 100,
+      }),
+    );
+    expect(archived?.clientUpdatedAt).toBeGreaterThan(100);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.newSession.type,
+        currentCursor: 500,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+        archivedClientUpdatedAt: archived?.clientUpdatedAt,
       }),
     );
   });

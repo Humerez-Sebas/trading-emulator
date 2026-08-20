@@ -1065,15 +1065,37 @@ function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
     lastOpenedAt: null,
   };
 
-  const archived: FlattenSession[] = (meta.sessions ?? []).map((s) => ({
-    id: s.id,
-    name: s.name,
-    createdAt: s.createdAt,
-    cursor: s.currentTime,
-    trading: s.trading,
-    clientUpdatedAt: s.clientUpdatedAt ?? s.createdAt,
-    lastOpenedAt: null,
-  }));
+  const archived: FlattenSession[] = (meta.sessions ?? []).map((s) => {
+    const [archivedStartRange, archivedEndRange] = inferRange(s.trading, s.currentTime);
+    return {
+      id: s.id,
+      name: s.name,
+      createdAt: s.createdAt,
+      cursor: s.currentTime,
+      trading: s.trading,
+      view: {
+        cursor: s.currentTime,
+        activeTf: meta.activeTf,
+        customTfMinutes:
+          s.customTfMinutes === undefined ? (meta.customTfMinutes ?? null) : s.customTfMinutes,
+        playbackSpeed: s.playbackSpeed ?? meta.playbackSpeed ?? 1,
+        replayResolution:
+          s.replayResolution === undefined
+            ? (meta.replayResolution ?? null)
+            : s.replayResolution,
+        drawings: { version: 2, items: meta.drawings ?? [] },
+        notes: [],
+        selectedTfs: meta.selectedTfs ?? [],
+        startRange: archivedStartRange,
+        endRange: archivedEndRange,
+        layout: meta.layout ?? fallback.layout,
+        panels: meta.panels ?? fallback.panels,
+        linkGroups: meta.linkGroups ?? [],
+      },
+      clientUpdatedAt: s.clientUpdatedAt ?? s.createdAt,
+      lastOpenedAt: null,
+    };
+  });
 
   return { symbol: meta.symbol, active, archived };
 }

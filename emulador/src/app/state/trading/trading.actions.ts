@@ -86,6 +86,9 @@ export const TradingActions = createActionGroup({
       replacementActiveSessionId?: string;
       archivedClientUpdatedAt?: number;
       archivedSyncedAt?: number;
+      customTfMinutes?: number | null;
+      playbackSpeed?: number;
+      replayResolution?: number | null;
     }>(),
     /** Names the ACTIVE session (kept when it gets archived). */
     'Set Session Name': props<{ name: string | null }>(),

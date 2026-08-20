@@ -71,9 +71,15 @@ function reconcileSessionClocks(
       session.id === existing.activeSessionId
         ? {
             ...session,
-            customTfMinutes: session.customTfMinutes ?? existing.customTfMinutes,
+            customTfMinutes:
+              session.customTfMinutes === undefined
+                ? existing.customTfMinutes
+                : session.customTfMinutes,
             playbackSpeed: session.playbackSpeed ?? existing.playbackSpeed,
-            replayResolution: session.replayResolution ?? existing.replayResolution,
+            replayResolution:
+              session.replayResolution === undefined
+                ? existing.replayResolution
+                : session.replayResolution,
             clientUpdatedAt: isRealSession(session.trading)
               ? nextClock(now, existing.activeClientUpdatedAt, existing.activeSyncedAt)
               : existing.activeClientUpdatedAt,

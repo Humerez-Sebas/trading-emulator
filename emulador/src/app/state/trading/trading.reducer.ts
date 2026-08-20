@@ -65,6 +65,9 @@ function archiveActive(
   currentCursor: number,
   clientUpdatedAt?: number,
   syncedAt?: number,
+  customTfMinutes?: number | null,
+  playbackSpeed?: number,
+  replayResolution?: number | null,
 ): SavedSession[] {
   if (!hasActivity(state) && state.sessionName === null) return state.savedSessions;
   return [
@@ -80,6 +83,9 @@ function archiveActive(
         `Sesión ${state.savedSessions.length + 1} · ${shortDate(currentCursor)}`,
       createdAt: Date.now(),
       currentTime: currentCursor,
+      ...(customTfMinutes === undefined ? {} : { customTfMinutes }),
+      ...(playbackSpeed === undefined ? {} : { playbackSpeed }),
+      ...(replayResolution === undefined ? {} : { replayResolution }),
       trading: pickTradingData(state),
       ...(clientUpdatedAt === undefined ? {} : { clientUpdatedAt }),
       ...(syncedAt === undefined ? {} : { syncedAt }),
@@ -354,6 +360,9 @@ export const tradingFeature = createFeature({
           replacementActiveSessionId,
           archivedClientUpdatedAt,
           archivedSyncedAt,
+          customTfMinutes,
+          playbackSpeed,
+          replayResolution,
         },
       ): TradingState => ({
         ...defaultTradingData(state.initialBalance),
@@ -364,6 +373,9 @@ export const tradingFeature = createFeature({
           currentCursor,
           archivedClientUpdatedAt,
           archivedSyncedAt,
+          customTfMinutes,
+          playbackSpeed,
+          replayResolution,
         ),
         // fresh blank session → fresh identity
         activeSessionId: replacementActiveSessionId ?? newId(),
