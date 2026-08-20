@@ -51,7 +51,7 @@ import {
 import { marketFeature } from '../../state/market/market.reducer';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { SavedSession, SessionFolder, TradingData } from '../../state/trading/trading.models';
-import { emptyWorkspace, WorkspaceMeta } from '../../state/workspaces/workspaces.models';
+import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { TrashIconComponent } from '../../components/icons/trash-icon.component';
 import { DialogService } from '../../components/ui/dialog.service';
 import { ButtonDirective } from '../../components/ui/button.directive';
