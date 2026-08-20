@@ -2316,13 +2316,13 @@ describe('SesionesPageComponent', () => {
   });
 
   it('dropping a dragged folder onto another persists the reordered folders and syncs when authenticated', async () => {
-    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const replaceFoldersIfUnchanged = vi.fn().mockResolvedValue(true);
     const a = folder({ id: 'a', name: 'A', order: 1000 });
     const b = folder({ id: 'b', name: 'B', order: 2000 });
     const c = folder({ id: 'c', name: 'C', order: 3000 });
     create({
       authStatus: 'authenticated',
-      db: { putFolder, listFolders: vi.fn().mockResolvedValue([a, b, c]) },
+      db: { replaceFoldersIfUnchanged, listFolders: vi.fn().mockResolvedValue([a, b, c]) },
     });
     await settle();
 
@@ -2333,7 +2333,8 @@ describe('SesionesPageComponent', () => {
       ev,
     );
 
-    expect(putFolder).toHaveBeenCalled();
+    expect(replaceFoldersIfUnchanged).toHaveBeenCalledOnce();
+    expect(replaceFoldersIfUnchanged.mock.calls[0][0]).toHaveLength(3);
     expect(component.folders().map((f) => f.id)).toEqual(['c', 'a', 'b']);
     expect(syncStub.flushDirty).toHaveBeenCalled();
     expect(component.draggingFolder()).toBeNull();
@@ -2344,31 +2345,31 @@ describe('SesionesPageComponent', () => {
     const b = folder({ id: 'b', name: 'B', order: 2000, clientUpdatedAt: 100, syncedAt: 100 });
     const live = new Map([
       [a.id, a],
-      [b.id, { ...b, name: 'B newer', clientUpdatedAt: 200 }],
+      [b.id, b],
     ]);
-    const putFolder = vi.fn(async (next: SessionFolder) => live.set(next.id, next));
-    const replaceFolderIfUnchanged = vi.fn(
-      async (expected: SessionFolder, next: SessionFolder) => {
-        const current = live.get(expected.id);
-        if (
-          current?.clientUpdatedAt !== expected.clientUpdatedAt ||
-          current?.syncedAt !== expected.syncedAt
-        ) {
-          return false;
-        }
-        live.set(next.id, next);
+    const replaceFoldersIfUnchanged = vi.fn(
+      async (changes: { expected: SessionFolder; next: SessionFolder }[]) => {
+        const exact = changes.every(({ expected }) => {
+          const current = live.get(expected.id);
+          return (
+            current?.clientUpdatedAt === expected.clientUpdatedAt &&
+            current?.syncedAt === expected.syncedAt
+          );
+        });
+        if (!exact) return false;
+        for (const { next } of changes) live.set(next.id, next);
         return true;
       },
     );
     create({
       authStatus: 'authenticated',
       db: {
-        putFolder,
-        replaceFolderIfUnchanged,
-        listFolders: vi.fn().mockResolvedValue([a, b]),
+        replaceFoldersIfUnchanged,
+        listFolders: vi.fn(async () => [...live.values()]),
       },
     });
     await settle();
+    live.set(b.id, { ...b, name: 'B newer', clientUpdatedAt: 200 });
 
     component.draggingFolder.set('b');
     await component.onFolderDrop(
@@ -2378,15 +2379,20 @@ describe('SesionesPageComponent', () => {
 
     expect(live.get('b')?.name).toBe('B newer');
     expect(live.get('b')?.clientUpdatedAt).toBe(200);
+    expect(live.get('a')?.order).toBe(1000);
+    expect(live.get('b')?.order).toBe(2000);
+    expect(new Set([...live.values()].map((item) => item.order)).size).toBe(live.size);
+    expect(replaceFoldersIfUnchanged).toHaveBeenCalledOnce();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
   });
 
   it('dropping a dragged folder does NOT sync when not authenticated', async () => {
-    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const replaceFoldersIfUnchanged = vi.fn().mockResolvedValue(true);
     const a = folder({ id: 'a', name: 'A', order: 1000 });
     const b = folder({ id: 'b', name: 'B', order: 2000 });
     create({
       authStatus: 'anonymous',
-      db: { putFolder, listFolders: vi.fn().mockResolvedValue([a, b]) },
+      db: { replaceFoldersIfUnchanged, listFolders: vi.fn().mockResolvedValue([a, b]) },
     });
     await settle();
 
@@ -2397,7 +2403,7 @@ describe('SesionesPageComponent', () => {
       ev,
     );
 
-    expect(putFolder).toHaveBeenCalled();
+    expect(replaceFoldersIfUnchanged).toHaveBeenCalledOnce();
     expect(syncStub.flushDirty).not.toHaveBeenCalled();
   });
 

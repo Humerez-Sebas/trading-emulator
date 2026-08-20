@@ -579,6 +579,70 @@ describe('WorkspaceDbService — session folders (v3)', () => {
     expect(await svc.listFolders()).toEqual([newer]);
   });
 
+  it('batch reorder writes zero rows when one participating folder changed concurrently', async () => {
+    const captured = [
+      { id: 'a', name: 'A', order: 1000, clientUpdatedAt: 100, syncedAt: 100 },
+      { id: 'b', name: 'B', order: 2000, clientUpdatedAt: 100, syncedAt: 100 },
+      { id: 'c', name: 'C', order: 3000, clientUpdatedAt: 100, syncedAt: 100 },
+    ];
+    for (const folder of captured) await svc.putFolder(folder);
+    const concurrentB = { ...captured[1], name: 'B newer', clientUpdatedAt: 200 };
+    await svc.putFolder(concurrentB);
+    const next = [
+      { ...captured[2], order: 1000, clientUpdatedAt: 101 },
+      { ...captured[0], order: 2000, clientUpdatedAt: 101 },
+      { ...captured[1], order: 3000, clientUpdatedAt: 101 },
+    ];
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        replaceFoldersIfUnchanged(
+          changes: { expected: (typeof captured)[number]; next: (typeof captured)[number] }[],
+        ): Promise<boolean>;
+      }
+    ).replaceFoldersIfUnchanged(
+      next.map((folder) => ({
+        expected: captured.find((item) => item.id === folder.id)!,
+        next: folder,
+      })),
+    );
+
+    const stored = await svc.listFolders();
+    expect(committed).toBe(false);
+    expect(stored).toEqual([captured[0], concurrentB, captured[2]]);
+    expect(new Set(stored.map((folder) => folder.order)).size).toBe(stored.length);
+  });
+
+  it('batch reorder commits every participating folder together on exact revisions', async () => {
+    const captured = [
+      { id: 'a', name: 'A', order: 1000, clientUpdatedAt: 100, syncedAt: 100 },
+      { id: 'b', name: 'B', order: 2000, clientUpdatedAt: 100, syncedAt: 100 },
+      { id: 'c', name: 'C', order: 3000, clientUpdatedAt: 100, syncedAt: 100 },
+    ];
+    for (const folder of captured) await svc.putFolder(folder);
+    const next = [
+      { ...captured[2], order: 1000, clientUpdatedAt: 101 },
+      { ...captured[0], order: 2000, clientUpdatedAt: 101 },
+      { ...captured[1], order: 3000, clientUpdatedAt: 101 },
+    ];
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        replaceFoldersIfUnchanged(
+          changes: { expected: (typeof captured)[number]; next: (typeof captured)[number] }[],
+        ): Promise<boolean>;
+      }
+    ).replaceFoldersIfUnchanged(
+      next.map((folder) => ({
+        expected: captured.find((item) => item.id === folder.id)!,
+        next: folder,
+      })),
+    );
+
+    expect(committed).toBe(true);
+    expect(await svc.listFolders()).toEqual(next);
+  });
+
   it('a stale delete neither removes a newer folder nor queues its cloud id', async () => {
     const captured = {
       id: 'f1',

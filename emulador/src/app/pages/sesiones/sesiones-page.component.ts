@@ -1387,14 +1387,15 @@ export class SesionesPageComponent {
     const changed = reordered.filter((f) => f.order !== previousOrderById.get(f.id));
     if (!changed.length) return;
     const previousById = new Map(previous.map((folder) => [folder.id, folder]));
-    let committed = 0;
-    for (const f of changed) {
-      const expected = previousById.get(f.id);
-      if (await this.db.replaceFolderIfUnchanged(expected, f)) committed++;
+    const committed = await this.db.replaceFoldersIfUnchanged(
+      changed.map((next) => ({ expected: previousById.get(next.id)!, next })),
+    );
+    if (!committed) {
+      await this.reloadFolders();
+      return;
     }
-    if (committed === changed.length) this.folders.set(reordered);
-    else await this.reloadFolders();
-    if (committed) await this.syncDirty();
+    this.folders.set(reordered);
+    await this.syncDirty();
   }
 
   private flash(message: string): void {

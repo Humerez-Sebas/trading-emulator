@@ -59,6 +59,10 @@ export function workspaceDbStub(): Partial<
       if (next) await putFolder(next);
       return true;
     }),
+    replaceFoldersIfUnchanged: vi.fn(async (changes) => {
+      for (const { next } of changes) await putFolder(next);
+      return true;
+    }),
     deleteFolder,
     deleteFolderIfUnchanged: vi.fn(async (expected, enqueuePending) => {
       await deleteFolder(expected.id);

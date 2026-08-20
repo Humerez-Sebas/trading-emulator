@@ -634,6 +634,38 @@ export class WorkspaceDbService {
     return committed;
   }
 
+  /** Reorders all participating folders atomically after validating every captured revision. */
+  async replaceFoldersIfUnchanged(
+    changes: readonly { expected: SessionFolder; next: SessionFolder }[],
+  ): Promise<boolean> {
+    if (!changes.length) return true;
+    const ids = new Set(changes.map(({ expected }) => expected.id));
+    if (
+      ids.size !== changes.length ||
+      changes.some(({ expected, next }) => expected.id !== next.id)
+    ) {
+      return false;
+    }
+
+    const { tx, store } = await this.userTx(FOLDERS_STORE, 'readwrite');
+    const completion = this.completed(tx);
+    const current = await Promise.all(
+      changes.map(({ expected }) =>
+        this.request<SessionFolder | undefined>(store.get(expected.id)),
+      ),
+    );
+    const exact = changes.every(
+      ({ expected }, index) =>
+        current[index]?.clientUpdatedAt === expected.clientUpdatedAt &&
+        current[index]?.syncedAt === expected.syncedAt,
+    );
+    if (exact) {
+      for (const { next } of changes) store.put(next);
+    }
+    await completion;
+    return exact;
+  }
+
   /** Acknowledges only the exact folder revision that completed its cloud upsert. */
   async acknowledgeFolderSynced(id: string, clientUpdatedAt: number): Promise<void> {
     const { tx, store } = await this.userTx(FOLDERS_STORE, 'readwrite');
