@@ -1194,11 +1194,15 @@ export class SesionesPageComponent {
       maxLength: 40,
     });
     if (!name || name === folder.name) return;
-    await this.db.putFolder({
+    const changed = await this.db.replaceFolderIfUnchanged(folder, {
       ...folder,
       name,
       clientUpdatedAt: nextClientClock(Date.now(), folder.clientUpdatedAt, folder.syncedAt),
     });
+    if (!changed) {
+      await this.reloadFolders();
+      return;
+    }
     await this.reloadFolders();
     await this.syncDirty();
     this.flash(`Carpeta renombrada a "${name}".`);
@@ -1212,11 +1216,12 @@ export class SesionesPageComponent {
       danger: true,
     });
     if (!confirmed) return;
-    await this.db.deleteFolder(folder.id);
+    const enqueuePendingDelete = this.authStatus() === 'authenticated';
+    const deleted = await this.db.deleteFolderIfUnchanged(folder, enqueuePendingDelete);
     await this.reloadFolders();
-    if (this.authStatus() === 'authenticated') {
+    if (!deleted) return;
+    if (enqueuePendingDelete) {
       try {
-        await this.db.addPendingDelete({ entity: 'folder', id: folder.id });
         await this.sync.flushPendingDeletes();
       } catch {
         // Local delete already applied; the pending-delete record (if it made
@@ -1385,11 +1390,15 @@ export class SesionesPageComponent {
     const previousOrderById = new Map(previous.map((f) => [f.id, f.order]));
     const changed = reordered.filter((f) => f.order !== previousOrderById.get(f.id));
     if (!changed.length) return;
-    this.folders.set(reordered);
+    const previousById = new Map(previous.map((folder) => [folder.id, folder]));
+    let committed = 0;
     for (const f of changed) {
-      await this.db.putFolder(f);
+      const expected = previousById.get(f.id);
+      if (await this.db.replaceFolderIfUnchanged(expected, f)) committed++;
     }
-    await this.syncDirty();
+    if (committed === changed.length) this.folders.set(reordered);
+    else await this.reloadFolders();
+    if (committed) await this.syncDirty();
   }
 
   private flash(message: string): void {

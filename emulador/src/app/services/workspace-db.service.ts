@@ -439,9 +439,9 @@ export class WorkspaceDbService {
   async replaceFolderIfUnchanged(
     expected: SessionFolder | undefined,
     next: SessionFolder | null,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const id = expected?.id ?? next?.id;
-    if (!id) return;
+    if (!id) return false;
     const { tx, store } = await this.userTx(FOLDERS_STORE, 'readwrite');
     const completion = this.completed(tx);
     const current = await this.request<SessionFolder | undefined>(store.get(id));
@@ -449,11 +449,14 @@ export class WorkspaceDbService {
       ? current?.clientUpdatedAt === expected.clientUpdatedAt &&
         current?.syncedAt === expected.syncedAt
       : current == null;
+    let committed = false;
     if (unchanged) {
       if (next) store.put(next);
       else if (expected) store.delete(expected.id);
+      committed = true;
     }
     await completion;
+    return committed;
   }
 
   /** Acknowledges only the exact folder revision that completed its cloud upsert. */
@@ -538,6 +541,35 @@ export class WorkspaceDbService {
     const { tx, store } = await this.userTx(FOLDERS_STORE, 'readwrite');
     store.delete(id);
     return this.completed(tx);
+  }
+
+  /** Atomically deletes one exact folder revision and optionally queues its cloud deletion. */
+  async deleteFolderIfUnchanged(
+    expected: SessionFolder,
+    enqueuePendingDelete: boolean,
+  ): Promise<boolean> {
+    const db = await this.openUser();
+    const tx = db.transaction([FOLDERS_STORE, SYNC_STORE], 'readwrite');
+    const completion = this.completed(tx);
+    const folders = tx.objectStore(FOLDERS_STORE);
+    const current = await this.request<SessionFolder | undefined>(folders.get(expected.id));
+    if (
+      current?.clientUpdatedAt !== expected.clientUpdatedAt ||
+      current?.syncedAt !== expected.syncedAt
+    ) {
+      await completion;
+      return false;
+    }
+    folders.delete(expected.id);
+    if (enqueuePendingDelete) {
+      tx.objectStore(SYNC_STORE).put({
+        key: `pendingDelete:${expected.id}`,
+        entity: 'folder',
+        id: expected.id,
+      });
+    }
+    await completion;
+    return true;
   }
 
   // ---- R2/Parquet datasets cache (v5) ----

@@ -210,6 +210,88 @@ describe('WorkspaceDbService — session folders (v3)', () => {
     const folders = await svc.listFolders();
     expect(folders).toEqual([{ id: 'f1', name: 'New', order: 0 }]);
   });
+
+  it('a stale rename cannot overwrite a newer exact folder revision', async () => {
+    const captured = {
+      id: 'f1',
+      name: 'Captured',
+      order: 0,
+      clientUpdatedAt: 100,
+      syncedAt: 100,
+    };
+    const newer = { ...captured, name: 'Newer', clientUpdatedAt: 200 };
+    await svc.putFolder(captured);
+    await svc.putFolder(newer);
+
+    const committed = await svc.replaceFolderIfUnchanged(captured, {
+      ...captured,
+      name: 'Stale rename',
+      clientUpdatedAt: 101,
+    });
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([newer]);
+  });
+
+  it('a stale reorder cannot overwrite a newer exact folder revision', async () => {
+    const captured = {
+      id: 'f1',
+      name: 'Captured',
+      order: 1000,
+      clientUpdatedAt: 100,
+      syncedAt: 90,
+    };
+    const newer = { ...captured, name: 'Concurrent edit', clientUpdatedAt: 200 };
+    await svc.putFolder(captured);
+    await svc.putFolder(newer);
+
+    const committed = await svc.replaceFolderIfUnchanged(captured, {
+      ...captured,
+      order: 2000,
+      clientUpdatedAt: 101,
+    });
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([newer]);
+  });
+
+  it('a stale delete neither removes a newer folder nor queues its cloud id', async () => {
+    const captured = {
+      id: 'f1',
+      name: 'Captured',
+      order: 0,
+      clientUpdatedAt: 100,
+      syncedAt: 100,
+    };
+    const newer = { ...captured, name: 'Newer', clientUpdatedAt: 200 };
+    await svc.putFolder(captured);
+    await svc.putFolder(newer);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        deleteFolderIfUnchanged(folder: typeof captured, enqueue: boolean): Promise<boolean>;
+      }
+    ).deleteFolderIfUnchanged(captured, true);
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([newer]);
+    expect(await svc.listPendingDeletes()).toEqual([]);
+  });
+
+  it('an exact folder delete commits removal and pending cloud deletion together', async () => {
+    const exact = {
+      id: 'f1',
+      name: 'Exact',
+      order: 0,
+      clientUpdatedAt: 100,
+      syncedAt: 100,
+    };
+    await svc.putFolder(exact);
+
+    expect(await svc.deleteFolderIfUnchanged(exact, true)).toBe(true);
+    expect(await svc.listFolders()).toEqual([]);
+    expect(await svc.listPendingDeletes()).toEqual([{ entity: 'folder', id: 'f1' }]);
+  });
 });
 
 describe('WorkspaceDbService — v1 → v3 migration', () => {

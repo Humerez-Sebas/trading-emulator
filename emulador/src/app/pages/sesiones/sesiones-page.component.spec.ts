@@ -129,6 +129,27 @@ describe('SesionesPageComponent', () => {
   ) {
     dbStub = workspaceDbStub();
     if (opts.db) Object.assign(dbStub, opts.db);
+    if (opts.db && !opts.db.replaceFolderIfUnchanged) {
+      const putFolder = dbStub.putFolder as unknown as (folder: SessionFolder) => Promise<void>;
+      dbStub.replaceFolderIfUnchanged = vi.fn(async (_expected, next) => {
+        if (next) await putFolder(next);
+        return true;
+      });
+    }
+    if (opts.db && !('deleteFolderIfUnchanged' in opts.db)) {
+      const deleteFolder = dbStub.deleteFolder as unknown as (id: string) => Promise<void>;
+      const addPendingDelete = dbStub.addPendingDelete as unknown as (pending: {
+        entity: 'folder';
+        id: string;
+      }) => Promise<void>;
+      dbStub.deleteFolderIfUnchanged = vi.fn(async (expected, enqueuePending) => {
+        await deleteFolder(expected.id);
+        if (enqueuePending) {
+          await addPendingDelete({ entity: 'folder', id: expected.id });
+        }
+        return true;
+      });
+    }
     if (opts.db && !opts.db.updateMeta) {
       const getMeta = dbStub.getMeta as unknown as (
         symbol: string,
@@ -1494,6 +1515,38 @@ describe('SesionesPageComponent', () => {
     );
   });
 
+  it('renameFolder does not overwrite a newer folder created while its dialog is pending', async () => {
+    const captured = folder({ clientUpdatedAt: 100, syncedAt: 100, name: 'Captured' });
+    let live = captured;
+    const putFolder = vi.fn(async (next: SessionFolder) => {
+      live = next;
+    });
+    const replaceFolderIfUnchanged = vi.fn(
+      async (expected: SessionFolder, next: SessionFolder) => {
+        if (
+          live.clientUpdatedAt !== expected.clientUpdatedAt ||
+          live.syncedAt !== expected.syncedAt
+        ) {
+          return false;
+        }
+        live = next;
+        return true;
+      },
+    );
+    let resolvePrompt!: (name: string) => void;
+    create({ db: { putFolder, replaceFolderIfUnchanged } });
+    dialogsStub.prompt.mockImplementation(() => new Promise((resolve) => (resolvePrompt = resolve)));
+    await settle();
+
+    const renaming = component.renameFolder(captured);
+    live = { ...captured, name: 'Newer', clientUpdatedAt: 200 };
+    resolvePrompt('Stale rename');
+    await renaming;
+
+    expect(live.name).toBe('Newer');
+    expect(live.clientUpdatedAt).toBe(200);
+  });
+
   it('deleteFolder (confirmed) removes it', async () => {
     const deleteFolder = vi.fn().mockResolvedValue(undefined);
     create({ db: { deleteFolder } });
@@ -1501,6 +1554,43 @@ describe('SesionesPageComponent', () => {
     await settle();
     await component.deleteFolder(folder({ id: 'f1' }));
     expect(deleteFolder).toHaveBeenCalledWith('f1');
+  });
+
+  it('deleteFolder does not remove or queue a folder updated while confirmation is pending', async () => {
+    const captured = folder({ clientUpdatedAt: 100, syncedAt: 100, name: 'Captured' });
+    let live: SessionFolder | undefined = captured;
+    const deleteFolder = vi.fn(async () => {
+      live = undefined;
+    });
+    const deleteFolderIfUnchanged = vi.fn(
+      async (expected: SessionFolder, _enqueue: boolean) => {
+        if (
+          live?.clientUpdatedAt !== expected.clientUpdatedAt ||
+          live?.syncedAt !== expected.syncedAt
+        ) {
+          return false;
+        }
+        live = undefined;
+        return true;
+      },
+    );
+    let resolveConfirm!: (confirmed: boolean) => void;
+    create({
+      authStatus: 'authenticated',
+      db: { deleteFolder, deleteFolderIfUnchanged } as never,
+    });
+    dialogsStub.confirm.mockImplementation(
+      () => new Promise((resolve) => (resolveConfirm = resolve)),
+    );
+    await settle();
+
+    const deleting = component.deleteFolder(captured);
+    live = { ...captured, name: 'Newer', clientUpdatedAt: 200 };
+    resolveConfirm(true);
+    await deleting;
+
+    expect(live?.name).toBe('Newer');
+    expect(dbStub.addPendingDelete).not.toHaveBeenCalled();
   });
 
   // ---- folder CRUD: cloud sync (Task 12) ----
@@ -1707,6 +1797,47 @@ describe('SesionesPageComponent', () => {
     expect(component.folders().map((f) => f.id)).toEqual(['c', 'a', 'b']);
     expect(syncStub.flushDirty).toHaveBeenCalled();
     expect(component.draggingFolder()).toBeNull();
+  });
+
+  it('folder reorder does not overwrite a folder concurrently updated after the drag snapshot', async () => {
+    const a = folder({ id: 'a', name: 'A', order: 1000, clientUpdatedAt: 100, syncedAt: 100 });
+    const b = folder({ id: 'b', name: 'B', order: 2000, clientUpdatedAt: 100, syncedAt: 100 });
+    const live = new Map([
+      [a.id, a],
+      [b.id, { ...b, name: 'B newer', clientUpdatedAt: 200 }],
+    ]);
+    const putFolder = vi.fn(async (next: SessionFolder) => live.set(next.id, next));
+    const replaceFolderIfUnchanged = vi.fn(
+      async (expected: SessionFolder, next: SessionFolder) => {
+        const current = live.get(expected.id);
+        if (
+          current?.clientUpdatedAt !== expected.clientUpdatedAt ||
+          current?.syncedAt !== expected.syncedAt
+        ) {
+          return false;
+        }
+        live.set(next.id, next);
+        return true;
+      },
+    );
+    create({
+      authStatus: 'authenticated',
+      db: {
+        putFolder,
+        replaceFolderIfUnchanged,
+        listFolders: vi.fn().mockResolvedValue([a, b]),
+      },
+    });
+    await settle();
+
+    component.draggingFolder.set('b');
+    await component.onFolderDrop(
+      { key: 'a', label: 'A', folderId: 'a', count: 0, removable: true },
+      { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as DragEvent,
+    );
+
+    expect(live.get('b')?.name).toBe('B newer');
+    expect(live.get('b')?.clientUpdatedAt).toBe(200);
   });
 
   it('dropping a dragged folder does NOT sync when not authenticated', async () => {
