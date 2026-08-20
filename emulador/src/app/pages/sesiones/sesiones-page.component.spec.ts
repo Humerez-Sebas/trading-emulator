@@ -1706,7 +1706,7 @@ describe('SesionesPageComponent', () => {
       live = undefined;
     });
     const deleteFolderIfUnchanged = vi.fn(
-      async (expected: SessionFolder, _enqueue: boolean) => {
+      async (expected: SessionFolder) => {
         if (
           live?.clientUpdatedAt !== expected.clientUpdatedAt ||
           live?.syncedAt !== expected.syncedAt
