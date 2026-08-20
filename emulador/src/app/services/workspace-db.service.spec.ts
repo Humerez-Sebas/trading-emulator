@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceDbService } from './workspace-db.service';
 import { fixedOwnerIdentity } from './owner-identity.service';
 import { ADOPTION_MARKER_KEY, ownerWorkspaceDbName } from './owner-scope';
-import { series, workspaceMeta } from '../testing/fixtures';
+import { savedSession, series, workspaceMeta } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
 import { singlePanelLayoutFor } from './session-migration';
 import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
@@ -143,6 +143,191 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
 
     expect(committed).toBe(true);
     expect(await svc.getMeta('EURUSD')).toEqual(captured);
+  });
+
+  it('rejects an active mutation when the id matches but the exact clocks changed', async () => {
+    const captured = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 90,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    });
+    const newer = {
+      ...captured,
+      activeClientUpdatedAt: 101,
+      trading: { ...captured.trading!, sessionName: 'A newer' },
+    };
+    await svc.putMeta(newer);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        replaceSessionIfUnchanged(
+          symbol: string,
+          expected: {
+            kind: 'active';
+            id: string;
+            clientUpdatedAt: number | undefined;
+            syncedAt: number | undefined;
+          },
+          update: (current: WorkspaceMeta) => WorkspaceMeta,
+        ): Promise<boolean>;
+      }
+    ).replaceSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 100,
+        syncedAt: 90,
+      },
+      (current) => ({
+        ...current,
+        trading: { ...current.trading!, sessionName: 'Stale rename' },
+      }),
+    );
+
+    expect(committed).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(newer);
+  });
+
+  it('commits an archived mutation only for the exact captured clocks', async () => {
+    const exact = savedSession({ id: 'saved-a', clientUpdatedAt: 200, syncedAt: 150 });
+    await svc.putMeta(workspaceMeta({ symbol: 'EURUSD', sessions: [exact] }));
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        replaceSessionIfUnchanged(
+          symbol: string,
+          expected: {
+            kind: 'archived';
+            id: string;
+            clientUpdatedAt: number | undefined;
+            syncedAt: number | undefined;
+          },
+          update: (current: WorkspaceMeta) => WorkspaceMeta,
+        ): Promise<boolean>;
+      }
+    ).replaceSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'archived',
+        id: exact.id,
+        clientUpdatedAt: exact.clientUpdatedAt,
+        syncedAt: exact.syncedAt,
+      },
+      (current) => ({
+        ...current,
+        sessions: current.sessions?.map((session) =>
+          session.id === exact.id ? { ...session, name: 'Renamed' } : session,
+        ),
+      }),
+    );
+
+    expect(committed).toBe(true);
+    expect((await svc.getMeta('EURUSD'))?.sessions?.[0].name).toBe('Renamed');
+  });
+
+  it('active delete resets and queues the exact captured id in one transaction', async () => {
+    const exact = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 300,
+      activeSyncedAt: 250,
+      trading: { ...defaultTradingData(), sessionName: 'A', history: [{ profit: 5 } as never] },
+    });
+    await svc.putMeta(exact);
+
+    const result = await (
+      svc as WorkspaceDbService & {
+        deleteSessionIfUnchanged(
+          symbol: string,
+          expected: {
+            kind: 'active';
+            id: string;
+            clientUpdatedAt: number | undefined;
+            syncedAt: number | undefined;
+          },
+          enqueue: boolean,
+        ): Promise<{ deletedId: string; replacementActiveSessionId?: string } | null>;
+      }
+    ).deleteSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 300,
+        syncedAt: 250,
+      },
+      true,
+    );
+
+    const current = await svc.getMeta('EURUSD');
+    expect(result).toEqual({
+      deletedId: 'active-a',
+      replacementActiveSessionId: expect.any(String),
+    });
+    expect(current?.activeSessionId).toBe(result?.replacementActiveSessionId);
+    expect(current?.activeSessionId).not.toBe('active-a');
+    expect(current?.trading?.history).toEqual([]);
+    expect(await svc.listPendingDeletes()).toEqual([{ entity: 'session', id: 'active-a' }]);
+  });
+
+  it('an A-to-B change while delete awaits leaves B untouched and queues no session id', async () => {
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 400,
+      activeSyncedAt: 400,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    });
+    const activeB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 400,
+      activeSyncedAt: 400,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    await svc.putMeta(activeA);
+
+    let releaseOwner!: () => void;
+    const ownerReady = new Promise<void>((resolve) => (releaseOwner = resolve));
+    const delayed = new WorkspaceDbService({
+      ownerId: vi.fn(async () => {
+        await ownerReady;
+        return OWNER;
+      }),
+    } as never);
+    const deleting = (
+      delayed as WorkspaceDbService & {
+        deleteSessionIfUnchanged(
+          symbol: string,
+          expected: {
+            kind: 'active';
+            id: string;
+            clientUpdatedAt: number | undefined;
+            syncedAt: number | undefined;
+          },
+          enqueue: boolean,
+        ): Promise<{ deletedId: string; replacementActiveSessionId?: string } | null>;
+      }
+    ).deleteSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 400,
+        syncedAt: 400,
+      },
+      true,
+    );
+
+    await svc.putMeta(activeB);
+    releaseOwner();
+
+    expect(await deleting).toBeNull();
+    expect(await svc.getMeta('EURUSD')).toEqual(activeB);
+    expect(await svc.listPendingDeletes()).toEqual([]);
   });
 });
 

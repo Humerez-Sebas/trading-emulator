@@ -39,6 +39,16 @@ export function workspaceDbStub(): Partial<
       });
       return committed;
     }),
+    replaceSessionIfUnchanged: vi.fn(async (symbol, _expected, update) => {
+      let committed = false;
+      await updateMeta(symbol, (current) => {
+        if (!current) return undefined;
+        committed = true;
+        return update(current);
+      });
+      return committed;
+    }),
+    deleteSessionIfUnchanged: vi.fn().mockResolvedValue(null),
     putSeries: vi.fn().mockResolvedValue(undefined),
     appendSeriesChunk: vi.fn().mockResolvedValue(undefined),
     remove: vi.fn().mockResolvedValue(undefined),

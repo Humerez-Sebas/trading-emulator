@@ -2,7 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe, PercentPipe, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { Store } from '@ngrx/store';
-import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { SessionRevision, WorkspaceDbService } from '../../services/workspace-db.service';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import {
   AnchorTf,
@@ -150,14 +150,6 @@ const FOLDER_ORDER_STEP = 1000;
 
 function nextClientClock(now: number, clientUpdatedAt?: number, syncedAt?: number): number {
   return Math.max(now, (clientUpdatedAt ?? 0) + 1, (syncedAt ?? 0) + 1);
-}
-
-function matchesActiveCard(meta: WorkspaceMeta, card: SessionCard): boolean {
-  return (
-    (meta.activeSessionId ?? null) === (card.syncId ?? null) &&
-    meta.activeClientUpdatedAt === card.clientUpdatedAt &&
-    meta.activeSyncedAt === card.syncedAt
-  );
 }
 
 /**
@@ -481,6 +473,25 @@ export class SesionesPageComponent {
     // active first, then most recently touched
     return [...cards].sort(
       (a, b) => Number(b.active) - Number(a.active) || b.createdAt - a.createdAt,
+    );
+  }
+
+  private sessionRevision(card: SessionCard): SessionRevision | null {
+    const id = card.id ?? card.syncId;
+    if (!id) return null;
+    return {
+      kind: card.id === null ? 'active' : 'archived',
+      id,
+      clientUpdatedAt: card.clientUpdatedAt,
+      syncedAt: card.syncedAt,
+    };
+  }
+
+  private currentRevisionStillMatches(revision: SessionRevision): boolean {
+    if (revision.kind === 'active') return this.liveActiveSessionId() === revision.id;
+    const saved = this.liveSessions().find((session) => session.id === revision.id);
+    return (
+      saved?.clientUpdatedAt === revision.clientUpdatedAt && saved?.syncedAt === revision.syncedAt
     );
   }
 
@@ -909,49 +920,44 @@ export class SesionesPageComponent {
       maxLength: 60,
     });
     if (!name || name === card.name) return;
-    if (card.symbol === this.currentAsset()) {
-      if (card.id === null) {
-        if ((card.syncId ?? null) !== (this.liveActiveSessionId() ?? null)) return;
-        this.store.dispatch(TradingActions.setSessionName({ name }));
-      } else {
-        this.store.dispatch(
-          TradingActions.renameSession({
-            id: card.id,
-            name,
-            clientUpdatedAt: nextClientClock(Date.now(), card.clientUpdatedAt, card.syncedAt),
-          }),
-        );
+    const revision = this.sessionRevision(card);
+    if (!revision) return;
+    const clientUpdatedAt = nextClientClock(
+      Date.now(),
+      revision.clientUpdatedAt,
+      revision.syncedAt,
+    );
+    const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
+      if (revision.kind === 'active') {
+        return {
+          ...meta,
+          trading: { ...meta.trading!, sessionName: name },
+          activeClientUpdatedAt: clientUpdatedAt,
+        };
       }
+      return {
+        ...meta,
+        sessions: (meta.sessions ?? []).map((session) =>
+          session.id === revision.id
+            ? {
+                ...session,
+                name,
+                trading: { ...session.trading, sessionName: name },
+                clientUpdatedAt,
+              }
+            : session,
+        ),
+      };
+    });
+    if (!changed) return;
+    if (card.symbol === this.currentAsset()) {
+      if (!this.currentRevisionStillMatches(revision)) return;
+      this.store.dispatch(
+        revision.kind === 'active'
+          ? TradingActions.setSessionName({ name })
+          : TradingActions.renameSession({ id: revision.id, name, clientUpdatedAt }),
+      );
     } else {
-      let changed = false;
-      await this.db.updateMeta(card.symbol, (meta) => {
-        if (!meta) return undefined;
-        if (card.id === null) {
-          if (!meta.trading || !matchesActiveCard(meta, card)) return undefined;
-          changed = true;
-          return {
-            ...meta,
-            trading: { ...meta.trading, sessionName: name },
-            activeClientUpdatedAt: nextClientClock(
-              Date.now(),
-              meta.activeClientUpdatedAt,
-              meta.activeSyncedAt,
-            ),
-          };
-        }
-        const sessions = (meta.sessions ?? []).map((session) => {
-          if (session.id !== card.id) return session;
-          changed = true;
-          return {
-            ...session,
-            name,
-            trading: { ...session.trading, sessionName: name },
-            clientUpdatedAt: nextClientClock(Date.now(), session.clientUpdatedAt, session.syncedAt),
-          };
-        });
-        return changed ? { ...meta, sessions } : undefined;
-      });
-      if (!changed) return;
       await this.reload();
       await this.syncDirty();
     }
@@ -965,41 +971,50 @@ export class SesionesPageComponent {
    */
   async archive(card: SessionCard): Promise<void> {
     if (!card.active) return;
-    if (card.symbol === this.currentAsset()) {
-      if ((card.syncId ?? null) !== (this.liveActiveSessionId() ?? null)) return;
-      this.store.dispatch(TradingActions.newSession({ currentCursor: this.currentTime() }));
+    const revision = this.sessionRevision(card);
+    if (!revision || revision.kind !== 'active') return;
+    const current = card.symbol === this.currentAsset();
+    const replacementActiveSessionId = newId();
+    const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
+      const trading = current ? this.liveTrading() : meta.trading;
+      if (!trading) return undefined;
+      const real =
+        trading.orders.length > 0 || trading.positions.length > 0 || trading.history.length > 0;
+      return {
+        ...meta,
+        sessions:
+          real || trading.sessionName !== null
+            ? [
+                ...(meta.sessions ?? []),
+                {
+                  id: revision.id,
+                  name: trading.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
+                  createdAt: Date.now(),
+                  currentTime: current ? this.currentTime() : meta.currentTime,
+                  trading: { ...trading },
+                  clientUpdatedAt: revision.clientUpdatedAt,
+                  syncedAt: revision.syncedAt,
+                },
+              ]
+            : meta.sessions,
+        trading: defaultTradingData(trading.initialBalance),
+        activeSessionId: replacementActiveSessionId,
+        activeClientUpdatedAt: undefined,
+        activeSyncedAt: undefined,
+      };
+    });
+    if (!changed) return;
+    if (current) {
+      if (!this.currentRevisionStillMatches(revision)) return;
+      this.store.dispatch(
+        TradingActions.newSession({
+          currentCursor: this.currentTime(),
+          replacementActiveSessionId,
+          archivedClientUpdatedAt: revision.clientUpdatedAt,
+          archivedSyncedAt: revision.syncedAt,
+        }),
+      );
     } else {
-      let changed = false;
-      await this.db.updateMeta(card.symbol, (meta) => {
-        const t = meta?.trading;
-        if (!meta || !t) return undefined;
-        if (!matchesActiveCard(meta, card)) return undefined;
-        changed = true;
-        const real = t.orders.length > 0 || t.positions.length > 0 || t.history.length > 0;
-        return {
-          ...meta,
-          sessions:
-            real || t.sessionName !== null
-              ? [
-                  ...(meta.sessions ?? []),
-                  {
-                    id: meta.activeSessionId ?? newId(),
-                    name: t.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
-                    createdAt: Date.now(),
-                    currentTime: meta.currentTime,
-                    trading: { ...t },
-                    clientUpdatedAt: meta.activeClientUpdatedAt,
-                    syncedAt: meta.activeSyncedAt,
-                  },
-                ]
-              : meta.sessions,
-          trading: defaultTradingData(t.initialBalance),
-          activeSessionId: newId(),
-          activeClientUpdatedAt: undefined,
-          activeSyncedAt: undefined,
-        };
-      });
-      if (!changed) return;
       await this.reload();
     }
     this.flash('Sesión archivada.');
@@ -1016,81 +1031,41 @@ export class SesionesPageComponent {
       equity: card.equity,
     });
     if (!confirmed) return;
-    // Active "Sesión en curso" (no archived id): reset the workspace to a fresh
-    // empty session and propagate the cloud delete if it had been synced.
-    if (card.id === null) {
-      let oldId: string | null | undefined;
-      let wasSynced = false;
-      if (card.symbol === this.currentAsset()) {
-        if ((card.syncId ?? null) !== (this.liveActiveSessionId() ?? null)) return;
-        const meta = await this.db.getMeta(card.symbol);
-        oldId = meta?.activeSessionId;
-        wasSynced = meta?.activeSyncedAt != null;
-        this.store.dispatch(TradingActions.deleteActiveSession());
-      } else {
-        let changed = false;
-        await this.db.updateMeta(card.symbol, (meta) => {
-          if (!meta) return undefined;
-          if (!matchesActiveCard(meta, card)) return undefined;
-          changed = true;
-          oldId = meta.activeSessionId;
-          wasSynced = meta.activeSyncedAt != null;
-          return {
-            ...meta,
-            trading: defaultTradingData(meta.trading?.initialBalance),
-            activeSessionId: newId(),
-            activeClientUpdatedAt: undefined,
-            activeSyncedAt: undefined,
-          };
-        });
-        if (!changed) return;
-        await this.reload();
-      }
-      if (this.authStatus() === 'authenticated' && oldId && wasSynced) {
-        try {
-          await this.db.addPendingDelete({ entity: 'session', id: oldId });
-          await this.sync.flushPendingDeletes();
-        } catch {
-          // local-first: the cloud delete is retried on the next flush/pull.
-        }
-      }
-      this.flash('Sesión en curso eliminada.');
-      return;
-    }
+    const revision = this.sessionRevision(card);
+    if (!revision) return;
+    const enqueuePendingDelete =
+      this.authStatus() === 'authenticated' &&
+      (revision.kind === 'archived' || revision.syncedAt != null);
+    const deleted = await this.db.deleteSessionIfUnchanged(
+      card.symbol,
+      revision,
+      enqueuePendingDelete,
+    );
+    if (!deleted) return;
     if (card.symbol === this.currentAsset()) {
-      this.store.dispatch(TradingActions.deleteSession({ id: card.id }));
+      if (!this.currentRevisionStillMatches(revision)) return;
+      this.store.dispatch(
+        revision.kind === 'active'
+          ? TradingActions.deleteActiveSessionCommitted({
+              replacementActiveSessionId: deleted.replacementActiveSessionId!,
+            })
+          : TradingActions.deleteSession({ id: revision.id }),
+      );
     } else {
-      let changed = false;
-      await this.db.updateMeta(card.symbol, (meta) => {
-        const session = meta?.sessions?.find((saved) => saved.id === card.id);
-        if (
-          !meta ||
-          !session ||
-          (card.clientUpdatedAt != null &&
-            (session.clientUpdatedAt !== card.clientUpdatedAt ||
-              session.syncedAt !== card.syncedAt))
-        ) {
-          return undefined;
-        }
-        changed = true;
-        return {
-          ...meta,
-          sessions: (meta.sessions ?? []).filter((session) => session.id !== card.id),
-        };
-      });
-      if (!changed) return;
       await this.reload();
-      if (this.authStatus() === 'authenticated') {
-        try {
-          await this.db.addPendingDelete({ entity: 'session', id: card.id });
-          await this.sync.flushPendingDeletes();
-        } catch {
-          // Local delete already applied; the pending-delete record (if it made
-          // it to IndexedDB) is retried on the next flush — local-first.
-        }
+    }
+    if (enqueuePendingDelete) {
+      try {
+        await this.sync.flushPendingDeletes();
+      } catch {
+        // Local delete and its pending record already committed atomically.
       }
     }
-    this.flash(`Sesión "${card.name}" eliminada.`);
+    this.flash(
+      revision.kind === 'active'
+        ? 'Sesión en curso eliminada.'
+        : `Sesión "${card.name}" eliminada.`,
+    );
   }
 
   /**
@@ -1254,49 +1229,41 @@ export class SesionesPageComponent {
   /** Moves a session into a folder (folderId null = unassign). */
   async moveToFolder(card: SessionCard, folderId: string | null): Promise<void> {
     if (card.folderId === folderId) return;
-    if (card.symbol === this.currentAsset()) {
-      if (
-        card.id === null &&
-        (card.syncId ?? null) !== (this.liveActiveSessionId() ?? null)
-      ) {
-        return;
+    const revision = this.sessionRevision(card);
+    if (!revision) return;
+    const clientUpdatedAt = nextClientClock(
+      Date.now(),
+      revision.clientUpdatedAt,
+      revision.syncedAt,
+    );
+    const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
+      if (revision.kind === 'active') {
+        return {
+          ...meta,
+          trading: { ...meta.trading!, folderId },
+          activeClientUpdatedAt: clientUpdatedAt,
+        };
       }
+      return {
+        ...meta,
+        sessions: (meta.sessions ?? []).map((session) =>
+          session.id === revision.id
+            ? { ...session, trading: { ...session.trading, folderId }, clientUpdatedAt }
+            : session,
+        ),
+      };
+    });
+    if (!changed) return;
+    if (card.symbol === this.currentAsset()) {
+      if (!this.currentRevisionStillMatches(revision)) return;
       this.store.dispatch(
         TradingActions.setSessionFolder({
-          id: card.id,
+          id: revision.kind === 'active' ? null : revision.id,
           folderId,
-          clientUpdatedAt: nextClientClock(Date.now(), card.clientUpdatedAt, card.syncedAt),
+          clientUpdatedAt,
         }),
       );
     } else {
-      let changed = false;
-      await this.db.updateMeta(card.symbol, (meta) => {
-        if (!meta) return undefined;
-        if (card.id === null) {
-          if (!meta.trading || !matchesActiveCard(meta, card)) return undefined;
-          changed = true;
-          return {
-            ...meta,
-            trading: { ...meta.trading, folderId },
-            activeClientUpdatedAt: nextClientClock(
-              Date.now(),
-              meta.activeClientUpdatedAt,
-              meta.activeSyncedAt,
-            ),
-          };
-        }
-        const sessions = (meta.sessions ?? []).map((session) => {
-          if (session.id !== card.id) return session;
-          changed = true;
-          return {
-            ...session,
-            trading: { ...session.trading, folderId },
-            clientUpdatedAt: nextClientClock(Date.now(), session.clientUpdatedAt, session.syncedAt),
-          };
-        });
-        return changed ? { ...meta, sessions } : undefined;
-      });
-      if (!changed) return;
       await this.reload();
       await this.syncDirty();
     }

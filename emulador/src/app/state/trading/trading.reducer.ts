@@ -60,7 +60,12 @@ function reviveIfEnded(state: TradingState, time: number): Partial<TradingState>
  * sessions are named before any trade happens and must survive a switch.
  * Anonymous AND empty sessions are just noise and get dropped.
  */
-function archiveActive(state: TradingState, currentCursor: number): SavedSession[] {
+function archiveActive(
+  state: TradingState,
+  currentCursor: number,
+  clientUpdatedAt?: number,
+  syncedAt?: number,
+): SavedSession[] {
   if (!hasActivity(state) && state.sessionName === null) return state.savedSessions;
   return [
     ...state.savedSessions,
@@ -76,6 +81,8 @@ function archiveActive(state: TradingState, currentCursor: number): SavedSession
       createdAt: Date.now(),
       currentTime: currentCursor,
       trading: pickTradingData(state),
+      ...(clientUpdatedAt === undefined ? {} : { clientUpdatedAt }),
+      ...(syncedAt === undefined ? {} : { syncedAt }),
     },
   ];
 }
@@ -339,13 +346,27 @@ export const tradingFeature = createFeature({
     // ---- sessions ----
     on(
       TradingActions.newSession,
-      (state, { currentCursor, executionCosts }): TradingState => ({
+      (
+        state,
+        {
+          currentCursor,
+          executionCosts,
+          replacementActiveSessionId,
+          archivedClientUpdatedAt,
+          archivedSyncedAt,
+        },
+      ): TradingState => ({
         ...defaultTradingData(state.initialBalance),
         riskPct: state.riskPct,
         summaryOpen: false,
-        savedSessions: archiveActive(state, currentCursor),
+        savedSessions: archiveActive(
+          state,
+          currentCursor,
+          archivedClientUpdatedAt,
+          archivedSyncedAt,
+        ),
         // fresh blank session → fresh identity
-        activeSessionId: newId(),
+        activeSessionId: replacementActiveSessionId ?? newId(),
         // RFC-014 G1: absent/undefined ⇒ null, same as defaultTradingData's
         // own default (legacy zero-cost session, V-1 anchor unaffected).
         executionCosts: executionCosts ?? null,
@@ -387,6 +408,16 @@ export const tradingFeature = createFeature({
         summaryOpen: false,
         savedSessions: state.savedSessions,
         activeSessionId: newId(),
+      }),
+    ),
+    on(
+      TradingActions.deleteActiveSessionCommitted,
+      (state, { replacementActiveSessionId }): TradingState => ({
+        ...defaultTradingData(state.initialBalance),
+        riskPct: state.riskPct,
+        summaryOpen: false,
+        savedSessions: state.savedSessions,
+        activeSessionId: replacementActiveSessionId,
       }),
     ),
     on(TradingActions.renameSession, (state, { id, name, clientUpdatedAt }): TradingState => {

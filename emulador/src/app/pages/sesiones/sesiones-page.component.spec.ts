@@ -165,6 +165,82 @@ describe('SesionesPageComponent', () => {
         },
       );
     }
+    if (opts.db && !opts.db.replaceSessionIfUnchanged) {
+      const updateMeta = dbStub.updateMeta as unknown as (
+        symbol: string,
+        update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+      ) => Promise<void>;
+      dbStub.replaceSessionIfUnchanged = vi.fn(async (symbol, expected, update) => {
+        let committed = false;
+        await updateMeta(symbol, (current) => {
+          if (!current) return undefined;
+          const exact =
+            expected.kind === 'active'
+              ? current.activeSessionId === expected.id &&
+                current.activeClientUpdatedAt === expected.clientUpdatedAt &&
+                current.activeSyncedAt === expected.syncedAt
+              : current.sessions?.some(
+                  (session) =>
+                    session.id === expected.id &&
+                    session.clientUpdatedAt === expected.clientUpdatedAt &&
+                    session.syncedAt === expected.syncedAt,
+                );
+          if (!exact) return undefined;
+          committed = true;
+          return update(current);
+        });
+        return committed;
+      });
+    }
+    if (opts.db && !opts.db.deleteSessionIfUnchanged) {
+      const updateMeta = dbStub.updateMeta as unknown as (
+        symbol: string,
+        update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+      ) => Promise<void>;
+      const addPendingDelete = dbStub.addPendingDelete as unknown as (pending: {
+        entity: 'session';
+        id: string;
+      }) => Promise<void>;
+      dbStub.deleteSessionIfUnchanged = vi.fn(async (symbol, expected, enqueue) => {
+        let result: {
+          deletedId: string;
+          replacementActiveSessionId?: string;
+        } | null = null;
+        await updateMeta(symbol, (current) => {
+          if (!current) return undefined;
+          const exact =
+            expected.kind === 'active'
+              ? current.activeSessionId === expected.id &&
+                current.activeClientUpdatedAt === expected.clientUpdatedAt &&
+                current.activeSyncedAt === expected.syncedAt
+              : current.sessions?.some(
+                  (session) =>
+                    session.id === expected.id &&
+                    session.clientUpdatedAt === expected.clientUpdatedAt &&
+                    session.syncedAt === expected.syncedAt,
+                );
+          if (!exact) return undefined;
+          if (expected.kind === 'active') {
+            const replacementActiveSessionId = 'replacement-active';
+            result = { deletedId: expected.id, replacementActiveSessionId };
+            return {
+              ...current,
+              trading: defaultTradingData(current.trading?.initialBalance),
+              activeSessionId: replacementActiveSessionId,
+              activeClientUpdatedAt: undefined,
+              activeSyncedAt: undefined,
+            };
+          }
+          result = { deletedId: expected.id };
+          return {
+            ...current,
+            sessions: (current.sessions ?? []).filter((session) => session.id !== expected.id),
+          };
+        });
+        if (result && enqueue) await addPendingDelete({ entity: 'session', id: expected.id });
+        return result;
+      });
+    }
     if (opts.db && !opts.db.updateMetaIfUnchanged) {
       const updateMeta = dbStub.updateMeta as unknown as (
         symbol: string,
@@ -1066,15 +1142,37 @@ describe('SesionesPageComponent', () => {
   // ---- rename ----
 
   it('rename current-asset active → setSessionName', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const meta = workspaceMeta({
+      symbol: 'XAUUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 10,
+      activeSyncedAt: 9,
+    });
+    create({ currentAsset: 'XAUUSD', db: { getMeta: vi.fn().mockResolvedValue(meta) } });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
-    await component.rename(card({ symbol: 'XAUUSD', id: null }));
+    await component.rename(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        clientUpdatedAt: 10,
+        syncedAt: 9,
+      }),
+    );
     expect(dispatch).toHaveBeenCalledWith(TradingActions.setSessionName({ name: 'Nuevo' }));
   });
 
   it('rename current-asset archived → renameSession (with clientUpdatedAt)', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const saved = savedSession({ id: 's1' });
+    const meta = workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] });
+    create({
+      currentAsset: 'XAUUSD',
+      liveSessions: [saved],
+      db: { getMeta: vi.fn().mockResolvedValue(meta) },
+    });
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
     await component.rename(card({ symbol: 'XAUUSD', id: 's1' }));
@@ -1197,7 +1295,9 @@ describe('SesionesPageComponent', () => {
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
 
-    await component.rename(card({ symbol: 'EURUSD', id: 's1' }));
+    await component.rename(
+      card({ symbol: 'EURUSD', id: 's1', clientUpdatedAt: 100, syncedAt: 100 }),
+    );
 
     expect(updateMeta).toHaveBeenCalledOnce();
     expect(written?.activeClientUpdatedAt).toBe(900);
@@ -1241,6 +1341,43 @@ describe('SesionesPageComponent', () => {
 
     expect(written).toBeUndefined();
     expect(replacement.trading?.sessionName).toBe('B');
+  });
+
+  it('rename current active requires the exact captured clocks before dispatch', async () => {
+    const replaceSessionIfUnchanged = vi.fn().mockResolvedValue(false);
+    create({
+      currentAsset: 'XAUUSD',
+      db: { replaceSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    dialogsStub.prompt.mockResolvedValue('Renamed A');
+    await settle();
+
+    await component.rename(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 500,
+        syncedAt: 400,
+      }),
+    );
+
+    expect(replaceSessionIfUnchanged).toHaveBeenCalledWith(
+      'XAUUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 500,
+        syncedAt: 400,
+      },
+      expect.any(Function),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.setSessionName.type }),
+    );
   });
 
   it('rename off-screen archived does NOT flush when not authenticated', async () => {
@@ -1288,7 +1425,16 @@ describe('SesionesPageComponent', () => {
   });
 
   it('remove confirmed current-asset → deleteSession', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const saved = savedSession({ id: 's1' });
+    create({
+      currentAsset: 'XAUUSD',
+      liveSessions: [saved],
+      db: {
+        getMeta: vi
+          .fn()
+          .mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+      },
+    });
     dialogsStub.deleteSession.mockResolvedValue(true);
     await settle();
     await component.remove(card({ symbol: 'XAUUSD', id: 's1' }));
@@ -1491,8 +1637,92 @@ describe('SesionesPageComponent', () => {
     });
   });
 
+  it('remove current active uses one exact delete transaction and never pre-reads or separately queues', async () => {
+    const deleteSessionIfUnchanged = vi.fn().mockResolvedValue(null);
+    const getMeta = vi.fn().mockResolvedValue(
+      workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'active-b' }),
+    );
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'XAUUSD',
+      authStatus: 'authenticated',
+      db: { deleteSessionIfUnchanged, getMeta, addPendingDelete },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 600,
+        syncedAt: 500,
+      }),
+    );
+
+    expect(deleteSessionIfUnchanged).toHaveBeenCalledWith(
+      'XAUUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 600,
+        syncedAt: 500,
+      },
+      true,
+    );
+    expect(getMeta).not.toHaveBeenCalled();
+    expect(addPendingDelete).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.deleteActiveSessionCommitted.type }),
+    );
+  });
+
+  it('remove current active dispatches the exact replacement id committed by IndexedDB', async () => {
+    const deleteSessionIfUnchanged = vi.fn().mockResolvedValue({
+      deletedId: 'active-a',
+      replacementActiveSessionId: 'active-next',
+    });
+    create({
+      currentAsset: 'XAUUSD',
+      authStatus: 'authenticated',
+      db: { deleteSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 600,
+        syncedAt: 500,
+      }),
+    );
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.deleteActiveSessionCommitted.type,
+        replacementActiveSessionId: 'active-next',
+      }),
+    );
+    expect(syncStub.flushPendingDeletes).toHaveBeenCalledOnce();
+  });
+
   it('remove ACTIVE current-asset session dispatches deleteActiveSession', async () => {
-    const meta = workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'a1' });
+    const meta = workspaceMeta({
+      symbol: 'XAUUSD',
+      activeSessionId: 'a1',
+      activeClientUpdatedAt: 10,
+      activeSyncedAt: 10,
+    });
     create({
       currentAsset: 'XAUUSD',
       authStatus: 'authenticated',
@@ -1503,12 +1733,27 @@ describe('SesionesPageComponent', () => {
         listMetas: vi.fn().mockResolvedValue([]),
       },
     });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'a1');
+    store.refreshState();
     dialogsStub.deleteSession.mockResolvedValue(true);
     await settle();
 
-    await component.remove(card({ symbol: 'XAUUSD', id: null, active: true }));
+    await component.remove(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'a1',
+        active: true,
+        clientUpdatedAt: 10,
+        syncedAt: 10,
+      }),
+    );
 
-    expect(dispatch).toHaveBeenCalledWith(TradingActions.deleteActiveSession());
+    expect(dispatch).toHaveBeenCalledWith(
+      TradingActions.deleteActiveSessionCommitted({
+        replacementActiveSessionId: 'replacement-active',
+      }),
+    );
   });
 
   it('remove off-screen card does NOT touch sync when not authenticated', async () => {
@@ -2030,7 +2275,16 @@ describe('SesionesPageComponent', () => {
   });
 
   it('moveToFolder current-asset → setSessionFolder (with clientUpdatedAt)', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const saved = savedSession({ id: 's1' });
+    create({
+      currentAsset: 'XAUUSD',
+      liveSessions: [saved],
+      db: {
+        getMeta: vi
+          .fn()
+          .mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+      },
+    });
     await settle();
     await component.moveToFolder(card({ symbol: 'XAUUSD', id: 's1', folderId: null }), 'f1');
     expect(dispatch).toHaveBeenCalledWith(
@@ -2136,6 +2390,41 @@ describe('SesionesPageComponent', () => {
     expect(replacement.trading?.folderId).toBeNull();
   });
 
+  it('moveToFolder current active requires the exact captured clocks before dispatch', async () => {
+    const replaceSessionIfUnchanged = vi.fn().mockResolvedValue(false);
+    create({ currentAsset: 'XAUUSD', db: { replaceSessionIfUnchanged } });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    await component.moveToFolder(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        folderId: null,
+        clientUpdatedAt: 700,
+        syncedAt: 650,
+      }),
+      'f1',
+    );
+
+    expect(replaceSessionIfUnchanged).toHaveBeenCalledWith(
+      'XAUUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 700,
+        syncedAt: 650,
+      },
+      expect.any(Function),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.setSessionFolder.type }),
+    );
+  });
+
   it('moveToFolder keeps archived clock semantics while preserving newer active revisions', async () => {
     const latest = workspaceMeta({
       symbol: 'EURUSD',
@@ -2155,7 +2444,10 @@ describe('SesionesPageComponent', () => {
     });
     await settle();
 
-    await component.moveToFolder(card({ symbol: 'EURUSD', id: 's1' }), 'f1');
+    await component.moveToFolder(
+      card({ symbol: 'EURUSD', id: 's1', clientUpdatedAt: 400, syncedAt: 400 }),
+      'f1',
+    );
 
     expect(written?.activeClientUpdatedAt).toBe(1000);
     expect(written?.activeSyncedAt).toBe(950);
@@ -2207,12 +2499,22 @@ describe('SesionesPageComponent', () => {
   });
 
   it('drop on a folder group moves the dragged card there', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const saved = savedSession({ id: 's1' });
+    create({
+      currentAsset: 'XAUUSD',
+      liveSessions: [saved],
+      db: {
+        getMeta: vi
+          .fn()
+          .mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+      },
+    });
     await settle();
     const c = card({ symbol: 'XAUUSD', id: 's1', folderId: null });
     component.onDragStart(c, { dataTransfer: { setData: vi.fn() } } as unknown as DragEvent);
     const ev = { preventDefault: vi.fn() } as unknown as DragEvent;
     component.onGroupDrop({ key: 'f1', label: 'A', folderId: 'f1', cards: [] }, ev);
+    await settle();
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: TradingActions.setSessionFolder.type,
@@ -2452,14 +2754,45 @@ describe('SesionesPageComponent', () => {
   // ---- archive ----
 
   it('archive on the current-asset active card dispatches newSession', async () => {
+    const meta = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 10,
+      activeSyncedAt: 9,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    });
     create({
       currentAsset: 'NAS100',
       currentTime: 500,
-      db: { listMetas: vi.fn().mockResolvedValue([]), listFolders: vi.fn().mockResolvedValue([]) },
+      liveTrading: meta.trading,
+      db: {
+        getMeta: vi.fn().mockResolvedValue(meta),
+        listMetas: vi.fn().mockResolvedValue([]),
+        listFolders: vi.fn().mockResolvedValue([]),
+      },
     });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
     await settle();
-    await component.archive(card({ symbol: 'NAS100', id: null, active: true }));
-    expect(dispatch).toHaveBeenCalledWith(TradingActions.newSession({ currentCursor: 500 }));
+    await component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 10,
+        syncedAt: 9,
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.newSession.type,
+        currentCursor: 500,
+        archivedClientUpdatedAt: 10,
+        archivedSyncedAt: 9,
+        replacementActiveSessionId: expect.any(String),
+      }),
+    );
   });
 
   it('archive on an off-screen active card moves it into meta.sessions (keeps cloud id) and resets', async () => {
@@ -2532,6 +2865,39 @@ describe('SesionesPageComponent', () => {
     expect(written).toBeUndefined();
     expect(replacement.activeSessionId).toBe('active-b');
     expect(replacement.trading?.sessionName).toBe('B');
+  });
+
+  it('archive current active requires the exact captured clocks before dispatch', async () => {
+    const replaceSessionIfUnchanged = vi.fn().mockResolvedValue(false);
+    create({ currentAsset: 'NAS100', db: { replaceSessionIfUnchanged } });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    await component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 800,
+        syncedAt: 750,
+      }),
+    );
+
+    expect(replaceSessionIfUnchanged).toHaveBeenCalledWith(
+      'NAS100',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 800,
+        syncedAt: 750,
+      },
+      expect.any(Function),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.newSession.type }),
+    );
   });
 
   beforeEach(() => {

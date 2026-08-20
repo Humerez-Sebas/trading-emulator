@@ -655,6 +655,18 @@ describe('trading reducer: deleteActiveSession', () => {
     expect(next.activeSessionId).toBeTruthy();
     expect(next.activeSessionId).not.toBe('old-active');
   });
+
+  it('uses the replacement active id already committed by IndexedDB', () => {
+    const next = reducer(
+      state({ activeSessionId: 'old-active', history: [closed()] }),
+      {
+        type: TradingActions.deleteActiveSessionCommitted.type,
+        replacementActiveSessionId: 'active-next',
+      } as never,
+    );
+
+    expect(next.activeSessionId).toBe('active-next');
+  });
 });
 
 describe('trading reducer: sessionImported', () => {
@@ -758,6 +770,28 @@ describe('trading reducer: stable activeSessionId (Part A)', () => {
     const next = reducer(s, TradingActions.newSession({ currentCursor: 100 }));
     expect(next.savedSessions).toHaveLength(1);
     expect(next.savedSessions[0].id).toBe('active-id-1');
+  });
+
+  it('uses the replacement id and archived clocks already committed by IndexedDB', () => {
+    const s = state({ history: [closed()], activeSessionId: 'active-id-1' });
+    const next = reducer(
+      s,
+      TradingActions.newSession({
+        currentCursor: 100,
+        replacementActiveSessionId: 'active-next',
+        archivedClientUpdatedAt: 500,
+        archivedSyncedAt: 400,
+      } as never),
+    );
+
+    expect(next.activeSessionId).toBe('active-next');
+    expect(next.savedSessions[0]).toEqual(
+      expect.objectContaining({
+        id: 'active-id-1',
+        clientUpdatedAt: 500,
+        syncedAt: 400,
+      }),
+    );
   });
 
   it('archiveActive mints a NEW id when activeSessionId is null', () => {

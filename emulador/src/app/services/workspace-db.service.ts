@@ -43,6 +43,32 @@ interface SeriesRecord {
   candles: Candle[];
 }
 
+export interface SessionRevision {
+  kind: 'active' | 'archived';
+  id: string;
+  clientUpdatedAt: number | undefined;
+  syncedAt: number | undefined;
+}
+
+export interface DeletedSessionResult {
+  deletedId: string;
+  replacementActiveSessionId?: string;
+}
+
+function matchesSessionRevision(current: WorkspaceMeta, expected: SessionRevision): boolean {
+  if (expected.kind === 'active') {
+    return (
+      current.activeSessionId === expected.id &&
+      current.activeClientUpdatedAt === expected.clientUpdatedAt &&
+      current.activeSyncedAt === expected.syncedAt
+    );
+  }
+  const saved = (current.sessions ?? []).find((session) => session.id === expected.id);
+  return (
+    saved?.clientUpdatedAt === expected.clientUpdatedAt && saved?.syncedAt === expected.syncedAt
+  );
+}
+
 function sameActivePayload(current: WorkspaceMeta, expected: WorkspaceMeta | undefined): boolean {
   if (!expected) return false;
   return (
@@ -315,6 +341,66 @@ export class WorkspaceDbService {
       return next;
     });
     return committed;
+  }
+
+  /** Applies a page action only while its captured active/archived revision is exact. */
+  async replaceSessionIfUnchanged(
+    symbol: string,
+    expected: SessionRevision,
+    update: (current: WorkspaceMeta) => WorkspaceMeta | undefined,
+  ): Promise<boolean> {
+    let committed = false;
+    await this.updateMeta(symbol, (current) => {
+      if (!current || !matchesSessionRevision(current, expected)) return undefined;
+      const next = update(current);
+      committed = next !== undefined;
+      return next;
+    });
+    return committed;
+  }
+
+  /** Atomically removes/resets one exact session revision and queues that same id. */
+  async deleteSessionIfUnchanged(
+    symbol: string,
+    expected: SessionRevision,
+    enqueuePendingDelete: boolean,
+  ): Promise<DeletedSessionResult | null> {
+    const db = await this.openUser();
+    const tx = db.transaction([META_STORE, SYNC_STORE], 'readwrite');
+    const completion = this.completed(tx);
+    const metas = tx.objectStore(META_STORE);
+    const current = await this.request<WorkspaceMeta | undefined>(metas.get(symbol));
+    if (!current || !matchesSessionRevision(current, expected)) {
+      await completion;
+      return null;
+    }
+
+    let result: DeletedSessionResult = { deletedId: expected.id };
+    if (expected.kind === 'active') {
+      const replacementActiveSessionId = crypto.randomUUID();
+      metas.put({
+        ...current,
+        trading: defaultTradingData(current.trading?.initialBalance),
+        activeSessionId: replacementActiveSessionId,
+        activeClientUpdatedAt: undefined,
+        activeSyncedAt: undefined,
+      });
+      result = { ...result, replacementActiveSessionId };
+    } else {
+      metas.put({
+        ...current,
+        sessions: (current.sessions ?? []).filter((session) => session.id !== expected.id),
+      });
+    }
+    if (enqueuePendingDelete) {
+      tx.objectStore(SYNC_STORE).put({
+        key: `pendingDelete:${expected.id}`,
+        entity: 'session',
+        id: expected.id,
+      });
+    }
+    await completion;
+    return result;
   }
 
   async putSeries(symbol: string, tf: Timeframe, candles: Candle[]): Promise<void> {
