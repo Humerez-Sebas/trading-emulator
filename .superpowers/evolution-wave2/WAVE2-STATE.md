@@ -396,3 +396,12 @@ unchanged. No push, PR, deployment, or `develop` mutation occurred.
   and `origin/develop` remained `a2ca53b`; canonical unrelated untracked Wave 1 evidence was
   left untouched. No specialist branch was merged, pushed, deployed, rebased, or squashed.
   Final synthesis and index were written on `agent/evolution-wave2-base` only.
+- **2026-08-20 cold-resume pause** — later fresh whole-range reviews revoked both earlier A/C
+  acceptances. Track A is clean at `fefea65`; after multiple bounded correction loops, two
+  Medium transaction windows remain (archive reconciliation can miss a second live edit, and
+  promotion can accept live A already ahead of durable A). Track C remains clean at `66211cc`;
+  one High caller-constructor side channel and one Medium exported-type-alias lint bypass remain.
+  Exact scope is in the two closeout briefs. The last A implementer was cancelled before any
+  mutation. No post-rejection final gates were accepted. Integration remains at `cbe52fc` before
+  this documentation commit; `develop == origin/develop == a2ca53b`. No merge, push, reset,
+  rebase, deployment, remote-system change, or completed-track mutation occurred.

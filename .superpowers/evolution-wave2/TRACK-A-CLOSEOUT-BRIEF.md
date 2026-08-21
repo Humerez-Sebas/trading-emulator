@@ -110,3 +110,50 @@ npm run build
 Update all four Track A documents and `PROGRESS.md`, commit with explicit pathspecs, and
 request a new independent acceptance review. Track A is not complete until that review has
 zero Critical/High/Medium findings and the closeout agent independently reruns the gates.
+
+## 2026-08-20 Cold-Resume Addendum
+
+Current branch head: `fefea658a9cd169b4d93654d21895c22a43d3190`, clean. The prior A-R1
+through A-R4 findings and several later consequence races were corrected, but the latest fresh
+whole-range review still rejected Track A with **two Medium findings**. Earlier `ACCEPTED`
+statements and gate counts are historical, not current acceptance evidence.
+
+Resolve only A-R5 and A-R6 below. The last implementer dispatched for these findings was
+cancelled before making any change; Git confirms `fefea65` remains the head.
+
+### A-R5: archive reconciliation has a second edit window (Medium)
+
+`archive()` detects a live edit during its first IndexedDB transaction and starts a second
+reconciliation transaction. Another same-id edit can occur while that second transaction is
+pending. The code then checks only symbol/active identity, dispatches the first reconciled
+payload, and clears the newer live edit.
+
+Required behavior:
+
+- After reconciliation returns, compare the complete live aggregate with the reconciled
+  snapshot synchronously.
+- If it changed again, do not dispatch archive. Restore the latest A as active with a narrow,
+  exact-guarded transaction and return with the UI still on A.
+- Preserve monotonic dirty clocks. If another edit occurs while restoration is pending, durable
+  active identity must remain A so normal persistence can save it.
+- Add a deterministic delayed-reconciliation test and a real IndexedDB restoration test.
+
+### A-R6: promotion accepts live state already ahead of durable state (Medium)
+
+Cloud promotion captures live A and durable A independently but checks only that live A remains
+unchanged after capture. If NgRx already contains A2 while IndexedDB still contains A1 because
+of the persistence debounce, promotion archives A1 and hydrates B, losing A2.
+
+Required behavior:
+
+- Before promotion, require the captured complete live A aggregate to equal the captured
+  durable active A aggregate and revision.
+- Include trading, cursor/time, replay/view fields, layout, drawings, panels, link groups,
+  active identity, and clocks in that comparison.
+- On initial live/durable divergence, fail closed before any promotion or B hydration. Keep A2
+  live so normal persistence can catch up and the user can retry.
+- Add a deterministic pre-existing live-A2/durable-A1 test plus an unchanged success test.
+
+After A-R5/A-R6: run focused RED/GREEN tests, request a fresh independent review of
+`894d72b..new HEAD`, resolve only verified in-scope Critical/High/Medium findings, and only after
+acceptance independently run the five raw gates.

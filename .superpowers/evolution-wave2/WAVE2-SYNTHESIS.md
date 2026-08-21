@@ -1,5 +1,9 @@
 # Engineering Evolution Wave 2 - Final Synthesis
 
+> **STALE ACCEPTANCE SNAPSHOT:** Fresh reviews on 2026-08-20 rejected Track A at `fefea65`
+> and Track C at `66211cc`. Preserve this document as historical synthesis only. Current scope
+> and restart order are authoritative in `WAVE2-RESUME-PROMPT.md` and the two closeout briefs.
+
 Campaign: 2026-08-12 to 2026-08-13. Specialist base:
 `894d72be95f8ad4b8d63e629114e486e825b13d7`. Integration branch:
 `agent/evolution-wave2-base`. Nothing in this closeout was merged into or pushed from
