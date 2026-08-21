@@ -1353,10 +1353,14 @@ describe('SesionesPageComponent', () => {
       currentTime: 200,
       trading: payload.trading,
     });
-    let resolveWorkspace!: (workspace: ReturnType<typeof workspaceMeta> & { series: {} }) => void;
+    let resolveWorkspace!: (
+      workspace: ReturnType<typeof workspaceMeta> & { series: Record<string, never> },
+    ) => void;
     const getWorkspace = vi.fn(
       () =>
-        new Promise<ReturnType<typeof workspaceMeta> & { series: {} }>((resolve) => {
+        new Promise<
+          ReturnType<typeof workspaceMeta> & { series: Record<string, never> }
+        >((resolve) => {
           resolveWorkspace = resolve;
         }),
     );
