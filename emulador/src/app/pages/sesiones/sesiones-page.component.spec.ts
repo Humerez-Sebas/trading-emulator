@@ -44,6 +44,7 @@ import { MarketDataRepository } from '../../domain/market-data.repository';
 import { DataOnboardingService } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
 import type { DatasetRecord } from '../../services/market-data-db';
+import type { SupabaseService } from '../../auth/supabase.service';
 
 function dataset(p: Partial<DatasetRecord> = {}): DatasetRecord {
   return {
@@ -1248,6 +1249,235 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
     );
     expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('open: compensates an A edit made while the post-promotion owner assertion is pending', async () => {
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const promotedB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      currentTime: 200,
+      trading: payload.trading,
+    });
+    let releaseOwner!: () => void;
+    const ownerPending = new Promise<void>((resolve) => (releaseOwner = resolve));
+    let assertions = 0;
+    const assertExpectedOwner = vi.fn(async () => {
+      assertions += 1;
+      if (assertions === 3) await ownerPending;
+    });
+    const compensatePromotionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        getWorkspace: vi.fn().mockResolvedValue({ ...promotedB, series: {} }),
+        promoteSessionIfUnchanged: vi.fn().mockResolvedValue(true),
+        compensatePromotionIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload), assertExpectedOwner },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(assertExpectedOwner).toHaveBeenCalledTimes(3));
+    store.overrideSelector(selectTradingData, {
+      ...activeA.trading!,
+      sessionName: 'A edited during owner assertion',
+      balance: 13000,
+    });
+    store.refreshState();
+    releaseOwner();
+    await opening;
+
+    expect(compensatePromotionIfUnchanged).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+  });
+
+  it('open: compensates an A edit made while the promoted workspace read is pending', async () => {
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const promotedB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      currentTime: 200,
+      trading: payload.trading,
+    });
+    let resolveWorkspace!: (workspace: ReturnType<typeof workspaceMeta> & { series: {} }) => void;
+    const getWorkspace = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof workspaceMeta> & { series: {} }>((resolve) => {
+          resolveWorkspace = resolve;
+        }),
+    );
+    const compensatePromotionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        getWorkspace,
+        promoteSessionIfUnchanged: vi.fn().mockResolvedValue(true),
+        compensatePromotionIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(getWorkspace).toHaveBeenCalledOnce());
+    store.overrideSelector(selectTradingData, {
+      ...activeA.trading!,
+      sessionName: 'A edited during workspace read',
+      balance: 13000,
+    });
+    store.refreshState();
+    resolveWorkspace({ ...promotedB, series: {} });
+    await opening;
+
+    expect(compensatePromotionIfUnchanged).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+  });
+
+  it('open: live Supabase owner drift after promotion prevents compensation and hydration', async () => {
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    let owner = 'owner-a';
+    let authReads = 0;
+    let releasePostPromotionAuth!: () => void;
+    const postPromotionAuthPending = new Promise<void>(
+      (resolve) => (releasePostPromotionAuth = resolve),
+    );
+    const getSession = vi.fn(async () => {
+      authReads += 1;
+      if (authReads === 4) await postPromotionAuthPending;
+      return { data: { session: { user: { id: owner } } } };
+    });
+    const dbOwnerGuard = vi.fn().mockResolvedValue(undefined);
+    const liveSync = new SessionSyncService(
+      { client: { auth: { getSession } } } as unknown as SupabaseService,
+      { assertOwner: dbOwnerGuard } as unknown as WorkspaceDbService,
+    );
+    let resolvePromotion!: () => void;
+    const promoteSessionIfUnchanged = vi.fn(
+      () => new Promise<boolean>((resolve) => (resolvePromotion = () => resolve(true))),
+    );
+    const compensatePromotionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        promoteSessionIfUnchanged,
+        compensatePromotionIfUnchanged,
+      },
+      sync: {
+        captureOwner: vi.fn(liveSync.captureOwner.bind(liveSync)),
+        assertExpectedOwner: vi.fn(liveSync.assertExpectedOwner.bind(liveSync)),
+        fetchPayload: vi.fn().mockResolvedValue(payload),
+      },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(promoteSessionIfUnchanged).toHaveBeenCalledOnce());
+    store.overrideSelector(selectTradingData, {
+      ...activeA.trading!,
+      sessionName: 'A edited before owner drift',
+      balance: 13000,
+    });
+    store.refreshState();
+    resolvePromotion();
+    await vi.waitFor(() => expect(getSession).toHaveBeenCalledTimes(4));
+    owner = 'owner-b';
+    releasePostPromotionAuth();
+    await opening;
+
+    expect(getSession).toHaveBeenCalled();
+    expect(dbOwnerGuard).toHaveBeenCalledWith('owner-a');
+    expect(compensatePromotionIfUnchanged).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
   });
 
   it('open: same-symbol cloud B really hydrates B while A is archived without a mixed aggregate', async () => {

@@ -944,55 +944,34 @@ export class SesionesPageComponent {
       archivedAt: Date.now(),
     });
     if (!committed) return;
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     if (!this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)) {
-      const activeSessionId = this.liveActiveSessionId();
-      if (
-        expectedLiveAggregate === null ||
-        card.symbol !== this.currentAsset() ||
-        !expectedMeta?.activeSessionId ||
-        activeSessionId !== expectedMeta.activeSessionId
-      ) {
-        return;
-      }
-      const now = Date.now();
-      const live = this.liveWorkspaceAggregate();
-      const trading = this.liveTrading();
-      await this.db.compensatePromotionIfUnchanged(card.symbol, expectedOwnerId, session, {
-        session: {
-          id: activeSessionId,
-          name: trading.sessionName ?? 'Sesión en curso',
-          createdAt: now,
-          currentTime: this.currentTime(),
-          customTfMinutes: this.liveCustomTf(),
-          playbackSpeed: this.livePlaybackSpeed(),
-          replayResolution: this.liveReplayResolution(),
-          trading,
-          clientUpdatedAt: nextClientClock(
-            now,
-            expectedMeta.activeClientUpdatedAt,
-            expectedMeta.activeSyncedAt,
-          ),
-          syncedAt: expectedMeta.activeSyncedAt,
-        },
-        activeTf: live.activeTf,
-        selectedTfs: live.selectedTfs,
-        drawings: live.drawings,
-        layout: live.layout,
-        panels: live.panels,
-        linkGroups: Object.values(live.linkGroups),
-        archivedAt: now,
-      });
+      await this.compensatePromotion(
+        card,
+        expectedOwnerId,
+        expectedMeta,
+        expectedLiveAggregate,
+        session,
+      );
       return;
     }
-    await this.sync.assertExpectedOwner(expectedOwnerId);
     if (card.symbol === this.currentAsset()) {
-      if (
-        (expectedMeta?.activeSessionId ?? null) !== (this.liveActiveSessionId() ?? null)
-      ) {
-        return;
-      }
       const workspace = await this.db.getWorkspace(card.symbol);
       await this.sync.assertExpectedOwner(expectedOwnerId);
+      if (
+        card.symbol !== this.currentAsset() ||
+        (expectedMeta?.activeSessionId ?? null) !== (this.liveActiveSessionId() ?? null) ||
+        !this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)
+      ) {
+        await this.compensatePromotion(
+          card,
+          expectedOwnerId,
+          expectedMeta,
+          expectedLiveAggregate,
+          session,
+        );
+        return;
+      }
       if (
         !workspace ||
         workspace.activeSessionId !== session.id ||
@@ -1019,6 +998,54 @@ export class SesionesPageComponent {
     await this.reload();
     await this.sync.assertExpectedOwner(expectedOwnerId);
     await this.dispatchOpen({ ...card, id: null, cloudOnly: false, needsDownload: false });
+  }
+
+  private async compensatePromotion(
+    card: SessionCard,
+    expectedOwnerId: string,
+    expectedMeta: WorkspaceMeta | undefined,
+    expectedLiveAggregate: string | null,
+    promoted: SavedSession,
+  ): Promise<void> {
+    await this.sync.assertExpectedOwner(expectedOwnerId);
+    const activeSessionId = this.liveActiveSessionId();
+    if (
+      expectedLiveAggregate === null ||
+      this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate) ||
+      card.symbol !== this.currentAsset() ||
+      !expectedMeta?.activeSessionId ||
+      activeSessionId !== expectedMeta.activeSessionId
+    ) {
+      return;
+    }
+    const now = Date.now();
+    const live = this.liveWorkspaceAggregate();
+    const trading = this.liveTrading();
+    await this.db.compensatePromotionIfUnchanged(card.symbol, expectedOwnerId, promoted, {
+      session: {
+        id: activeSessionId,
+        name: trading.sessionName ?? 'Sesión en curso',
+        createdAt: now,
+        currentTime: this.currentTime(),
+        customTfMinutes: this.liveCustomTf(),
+        playbackSpeed: this.livePlaybackSpeed(),
+        replayResolution: this.liveReplayResolution(),
+        trading,
+        clientUpdatedAt: nextClientClock(
+          now,
+          expectedMeta.activeClientUpdatedAt,
+          expectedMeta.activeSyncedAt,
+        ),
+        syncedAt: expectedMeta.activeSyncedAt,
+      },
+      activeTf: live.activeTf,
+      selectedTfs: live.selectedTfs,
+      drawings: live.drawings,
+      layout: live.layout,
+      panels: live.panels,
+      linkGroups: Object.values(live.linkGroups),
+      archivedAt: now,
+    });
   }
 
   async rename(card: SessionCard): Promise<void> {
