@@ -8,6 +8,8 @@ import { defaultTradingData } from '../state/trading/trading.models';
 import { singlePanelLayoutFor } from './session-migration';
 import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import type { LinkGroup } from '../state/link-groups/link-groups.models';
+import { SessionSyncService } from './session-sync.service';
+import type { SupabaseService } from '../auth/supabase.service';
 
 const DB_NAME = 'emulador-workspaces';
 
@@ -244,6 +246,69 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
 
     expect(committed).toBe(true);
     expect((await svc.getMeta('EURUSD'))?.sessions?.[0].name).toBe('Renamed');
+  });
+
+  it('transactionally reconciles a newly archived row and flushes its latest dirty payload', async () => {
+    const captured = savedSession({
+      id: 'active-a',
+      name: 'Captured A',
+      currentTime: 500,
+      trading: { ...defaultTradingData(), sessionName: 'Captured A', balance: 11000 },
+      clientUpdatedAt: 100,
+      syncedAt: 100,
+    });
+    const latest = savedSession({
+      ...captured,
+      name: 'Latest A',
+      trading: { ...captured.trading, sessionName: 'Latest A', balance: 12000 },
+      clientUpdatedAt: 101,
+    });
+    await svc.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'active-next',
+        trading: defaultTradingData(),
+        sessions: [captured],
+      }),
+    );
+    const reconciling = svc as WorkspaceDbService & {
+      reconcileArchivedSessionIfUnchanged(
+        symbol: string,
+        expectedActiveSessionId: string,
+        expectedArchived: typeof captured,
+        reconciled: typeof latest,
+      ): Promise<boolean>;
+    };
+
+    expect(reconciling.reconcileArchivedSessionIfUnchanged).toBeTypeOf('function');
+    const committed = await reconciling.reconcileArchivedSessionIfUnchanged(
+      'EURUSD',
+      'active-next',
+      captured,
+      latest,
+    );
+
+    expect(committed).toBe(true);
+    expect((await svc.getMeta('EURUSD'))?.sessions).toContainEqual(latest);
+
+    const sync = new SessionSyncService(
+      {
+        client: {
+          auth: { getSession: async () => ({ data: { session: { user: { id: OWNER } } } }) },
+        },
+      } as SupabaseService,
+      svc,
+    );
+    const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
+    await sync.flushDirty();
+
+    const row = upsert.mock.calls.map(([candidate]) => candidate).find(({ id }) => id === 'active-a');
+    expect(row?.payload).toEqual(
+      expect.objectContaining({
+        trading: expect.objectContaining({ sessionName: 'Latest A', balance: 12000 }),
+      }),
+    );
+    expect(row?.clientUpdatedAt).toBe(101);
   });
 
   it('rejects an unclocked archived mutation when the saved row is absent', async () => {

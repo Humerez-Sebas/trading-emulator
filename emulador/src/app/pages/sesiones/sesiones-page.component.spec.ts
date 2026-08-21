@@ -3364,7 +3364,7 @@ describe('SesionesPageComponent', () => {
     );
   });
 
-  it('archive captures a live edit before persistence and gives the archived payload a dirty clock', async () => {
+  it('archive reconciles an equal-clock live edit made while persistence is pending', async () => {
     const durable = workspaceMeta({
       symbol: 'NAS100',
       activeSessionId: 'active-a',
@@ -3389,12 +3389,31 @@ describe('SesionesPageComponent', () => {
         return true;
       },
     );
+    const reconcileArchivedSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _expectedActiveSessionId: string,
+        _expectedArchived: SavedSession | undefined,
+        reconciled: SavedSession,
+      ) => {
+        latest = {
+          ...latest,
+          sessions: (latest.sessions ?? [])
+            .filter((session) => session.id !== reconciled.id)
+            .concat(reconciled),
+        };
+        return true;
+      },
+    );
     const capturedEdit = { ...defaultTradingData(), sessionName: 'Captured A', balance: 11000 };
     create({
       currentAsset: 'NAS100',
       currentTime: 500,
       liveTrading: capturedEdit,
-      db: { replaceSessionIfUnchanged },
+      db: {
+        replaceSessionIfUnchanged,
+        reconcileArchivedSessionIfUnchanged,
+      } as unknown as Partial<ReturnType<typeof workspaceDbStub>>,
     });
     store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
     store.refreshState();
@@ -3410,17 +3429,19 @@ describe('SesionesPageComponent', () => {
         syncedAt: 100,
       }),
     );
-    store.overrideSelector(selectTradingData, {
+    const laterEdit = {
       ...capturedEdit,
       sessionName: 'Later A edit',
       balance: 12000,
-    });
+    };
+    store.overrideSelector(selectTradingData, laterEdit);
     store.refreshState();
     release();
     await archiving;
 
     const archived = latest.sessions?.find((session) => session.id === 'active-a');
-    expect(archived?.trading).toEqual(capturedEdit);
+    expect(reconcileArchivedSessionIfUnchanged).toHaveBeenCalledOnce();
+    expect(archived?.trading).toEqual(laterEdit);
     expect(archived?.currentTime).toBe(500);
     expect(archived?.clientUpdatedAt).toBeGreaterThan(100);
     expect(archived?.syncedAt).toBe(100);
@@ -3429,6 +3450,7 @@ describe('SesionesPageComponent', () => {
         type: TradingActions.newSession.type,
         archivedClientUpdatedAt: archived?.clientUpdatedAt,
         archivedSyncedAt: 100,
+        archivedSession: archived,
       }),
     );
   });

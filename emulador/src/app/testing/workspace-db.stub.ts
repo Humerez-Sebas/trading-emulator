@@ -48,6 +48,7 @@ export function workspaceDbStub(): Partial<
       });
       return committed;
     }),
+    reconcileArchivedSessionIfUnchanged: vi.fn().mockResolvedValue(false),
     deleteSessionIfUnchanged: vi.fn().mockResolvedValue(null),
     promoteSessionIfUnchanged: vi.fn().mockResolvedValue(false),
     compensatePromotionIfUnchanged: vi.fn().mockResolvedValue(false),

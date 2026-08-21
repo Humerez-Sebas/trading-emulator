@@ -68,7 +68,14 @@ function archiveActive(
   customTfMinutes?: number | null,
   playbackSpeed?: number,
   replayResolution?: number | null,
+  archivedSession?: SavedSession,
 ): SavedSession[] {
+  if (archivedSession) {
+    return [
+      ...state.savedSessions.filter((session) => session.id !== archivedSession.id),
+      archivedSession,
+    ];
+  }
   if (!hasActivity(state) && state.sessionName === null) return state.savedSessions;
   return [
     ...state.savedSessions,
@@ -363,6 +370,7 @@ export const tradingFeature = createFeature({
           customTfMinutes,
           playbackSpeed,
           replayResolution,
+          archivedSession,
         },
       ): TradingState => ({
         ...defaultTradingData(state.initialBalance),
@@ -376,6 +384,7 @@ export const tradingFeature = createFeature({
           customTfMinutes,
           playbackSpeed,
           replayResolution,
+          archivedSession,
         ),
         // fresh blank session → fresh identity
         activeSessionId: replacementActiveSessionId ?? newId(),

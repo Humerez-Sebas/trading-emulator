@@ -824,6 +824,40 @@ describe('trading reducer: stable activeSessionId (Part A)', () => {
     );
   });
 
+  it('archives the exact reconciled session carried by a committed new-session consequence', () => {
+    const live = state({
+      activeSessionId: 'active-a',
+      sessionName: 'Live changed again',
+      balance: 13000,
+    });
+    const reconciled = {
+      id: 'active-a',
+      name: 'Reconciled A',
+      createdAt: 400,
+      currentTime: 500,
+      trading: {
+        ...defaultTradingData(),
+        sessionName: 'Reconciled A',
+        balance: 12000,
+      },
+      clientUpdatedAt: 101,
+      syncedAt: 100,
+    };
+
+    const next = reducer(
+      live,
+      TradingActions.newSession({
+        currentCursor: 500,
+        replacementActiveSessionId: 'active-next',
+        archivedClientUpdatedAt: 101,
+        archivedSyncedAt: 100,
+        archivedSession: reconciled,
+      } as never),
+    );
+
+    expect(next.savedSessions.find((session) => session.id === 'active-a')).toEqual(reconciled);
+  });
+
   it('archives the replay settings captured by the committed new-session action', () => {
     const s = state({ history: [closed()], activeSessionId: 'active-id-1' });
     const next = reducer(

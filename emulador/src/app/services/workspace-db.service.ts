@@ -385,6 +385,29 @@ export class WorkspaceDbService {
     return committed;
   }
 
+  /** Replaces the just-archived row only while both it and the replacement active id are exact. */
+  async reconcileArchivedSessionIfUnchanged(
+    symbol: string,
+    expectedActiveSessionId: string,
+    expectedArchived: SavedSession | undefined,
+    reconciled: SavedSession,
+  ): Promise<boolean> {
+    let committed = false;
+    await this.updateMeta(symbol, (current) => {
+      if (!current || current.activeSessionId !== expectedActiveSessionId) return undefined;
+      const archived = (current.sessions ?? []).find((session) => session.id === reconciled.id);
+      if (JSON.stringify(archived) !== JSON.stringify(expectedArchived)) return undefined;
+      committed = true;
+      return {
+        ...current,
+        sessions: (current.sessions ?? [])
+          .filter((session) => session.id !== reconciled.id)
+          .concat(reconciled),
+      };
+    });
+    return committed;
+  }
+
   /** Atomically removes/resets one exact session revision and queues that same id. */
   async deleteSessionIfUnchanged(
     symbol: string,

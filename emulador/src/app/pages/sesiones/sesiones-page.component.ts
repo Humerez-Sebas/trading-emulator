@@ -1085,6 +1085,7 @@ export class SesionesPageComponent {
     if (!revision || revision.kind !== 'active') return;
     const current = card.symbol === this.currentAsset();
     if (current && !this.currentRevisionStillMatches(revision)) return;
+    const expectedLiveAggregate = current ? this.serializeLiveAggregate() : null;
     const intendedTrading = current ? this.liveTrading() : undefined;
     const intendedCurrentTime = current ? this.currentTime() : undefined;
     const intendedCustomTfMinutes = current ? this.liveCustomTf() : undefined;
@@ -1092,6 +1093,7 @@ export class SesionesPageComponent {
     const intendedReplayResolution = current ? this.liveReplayResolution() : undefined;
     const replacementActiveSessionId = newId();
     let archivedClientUpdatedAt = revision.clientUpdatedAt;
+    let archivedSession: SavedSession | undefined;
     const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
       if (current && !this.currentRevisionStillMatches(revision)) return undefined;
       const trading = intendedTrading ?? meta.trading;
@@ -1118,28 +1120,27 @@ export class SesionesPageComponent {
         : revision.clientUpdatedAt;
       const real =
         trading.orders.length > 0 || trading.positions.length > 0 || trading.history.length > 0;
+      archivedSession =
+        real || trading.sessionName !== null
+          ? {
+              id: revision.id,
+              name: trading.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
+              createdAt: Date.now(),
+              currentTime,
+              customTfMinutes: current ? intendedCustomTfMinutes : meta.customTfMinutes,
+              playbackSpeed: current ? intendedPlaybackSpeed : meta.playbackSpeed,
+              replayResolution: current ? intendedReplayResolution : meta.replayResolution,
+              trading: { ...trading },
+              clientUpdatedAt: archivedClientUpdatedAt,
+              syncedAt: revision.syncedAt,
+            }
+          : undefined;
       return {
         ...meta,
         sessions:
-          real || trading.sessionName !== null
-            ? [
-                ...(meta.sessions ?? []),
-                {
-                  id: revision.id,
-                  name: trading.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
-                  createdAt: Date.now(),
-                  currentTime,
-                  customTfMinutes: current ? intendedCustomTfMinutes : meta.customTfMinutes,
-                  playbackSpeed: current ? intendedPlaybackSpeed : meta.playbackSpeed,
-                  replayResolution: current
-                    ? intendedReplayResolution
-                    : meta.replayResolution,
-                  trading: { ...trading },
-                  clientUpdatedAt: archivedClientUpdatedAt,
-                  syncedAt: revision.syncedAt,
-                },
-              ]
-            : meta.sessions,
+          archivedSession === undefined
+            ? meta.sessions
+            : [...(meta.sessions ?? []), archivedSession],
         trading: defaultTradingData(trading.initialBalance),
         activeSessionId: replacementActiveSessionId,
         activeClientUpdatedAt: undefined,
@@ -1149,15 +1150,59 @@ export class SesionesPageComponent {
     if (!changed) return;
     if (current) {
       if (!this.currentRevisionStillMatches(revision)) return;
+      if (!this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)) {
+        const trading = this.liveTrading();
+        const real =
+          trading.orders.length > 0 || trading.positions.length > 0 || trading.history.length > 0;
+        if (real || trading.sessionName !== null) {
+          const now = Date.now();
+          const reconciled: SavedSession = {
+            id: revision.id,
+            name:
+              trading.sessionName ??
+              archivedSession?.name ??
+              `Sesión ${(this.liveSessions() ?? []).length + 1}`,
+            createdAt: archivedSession?.createdAt ?? now,
+            currentTime: this.currentTime(),
+            customTfMinutes: this.liveCustomTf(),
+            playbackSpeed: this.livePlaybackSpeed(),
+            replayResolution: this.liveReplayResolution(),
+            trading,
+            clientUpdatedAt: nextClientClock(
+              now,
+              archivedSession?.clientUpdatedAt ?? revision.clientUpdatedAt,
+              revision.syncedAt,
+            ),
+            syncedAt: revision.syncedAt,
+          };
+          const reconciledCommit = await this.db.reconcileArchivedSessionIfUnchanged(
+            card.symbol,
+            replacementActiveSessionId,
+            archivedSession,
+            reconciled,
+          );
+          if (!reconciledCommit) return;
+          if (card.symbol !== this.currentAsset() || !this.currentRevisionStillMatches(revision)) {
+            return;
+          }
+          archivedSession = reconciled;
+          archivedClientUpdatedAt = reconciled.clientUpdatedAt;
+        }
+      }
       this.store.dispatch(
         TradingActions.newSession({
-          currentCursor: intendedCurrentTime!,
+          currentCursor: archivedSession ? archivedSession.currentTime : intendedCurrentTime!,
           replacementActiveSessionId,
           archivedClientUpdatedAt,
           archivedSyncedAt: revision.syncedAt,
-          customTfMinutes: intendedCustomTfMinutes,
-          playbackSpeed: intendedPlaybackSpeed,
-          replayResolution: intendedReplayResolution,
+          customTfMinutes: archivedSession
+            ? archivedSession.customTfMinutes
+            : intendedCustomTfMinutes,
+          playbackSpeed: archivedSession ? archivedSession.playbackSpeed : intendedPlaybackSpeed,
+          replayResolution: archivedSession
+            ? archivedSession.replayResolution
+            : intendedReplayResolution,
+          archivedSession,
         }),
       );
     } else {

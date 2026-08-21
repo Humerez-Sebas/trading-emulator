@@ -1,7 +1,7 @@
 import { createActionGroup, emptyProps, props } from '@ngrx/store';
 import { Candle } from '../../models';
 import { ExecutionCosts } from './execution-costs';
-import { ClosedTrade, OrderSide, PendingType, TradingData } from './trading.models';
+import { ClosedTrade, OrderSide, PendingType, SavedSession, TradingData } from './trading.models';
 
 export const TradingActions = createActionGroup({
   source: 'Trading',
@@ -89,6 +89,7 @@ export const TradingActions = createActionGroup({
       customTfMinutes?: number | null;
       playbackSpeed?: number;
       replayResolution?: number | null;
+      archivedSession?: SavedSession;
     }>(),
     /** Names the ACTIVE session (kept when it gets archived). */
     'Set Session Name': props<{ name: string | null }>(),
