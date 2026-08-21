@@ -289,3 +289,16 @@ Implementation heads: `481a3d5`, `66d8526`, and `985534f`. Observed RED/GREEN co
 view **3/185 -> 185/185**, folder absence **3/66 -> 66/66**, and delayed same-id live mutation
 **1/113 -> 113/113**. Fresh affected evidence passed **9 files / 476 tests**; app/spec tsc and lint
 exited `0`. No full suite/build or independent acceptance is claimed.
+
+## Final Medium TOCTOU addendum from `cc0b71a` (2026-08-20)
+
+The migration layout and O-7 policy are unchanged. Same-symbol cloud opening now revalidates the
+captured live aggregate synchronously after promotion returns and before any B hydration. If same-id
+A changed in that interval, one owner-bound exact-revision transaction restores latest A as active,
+marks it dirty monotonically, removes stale archived A, and retains promoted B as an archived
+session. Exact B id/client/synced or expected-owner drift rejects the compensation without an
+overwrite; there is no retry loop or lock.
+
+Implementation head: `7051b44`. Observed RED/GREEN was **4 failed / 179 passed (183) -> 183/183**
+across the component and real fake-indexeddb service specs. Fresh app/spec tsc and lint exited `0`.
+No full suite/build or independent acceptance is claimed.

@@ -638,3 +638,43 @@ Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
 
 No full repository test suite or build was run; this is bounded implementer evidence only and makes
 no acceptance claim.
+
+## 2026-08-20 final Medium TOCTOU continuation from `cc0b71a`
+
+The historical acceptance statements remain historical. This continuation fixes only the reported
+post-promotion TOCTOU from rejected clean head `cc0b71a`; it makes no independent acceptance or full
+final-gates claim. No dependency, lockfile, Supabase, Vercel, framework, other-worktree, remote,
+push, merge, reset, rebase, or squash operation was performed.
+
+Implementation commit:
+
+- `7051b44` `fix(sessions): compensate post-promotion edits`
+
+Correction:
+
+- Same-symbol cloud open now compares the captured live aggregate synchronously again immediately
+  after durable promotion returns and before any B dispatch. A same-id A edit in the pending
+  promotion interval invokes one narrow owner-bound IndexedDB transaction: only exact active B
+  id/client/synced provenance may be replaced, latest A becomes active with a monotonic dirty clock,
+  stale archived A is removed, and B is retained coherently archived. A changed owner or active
+  revision fails closed. The component returns without B hydration/navigation; no loop or lock was
+  introduced, so a still-later live A edit remains eligible for normal monotonic persistence after A
+  identity is restored.
+
+TDD evidence, raw and unpiped from `emulador/`:
+
+- Focused RED over the page and real fake-indexeddb service specs exited `1`, **4 failed / 179 passed
+  (183)**: the controlled pending-promotion test observed zero compensation calls, and the three DB
+  proofs observed the missing guarded operation.
+- Focused GREEN over those same two explicit files exited `0`, **2 files / 183 tests passed**. This
+  includes the unchanged coherent B promotion proofs plus successful compensation, active drift, and
+  owner drift through real fake-indexeddb.
+
+Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
+
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- `npm run lint` -> exit `0`, `All files pass linting.`
+
+No full repository test suite or build was run; this is bounded implementer evidence only and makes
+no acceptance claim.
