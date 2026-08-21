@@ -302,3 +302,27 @@ overwrite; there is no retry loop or lock.
 Implementation head: `7051b44`. Observed RED/GREEN was **4 failed / 179 passed (183) -> 183/183**
 across the component and real fake-indexeddb service specs. Fresh app/spec tsc and lint exited `0`.
 No full suite/build or independent acceptance is claimed.
+
+## Three-Medium correction addendum from `5bc7aec` (2026-08-20)
+
+The migration layout, O-7 policy, and DB-owner guard are unchanged. Three later Medium findings were
+corrected from rejected clean head `5bc7aec`:
+
+1. Same-symbol cloud promotion now completes live Supabase owner and workspace awaits before a final
+   synchronous current-symbol, active-id, full-live-aggregate, and promoted-workspace comparison.
+   Same-id A edits during either the owner assertion or workspace read invoke compensation and return
+   without hydrating B.
+2. Current-active archive detects a same-id live edit made while the first exact transaction is
+   pending. A second exact transaction reconciles the archived row to latest A under the replacement
+   active id with a monotonic dirty clock, and the reducer consequence carries that exact payload and
+   clocks. Real fake-IndexedDB plus `flushDirty` evidence emits latest A and remains flush-eligible.
+3. Every post-promotion compensation is preceded by live
+   `SessionSyncService.assertExpectedOwner`, including immediately before the local write. A delayed
+   fake Supabase auth read through the actual capture/assert semantics changing A to B causes no
+   compensation or hydration; the DB transaction still independently requires the exact expected
+   owner and promoted B revision.
+
+Implementation heads: `22cbba7`, `89cacae`, and test-only lint correction `216822f`. Accepted
+RED/GREEN counts were archive **3/251 -> 251/251** and promotion/auth **3/117 -> 117/117**. Fresh
+affected evidence passed **10 files / 397 tests**; app/spec tsc and lint exited `0`. No full suite,
+build, or independent acceptance is claimed.

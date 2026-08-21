@@ -678,3 +678,55 @@ Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
 
 No full repository test suite or build was run; this is bounded implementer evidence only and makes
 no acceptance claim.
+
+## 2026-08-20 three-Medium continuation from `5bc7aec`
+
+The historical acceptance statements remain historical. This continuation fixes only the three
+reported Medium findings from rejected clean head `5bc7aec`; it makes no independent acceptance or
+full final-gates claim. No dependency, lockfile, Supabase, Vercel, framework, other-worktree,
+remote, push, merge, reset, rebase, squash, full-suite, or build operation was performed.
+
+Implementation commits:
+
+- `22cbba7` `fix(sessions): reconcile pending active archive`
+- `89cacae` `fix(sessions): close promotion consequence windows`
+- `216822f` `test(sessions): type delayed workspace fixture`
+
+Corrections:
+
+- Current-active archive now captures the full live aggregate before its exact revision
+  transaction. If same-id A changes while that transaction is pending, a second transaction checks
+  both the replacement active id and the exact just-archived row before replacing A with the latest
+  payload and a monotonic dirty clock. The reducer receives that exact `SavedSession`, so it cannot
+  combine a later live payload with earlier clocks. A real fake-IndexedDB-to-`flushDirty` proof
+  observed latest A at `101 > 100` in the emitted cloud payload.
+- Same-symbol promotion resolves the live Supabase owner and promoted workspace before its final
+  synchronous current-symbol, active-id, full-aggregate, and promoted-provenance checks. No await
+  separates a successful final check from `workspaceRestored`. Deterministic tests edit same-id A
+  while the post-promotion owner assertion and `getWorkspace` are each pending; both compensate and
+  return without B hydration.
+- Promotion compensation now requires `SessionSyncService.assertExpectedOwner` immediately after
+  promotion and again immediately before its owner-bound local write. A delayed fake Supabase
+  `getSession` behind the real capture/assert implementation changes A to B during the post-promotion
+  assertion and produces no compensation or hydration. The existing exact expected-owner guard in
+  `WorkspaceDbService.compensatePromotionIfUnchanged` remains unchanged.
+
+TDD evidence, raw and unpiped from `emulador/`:
+
+- Archive test draft first failed compilation on the wished-for typed stub key and one wire/domain
+  clock-name mismatch; after correcting only the harness, accepted RED exited `1`, **3 failed / 248
+  passed (251)**. Focused GREEN passed **3 files / 251 tests**.
+- Promotion/auth test draft first failed compilation on two intentionally partial fake casts; after
+  applying the repository's `unknown as` test idiom, accepted RED exited `1`, **3 failed / 114 passed
+  (117)**. Focused GREEN passed **117/117**; the promotion expansion passed **4 files / 330 tests**.
+
+Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
+
+- Aggregate affected command (10 explicit files) -> exit `0`, **10 files / 397 tests passed**.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- First `npm run lint` -> exit `1`, two test-only empty-object type annotations. After replacing only
+  those annotations with `Record<string, never>`, all four commands were rerun fresh: affected
+  **397/397**, app/spec tsc exit `0`, and lint exit `0` with `All files pass linting.`
+
+This is bounded implementer evidence only and makes no final acceptance claim.
