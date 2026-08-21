@@ -170,9 +170,12 @@ export class WorkspaceDbService {
    * changes inside one document (it should not — `loggedOut` hard-reloads), the
    * stale connection is closed and a fresh one opened rather than reused.
    */
-  private async openUser(): Promise<IDBDatabase> {
+  private async openUser(expectedOwnerId?: string): Promise<IDBDatabase> {
     const ownerId = await this.owner.ownerId();
     if (!ownerId) throw new Error(NO_OWNER_MESSAGE);
+    if (expectedOwnerId && ownerId !== expectedOwnerId) {
+      throw new Error('El propietario autenticado no coincide con el espacio de trabajo local.');
+    }
     if (this.userDbPromise && this.userDbOwnerId === ownerId) return this.userDbPromise;
     if (this.userDbPromise) {
       const stale = this.userDbPromise;
@@ -488,6 +491,56 @@ export class WorkspaceDbService {
         lastModified: materialized.archivedAt,
       };
     });
+  }
+
+  /** Restores a newer live active after promotion only while that exact promoted revision owns it. */
+  async compensatePromotionIfUnchanged(
+    symbol: string,
+    expectedOwnerId: string,
+    promoted: SavedSession,
+    restored: MaterializedSessionAggregate,
+  ): Promise<boolean> {
+    if (promoted.id === restored.session.id) return false;
+    const db = await this.openUser(expectedOwnerId);
+    const tx = db.transaction(META_STORE, 'readwrite');
+    const completion = this.completed(tx);
+    const metas = tx.objectStore(META_STORE);
+    const current = await this.request<WorkspaceMeta | undefined>(metas.get(symbol));
+    if (
+      !current ||
+      current.activeSessionId !== promoted.id ||
+      current.activeClientUpdatedAt !== promoted.clientUpdatedAt ||
+      current.activeSyncedAt !== promoted.syncedAt
+    ) {
+      await completion;
+      return false;
+    }
+
+    const sessions = (current.sessions ?? []).filter(
+      (session) => session.id !== promoted.id && session.id !== restored.session.id,
+    );
+    sessions.push(promoted);
+    metas.put({
+      ...current,
+      activeTf: restored.activeTf,
+      selectedTfs: restored.selectedTfs,
+      currentTime: restored.session.currentTime,
+      customTfMinutes: restored.session.customTfMinutes,
+      playbackSpeed: restored.session.playbackSpeed,
+      replayResolution: restored.session.replayResolution,
+      drawings: restored.drawings,
+      trading: restored.session.trading,
+      sessions,
+      activeSessionId: restored.session.id,
+      activeClientUpdatedAt: restored.session.clientUpdatedAt,
+      activeSyncedAt: restored.session.syncedAt,
+      layout: restored.layout,
+      panels: restored.panels,
+      linkGroups: restored.linkGroups,
+      lastModified: restored.archivedAt,
+    });
+    await completion;
+    return true;
   }
 
   async putSeries(symbol: string, tf: Timeframe, candles: Candle[]): Promise<void> {

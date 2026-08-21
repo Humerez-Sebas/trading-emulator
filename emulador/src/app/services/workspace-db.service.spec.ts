@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceDbService } from './workspace-db.service';
-import { fixedOwnerIdentity } from './owner-identity.service';
+import { fixedOwnerIdentity, OwnerIdentityService } from './owner-identity.service';
 import { ADOPTION_MARKER_KEY, ownerWorkspaceDbName } from './owner-scope';
 import { savedSession, series, workspaceMeta } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
@@ -35,6 +35,24 @@ async function freshDb(): Promise<WorkspaceDbService> {
 }
 
 let svc: WorkspaceDbService;
+
+type CompensatingWorkspaceDb = WorkspaceDbService & {
+  compensatePromotionIfUnchanged(
+    symbol: string,
+    expectedOwnerId: string,
+    promoted: ReturnType<typeof savedSession>,
+    restored: {
+      session: ReturnType<typeof savedSession>;
+      activeTf: 'M1';
+      selectedTfs: ['M1'];
+      drawings: [];
+      layout: ReturnType<typeof singlePanelLayoutFor>['layout'];
+      panels: ReturnType<typeof singlePanelLayoutFor>['panels'];
+      linkGroups: [];
+      archivedAt: number;
+    },
+  ): Promise<boolean>;
+};
 
 beforeEach(async () => {
   svc = await freshDb();
@@ -456,6 +474,179 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
       }),
     ]);
     expect(JSON.stringify(promoted)).not.toMatch(/"candles"|"series"|"ohlc"|"parquet"/i);
+  });
+
+  it('compensates an exact promoted B by restoring latest A and archiving B coherently', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const bView = singlePanelLayoutFor('EURUSD', 'H1');
+    const archivedA = savedSession({
+      id: 'active-a',
+      name: 'A stale',
+      createdAt: 800,
+      currentTime: 100,
+      clientUpdatedAt: 700,
+      syncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A stale', balance: 11000 },
+    });
+    const promotedB = savedSession({
+      id: 'cloud-b',
+      name: 'B',
+      createdAt: 900,
+      currentTime: 200,
+      clientUpdatedAt: 900,
+      syncedAt: 900,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    await svc.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'cloud-b',
+        activeClientUpdatedAt: 900,
+        activeSyncedAt: 900,
+        currentTime: 200,
+        trading: promotedB.trading,
+        sessions: [archivedA],
+        layout: bView.layout,
+        panels: bView.panels,
+      }),
+    );
+    const latestA = savedSession({
+      id: 'active-a',
+      name: 'A latest',
+      createdAt: 1000,
+      currentTime: 150,
+      clientUpdatedAt: 901,
+      syncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A latest', balance: 13000 },
+    });
+    const compensating = svc as CompensatingWorkspaceDb;
+
+    expect(compensating.compensatePromotionIfUnchanged).toBeTypeOf('function');
+    const committed = await compensating.compensatePromotionIfUnchanged(
+      'EURUSD',
+      OWNER,
+      promotedB,
+      {
+        session: latestA,
+        activeTf: 'M1',
+        selectedTfs: ['M1'],
+        drawings: [],
+        layout: aView.layout,
+        panels: aView.panels,
+        linkGroups: [],
+        archivedAt: 1000,
+      },
+    );
+
+    const restored = await svc.getMeta('EURUSD');
+    expect(committed).toBe(true);
+    expect(restored).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: 901,
+        activeSyncedAt: 650,
+        currentTime: 150,
+        trading: expect.objectContaining({ sessionName: 'A latest', balance: 13000 }),
+        layout: aView.layout,
+        panels: aView.panels,
+      }),
+    );
+    expect(restored?.sessions).toEqual([promotedB]);
+    expect(JSON.stringify(restored)).not.toMatch(/"candles"|"series"|"ohlc"|"parquet"/i);
+  });
+
+  it('compensation rejects an active drift while owner resolution is pending', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const promotedB = savedSession({
+      id: 'cloud-b',
+      clientUpdatedAt: 900,
+      syncedAt: 900,
+      trading: { ...defaultTradingData(), sessionName: 'B' },
+    });
+    const activeB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      trading: promotedB.trading,
+    });
+    const activeC = workspaceMeta({
+      ...activeB,
+      activeSessionId: 'active-c',
+      activeClientUpdatedAt: 901,
+      activeSyncedAt: 901,
+      trading: { ...defaultTradingData(), sessionName: 'C' },
+    });
+    await svc.putMeta(activeB);
+    let releaseOwner!: () => void;
+    const ownerWaiting = new Promise<void>((resolve) => (releaseOwner = resolve));
+    const delayed = new WorkspaceDbService({
+      ownerId: async () => {
+        await ownerWaiting;
+        return OWNER;
+      },
+    } as OwnerIdentityService) as CompensatingWorkspaceDb;
+    const latestA = savedSession({ id: 'active-a', clientUpdatedAt: 901, syncedAt: 650 });
+
+    expect(delayed.compensatePromotionIfUnchanged).toBeTypeOf('function');
+    const compensating = delayed.compensatePromotionIfUnchanged('EURUSD', OWNER, promotedB, {
+      session: latestA,
+      activeTf: 'M1',
+      selectedTfs: ['M1'],
+      drawings: [],
+      layout: view.layout,
+      panels: view.panels,
+      linkGroups: [],
+      archivedAt: 1000,
+    });
+    await svc.putMeta(activeC);
+    releaseOwner();
+
+    expect(await compensating).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(activeC);
+  });
+
+  it('compensation rejects owner drift without touching the expected owner database', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const promotedB = savedSession({
+      id: 'cloud-b',
+      clientUpdatedAt: 900,
+      syncedAt: 900,
+      trading: { ...defaultTradingData(), sessionName: 'B' },
+    });
+    const activeB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      trading: promotedB.trading,
+    });
+    await svc.putMeta(activeB);
+    let releaseOwner!: () => void;
+    const ownerWaiting = new Promise<void>((resolve) => (releaseOwner = resolve));
+    const drifted = new WorkspaceDbService({
+      ownerId: async () => {
+        await ownerWaiting;
+        return 'owner-other';
+      },
+    } as OwnerIdentityService) as CompensatingWorkspaceDb;
+    const latestA = savedSession({ id: 'active-a', clientUpdatedAt: 901, syncedAt: 650 });
+
+    expect(drifted.compensatePromotionIfUnchanged).toBeTypeOf('function');
+    const compensating = drifted.compensatePromotionIfUnchanged('EURUSD', OWNER, promotedB, {
+      session: latestA,
+      activeTf: 'M1',
+      selectedTfs: ['M1'],
+      drawings: [],
+      layout: view.layout,
+      panels: view.panels,
+      linkGroups: [],
+      archivedAt: 1000,
+    });
+    releaseOwner();
+
+    await expect(compensating).rejects.toThrow(/propietario autenticado/i);
+    expect(await svc.getMeta('EURUSD')).toEqual(activeB);
   });
 });
 

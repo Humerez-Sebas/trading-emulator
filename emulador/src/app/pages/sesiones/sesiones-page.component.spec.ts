@@ -3,7 +3,10 @@ import { Router } from '@angular/router';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SesionesPageComponent, SessionCard, reorderFolders } from './sesiones-page.component';
-import { WorkspaceDbService } from '../../services/workspace-db.service';
+import {
+  MaterializedSessionAggregate,
+  WorkspaceDbService,
+} from '../../services/workspace-db.service';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { ReplayActions } from '../../state/replay/replay.actions';
@@ -21,7 +24,12 @@ import {
 import { authFeature } from '../../state/auth/auth.reducer';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { workspaceMeta, savedSession, closed } from '../../testing/fixtures';
-import { defaultTradingData, SessionFolder, TradingData } from '../../state/trading/trading.models';
+import {
+  defaultTradingData,
+  SavedSession,
+  SessionFolder,
+  TradingData,
+} from '../../state/trading/trading.models';
 import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { DialogService } from '../../components/ui/dialog.service';
 import { SessionService } from '../../services/session.service';
@@ -1102,6 +1110,140 @@ describe('SesionesPageComponent', () => {
 
     expect(promoteSessionIfUnchanged).not.toHaveBeenCalled();
     expect(durable).toEqual(activeA);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+    expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('open: compensates a same-id live A edit made while promotion is pending', async () => {
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    let durable = activeA;
+    let resolvePromotion!: () => void;
+    const promoteSessionIfUnchanged = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolvePromotion = () => {
+            durable = {
+              ...durable,
+              activeTf: payload.activeTf,
+              currentTime: payload.currentTime,
+              customTfMinutes: payload.customTfMinutes,
+              playbackSpeed: payload.playbackSpeed,
+              trading: payload.trading,
+              sessions: [
+                savedSession({
+                  id: 'active-a',
+                  name: 'A',
+                  currentTime: 100,
+                  trading: activeA.trading,
+                  clientUpdatedAt: 700,
+                  syncedAt: 650,
+                }),
+              ],
+              activeSessionId: 'cloud-b',
+              activeClientUpdatedAt: 900,
+              activeSyncedAt: 900,
+            };
+            resolve(true);
+          };
+        }),
+    );
+    const compensatePromotionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _expectedOwnerId: string,
+        promoted: SavedSession,
+        restored: MaterializedSessionAggregate,
+      ) => {
+        durable = {
+          ...durable,
+          activeTf: restored.activeTf,
+          selectedTfs: restored.selectedTfs,
+          currentTime: restored.session.currentTime,
+          customTfMinutes: restored.session.customTfMinutes,
+          playbackSpeed: restored.session.playbackSpeed,
+          replayResolution: restored.session.replayResolution,
+          drawings: restored.drawings,
+          trading: restored.session.trading,
+          sessions: [promoted],
+          activeSessionId: restored.session.id,
+          activeClientUpdatedAt: restored.session.clientUpdatedAt,
+          activeSyncedAt: restored.session.syncedAt,
+          layout: restored.layout,
+          panels: restored.panels,
+          linkGroups: restored.linkGroups,
+        };
+        return true;
+      },
+    );
+    const db = {
+      getMeta: vi.fn(async () => durable),
+      promoteSessionIfUnchanged,
+      compensatePromotionIfUnchanged,
+    } as unknown as Partial<ReturnType<typeof workspaceDbStub>>;
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db,
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(promoteSessionIfUnchanged).toHaveBeenCalledOnce());
+    const latestA = {
+      ...activeA.trading!,
+      sessionName: 'A edited while promotion is pending',
+      balance: 13000,
+    };
+    store.overrideSelector(selectTradingData, latestA);
+    store.refreshState();
+    resolvePromotion();
+    await opening;
+
+    expect(compensatePromotionIfUnchanged).toHaveBeenCalledOnce();
+    expect(durable).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: expect.any(Number),
+        activeSyncedAt: 650,
+        trading: latestA,
+      }),
+    );
+    expect(durable.sessions).toEqual([
+      expect.objectContaining({
+        id: 'cloud-b',
+        clientUpdatedAt: 900,
+        syncedAt: 900,
+        trading: payload.trading,
+      }),
+    ]);
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
     );
