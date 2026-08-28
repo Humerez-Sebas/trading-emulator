@@ -1178,6 +1178,7 @@ export class SesionesPageComponent {
     if (current) {
       if (!this.currentRevisionStillMatches(revision)) return;
       if (!this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)) {
+        const expectedReconciledLiveAggregate = this.serializeLiveAggregate();
         const trading = this.liveTrading();
         const real =
           trading.orders.length > 0 || trading.positions.length > 0 || trading.history.length > 0;
@@ -1214,6 +1215,46 @@ export class SesionesPageComponent {
           }
           archivedSession = reconciled;
           archivedClientUpdatedAt = reconciled.clientUpdatedAt;
+          if (!this.liveAggregateStillMatches(card.symbol, expectedReconciledLiveAggregate)) {
+            const latestTrading = this.liveTrading();
+            const latestWorkspace = this.liveWorkspaceAggregate();
+            const restoreTime = Date.now();
+            const restoredSession: SavedSession = {
+              id: revision.id,
+              name:
+                latestTrading.sessionName ??
+                reconciled.name ??
+                `Sesión ${(this.liveSessions() ?? []).length + 1}`,
+              createdAt: reconciled.createdAt,
+              currentTime: this.currentTime(),
+              customTfMinutes: this.liveCustomTf(),
+              playbackSpeed: this.livePlaybackSpeed(),
+              replayResolution: this.liveReplayResolution(),
+              trading: latestTrading,
+              clientUpdatedAt: nextClientClock(
+                restoreTime,
+                reconciled.clientUpdatedAt,
+                reconciled.syncedAt,
+              ),
+              syncedAt: reconciled.syncedAt,
+            };
+            await this.db.restoreArchivedSessionAsActiveIfUnchanged(
+              card.symbol,
+              replacementActiveSessionId,
+              reconciled,
+              {
+                session: restoredSession,
+                activeTf: latestWorkspace.activeTf,
+                selectedTfs: latestWorkspace.selectedTfs,
+                drawings: latestWorkspace.drawings,
+                layout: latestWorkspace.layout,
+                panels: latestWorkspace.panels,
+                linkGroups: Object.values(latestWorkspace.linkGroups),
+                archivedAt: restoreTime,
+              },
+            );
+            return;
+          }
         }
       }
       this.store.dispatch(

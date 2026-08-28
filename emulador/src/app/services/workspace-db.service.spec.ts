@@ -56,6 +56,24 @@ type CompensatingWorkspaceDb = WorkspaceDbService & {
   ): Promise<boolean>;
 };
 
+type RestoringArchivedWorkspaceDb = WorkspaceDbService & {
+  restoreArchivedSessionAsActiveIfUnchanged(
+    symbol: string,
+    expectedActiveSessionId: string,
+    expectedArchived: ReturnType<typeof savedSession>,
+    restored: {
+      session: ReturnType<typeof savedSession>;
+      activeTf: 'M1';
+      selectedTfs: ['M1'];
+      drawings: [];
+      layout: ReturnType<typeof singlePanelLayoutFor>['layout'];
+      panels: ReturnType<typeof singlePanelLayoutFor>['panels'];
+      linkGroups: [];
+      archivedAt: number;
+    },
+  ): Promise<boolean>;
+};
+
 beforeEach(async () => {
   svc = await freshDb();
 });
@@ -309,6 +327,112 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
       }),
     );
     expect(row?.clientUpdatedAt).toBe(101);
+  });
+
+  it('restores an exact archived A as active with its latest aggregate and monotonic dirty clock', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const archivedA = savedSession({
+      id: 'active-a',
+      name: 'A1',
+      currentTime: 500,
+      trading: { ...defaultTradingData(), sessionName: 'A1', balance: 12000 },
+      clientUpdatedAt: 101,
+      syncedAt: 100,
+    });
+    const unrelated = savedSession({ id: 'saved-c', name: 'C' });
+    await svc.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'active-next',
+        trading: defaultTradingData(),
+        sessions: [unrelated, archivedA],
+      }),
+    );
+    const restoredA = savedSession({
+      ...archivedA,
+      name: 'A2',
+      currentTime: 600,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      trading: { ...archivedA.trading, sessionName: 'A2', balance: 13000 },
+      clientUpdatedAt: 102,
+    });
+    const restoring = svc as RestoringArchivedWorkspaceDb;
+
+    expect(restoring.restoreArchivedSessionAsActiveIfUnchanged).toBeTypeOf('function');
+    const committed = await restoring.restoreArchivedSessionAsActiveIfUnchanged(
+      'EURUSD',
+      'active-next',
+      archivedA,
+      {
+        session: restoredA,
+        activeTf: 'M1',
+        selectedTfs: ['M1'],
+        drawings: [],
+        layout: view.layout,
+        panels: view.panels,
+        linkGroups: [],
+        archivedAt: 1000,
+      },
+    );
+
+    const restored = await svc.getMeta('EURUSD');
+    expect(committed).toBe(true);
+    expect(restored).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: 102,
+        activeSyncedAt: 100,
+        currentTime: 600,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+        trading: expect.objectContaining({ sessionName: 'A2', balance: 13000 }),
+        layout: view.layout,
+        panels: view.panels,
+      }),
+    );
+    expect(restored?.sessions).toEqual([unrelated]);
+    expect(restored?.activeClientUpdatedAt).toBeGreaterThan(restored?.activeSyncedAt ?? 0);
+  });
+
+  it('does not restore A after the exact archived row changes', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const archivedA = savedSession({
+      id: 'active-a',
+      clientUpdatedAt: 101,
+      syncedAt: 100,
+    });
+    const newerArchivedA = { ...archivedA, clientUpdatedAt: 102 };
+    const current = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-next',
+      trading: defaultTradingData(),
+      sessions: [newerArchivedA],
+    });
+    await svc.putMeta(current);
+    const restoring = svc as RestoringArchivedWorkspaceDb;
+
+    expect(restoring.restoreArchivedSessionAsActiveIfUnchanged).toBeTypeOf('function');
+    const committed = await restoring.restoreArchivedSessionAsActiveIfUnchanged(
+      'EURUSD',
+      'active-next',
+      archivedA,
+      {
+        session: { ...newerArchivedA, clientUpdatedAt: 103 },
+        activeTf: 'M1',
+        selectedTfs: ['M1'],
+        drawings: [],
+        layout: view.layout,
+        panels: view.panels,
+        linkGroups: [],
+        archivedAt: 1000,
+      },
+    );
+
+    expect(committed).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(current);
   });
 
   it('rejects an unclocked archived mutation when the saved row is absent', async () => {

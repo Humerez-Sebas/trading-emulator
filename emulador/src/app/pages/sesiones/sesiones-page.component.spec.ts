@@ -3689,6 +3689,154 @@ describe('SesionesPageComponent', () => {
     );
   });
 
+  it('archive restores A when another live edit arrives while reconciliation is pending', async () => {
+    const durable = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 400,
+      trading: { ...defaultTradingData(), sessionName: 'Durable A', balance: 10000 },
+    });
+    let latest = durable;
+    let releaseArchive!: () => void;
+    const archiveWaiting = new Promise<void>((resolve) => (releaseArchive = resolve));
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        await archiveWaiting;
+        const next = update(latest);
+        if (!next) return false;
+        latest = next;
+        return true;
+      },
+    );
+    let releaseReconciliation!: () => void;
+    const reconciliationWaiting = new Promise<void>(
+      (resolve) => (releaseReconciliation = resolve),
+    );
+    const reconcileArchivedSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _expectedActiveSessionId: string,
+        _expectedArchived: SavedSession | undefined,
+        reconciled: SavedSession,
+      ) => {
+        await reconciliationWaiting;
+        latest = {
+          ...latest,
+          sessions: (latest.sessions ?? [])
+            .filter((session) => session.id !== reconciled.id)
+            .concat(reconciled),
+        };
+        return true;
+      },
+    );
+    let releaseRestoration!: () => void;
+    const restorationWaiting = new Promise<void>((resolve) => (releaseRestoration = resolve));
+    const restoreArchivedSessionAsActiveIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        expectedActiveSessionId: string,
+        expectedArchived: SavedSession,
+        restored: MaterializedSessionAggregate,
+      ) => {
+        await restorationWaiting;
+        const archived = latest.sessions?.find((session) => session.id === expectedArchived.id);
+        if (
+          latest.activeSessionId !== expectedActiveSessionId ||
+          JSON.stringify(archived) !== JSON.stringify(expectedArchived)
+        ) {
+          return false;
+        }
+        latest = {
+          ...latest,
+          activeTf: restored.activeTf,
+          selectedTfs: restored.selectedTfs,
+          currentTime: restored.session.currentTime,
+          customTfMinutes: restored.session.customTfMinutes,
+          playbackSpeed: restored.session.playbackSpeed,
+          replayResolution: restored.session.replayResolution,
+          drawings: restored.drawings,
+          trading: restored.session.trading,
+          sessions: (latest.sessions ?? []).filter(
+            (session) => session.id !== restored.session.id,
+          ),
+          activeSessionId: restored.session.id,
+          activeClientUpdatedAt: restored.session.clientUpdatedAt,
+          activeSyncedAt: restored.session.syncedAt,
+          layout: restored.layout,
+          panels: restored.panels,
+          linkGroups: restored.linkGroups,
+        };
+        return true;
+      },
+    );
+    const capturedA = { ...defaultTradingData(), sessionName: 'Captured A', balance: 11000 };
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      liveTrading: capturedA,
+      db: {
+        replaceSessionIfUnchanged,
+        reconcileArchivedSessionIfUnchanged,
+        restoreArchivedSessionAsActiveIfUnchanged,
+      } as unknown as Partial<ReturnType<typeof workspaceDbStub>>,
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const archiving = component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+    const firstEdit = { ...capturedA, sessionName: 'A1 during archive', balance: 12000 };
+    store.overrideSelector(selectTradingData, firstEdit);
+    store.refreshState();
+    releaseArchive();
+    await vi.waitFor(() => expect(reconcileArchivedSessionIfUnchanged).toHaveBeenCalledOnce());
+
+    const secondEdit = { ...firstEdit, sessionName: 'A2 during reconciliation', balance: 13000 };
+    store.overrideSelector(selectTradingData, secondEdit);
+    store.refreshState();
+    releaseReconciliation();
+    await vi.waitFor(() =>
+      expect(restoreArchivedSessionAsActiveIfUnchanged).toHaveBeenCalledOnce(),
+    );
+
+    const thirdEdit = { ...secondEdit, sessionName: 'A3 during restoration', balance: 14000 };
+    store.overrideSelector(selectTradingData, thirdEdit);
+    store.refreshState();
+    releaseRestoration();
+    await archiving;
+
+    expect(latest).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: expect.any(Number),
+        activeSyncedAt: 100,
+        trading: secondEdit,
+      }),
+    );
+    expect(latest.activeClientUpdatedAt).toBeGreaterThan(100);
+    expect(latest.sessions?.some((session) => session.id === 'active-a')).toBe(false);
+    expect(store.selectSignal(tradingFeature.selectActiveSessionId)()).toBe('active-a');
+    expect(store.selectSignal(selectTradingData)()).toEqual(thirdEdit);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.newSession.type }),
+    );
+  });
+
   it('archive treats replay-settings-only changes as a dirty captured payload', async () => {
     const trading = { ...defaultTradingData(), sessionName: 'A' };
     const durable = workspaceMeta({

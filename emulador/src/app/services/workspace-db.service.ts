@@ -408,6 +408,47 @@ export class WorkspaceDbService {
     return committed;
   }
 
+  /** Restores the latest live A only while the replacement active and archived A are exact. */
+  async restoreArchivedSessionAsActiveIfUnchanged(
+    symbol: string,
+    expectedActiveSessionId: string,
+    expectedArchived: SavedSession,
+    restored: MaterializedSessionAggregate,
+  ): Promise<boolean> {
+    if (expectedArchived.id !== restored.session.id) return false;
+    let committed = false;
+    await this.updateMeta(symbol, (current) => {
+      if (!current || current.activeSessionId !== expectedActiveSessionId) return undefined;
+      const archived = (current.sessions ?? []).find(
+        (session) => session.id === expectedArchived.id,
+      );
+      if (JSON.stringify(archived) !== JSON.stringify(expectedArchived)) return undefined;
+      committed = true;
+      return {
+        ...current,
+        activeTf: restored.activeTf,
+        selectedTfs: restored.selectedTfs,
+        currentTime: restored.session.currentTime,
+        customTfMinutes: restored.session.customTfMinutes,
+        playbackSpeed: restored.session.playbackSpeed,
+        replayResolution: restored.session.replayResolution,
+        drawings: restored.drawings,
+        trading: restored.session.trading,
+        sessions: (current.sessions ?? []).filter(
+          (session) => session.id !== restored.session.id,
+        ),
+        activeSessionId: restored.session.id,
+        activeClientUpdatedAt: restored.session.clientUpdatedAt,
+        activeSyncedAt: restored.session.syncedAt,
+        layout: restored.layout,
+        panels: restored.panels,
+        linkGroups: restored.linkGroups,
+        lastModified: restored.archivedAt,
+      };
+    });
+    return committed;
+  }
+
   /** Atomically removes/resets one exact session revision and queues that same id. */
   async deleteSessionIfUnchanged(
     symbol: string,
