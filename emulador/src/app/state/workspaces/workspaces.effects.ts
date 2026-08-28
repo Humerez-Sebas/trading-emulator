@@ -284,9 +284,13 @@ export class WorkspacesEffects {
                 const activePayloadChanged =
                   existing?.activeSessionId === meta.activeSessionId &&
                   JSON.stringify({
+                    files: existing?.files,
                     currentTime: existing?.currentTime,
                     activeTf: existing?.activeTf,
                     selectedTfs: existing?.selectedTfs,
+                    customTfMinutes: existing?.customTfMinutes,
+                    playbackSpeed: existing?.playbackSpeed,
+                    replayResolution: existing?.replayResolution,
                     drawings: existing?.drawings,
                     trading: existing?.trading,
                     layout: existing?.layout,
@@ -294,9 +298,13 @@ export class WorkspacesEffects {
                     linkGroups: existing?.linkGroups,
                   }) !==
                     JSON.stringify({
+                      files: meta.files,
                       currentTime: meta.currentTime,
                       activeTf: meta.activeTf,
                       selectedTfs: meta.selectedTfs,
+                      customTfMinutes: meta.customTfMinutes,
+                      playbackSpeed: meta.playbackSpeed,
+                      replayResolution: meta.replayResolution,
                       drawings: meta.drawings,
                       trading: meta.trading,
                       layout: meta.layout,
@@ -307,9 +315,6 @@ export class WorkspacesEffects {
                 return {
                   symbol: current!,
                   ...meta,
-                  customTfMinutes: existing?.customTfMinutes,
-                  playbackSpeed: existing?.playbackSpeed,
-                  replayResolution: existing?.replayResolution,
                   // RFC-011 Task 4 (folded audit fix): selectWorkspaceMetaSnapshot's
                   // `linkGroups` is linkGroupsFeature's runtime Record<string,
                   // LinkGroup> (state), but WorkspaceMeta.linkGroups is declared as
@@ -404,9 +409,6 @@ export class WorkspacesEffects {
           return {
             symbol: current,
             ...meta,
-            customTfMinutes: meta.customTfMinutes ?? existing?.customTfMinutes,
-            playbackSpeed: meta.playbackSpeed ?? existing?.playbackSpeed,
-            replayResolution: meta.replayResolution ?? existing?.replayResolution,
             linkGroups: Object.values(meta.linkGroups),
             lastModified: now,
             ...clocks,

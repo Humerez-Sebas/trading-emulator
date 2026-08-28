@@ -391,7 +391,10 @@ describe('SesionesPageComponent', () => {
       files: {},
       activeTf: null,
       selectedTfs: undefined,
+      customTfMinutes: null,
       currentTime: opts.currentTime ?? 0,
+      playbackSpeed: 500,
+      replayResolution: null,
       drawings: [],
       trading: opts.liveTrading ?? defaultTradingData(),
       sessions: opts.liveSessions ?? [],
@@ -427,7 +430,10 @@ describe('SesionesPageComponent', () => {
       files: meta.files,
       activeTf: meta.activeTf,
       selectedTfs: meta.selectedTfs,
+      customTfMinutes: meta.customTfMinutes ?? null,
       currentTime: meta.currentTime,
+      playbackSpeed: meta.playbackSpeed ?? 500,
+      replayResolution: meta.replayResolution ?? null,
       drawings: meta.drawings,
       trading: meta.trading ?? defaultTradingData(),
       sessions: meta.sessions ?? [],
@@ -4020,6 +4026,129 @@ describe('SesionesPageComponent', () => {
     expect(latest.sessions?.some((session) => session.id === 'active-a')).toBe(false);
     expect(store.selectSignal(tradingFeature.selectActiveSessionId)()).toBe('active-a');
     expect(store.selectSignal(selectTradingData)()).toEqual(thirdEdit);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.newSession.type }),
+    );
+  });
+
+  it('keeps replay-settings-and-files-only A3 live while restoration persists complete A2', async () => {
+    const trading = { ...defaultTradingData(), sessionName: 'A' };
+    const durable = completeWorkspaceMeta({
+      symbol: 'NAS100',
+      files: { H1: 'a.csv' },
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 500,
+      customTfMinutes: 15,
+      playbackSpeed: 1000,
+      replayResolution: null,
+      trading,
+    });
+    let releaseArchive!: () => void;
+    const archiveWaiting = new Promise<void>((resolve) => (releaseArchive = resolve));
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        await archiveWaiting;
+        return update(durable) !== undefined;
+      },
+    );
+    let releaseReconciliation!: () => void;
+    const reconciliationWaiting = new Promise<void>(
+      (resolve) => (releaseReconciliation = resolve),
+    );
+    const reconcileArchivedSessionIfUnchanged = vi.fn(async () => {
+      await reconciliationWaiting;
+      return true;
+    });
+    let releaseRestoration!: () => void;
+    const restorationWaiting = new Promise<void>((resolve) => (releaseRestoration = resolve));
+    const restoreArchivedSessionAsActiveIfUnchanged = vi.fn(async () => {
+      await restorationWaiting;
+      return true;
+    });
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      liveTrading: trading,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([durable]),
+        replaceSessionIfUnchanged,
+        reconcileArchivedSessionIfUnchanged,
+        restoreArchivedSessionAsActiveIfUnchanged,
+      } as unknown as Partial<ReturnType<typeof workspaceDbStub>>,
+    });
+    overrideLiveAggregate(durable);
+    await settle();
+
+    const archiving = component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+    store.overrideSelector(selectMsPerCandle, 500);
+    store.refreshState();
+    releaseArchive();
+    await vi.waitFor(() => expect(reconcileArchivedSessionIfUnchanged).toHaveBeenCalledOnce());
+
+    const a2Files = { H1: 'a2.csv', M5: 'a2-m5.csv' } as const;
+    store.overrideSelector(marketFeature.selectCustomTf, 45);
+    store.overrideSelector(selectMsPerCandle, 250);
+    store.overrideSelector(selectResolutionMinutes, 5);
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      ...store.selectSignal(selectWorkspaceMetaSnapshot)(),
+      files: a2Files,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+    });
+    store.refreshState();
+    releaseReconciliation();
+    await vi.waitFor(() =>
+      expect(restoreArchivedSessionAsActiveIfUnchanged).toHaveBeenCalledOnce(),
+    );
+
+    const a3Files = { H1: 'a3.csv', M5: 'a3-m5.csv' } as const;
+    store.overrideSelector(marketFeature.selectCustomTf, 90);
+    store.overrideSelector(selectMsPerCandle, 100);
+    store.overrideSelector(selectResolutionMinutes, 1);
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      ...store.selectSignal(selectWorkspaceMetaSnapshot)(),
+      files: a3Files,
+      customTfMinutes: 90,
+      playbackSpeed: 100,
+      replayResolution: 1,
+    });
+    store.refreshState();
+    releaseRestoration();
+    await archiving;
+
+    expect(restoreArchivedSessionAsActiveIfUnchanged).toHaveBeenCalledWith(
+      'NAS100',
+      expect.any(String),
+      expect.any(Object),
+      expect.objectContaining({
+        files: a2Files,
+        session: expect.objectContaining({
+          customTfMinutes: 45,
+          playbackSpeed: 250,
+          replayResolution: 5,
+        }),
+      }),
+    );
+    expect(store.selectSignal(marketFeature.selectCustomTf)()).toBe(90);
+    expect(store.selectSignal(selectMsPerCandle)()).toBe(100);
+    expect(store.selectSignal(selectResolutionMinutes)()).toBe(1);
+    expect(store.selectSignal(selectWorkspaceMetaSnapshot)().files).toEqual(a3Files);
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: TradingActions.newSession.type }),
     );

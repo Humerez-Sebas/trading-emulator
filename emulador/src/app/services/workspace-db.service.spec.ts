@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { WorkspaceDbService } from './workspace-db.service';
+import { type MaterializedSessionAggregate, WorkspaceDbService } from './workspace-db.service';
 import { fixedOwnerIdentity, OwnerIdentityService } from './owner-identity.service';
 import { ADOPTION_MARKER_KEY, ownerWorkspaceDbName } from './owner-scope';
 import { savedSession, series, workspaceMeta } from '../testing/fixtures';
@@ -414,6 +414,44 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
         trading: expect.objectContaining({ sessionName: 'A2', balance: 13000 }),
       }),
     );
+  });
+
+  it('restores the captured active files with the archived aggregate', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const archivedA = savedSession({
+      id: 'active-a',
+      clientUpdatedAt: 101,
+      syncedAt: 100,
+    });
+    await svc.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        files: { H1: 'stale.csv' },
+        activeSessionId: 'active-next',
+        sessions: [archivedA],
+      }),
+    );
+    const restored = {
+      session: { ...archivedA, clientUpdatedAt: 102 },
+      files: { H1: 'latest.csv', M5: 'latest-m5.csv' },
+      activeTf: 'M1' as const,
+      selectedTfs: ['M1'] as const,
+      drawings: [],
+      layout: view.layout,
+      panels: view.panels,
+      linkGroups: [],
+      archivedAt: 1000,
+    } as MaterializedSessionAggregate & { files: WorkspaceMeta['files'] };
+
+    const committed = await svc.restoreArchivedSessionAsActiveIfUnchanged(
+      'EURUSD',
+      'active-next',
+      archivedA,
+      restored,
+    );
+
+    expect(committed).toBe(true);
+    expect((await svc.getMeta('EURUSD'))?.files).toEqual(restored.files);
   });
 
   it('does not restore A after the exact archived row changes', async () => {

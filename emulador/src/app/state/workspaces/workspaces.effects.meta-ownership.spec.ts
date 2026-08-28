@@ -50,7 +50,10 @@ const metaSnap = {
   files: {},
   activeTf: null,
   selectedTfs: undefined,
+  customTfMinutes: null,
   currentTime: 0,
+  playbackSpeed: 500,
+  replayResolution: null,
   drawings: [],
   trading: { ...defaultTradingData(), positions: [position()] },
   sessions: [],
@@ -134,6 +137,72 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     const stored = await db.getMeta(SYMBOL);
     expect(stored!.activeClientUpdatedAt).toBeGreaterThan(111);
     expect(stored!.activeSyncedAt).toBe(110);
+  });
+
+  it('persists replay-settings-and-files-only A3 dirty for cold read and cloud flatten', async () => {
+    const trading = { ...defaultTradingData(), sessionName: 'A' };
+    await db.putMeta({
+      ...workspaceMeta({
+        symbol: SYMBOL,
+        files: { H1: 'a2.csv' },
+        activeSessionId: 'sess-A',
+        activeClientUpdatedAt: 101,
+        activeSyncedAt: 100,
+        trading,
+      }),
+      customTfMinutes: 30,
+      playbackSpeed: 500,
+      replayResolution: null,
+    });
+    const a3 = {
+      ...metaSnap,
+      files: { H1: 'a3.csv', M5: 'a3-m5.csv' },
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      trading,
+    };
+    const snapshotSelector = store.overrideSelector(selectWorkspaceMetaSnapshot, a3);
+    snapshotSelector.setResult(a3);
+    store.refreshState();
+
+    const updateMeta = vi.spyOn(db, 'updateMeta');
+    const sub = effects.persistMeta$.subscribe();
+    store.refreshState();
+    await vi.waitFor(() => expect(updateMeta).toHaveBeenCalledOnce());
+    await updateMeta.mock.results[0].value;
+    sub.unsubscribe();
+
+    const coldDb = new WorkspaceDbService(fixedOwnerIdentity(OWNER));
+    const cold = await coldDb.getMeta(SYMBOL);
+    expect(cold).toEqual(
+      expect.objectContaining({
+        files: { H1: 'a3.csv', M5: 'a3-m5.csv' },
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+        activeClientUpdatedAt: expect.any(Number),
+        activeSyncedAt: 100,
+      }),
+    );
+    expect(cold!.activeClientUpdatedAt).toBeGreaterThan(101);
+    expect(cold!.activeClientUpdatedAt).toBeGreaterThan(cold!.activeSyncedAt!);
+
+    const sync = new SessionSyncService(
+      { client: syncClient } as SupabaseService,
+      coldDb,
+    );
+    const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
+    await sync.flushDirty();
+
+    expect(upsert).toHaveBeenCalledOnce();
+    expect(upsert.mock.calls[0][0].payload).toEqual(
+      expect.objectContaining({
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      }),
+    );
   });
 
   it('newSession then switchAsset keeps the archived session clocks and gives the new id fresh provenance', async () => {

@@ -335,7 +335,10 @@ export class SesionesPageComponent {
           files: durable.files,
           activeTf: durable.activeTf,
           selectedTfs: durable.selectedTfs,
+          customTfMinutes: durable.customTfMinutes,
           currentTime: durable.currentTime,
+          playbackSpeed: durable.playbackSpeed,
+          replayResolution: durable.replayResolution,
           drawings: durable.drawings,
           trading: durable.trading,
           sessions: durable.sessions ?? [],
@@ -996,6 +999,7 @@ export class SesionesPageComponent {
     }
     const committed = await this.db.promoteSessionIfUnchanged(card.symbol, expectedMeta, {
       session,
+      files: expectedMeta?.files ?? {},
       activeTf: restored.activeTf,
       selectedTfs: restored.selectedTfs,
       drawings: restored.drawings.items,
@@ -1099,6 +1103,7 @@ export class SesionesPageComponent {
         ),
         syncedAt: expectedMeta.activeSyncedAt,
       },
+      files: live.files,
       activeTf: live.activeTf,
       selectedTfs: live.selectedTfs,
       drawings: live.drawings,
@@ -1305,6 +1310,7 @@ export class SesionesPageComponent {
               reconciled,
               {
                 session: restoredSession,
+                files: latestWorkspace.files,
                 activeTf: latestWorkspace.activeTf,
                 selectedTfs: latestWorkspace.selectedTfs,
                 drawings: latestWorkspace.drawings,

@@ -61,6 +61,7 @@ export interface DeletedSessionResult {
 
 export interface MaterializedSessionAggregate {
   session: SavedSession;
+  files: WorkspaceMeta['files'];
   activeTf: WorkspaceMeta['activeTf'];
   selectedTfs: WorkspaceMeta['selectedTfs'];
   drawings: WorkspaceMeta['drawings'];
@@ -426,6 +427,7 @@ export class WorkspaceDbService {
       committed = true;
       return {
         ...current,
+        files: restored.files,
         activeTf: restored.activeTf,
         selectedTfs: restored.selectedTfs,
         currentTime: restored.session.currentTime,
@@ -537,6 +539,7 @@ export class WorkspaceDbService {
 
       return {
         ...meta,
+        files: materialized.files,
         activeTf: materialized.activeTf,
         selectedTfs: materialized.selectedTfs,
         currentTime: materialized.session.currentTime,
@@ -586,6 +589,7 @@ export class WorkspaceDbService {
     sessions.push(promoted);
     metas.put({
       ...current,
+      files: restored.files,
       activeTf: restored.activeTf,
       selectedTfs: restored.selectedTfs,
       currentTime: restored.session.currentTime,

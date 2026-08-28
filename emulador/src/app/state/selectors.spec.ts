@@ -96,13 +96,47 @@ describe('selectWorkspaceSnapshot', () => {
 
 // ---- selectWorkspaceMetaSnapshot ----
 describe('selectWorkspaceMetaSnapshot', () => {
+  it('carries the active replay settings with the lightweight workspace payload', () => {
+    const projector = selectWorkspaceMetaSnapshot.projector as unknown as (
+      ...args: unknown[]
+    ) => Record<string, unknown>;
+    const result = projector(
+      { H1: 'file.csv' },
+      'H1',
+      ['M5', 'H1'],
+      45,
+      3600,
+      250,
+      5,
+      [],
+      defaultTradingData(),
+      [],
+      'sess-42',
+      createInitialLayoutState().workspace,
+      createInitialLayoutState().panels,
+      {},
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        customTfMinutes: 45,
+        currentTime: 3600,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      }),
+    );
+  });
+
   it('bundles correct keys (incl. selectedTfs + activeSessionId) and has NO series field', () => {
     const trading = defaultTradingData();
     const result = selectWorkspaceMetaSnapshot.projector(
       { H1: 'file.csv' },
       'H1',
       ['M5', 'H1'],
+      null,
       3600,
+      500,
+      null,
       [],
       trading,
       [],
@@ -124,7 +158,10 @@ describe('selectWorkspaceMetaSnapshot', () => {
       {},
       null,
       null,
+      null,
       0,
+      500,
+      null,
       [],
       defaultTradingData(),
       [],
@@ -141,7 +178,10 @@ describe('selectWorkspaceMetaSnapshot', () => {
       {},
       null,
       null,
+      null,
       0,
+      500,
+      null,
       [],
       defaultTradingData(),
       [],
@@ -158,7 +198,10 @@ describe('selectWorkspaceMetaSnapshot', () => {
       {},
       null,
       null,
+      null,
       0,
+      500,
+      null,
       [],
       defaultTradingData(),
       [],
