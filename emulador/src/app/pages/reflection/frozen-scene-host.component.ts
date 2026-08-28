@@ -16,9 +16,6 @@ import { TIMEFRAME_SECONDS, type Timeframe } from '../../models';
 import { derivePointSize } from '../../models';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { TradingCapability } from '../../domain/chart/capabilities/trading-capability';
-import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
-import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
 import type { Drawing, Position, RenderModel } from '../../domain/chart/render-model';
 import { resolveDisplayZone, SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { SceneSpec, SCENE_WINDOW_CANDLES } from '../../domain/reflection/scene-spec';
@@ -295,11 +292,10 @@ export class FrozenSceneHostComponent implements AfterViewInit, OnDestroy {
   private createEngine(container: HTMLElement): ChartEngine {
     const engine = this.engineFactory.create(container);
     engine.setInteractivity(false);
-    // RFC-004/RFC-005: the engine builds each capability with its OWN main series; this host
-    // no longer reads a `seriesApi` bridge getter, because that getter no longer exists.
-    engine.registerCapability(TradingCapability);
-    engine.registerCapability(DrawingsCapability);
-    engine.registerCapability(SessionCapability);
+    // Preserve frozen-scene composition and order through the closed built-in registry.
+    engine.registerCapability('trading');
+    engine.registerCapability('drawings');
+    engine.registerCapability('session');
     return engine;
   }
 

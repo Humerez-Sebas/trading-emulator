@@ -12,7 +12,11 @@ import {
 } from 'lightweight-charts';
 import { Candle, RenderModel } from './render-model';
 import { ChartEventBus, ChartEventSource, ChartPointerEvent } from './chart-event-bus';
-import { Capability, CapabilityApiMap, MainSeriesCapability } from './capability';
+import { Capability, CapabilityApiMap } from './capability';
+import {
+  createBuiltInCapability,
+  type BuiltInCapabilityId,
+} from './capability-registry';
 import { hexToRgba } from './color-utils';
 
 export interface ChartApplyHandle {
@@ -169,18 +173,16 @@ export class ChartEngine implements ChartApplyHandle {
   }
 
   /**
-   * Builds and registers a capability. Takes the CLASS, not an instance: the engine owns
-   * the main series and injects it itself, which is why no caller needs (or can obtain) a
-   * reference to it — that is what retired the RFC-004/RFC-005 `seriesApi` bridge getter.
+   * Builds and registers one closed, domain-owned capability ID. The registry owns concrete
+   * composition and receives the engine's main series; callers cannot supply executable code
+   * that captures that handle.
    *
    * Ordering note (behavior-preserving): the duplicate-id `Error` is still thrown with the
-   * same message, but construction now happens BEFORE the check. Every capability's
-   * constructor only stores the series reference (no side effects), so a rejected duplicate
-   * registration remains inert — verified against all four capabilities in
-   * `domain/chart/capabilities/`.
+   * same message, with construction still happening BEFORE the check. Every built-in
+   * constructor is side-effect free, so a rejected duplicate registration remains inert.
    */
-  public registerCapability(Ctor: MainSeriesCapability): void {
-    const cap = new Ctor(this.mainSeries);
+  public registerCapability(id: BuiltInCapabilityId): void {
+    const cap = createBuiltInCapability(id, this.mainSeries);
     if (this.capabilities.has(cap.id)) {
       throw new Error(`Capability with ID "${cap.id}" is already registered.`);
     }

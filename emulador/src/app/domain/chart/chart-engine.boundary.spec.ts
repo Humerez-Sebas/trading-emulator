@@ -9,6 +9,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { Capability, CapabilityApiMap } from './capability';
+import type { BuiltInCapabilityId } from './capability-registry';
 import { ChartEventBus, type ChartEventMap } from './chart-event-bus';
 import type { RenderModel } from './render-model';
 
@@ -134,27 +135,6 @@ class ProbeCapability implements Capability {
   }
 }
 
-/** A second class with the SAME id, for the duplicate-registration test. */
-class DuplicateProbeCapability extends ProbeCapability {}
-
-class PublicProbeCapability implements Capability {
-  readonly id = 'drawings';
-  static built: PublicProbeCapability[] = [];
-  readonly publicApi = {
-    timeForX: (x: number) => x + 1,
-    xForTime: (timeUtc: number) => timeUtc - 1,
-    hitTestDrawing: () => 'drawing-1',
-    hitTestHandle: () => 'p1' as const,
-  };
-
-  constructor(readonly series: ISeriesApi<'Candlestick'>) {
-    PublicProbeCapability.built.push(this);
-  }
-  init(): void {}
-  render(): void {}
-  destroy(): void {}
-}
-
 type RawChartHandle =
   | IChartApi
   | ISeriesApi<SeriesType>
@@ -192,14 +172,18 @@ type ContainsRawHandle<T, Depth extends unknown[] = []> = Depth['length'] extend
 
 describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
   let ChartEngine: typeof ChartEngineType;
+  let DrawingsCapability: typeof import('./capabilities/drawings-capability').DrawingsCapability;
   let engine: ChartEngineType;
 
   beforeEach(async () => {
     reset();
     vi.clearAllMocks();
     ProbeCapability.built = [];
-    PublicProbeCapability.built = [];
     vi.resetModules();
+    ({ DrawingsCapability } = await import('./capabilities/drawings-capability'));
+    vi.spyOn(DrawingsCapability.prototype, 'init').mockImplementation(() => {});
+    vi.spyOn(DrawingsCapability.prototype, 'render').mockImplementation(() => {});
+    vi.spyOn(DrawingsCapability.prototype, 'destroy').mockImplementation(() => {});
     ({ ChartEngine } = await import('./chart-engine'));
     engine = new ChartEngine(document.createElement('div'));
   });
@@ -345,69 +329,89 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
     });
   });
 
-  describe('registerCapability builds the capability from the engine-owned series', () => {
-    it('constructs the class with the engine’s own main series without returning the instance', () => {
-      const registration = engine.registerCapability(ProbeCapability);
+  describe('built-in capability registration', () => {
+    it('accepts only the closed built-in ID contract at compile time', () => {
+      expectTypeOf<Parameters<ChartEngineType['registerCapability']>[0]>().toEqualTypeOf<BuiltInCapabilityId>();
+      const rejectedRegistration = (target: ChartEngineType) => {
+        // @ts-expect-error executable constructors are not a public registration contract
+        target.registerCapability(ProbeCapability);
+      };
+      expectTypeOf(rejectedRegistration).toBeFunction();
+    });
 
-      expect(ProbeCapability.built).toHaveLength(1);
+    it('rejects a caller-supplied constructor before it can retain the main series', () => {
+      let thrown: unknown;
+      try {
+        engine.registerCapability(ProbeCapability as unknown as BuiltInCapabilityId);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(ProbeCapability.built).toEqual([]);
+      expect(thrown).toEqual(new Error('Unknown built-in capability.'));
+    });
+
+    it('registers a built-in capability without returning its instance', () => {
+      const registration = engine.registerCapability('drawings');
+
       expectTypeOf(registration).toEqualTypeOf<void>();
       expect(registration).toBeUndefined();
-      // THE point of the whole refactor: the series reaches the capability without any
-      // caller ever holding it.
-      expect(ProbeCapability.built[0].series).toBe(seriesStub);
     });
 
     it('calls init with the chart and the engine bus', () => {
-      engine.registerCapability(ProbeCapability);
-      expect(ProbeCapability.built[0].initArgs?.chart).toBe(chartStub);
-      expect(ProbeCapability.built[0].initArgs?.bus).not.toBe(engine.events);
-      expect(ProbeCapability.built[0].initArgs?.bus).toHaveProperty('emit');
+      engine.registerCapability('drawings');
+      const [chart, bus] = vi.mocked(DrawingsCapability.prototype.init).mock.calls[0];
+      expect(chart).toBe(chartStub);
+      expect(bus).not.toBe(engine.events);
+      expect(bus).toHaveProperty('emit');
     });
 
-    it('getCapability exposes only the base contract, and render fans out to the instance', () => {
-      engine.registerCapability(ProbeCapability);
-
-      // @ts-expect-error callers cannot select an arbitrary capability instance type
-      expect(engine.getCapability<ProbeCapability>('probe')).toBeUndefined();
+    it('render fans out to the registered capability', () => {
+      engine.registerCapability('drawings');
 
       engine.render({});
-      expect(ProbeCapability.built[0].renderCalls).toBe(1);
+      expect(DrawingsCapability.prototype.render).toHaveBeenCalledOnce();
     });
 
     it('getCapability returns the registered handle-free facade rather than the capability', () => {
-      engine.registerCapability(PublicProbeCapability);
+      engine.registerCapability('drawings');
 
       const api = engine.getCapability('drawings');
 
-      expect(api).toBe(PublicProbeCapability.built[0].publicApi);
-      expect(api?.timeForX(9)).toBe(10);
-      expect(api).not.toBe(PublicProbeCapability.built[0]);
+      expect(api).toEqual({
+        timeForX: expect.any(Function),
+        xForTime: expect.any(Function),
+        hitTestDrawing: expect.any(Function),
+        hitTestHandle: expect.any(Function),
+      });
+      expect(api).not.toBeInstanceOf(DrawingsCapability);
     });
 
     it('still throws on a duplicate id, with the same message', () => {
-      engine.registerCapability(ProbeCapability);
-      expect(() => engine.registerCapability(DuplicateProbeCapability)).toThrowError(
-        'Capability with ID "probe" is already registered.',
+      engine.registerCapability('drawings');
+      expect(() => engine.registerCapability('drawings')).toThrowError(
+        'Capability with ID "drawings" is already registered.',
       );
     });
 
     it('a rejected duplicate leaves the FIRST instance registered and un-destroyed', () => {
-      engine.registerCapability(ProbeCapability);
-      const first = ProbeCapability.built[0];
-      expect(() => engine.registerCapability(DuplicateProbeCapability)).toThrow();
+      engine.registerCapability('drawings');
+      expect(() => engine.registerCapability('drawings')).toThrow();
 
       engine.render({});
-      expect(first.renderCalls).toBe(1);
-      expect(first.destroyed).toBe(false);
+      expect(DrawingsCapability.prototype.render).toHaveBeenCalledOnce();
+      expect(DrawingsCapability.prototype.destroy).not.toHaveBeenCalled();
     });
 
     it('destroy() tears down registered capabilities before removing the chart', () => {
-      engine.registerCapability(ProbeCapability);
-      const cap = ProbeCapability.built[0];
+      engine.registerCapability('drawings');
       engine.destroy();
 
-      expect(cap.destroyed).toBe(true);
+      expect(DrawingsCapability.prototype.destroy).toHaveBeenCalledOnce();
       expect(chartStub.remove).toHaveBeenCalledTimes(1);
+      expect(
+        vi.mocked(DrawingsCapability.prototype.destroy).mock.invocationCallOrder[0],
+      ).toBeLessThan(chartStub.remove.mock.invocationCallOrder[0]);
     });
   });
 });

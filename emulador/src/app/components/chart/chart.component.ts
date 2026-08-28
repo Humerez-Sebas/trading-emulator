@@ -58,10 +58,6 @@ import {
 import { resolveDrawingTarget } from '../../state/drawings/drawing-ownership';
 import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
 import { layoutFeature } from '../../state/layout/layout.reducer';
-import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
-import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
-import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
-import { TradingCapability } from '../../domain/chart/capabilities/trading-capability';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { lotsForRisk, OrderSide, PendingType } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
@@ -636,14 +632,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // selectChartStyle emission for theme / user overrides.
     this.engine = new ChartEngine(this.container.nativeElement);
 
-    // RFC-004/RFC-005: the engine builds each capability with its OWN main series, so this
-    // component never holds an `ISeriesApi`/`IChartApi` at all. Registration order is
-    // unchanged (drawings, countdown, session, trading) — capabilities render in insertion
-    // order, so it is observable.
-    this.engine.registerCapability(DrawingsCapability);
-    this.engine.registerCapability(CountdownCapability);
-    this.engine.registerCapability(SessionCapability);
-    this.engine.registerCapability(TradingCapability);
+    // The engine's closed domain registry builds each capability with its own main series.
+    // Registration order is observable and remains drawings, countdown, session, trading.
+    this.engine.registerCapability('drawings');
+    this.engine.registerCapability('countdown');
+    this.engine.registerCapability('session');
+    this.engine.registerCapability('trading');
 
     // chart colors + grid controls (theme / user customization)
     this.mapper.chartStyle$
