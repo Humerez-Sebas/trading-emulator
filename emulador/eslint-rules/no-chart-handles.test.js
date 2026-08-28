@@ -94,6 +94,30 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       code: `import type { IChartApi } from 'lightweight-charts';`,
       options: [{ allowImports: true }],
     },
+    {
+      name: 'allows an exported alias of a named data-only type',
+      code: `
+        import type { CandlestickData as D } from 'lightweight-charts';
+        export type Public = D;
+      `,
+      options: [{ allowImports: true }],
+    },
+    {
+      name: 'allows an exported alias of a namespace-qualified data-only type',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type Public = LC.CandlestickData;
+      `,
+      options: [{ allowImports: true }],
+    },
+    {
+      name: 'allows an exported alias of a namespace-indexed data-only type',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type Public = LC['CandlestickData'];
+      `,
+      options: [{ allowImports: true }],
+    },
   ],
   invalid: [
     {
@@ -125,6 +149,51 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       code: `
         import type * as LightweightCharts from 'lightweight-charts';
         export type { LightweightCharts };
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamespaceImport' }],
+    },
+    {
+      name: 'rejects an exported alias of a named handle binding',
+      code: `
+        import type { IChartApi as H } from 'lightweight-charts';
+        export type Public = H;
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects an exported alias of a namespace-qualified handle',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type Public = LC.IChartApi;
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects an exported alias of a namespace-indexed handle',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type Public = LC['ISeriesApi'];
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'ISeriesApi' } }],
+    },
+    {
+      name: 'rejects an indexed member of a named handle binding',
+      code: `
+        import type { IChartApi as H } from 'lightweight-charts';
+        export type Public = H['priceScale'];
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects an exported alias of the whole forbidden namespace',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type Public = LC;
       `,
       options: [{ allowImports: true }],
       errors: [{ messageId: 'forbiddenNamespaceImport' }],

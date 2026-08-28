@@ -7,8 +7,9 @@
  * Scope is set in eslint.config.js: production TypeScript under src/app, excluding
  * src/app/domain/chart/** and specs. It permits lightweight-charts payload/data types while
  * rejecting the four handle types the retired RFC-004/RFC-005 bridge exposed through static
- * imports, TypeScript import types, and direct re-exports. Namespace imports and star
- * re-exports are rejected because they can expose handles without a named specifier.
+ * imports, TypeScript import types, direct re-exports, and exported aliases of tracked
+ * bindings. Namespace imports and star re-exports are rejected because they can expose
+ * handles without a named specifier.
  */
 
 const FORBIDDEN_HANDLES = new Set([
@@ -53,6 +54,16 @@ const noChartHandles = {
       context.report({ node, messageId: 'forbiddenNamedImport', data: { name } });
     }
 
+    function reportTrackedBinding(node, localName) {
+      if (!importedHandleLocals.has(localName)) return;
+      const name = importedHandleLocals.get(localName);
+      if (name === null) {
+        context.report({ node, messageId: 'forbiddenNamespaceImport' });
+      } else {
+        reportNamed(node, name);
+      }
+    }
+
     return {
       ImportDeclaration(node) {
         if (node.source.value !== 'lightweight-charts') return;
@@ -94,6 +105,41 @@ const noChartHandles = {
           return;
         }
         reportNamed(node, String(node.indexType.literal.value));
+      },
+      TSTypeAliasDeclaration(node) {
+        if (node.parent.type !== 'ExportNamedDeclaration') return;
+        const type = node.typeAnnotation;
+
+        if (type.type === 'TSTypeReference') {
+          if (type.typeName.type === 'Identifier') {
+            reportTrackedBinding(node, type.typeName.name);
+          } else if (
+            type.typeName.left.type === 'Identifier' &&
+            importedHandleLocals.get(type.typeName.left.name) === null
+          ) {
+            reportNamed(node, type.typeName.right.name);
+          }
+          return;
+        }
+
+        if (
+          type.type !== 'TSIndexedAccessType' ||
+          type.objectType.type !== 'TSTypeReference' ||
+          type.objectType.typeName.type !== 'Identifier'
+        ) {
+          return;
+        }
+
+        const sourceName = importedHandleLocals.get(type.objectType.typeName.name);
+        if (sourceName !== null && sourceName !== undefined) {
+          reportNamed(node, sourceName);
+        } else if (
+          sourceName === null &&
+          type.indexType.type === 'TSLiteralType' &&
+          type.indexType.literal.type === 'Literal'
+        ) {
+          reportNamed(node, String(type.indexType.literal.value));
+        }
       },
       ExportNamedDeclaration(node) {
         for (const specifier of node.specifiers) {
