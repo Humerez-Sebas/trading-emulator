@@ -298,6 +298,30 @@ dynamic imports, or type-checker analysis.
   for this lint-only review correction, and this evidence makes no independent acceptance or
   final full-gate claim.
 
+## Final Track C Medium Correction
+
+The final Medium finding was declaration-order dependence in C-R6 binding tracking. The rule
+recorded relevant named and namespace locals only during `ImportDeclaration` traversal, so a
+legal export before its import saw no tracked binding. The correction precollects only relevant
+top-level `lightweight-charts` imports from `Program.body` when `allowImports` is enabled. The
+normal import visitor retains all non-domain reporting, including exact one-report behavior.
+
+- RuleTester RED: `node eslint-rules/no-chart-handles.test.js` exited `1` at the first late
+  named alias with `Should have 1 error but had 0`.
+- RuleTester GREEN: the same command exited `0`. Invalid cases cover late named alias,
+  namespace-qualified nested, namespace-indexed nested, source-less named export specifier,
+  and namespace export specifier forms. Late named and namespace data-only aliases/exports pass.
+- `npm run lint`, `npx tsc -p tsconfig.app.json --noEmit`, and
+  `npx tsc -p tsconfig.spec.json --noEmit` each exited `0` after implementation.
+- Production chart-domain mutation: a temporary exported
+  `LC.ISeriesApi<'Candlestick'>['createPriceLine']` alias before its namespace import in
+  `capability.ts` made ordinary lint exit `1` with exactly one boundary diagnostic. Its inverse
+  patch restored Git blob hash `8aab57eb1a2e8b833e9e1f9007e6d1d460eff7bc`, zero file diff,
+  and green ordinary lint.
+- No recursive local type flow, dependency traversal, production TypeScript, dependency, or
+  lockfile change was introduced. No full Angular suite or build was run for this correction.
+  This implementer evidence does not claim independent acceptance or a final full-gate run.
+
 ## Residual Risk
 
 - The import detector does not perform general type-flow analysis or inspect runtime dynamic

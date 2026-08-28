@@ -93,6 +93,14 @@ indexed from a namespace-qualified handle and a member indexed from a namespace-
 while preserving structurally equivalent data-only aliases. This remains syntax-bounded: local
 alias flow, unions, conditionals, dynamic imports, and type-checker analysis are not included.
 
+The final Track C Medium correction makes imported binding resolution declaration-order
+independent. In trusted chart-domain files, the rule precollects relevant named and namespace
+bindings from top-level `ImportDeclaration` nodes before visiting exports. Consequently, direct
+tracked aliases and source-less export specifiers are rejected even when their legal import is
+declared later in the module. Import diagnostics remain in the normal import visitor and are not
+duplicated; late data-only aliases/exports remain allowed. This does not introduce recursive local
+type flow or dependency analysis.
+
 It deliberately does not reflect over runtime own fields: TypeScript `private` fields such
 as `chart` and `mainSeries` exist at runtime but are excluded from `keyof ChartEngine` and
 are not public API.

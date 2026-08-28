@@ -214,3 +214,29 @@ acceptance remains pending.
   TypeScript, dependency, or lockfile changed.
 - This correction does not claim independent acceptance or a final full-gate run. No full
   Angular suite or build was run for the lint-only correction.
+
+## Final Track C Medium Correction
+
+- Implementation commit: `6246093 fix(lint): resolve chart bindings before exports`.
+- Root cause: tracked named and namespace bindings were populated only when the
+  `ImportDeclaration` visitor ran. Legal exports placed before their imports were therefore
+  inspected against an empty binding map and returned zero diagnostics.
+- RuleTester RED: `node eslint-rules/no-chart-handles.test.js` exited `1` at the first late
+  named alias with `Should have 1 error but had 0`.
+- RuleTester GREEN: exit `0` after relevant `lightweight-charts` bindings were precollected
+  from `Program.body` when `allowImports` is enabled. Normal import reporting remains in the
+  `ImportDeclaration` visitor, so non-domain imports still report exactly once.
+- Invalid late-import coverage includes a named alias, namespace-qualified nested alias,
+  namespace-indexed nested alias, source-less named export specifier, and namespace export
+  specifier. Late named and namespace data-only aliases/exports remain valid.
+- Ordinary lint, app TypeScript, and spec TypeScript each exited `0` after implementation.
+- Production chart-domain late-import mutation: temporarily exporting
+  `LC.ISeriesApi<'Candlestick'>['createPriceLine']` before its namespace import in
+  `capability.ts` made ordinary `npm run lint` exit `1` with exactly one
+  `engine-boundary/no-chart-handles` error. Inverse restoration returned the file to Git blob
+  hash `8aab57eb1a2e8b833e9e1f9007e6d1d460eff7bc`, zero file diff, and restored lint exit `0`.
+- Scope remains syntax-bounded: no recursive local type flow, dependency traversal, unions,
+  conditionals, dynamic imports, or type checker. No production TypeScript, dependency, or
+  lockfile remains changed.
+- This correction does not claim independent acceptance or a final full-gate run. No full
+  Angular suite or build was run.
