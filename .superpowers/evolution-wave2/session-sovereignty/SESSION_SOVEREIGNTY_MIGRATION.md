@@ -326,3 +326,28 @@ Implementation heads: `22cbba7`, `89cacae`, and test-only lint correction `21682
 RED/GREEN counts were archive **3/251 -> 251/251** and promotion/auth **3/117 -> 117/117**. Fresh
 affected evidence passed **10 files / 397 tests**; app/spec tsc and lint exited `0`. No full suite,
 build, or independent acceptance is claimed.
+
+## Cold-resume A-R5/A-R6 addendum from `fefea65` (2026-08-28)
+
+The physical migration layout, O-7 policy, owner guards, and cloud schema remain unchanged. Two final
+local consequence windows were corrected without introducing auth, cross-tab, or recovery machinery:
+
+1. Archive reconciliation now has a synchronous second-edit check after its transaction returns. If
+   A changed again, a transaction guarded by the exact replacement active id and reconciled archived
+   A restores the latest captured A aggregate as active, removes its stale archived copy, and advances
+   the client clock monotonically above the retained synced clock. Archive is not dispatched. If A is
+   edited again while restoration is pending, the committed durable identity is A and normal
+   persistence can reconcile that later live payload. Fake-indexeddb plus `flushDirty()` observed the
+   restored A payload as the next dirty cloud candidate, so no clean clock can hide the edit.
+2. Before same-symbol cloud promotion, the complete captured NgRx A aggregate plus captured active
+   id/client/synced revision must exactly equal the independently read durable A. The comparison covers
+   trading, sessions, cursor, active/selected timeframe state, custom timeframe, playback speed,
+   replay resolution, files, drawings, layout, panels, link groups, identity, and clocks. Initial A2/A1
+   divergence returns before IndexedDB promotion or B hydration and leaves A2 live for normal
+   persistence/retry. An unchanged exact A continues through the coherent B promotion/hydration path.
+
+Implementation heads are `9be19b9`, `fc7f407`, and the explicit no-cloud-clean-loss proof `4f96f15`.
+Accepted focused RED/GREEN counts were A-R5 **3 failed / 187 passed (190) -> 190/190** and A-R6
+**1 failed / 119 passed (120) -> 120/120**. Final focused evidence passed **2 files / 192 tests**;
+fresh affected evidence passed **10 files / 430 tests**; app/spec tsc and lint exited `0`. No full
+suite, build, final gates, or independent acceptance is claimed.

@@ -730,3 +730,56 @@ Fresh requested post-implementation evidence, raw and unpiped from `emulador/`:
   **397/397**, app/spec tsc exit `0`, and lint exit `0` with `All files pass linting.`
 
 This is bounded implementer evidence only and makes no final acceptance claim.
+
+## 2026-08-28 cold-resume A-R5/A-R6 addendum from `fefea65`
+
+All earlier acceptance statements remain historical. This bounded continuation implements only the
+final A-R5/A-R6 cold-resume addendum and makes no independent-acceptance or final-full-gates claim.
+No dependency, lockfile, Supabase, Vercel, auth, cross-tab, recovery, other-worktree, remote, push,
+merge, reset, rebase, squash, full-suite, or build operation was performed.
+
+Implementation commits:
+
+- `9be19b9` `fix(sessions): restore active after archive reconciliation drift`
+- `fc7f407` `fix(sessions): reject live durable promotion divergence`
+- `4f96f15` `test(sessions): prove restored archive remains dirty`
+
+Corrections:
+
+- After archive reconciliation returns, the component synchronously compares the full current live
+  aggregate with the exact aggregate used to create the reconciled A1 row. A second A2 edit invokes
+  one narrow transaction guarded by the replacement active id and exact reconciled archived A. The
+  transaction removes archived A, restores A2 as active with every replay/view/workspace field, and
+  stamps `clientUpdatedAt > syncedAt`. It then returns without dispatching `newSession`. A controlled
+  A3 edit while that restore awaited remained live while durable active identity became A, leaving
+  ordinary persistence able to save A3. The real fake-indexeddb proof observed restored A2 in the
+  next `flushDirty()` cloud candidate at dirty clock `102 > 100`.
+- Same-symbol cloud promotion captures NgRx A plus its pre-I/O active id/client/synced revision from
+  the page's local snapshot. Immediately before promotion it requires that capture to remain current
+  and equal the independently captured durable A across files/active timeframe/selected timeframes,
+  trading, saved sessions, cursor, custom timeframe, playback speed, replay resolution, drawings,
+  layout, panels, link groups, active identity, and both clocks. Pre-existing live A2 over durable A1
+  now returns before the DB promotion and B hydration, without dispatching over A2. Exact unchanged A
+  still promotes and hydrates B through the existing coherent path.
+
+TDD and bounded verification evidence, raw and unpiped from `emulador/`:
+
+- Baseline page + real DB command passed **2 files / 187 tests**.
+- A-R5 RED: `npx ng test --watch=false --include=src/app/pages/sesiones/sesiones-page.component.spec.ts --include=src/app/services/workspace-db.service.spec.ts`
+  -> exit `1`, **3 failed / 187 passed (190)**. Failures were the missing component restoration call
+  and two missing real transaction behaviors. GREEN of the same command -> exit `0`, **190/190**.
+- A-R6 RED: `npx ng test --watch=false --include=src/app/pages/sesiones/sesiones-page.component.spec.ts`
+  -> exit `1`, **1 failed / 119 passed (120)** because promotion was called for pre-existing A2/A1;
+  the new exact-match success case already passed. GREEN -> exit `0`, **120/120**. Two intermediate
+  implementation runs exposed pre-existing promotion fixtures that did not model a complete matching
+  A (`12 failed / 108 passed`, then `5 failed / 115 passed`); only their setup was completed before
+  the accepted GREEN, with their behavioral assertions unchanged.
+- Final page + fake-indexeddb focus after the cloud-dirty assertion -> exit `0`, **2 files / 192 tests**.
+- Fresh affected command covering the page, real DB, sync service/mapping/effects, trading reducer,
+  workspace persistence/effects/meta-ownership/new-session-costs -> exit `0`, **10 files / 430 tests**.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- `npm run lint` -> exit `0`, `All files pass linting.`
+
+No full repository test suite or build was run. The results above are implementer evidence only;
+Track A still requires fresh independent review and any independently owned final gates.
