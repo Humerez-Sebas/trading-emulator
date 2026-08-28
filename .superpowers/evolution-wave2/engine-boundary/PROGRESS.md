@@ -74,6 +74,7 @@ a9ba615 chore(lint): enforce the chart handle boundary
 a34f3b6 style(chart): repair trade guard fixture indentation
 57c7813 fix(chart): close capability registration contract
 a33d639 fix(lint): reject exported chart handle aliases
+9e64211 fix(lint): reject nested chart handle aliases
 ```
 
 ## Historical Gates
@@ -190,3 +191,26 @@ npm run lint                                   exit 0, RuleTester + All files pa
 
 No full-suite or build gate was run for C-R5/C-R6 in this implementation closeout. Independent
 acceptance remains pending.
+
+## Final Track C Review Correction
+
+- Root cause: exported indexed aliases were inspected only when `objectType` was directly a
+  `TSTypeReference` whose `typeName` was an `Identifier`; direct nested namespace-qualified
+  and namespace-indexed handle chains therefore escaped.
+- RuleTester RED: exact
+  `LC.ISeriesApi<'Candlestick'>['createPriceLine']` invalid case exited `1` with
+  `Should have 1 error but had 0`; the exact `LC['IChartApi']['priceScale']` invalid case and
+  matching data-only valid counterparts were added in the same test-first patch.
+- RuleTester GREEN: exit `0` after bounded direct structural-root inspection across
+  `TSTypeReference`, `TSQualifiedName`, and nested `TSIndexedAccessType` nodes.
+- Ordinary lint: exit `0`, with RuleTester executed before `ng lint`; app and spec TypeScript:
+  exit `0`, no diagnostics.
+- Production chart-domain nested-alias mutation: ordinary lint exited `1` with exactly one
+  `engine-boundary/no-chart-handles` error. Inverse restoration returned `capability.ts` to
+  SHA-256 `6D11CAE1E7A0866B56C69C0380E7F3D297DED3BADA6CDD48F67482EC0292563D`, zero file diff, and
+  restored ordinary lint exit `0`.
+- Scope remains explicit: no recursive local alias/type flow, unions, conditionals, dynamic
+  imports, or type checker; data-only direct nested aliases remain valid. No production
+  TypeScript, dependency, or lockfile changed.
+- This correction does not claim independent acceptance or a final full-gate run. No full
+  Angular suite or build was run for the lint-only correction.

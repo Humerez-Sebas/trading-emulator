@@ -272,6 +272,32 @@ These are implementation checks, not independent acceptance or final full gates:
 | `npx tsc -p tsconfig.spec.json --noEmit` | 0 | No diagnostics. |
 | `npm run lint` | 0 | RuleTester ran first; Angular lint reported `All files pass linting.` |
 
+## Final Track C Review Correction
+
+The final review found that C-R6's immediate indexed-object check did not carry a tracked
+namespace handle through a direct nested indexed alias. This correction remains bounded to
+exported aliases whose syntax is a direct `TSTypeReference` / `TSQualifiedName` /
+`TSIndexedAccessType` chain; it does not add recursive local-alias flow, unions, conditionals,
+dynamic imports, or type-checker analysis.
+
+- RuleTester RED: `node eslint-rules/no-chart-handles.test.js` exited `1` at the exact
+  `LC.ISeriesApi<'Candlestick'>['createPriceLine']` case with
+  `Should have 1 error but had 0`. The exact `LC['IChartApi']['priceScale']` case was added in
+  the same RED patch.
+- RuleTester GREEN: the same command exited `0`. Matching direct nested data-only forms,
+  `LC.CandlestickData['close']` and `LC['CandlestickData']['close']`, remain valid.
+- Ordinary `npm run lint` exited `0`, proving the RuleTester suite still runs before Angular
+  lint. App and spec TypeScript both exited `0` with no diagnostics.
+- Production chart-domain mutation: temporarily exporting
+  `LC.ISeriesApi<'Candlestick'>['createPriceLine']` from `capability.ts` made ordinary
+  `npm run lint` exit `1` with exactly one `engine-boundary/no-chart-handles` error. The file
+  was inverse-patched; its SHA-256 returned to
+  `6D11CAE1E7A0866B56C69C0380E7F3D297DED3BADA6CDD48F67482EC0292563D`, its diff was empty,
+  and restored ordinary lint exited `0`.
+- No production TypeScript, dependency, or lockfile changed. No full suite or build was run
+  for this lint-only review correction, and this evidence makes no independent acceptance or
+  final full-gate claim.
+
 ## Residual Risk
 
 - The import detector does not perform general type-flow analysis or inspect runtime dynamic

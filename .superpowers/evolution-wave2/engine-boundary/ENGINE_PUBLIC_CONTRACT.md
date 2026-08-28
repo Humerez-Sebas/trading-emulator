@@ -87,6 +87,12 @@ through a named binding, namespace qualification, namespace indexing, a member i
 named handle, or a whole namespace alias. Named, qualified, and indexed data-only aliases remain
 valid. The rule deliberately does not perform recursive type-flow analysis.
 
+The final Track C correction also carries that tracked root through direct nested
+`TSTypeReference` / `TSQualifiedName` / `TSIndexedAccessType` chains. It rejects both a member
+indexed from a namespace-qualified handle and a member indexed from a namespace-indexed handle,
+while preserving structurally equivalent data-only aliases. This remains syntax-bounded: local
+alias flow, unions, conditionals, dynamic imports, and type-checker analysis are not included.
+
 It deliberately does not reflect over runtime own fields: TypeScript `private` fields such
 as `chart` and `mainSeries` exist at runtime but are excluded from `keyof ChartEngine` and
 are not public API.
