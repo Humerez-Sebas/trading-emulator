@@ -118,6 +118,22 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       `,
       options: [{ allowImports: true }],
     },
+    {
+      name: 'allows an indexed member of a namespace-qualified data-only type',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type Public = LC.CandlestickData['close'];
+      `,
+      options: [{ allowImports: true }],
+    },
+    {
+      name: 'allows a nested indexed member of a namespace-indexed data-only type',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type AlsoPublic = LC['CandlestickData']['close'];
+      `,
+      options: [{ allowImports: true }],
+    },
   ],
   invalid: [
     {
@@ -185,6 +201,24 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       code: `
         import type { IChartApi as H } from 'lightweight-charts';
         export type Public = H['priceScale'];
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects an indexed member of a namespace-qualified handle',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type Public = LC.ISeriesApi<'Candlestick'>['createPriceLine'];
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'ISeriesApi' } }],
+    },
+    {
+      name: 'rejects a nested indexed member of a namespace-indexed handle',
+      code: `
+        import type * as LC from 'lightweight-charts';
+        export type AlsoPublic = LC['IChartApi']['priceScale'];
       `,
       options: [{ allowImports: true }],
       errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],

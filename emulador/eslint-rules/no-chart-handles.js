@@ -4,8 +4,9 @@
 /**
  * Prevent raw lightweight-charts handles from crossing out of the chart domain.
  *
- * Scope is set in eslint.config.js: production TypeScript under src/app, excluding
- * src/app/domain/chart/** and specs. It permits lightweight-charts payload/data types while
+ * Scope is set in eslint.config.js: production TypeScript under src/app, excluding specs.
+ * Chart-domain files may import owned handles but may not export them; non-domain files may
+ * neither import nor export them. The rule permits lightweight-charts payload/data types while
  * rejecting the four handle types the retired RFC-004/RFC-005 bridge exposed through static
  * imports, TypeScript import types, direct re-exports, and exported aliases of tracked
  * bindings. Namespace imports and star re-exports are rejected because they can expose
@@ -54,9 +55,39 @@ const noChartHandles = {
       context.report({ node, messageId: 'forbiddenNamedImport', data: { name } });
     }
 
-    function reportTrackedBinding(node, localName) {
-      if (!importedHandleLocals.has(localName)) return;
-      const name = importedHandleLocals.get(localName);
+    function trackedTypeRoot(type) {
+      if (type.type === 'TSIndexedAccessType') {
+        const name = trackedTypeRoot(type.objectType);
+        if (name !== null) return name;
+        if (
+          type.indexType.type === 'TSLiteralType' &&
+          type.indexType.literal.type === 'Literal' &&
+          FORBIDDEN_HANDLES.has(String(type.indexType.literal.value))
+        ) {
+          return String(type.indexType.literal.value);
+        }
+        return undefined;
+      }
+
+      if (type.type !== 'TSTypeReference') return undefined;
+      if (type.typeName.type === 'Identifier') {
+        return importedHandleLocals.get(type.typeName.name);
+      }
+
+      let qualifiedName = type.typeName;
+      while (qualifiedName.left.type === 'TSQualifiedName') {
+        qualifiedName = qualifiedName.left;
+      }
+      const name = importedHandleLocals.get(qualifiedName.left.name);
+      if (name !== null) return name;
+      return FORBIDDEN_HANDLES.has(qualifiedName.right.name)
+        ? qualifiedName.right.name
+        : undefined;
+    }
+
+    function reportTrackedTypeRoot(node, type) {
+      const name = trackedTypeRoot(type);
+      if (name === undefined) return;
       if (name === null) {
         context.report({ node, messageId: 'forbiddenNamespaceImport' });
       } else {
@@ -108,38 +139,7 @@ const noChartHandles = {
       },
       TSTypeAliasDeclaration(node) {
         if (node.parent.type !== 'ExportNamedDeclaration') return;
-        const type = node.typeAnnotation;
-
-        if (type.type === 'TSTypeReference') {
-          if (type.typeName.type === 'Identifier') {
-            reportTrackedBinding(node, type.typeName.name);
-          } else if (
-            type.typeName.left.type === 'Identifier' &&
-            importedHandleLocals.get(type.typeName.left.name) === null
-          ) {
-            reportNamed(node, type.typeName.right.name);
-          }
-          return;
-        }
-
-        if (
-          type.type !== 'TSIndexedAccessType' ||
-          type.objectType.type !== 'TSTypeReference' ||
-          type.objectType.typeName.type !== 'Identifier'
-        ) {
-          return;
-        }
-
-        const sourceName = importedHandleLocals.get(type.objectType.typeName.name);
-        if (sourceName !== null && sourceName !== undefined) {
-          reportNamed(node, sourceName);
-        } else if (
-          sourceName === null &&
-          type.indexType.type === 'TSLiteralType' &&
-          type.indexType.literal.type === 'Literal'
-        ) {
-          reportNamed(node, String(type.indexType.literal.value));
-        }
+        reportTrackedTypeRoot(node, node.typeAnnotation);
       },
       ExportNamedDeclaration(node) {
         for (const specifier of node.specifiers) {
