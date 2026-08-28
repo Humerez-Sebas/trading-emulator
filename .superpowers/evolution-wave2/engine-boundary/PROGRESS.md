@@ -7,22 +7,27 @@ Checkpoint: `a736da843a4d35490fd93007d14e9da6ff4ad932`
 
 ## Status
 
-**TRACK C ACCEPTED.** C-R1 through C-R4 are resolved, independent review returned
-`ACCEPTED` with zero Critical/High/Medium findings, and all five fresh final gates are green.
+**C-R5/C-R6 IMPLEMENTED; INDEPENDENT ACCEPTANCE AND FINAL FIVE GATES PENDING.** The prior
+acceptance at `b06fb62` covered C-R1 through C-R4 but was superseded by the 2026-08-20
+whole-range findings. Current implementation checks are green; this ledger does not claim a
+new independent verdict or final full-gate run.
 
 - [x] 22 production bridge call sites migrated to narrow contracts.
 - [x] `chartApi` and `seriesApi` deleted; no generic getter/handle replacement added.
-- [x] Capability construction routed through the engine.
+- [x] Capability construction routed through a closed built-in ID registry; hosts cannot
+  provide executable constructors.
 - [x] Trading placement previews and hit-test results are handle-free at the host boundary.
 - [x] Frozen scene migrated.
 - [x] Checkpoint boundary spec corrected with runtime exact-name checks plus a compile-time
   `keyof ChartEngine` public-output contract.
-- [x] Local import detector enabled at zero backlog and zero suppressions.
+- [x] Local import detector enabled at zero backlog and zero suppressions, including direct
+  exported aliases of tracked named/namespace bindings.
 - [x] Five requested trade-guard indentation blocks corrected only.
 - [x] Mandatory lint mutation and additional renamed-getter mutation both failed as expected,
   were restored exactly, and clean restoration was verified.
 - [x] `ENGINE_PUBLIC_CONTRACT.md` and `ENGINE_BOUNDARY_RESTORATION_REPORT.md` created.
-- [x] Five final raw gates recorded, including the test-gate failure without masking it.
+- [x] Historical five-gate evidence retained and clearly separated from current C-R5/C-R6
+  implementation checks.
 
 ## Targeted Evidence
 
@@ -40,10 +45,14 @@ Trade-guard targeted verification: `13 passed (13)`, exit `0` after indentation-
 
 ## Detector State
 
-- Scope: non-spec `src/app/**/*.ts`, excluding `src/app/domain/chart/**`.
-- Forbidden: four named raw-handle imports and all `lightweight-charts` namespace imports.
+- Scope: non-spec `src/app/**/*.ts`; chart-domain imports are allowed but exports remain
+  checked, while non-domain raw-handle imports are rejected.
+- Forbidden outside the chart domain: four named raw-handle imports and all
+  `lightweight-charts` namespace imports.
 - Allowed: payload/data imports, including `LogicalRange`, `MouseEventParams`, `Time` and
   `UTCTimestamp`.
+- Exported aliases: immediate tracked named, qualified, indexed, member-indexed and whole
+  namespace handle roots are rejected; data-only equivalents pass.
 - Production backlog: zero.
 - Rule suppressions: zero.
 - Dependencies/lockfiles: unchanged.
@@ -63,6 +72,8 @@ Trade-guard targeted verification: `13 passed (13)`, exit `0` after indentation-
 b4cb0c9 test(chart): enforce the public engine handle boundary
 a9ba615 chore(lint): enforce the chart handle boundary
 a34f3b6 style(chart): repair trade guard fixture indentation
+57c7813 fix(chart): close capability registration contract
+a33d639 fix(lint): reject exported chart handle aliases
 ```
 
 ## Historical Gates
@@ -112,15 +123,16 @@ remained unchanged. No dependency/lockfile mutation, push, merge or deploy occur
   `import('lightweight-charts').IChartApi` in `chart.component.ts` made `npm run lint` fail
   with exactly one `engine-boundary/no-chart-handles` error; inverse restoration was green.
 
-## Final Acceptance
+## Superseded Acceptance Record
 
+- This record applies only to head `b06fb62`; the later C-R5/C-R6 review superseded it.
 - Independent review session: `ses_00402de38ffet2fHXAeapj5aSZ`.
 - Accepted implementation head: `b06fb62`.
 - Verdict: `ACCEPTED`, zero Critical/High/Medium findings.
 - One Low ruled no-fix: the detector intentionally enforces the four C-R2 raw-handle types,
   not every mutable interface exported by lightweight-charts.
 
-Fresh raw gates from `emulador/`:
+Historical raw gates from `emulador/` at `b06fb62`:
 
 ```text
 npx tsc -p tsconfig.app.json --noEmit   exit 0, no diagnostics
@@ -134,3 +146,47 @@ npm run build                            exit 0, initial 651.83 kB
   only known warning: 500 kB budget exceeded by 151.83 kB
   no unexpected or Vitest chunk type
 ```
+
+## C-R5/C-R6 Closeout
+
+### C-R5
+
+- Closed registration contract: `BuiltInCapabilityId` is exactly `drawings | countdown |
+  session | trading`; `chart-engine.ts` delegates composition to `capability-registry.ts` and
+  imports no concrete capability classes.
+- Hosts register IDs in preserved order: chart
+  `drawings,countdown,session,trading`; frozen scene `trading,drawings,session` with no
+  countdown. `getCapability` remains the mapped drawings/trading facade.
+- Runtime RED before implementation: boundary spec `1 failed / 24 passed (25)` because the
+  caller constructor executed instead of throwing.
+- Desired-contract RED: missing registry, rejected string IDs, and unused constructor-negative
+  directive caused the three-file target to fail compilation.
+- GREEN: boundary/registry/frozen target `3 files / 49 tests`; final boundary target `26/26`.
+- Declaration-widening mutation: spec tsc exited `1`, `TS2578` on the constructor-negative
+  directive; restored spec tsc exited `0`.
+- Runtime-fallback mutation: boundary target exited `1`, `1 failed / 25 passed`; output showed
+  `ProbeCapability.built` retaining the raw series. Restored target passed `26/26`.
+- Registry SHA-256 matched before/after mutations:
+  `8EDC083A8C51110321ADDFC90921985C4EA0C355E71265DA41F0F365031D1897`.
+
+### C-R6
+
+- RuleTester RED: `Should have 1 error but had 0` at the first exported-alias case.
+- RuleTester GREEN covers `H`, `LC.IChartApi`, `LC['ISeriesApi']`, `H['priceScale']`, and the
+  whole namespace, plus data-only named/qualified/indexed aliases.
+- Production named and namespace alias mutations each made ordinary `npm run lint` exit `1`
+  with exactly one `engine-boundary/no-chart-handles` error.
+- Both mutations were patch-restored; `capability.ts` SHA-256 matched before/after:
+  `6D11CAE1E7A0866B56C69C0380E7F3D297DED3BADA6CDD48F67482EC0292563D`.
+
+### Current Checks
+
+```text
+affected chart/frozen suites                   exit 0, 28 files / 311 tests
+npx tsc -p tsconfig.app.json --noEmit          exit 0, no diagnostics
+npx tsc -p tsconfig.spec.json --noEmit         exit 0, no diagnostics
+npm run lint                                   exit 0, RuleTester + All files pass linting
+```
+
+No full-suite or build gate was run for C-R5/C-R6 in this implementation closeout. Independent
+acceptance remains pending.

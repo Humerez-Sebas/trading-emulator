@@ -2,10 +2,11 @@
 
 ## Verdict
 
-**Track C is independently accepted and all five fresh gates are green.** The RFC-004/RFC-005 raw-handle
-bridge is retired with no intentional behavior change. The historical bridge is classified
-as an **EXPIRED MIGRATION CONSTRAINT**: its migration purpose has ended, every live host
-operation has a narrow owner, and the backlog is zero before detector enablement.
+**C-R5/C-R6 are implemented; independent acceptance and final five-gate verification are
+pending.** The earlier acceptance at `b06fb62` was superseded when the 2026-08-20 whole-range
+review found the constructor-retention and exported-alias bypasses. The RFC-004/RFC-005
+raw-handle bridge remains retired with no intentional behavior change, but this implementer
+report does not claim independent acceptance or a fresh final full-gate run.
 
 ## Scope Delivered
 
@@ -13,8 +14,8 @@ operation has a narrow owner, and the backlog is zero before detector enablement
 - Migrated 22 production bridge call sites (24 raw operations when the two retained
   `IPriceLine.applyOptions` calls are included) to six narrow `ChartEngine` methods and
   three `TradingCapability` placement-preview methods.
-- Changed capability registration to class-based engine construction, including the frozen
-  scene host, without making `ChartEngine` import concrete capabilities.
+- Routed built-in capability construction through a chart-domain registry, including the
+  frozen scene host, without making `chart-engine.ts` import concrete capabilities.
 - Narrowed `hitTestTradeLine` to a handle-free copy and moved placement-line ownership into
   `TradingCapability`.
 - Corrected five malformed indentation blocks in
@@ -22,9 +23,14 @@ operation has a narrow owner, and the backlog is zero before detector enablement
 - Corrected the checkpoint boundary spec: exact bridge-name absence remains runtime-tested;
   renamed public handle outputs are now checked at compile time over `keyof ChartEngine`.
 - Added and enabled a local ESLint detector with deterministic `RuleTester` coverage.
-- Closed the final-review constructor/generic-lookup leak: registration returns `void`, while
-  hosts receive only mapped drawings/trading facades.
+- Preserved the earlier C-R1 corrections: registration returns `void`, while hosts receive
+  only mapped drawings/trading facades.
 - Reduced raw library mouse callbacks to `ChartPointerEvent` before event-bus emission.
+- C-R5 replaced caller-supplied constructors with a closed four-ID built-in registration
+  contract. Concrete composition lives in `capability-registry.ts`; `chart-engine.ts` imports
+  no concrete capability class.
+- C-R6 rejects exported type aliases rooted in tracked forbidden named or namespace bindings,
+  including qualified/indexed forms, while preserving data-only aliases.
 
 The detailed OLD-to-NEW map and ownership rationale are in `ENGINE_PUBLIC_CONTRACT.md`.
 
@@ -75,7 +81,8 @@ exit 0
 ```
 
 Cases prove all four named handles fail, aliases fail, namespace imports fail, dot/indexed
-TypeScript import types fail, named/star re-exports fail, and data-only forms pass.
+TypeScript import types fail, named/star re-exports fail, exported named/qualified/indexed
+aliases fail, and data-only forms pass.
 
 ## Detector Semantics And State
 
@@ -88,6 +95,8 @@ Rule: `engine-boundary/no-chart-handles`.
 - Rejects namespace imports from `lightweight-charts`, which could bypass named checks.
 - Allows `LogicalRange`, `MouseEventParams`, `Time`, `UTCTimestamp` and data-only imports.
 - Inspects static imports, TypeScript import types, and direct re-exports.
+- Inspects exported aliases whose immediate root is a tracked forbidden named or namespace
+  binding; it does not recursively follow aliases or dependencies.
 - Uses plain ESLint AST and existing packages; no dependency or lockfile changed.
 - Backlog at enablement: **0 production violations** outside `domain/chart`.
 - Suppressions for this rule: **0**.
@@ -148,8 +157,9 @@ clean.
   input/output values; covered by `chart-engine.boundary.spec.ts`.
 - `shiftVisibleRange` remains echoing while `applyVisibleRange` remains one-shot suppressed;
   both next-frame semantics are explicitly tested.
-- Engine-side capability construction preserves registration order, duplicate-id error text,
-  facade lookup, render fan-out and destroy order.
+- Engine-side built-in capability construction preserves chart order
+  `drawings,countdown,session,trading`, frozen order `trading,drawings,session`, duplicate-id
+  error text, facade lookup, render fan-out and destroy-before-chart order.
 - Placement preview specs preserve exact line styles/options, no-op movement, replacement,
   teardown and handle-free hit results.
 - Existing guard specs were rewired to narrow engine fakes without assertion changes.
@@ -195,14 +205,16 @@ and three Medium findings. Resolutions:
 - The Low indexed-import-type bypass was also closed with `RuleTester` coverage.
 
 Review loops subsequently found and resolved the two-step domain barrel variants and the
-shared-bus structural payload path. Final independent review of head `b06fb62` returned
-`ACCEPTED`: zero Critical, High, or Medium findings. Its sole Low notes that the detector's
+shared-bus structural payload path. Independent review of head `b06fb62` returned `ACCEPTED`:
+zero Critical, High, or Medium findings. That verdict is historical evidence only and was
+superseded by the later C-R5/C-R6 whole-range review. Its sole Low noted that the detector's
 four-handle set does not attempt to classify every mutable lightweight-charts interface;
-that is outside C-R2's required scope and remains an explicit detector limit.
+that remains outside the bounded rule.
 
-## Fresh Final Gates
+## Historical Final Gates At `b06fb62`
 
-Final raw, unpiped results from `emulador/` at accepted implementation head `b06fb62`:
+These raw, unpiped results were recorded at the now-superseded accepted head `b06fb62`; they
+are not current final-gate evidence for C-R5/C-R6:
 
 | Gate | Exit | Evidence |
 |---|---:|---|
@@ -212,16 +224,64 @@ Final raw, unpiped results from `emulador/` at accepted implementation head `b06
 | `npm run lint` | 0 | Local `RuleTester` suite ran first; Angular lint reported `All files pass linting.` |
 | `npm run build` | 0 | Initial total `651.83 kB`; only the known 500 kB budget warning (`151.83 kB` over). No unexpected or Vitest chunk type. |
 
+## C-R5/C-R6 TDD And Mutation Evidence
+
+### C-R5
+
+- Initial runtime RED: targeted `chart-engine.boundary.spec.ts` exited `1`, with `1 failed /
+  24 passed (25)`. The constructor was accepted and did not throw.
+- Desired-contract RED: the three-file boundary/registry/frozen run failed to compile because
+  `capability-registry.ts` did not exist, string IDs were not assignable to the old constructor
+  parameter, and the constructor-negative `@ts-expect-error` was unused.
+- GREEN: the same three-file command passed `3 files / 49 tests`; the final focused boundary
+  run passed `26/26`.
+- Declaration-widening mutation: temporarily adding an executable constructor to
+  `BuiltInCapabilityId` made `npx tsc -p tsconfig.spec.json --noEmit` exit `1` with `TS2578`
+  on the now-unused constructor-negative directive. Restored spec TypeScript exited `0`.
+- Runtime-fallback mutation: temporarily invoking an unknown registration value as a
+  constructor made the focused boundary run fail `1 / 25 passed`; the failure printed
+  `ProbeCapability.built` containing the probe, its raw series, chart, and capability bus.
+  Restoration passed `26/26`.
+- `capability-registry.ts` SHA-256 before and after both mutations was
+  `8EDC083A8C51110321ADDFC90921985C4EA0C355E71265DA41F0F365031D1897`.
+
+### C-R6
+
+- RED: `node eslint-rules/no-chart-handles.test.js` exited `1` at the first exported-alias
+  case: `Should have 1 error but had 0`.
+- GREEN: the same RuleTester command exited `0` with named `H`, `LC.IChartApi`,
+  `LC['ISeriesApi']`, `H['priceScale']`, whole-namespace negatives, and named/qualified/indexed
+  data-only positives.
+- Production named-alias mutation in `capability.ts` (`IPriceLine as H`; exported alias `H`):
+  ordinary `npm run lint` exited `1` with exactly one
+  `engine-boundary/no-chart-handles` error.
+- Production namespace-alias mutation in `capability.ts` (`LC.IChartApi`): ordinary
+  `npm run lint` exited `1` with exactly one boundary error.
+- Both mutations were reversed with patches. `capability.ts` SHA-256 before and after was
+  `6D11CAE1E7A0866B56C69C0380E7F3D297DED3BADA6CDD48F67482EC0292563D`; restored ordinary lint
+  exited `0`.
+
+### Current Requested Checks
+
+These are implementation checks, not independent acceptance or final full gates:
+
+| Check | Exit | Evidence |
+|---|---:|---|
+| affected chart/frozen suites | 0 | 28 files; 311 tests passed. |
+| `npx tsc -p tsconfig.app.json --noEmit` | 0 | No diagnostics. |
+| `npx tsc -p tsconfig.spec.json --noEmit` | 0 | No diagnostics. |
+| `npm run lint` | 0 | RuleTester ran first; Angular lint reported `All files pass linting.` |
+
 ## Residual Risk
 
 - The import detector does not perform general type-flow analysis or inspect runtime dynamic
   `import()` / CommonJS `require()` expressions. This TypeScript ESM app has zero measured
   production use of those forms; static imports, TypeScript import types, and direct
-  re-exports are enforced.
+  re-exports plus direct exported aliases of tracked bindings are enforced.
 - `Capability.init` legitimately receives `IChartApi` inside `domain/chart`; capability
   implementations remain trusted boundary owners and require normal review/lifecycle tests.
 - TypeScript `private` is compile-time privacy, not ECMAScript `#private`; runtime reflection
   can observe internal own properties. This is not public API, and the corrected test avoids
   claiming otherwise.
-- The historical full-suite timeout evidence above is preserved separately from the fresh
-  green closeout suite.
+- The historical full-suite timeout evidence above remains preserved separately from the
+  later historical green suite at `b06fb62`.

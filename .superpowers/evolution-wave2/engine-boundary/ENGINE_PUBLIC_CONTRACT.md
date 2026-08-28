@@ -13,9 +13,10 @@ separate private bus and cannot publish arbitrary payloads to host listeners.
 
 The original `chartApi` sunset condition was met directly. The old `capability.ts` note
 predicted that the main series might later enter through `Capability.init`; that prediction
-did not happen. The replacement is stricter: `ChartEngine.registerCapability(Ctor)` invokes
-the capability constructor with the engine-owned series, so host code never receives the
-series, even transiently.
+did not happen. The final replacement is stricter: `ChartEngine.registerCapability(id)`
+accepts only the closed built-in IDs `drawings`, `countdown`, `session`, and `trading`. A
+chart-domain registry maps those IDs to concrete classes and receives the engine-owned series.
+Hosts cannot supply executable constructors that retain the series in a static field or closure.
 
 ## Escape-Hatch Map
 
@@ -30,7 +31,7 @@ series, even transiently.
 | `seriesApi` -> `createPriceLine(...)` for entry/SL/TP preview | `TradingCapability.addPlacementLine(slot, spec)` | Interactive order placement in `ChartComponent` | `TradingCapability` | Placement preview is trading visualization behavior, not generic chart geometry. Slot determines the existing line style internally. | `void`; domain slot/spec in |
 | retained `IPriceLine.applyOptions(...)` during preview | `TradingCapability.movePlacementLine(slot, price, title)` | Interactive order placement in `ChartComponent` | `TradingCapability` | The capability owns the preview line lifecycle and translates a domain update into library options. | `void`; primitives in |
 | `seriesApi` -> `removePriceLine(...)` for preview teardown | `TradingCapability.clearPlacementLines()` | Placement completion/cancellation and capability destruction | `TradingCapability` | The owner that creates preview handles must remove them, including destroy-time cleanup. | `void` |
-| `seriesApi` passed by host to capability constructors | `ChartEngine.registerCapability(Ctor)` | `ChartComponent` and `FrozenSceneHostComponent` | `ChartEngine` | Constructor injection happens where the main series is owned; capability selection remains host-controlled, preserving the closed-core registry. | Returns `void`; the instance stays inside the engine |
+| `seriesApi` passed by host to capability constructors | `ChartEngine.registerCapability(id)` | `ChartComponent` and `FrozenSceneHostComponent` | `ChartEngine` + chart-domain registry | Hosts select only a built-in ID; the domain registry performs constructor injection where the main series is owned. Cast/JavaScript constructor values are rejected before invocation. | Returns `void`; no executable constructor crosses from a host |
 | Generic `getCapability<T>(id)` instance cast | `getCapability(id)` over `CapabilityApiMap` | `ChartComponent` | `ChartEngine` | Hosts need only drawings/trading interaction methods, not lifecycle state or constructor-held handles. | Returns the registered handle-free `publicApi` facade |
 | Raw `MouseEventParams` forwarded through `ChartEventBus` | `ChartPointerEvent` | `ChartComponent` and panel sync | `ChartEngine` | Hosts consume only `time`, `logical`, and `point`; library payloads also contain live series handles. | Fresh data-only object; no `seriesData`, `hoveredSeries`, or source event |
 | `hitTestTradeLine(...)` returning stored `TradeLine` with `.line` | handle-free `TradeLineHit` copy | Drag/cursor interaction in `ChartComponent` | `TradingCapability` | Hit testing belongs with the trading primitives and series geometry it owns. | Copy contains only identity, field, price and draggable state |
@@ -49,10 +50,13 @@ Combining them would be a behavior change even though both call
 ## Capability Ownership
 
 - `ChartEngine` owns `IChartApi` and the main `ISeriesApi<'Candlestick'>`.
-- Capability constructors receive the main series only inside
-  `ChartEngine.registerCapability`; Angular and frozen-scene hosts receive no handle.
+- Capability constructors receive the main series only inside the chart-domain built-in
+  registry; `ChartEngine` imports that registry, not concrete capability classes. Angular and
+  frozen-scene hosts receive no handle and cannot provide constructors.
 - `registerCapability` returns `void`; `getCapability` returns only a mapped handle-free facade
   for the drawings and trading interaction contracts.
+- The chart host registers `drawings`, `countdown`, `session`, `trading` in that order. Frozen
+  scenes register `trading`, `drawings`, `session`, with no countdown.
 - Each capability may own the lightweight-charts objects needed for its visualization and
   must release them in `destroy()`.
 - `TradingCapability` owns trade price lines, placement preview lines, series markers and
@@ -62,7 +66,7 @@ Combining them would be a behavior change even though both call
 
 ## Executable Contract
 
-`chart-engine.boundary.spec.ts` enforces four distinct facts:
+`chart-engine.boundary.spec.ts` and `capability-registry.spec.ts` enforce six distinct facts:
 
 1. Runtime reflection checks the exact absence of `chartApi` and `seriesApi`.
 2. A compile-time mapped type over `keyof ChartEngine` fails if any public property or
@@ -74,6 +78,14 @@ Combining them would be a behavior change even though both call
    returns a facade rather than the concrete capability instance.
 5. A compile-time negative contract proves the host event source has no `emit`, and a runtime
    assertion proves capabilities receive a different private bus.
+6. The registration parameter is exactly `BuiltInCapabilityId`; a constructor call is a
+   compile-time error, and a cast/JavaScript constructor is rejected before the existing
+   `ProbeCapability.built` static can retain the engine series.
+
+`no-chart-handles.test.js` additionally proves exported aliases cannot expose tracked handles
+through a named binding, namespace qualification, namespace indexing, a member indexed from a
+named handle, or a whole namespace alias. Named, qualified, and indexed data-only aliases remain
+valid. The rule deliberately does not perform recursive type-flow analysis.
 
 It deliberately does not reflect over runtime own fields: TypeScript `private` fields such
 as `chart` and `mainSeries` exist at runtime but are excluded from `keyof ChartEngine` and
