@@ -5,13 +5,13 @@ Worktree `C:\Users\78701\Desktop\trading-emulator-session-sovereignty`
 
 ## STATUS
 
-Track A plus the final bounded independent-review corrections: **INDEPENDENTLY ACCEPTED / DONE.** Session
-clocks are identity-bound and transactionally reconciled; dirty time is monotonic; every
-cloud boundary captures and revalidates auth/DB owner before returning data or mutating local
-state; O-7 requires all meaningful ids; adoption performs transaction-local non-overwrite and
-marks only actual copies; null exact counts prove nothing. Nothing was pushed or merged; no
-Supabase, Vercel, dependency, lockfile, market-data worker, recovery UI, auth listener, sibling
-worktree, or `develop` change was made.
+Track A at implementation head `d72c51d`: **INDEPENDENTLY ACCEPTED / DONE.** Session clocks are
+identity-bound and transactionally reconciled; dirty time is monotonic; every cloud boundary
+captures and revalidates auth/DB owner before returning data or mutating local state; O-7 requires
+all meaningful ids; adoption performs transaction-local non-overwrite and marks only actual copies;
+null exact counts prove nothing. Nothing was pushed or merged; no Supabase, Vercel, dependency,
+lockfile, market-data worker, recovery UI, auth listener, sibling worktree, remote, or `develop`
+change was made.
 
 Primary A5 verdict: **CONFIRMED DEFECT**.
 
@@ -834,3 +834,23 @@ TDD and bounded verification evidence, raw and unpiped from `emulador/`:
 
 No full repository test suite or build was run. The evidence above is implementer evidence only;
 Track A still requires fresh independent review and any independently owned final gates.
+
+## 2026-08-28 final independent acceptance at `d72c51d`
+
+The historical rejected reviews and their bounded correction evidence above remain preserved.
+Independent review of clean accepted implementation head `d72c51d` returned **ACCEPTED** with zero
+Critical, High, or Medium findings. It reported one Low: `sameActivePayload()` D1 equality omits
+`files`. This is latent because every current writer of `files` also advances the exact revision
+clocks used by the guard.
+
+The controller independently ran all final gates raw and unpiped from `emulador/` at `d72c51d`:
+
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`.
+- `npx ng test --watch=false` -> exit `0`, **186 files / 2562 tests passed**.
+- `npm run lint` -> exit `0`.
+- `npm run build` -> exit `0`; initial bundle **669.96 kB**, with only the known 500 kB budget
+  warning by **169.96 kB** and no unexpected or Vitest production chunk.
+
+No push, merge, dependency, or remote change was made. The worktree was clean at accepted
+implementation head `d72c51d`.

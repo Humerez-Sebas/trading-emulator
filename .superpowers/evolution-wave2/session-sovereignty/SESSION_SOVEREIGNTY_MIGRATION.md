@@ -373,3 +373,19 @@ Accepted RED/GREEN was **4 failed / 274 passed (278) -> 278/278** across the sel
 real fake-indexeddb workspace service, and real fake-indexeddb workspace effect specs. Fresh affected
 evidence passed **11 files / 509 tests**; app/spec tsc and lint exited `0`. No full suite, build,
 final gates, or independent acceptance is claimed.
+
+## Final independent acceptance at `d72c51d` (2026-08-28)
+
+All earlier rejected reviews and bounded correction addenda remain historical evidence. Independent
+review of clean accepted implementation head `d72c51d` returned **ACCEPTED** with zero Critical,
+High, or Medium findings. The sole Low finding is that `sameActivePayload()` D1 equality omits
+`files`; it is latent because every current `files` writer advances the exact revision clocks used
+by that guard.
+
+The controller independently ran the final gates raw and unpiped from `emulador/` at `d72c51d`:
+app tsc exit `0`; spec tsc exit `0`; `ng test` exit `0` with **186 files / 2562 tests passed**;
+lint exit `0`; and build exit `0` with an initial bundle of **669.96 kB**, only the known 500 kB
+budget warning by **169.96 kB**, and no unexpected or Vitest production chunk.
+
+No push, merge, dependency, or remote change was made. The worktree was clean at accepted
+implementation head `d72c51d`.
