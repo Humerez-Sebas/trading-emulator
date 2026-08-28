@@ -395,6 +395,25 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
     );
     expect(restored?.sessions).toEqual([unrelated]);
     expect(restored?.activeClientUpdatedAt).toBeGreaterThan(restored?.activeSyncedAt ?? 0);
+
+    const sync = new SessionSyncService(
+      {
+        client: {
+          auth: { getSession: async () => ({ data: { session: { user: { id: OWNER } } } }) },
+        },
+      } as SupabaseService,
+      svc,
+    );
+    const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
+    await sync.flushDirty();
+
+    const row = upsert.mock.calls.map(([candidate]) => candidate).find(({ id }) => id === 'active-a');
+    expect(row?.clientUpdatedAt).toBe(102);
+    expect(row?.payload).toEqual(
+      expect.objectContaining({
+        trading: expect.objectContaining({ sessionName: 'A2', balance: 13000 }),
+      }),
+    );
   });
 
   it('does not restore A after the exact archived row changes', async () => {
