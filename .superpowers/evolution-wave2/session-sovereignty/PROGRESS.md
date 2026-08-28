@@ -783,3 +783,54 @@ TDD and bounded verification evidence, raw and unpiped from `emulador/`:
 
 No full repository test suite or build was run. The results above are implementer evidence only;
 Track A still requires fresh independent review and any independently owned final gates.
+
+## 2026-08-28 replay-only A-R7 addendum from `9960638`
+
+All earlier acceptance statements remain historical. This bounded continuation implements only the
+remaining Track A Medium A-R7 and makes no independent-acceptance or final-full-gates claim. No
+dependency, lockfile, Supabase, Vercel, auth, cross-tab, recovery, other-worktree, remote, push,
+merge, reset, rebase, squash, full-suite, or build operation was performed.
+
+Implementation commit:
+
+- `4651aeb` `fix(sessions): persist replay-only restore edits`
+
+Correction:
+
+- `selectWorkspaceMetaSnapshot` now carries `customTfMinutes`, `playbackSpeed`, and
+  `replayResolution` from their existing market/replay owners. The existing debounced workspace
+  writer compares those fields plus `files` as part of the coherent active payload, writes the live
+  values rather than retaining the durable values, and advances the existing monotonic dirty clock
+  when only those fields change.
+- `MaterializedSessionAggregate` now includes `files`. Guarded archive restoration writes the exact
+  files captured with latest A2; promotion and compensation also pass their coherent file view, so
+  no materialization path can silently omit the field. A deterministic A3 edit made while that
+  restoration transaction waits changes only replay settings and files: restoration receives exact
+  A2, NgRx remains exact A3, and no stale `newSession` consequence dispatches.
+- Real fake-IndexedDB coverage proves ordinary persistence writes replay-settings/files-only A3,
+  cold construction reads those exact local fields with `activeClientUpdatedAt > activeSyncedAt`,
+  and `flushDirty()` flattens the exact replay settings into the cloud payload. File names remain the
+  local informational `WorkspaceMeta.files` field; the existing cloud contract continues to use
+  `requiredDatasets` rather than file names (`docs/engineering/domain/session-sync.md`, payload rule
+  1), so no wire schema or migration was introduced.
+
+TDD and bounded verification evidence, raw and unpiped from `emulador/`:
+
+- Baseline affected command (11 explicit files) -> exit `0`, **11 files / 505 tests passed**.
+- The first RED draft failed compilation only because the new service spec omitted its type import;
+  after correcting that harness, accepted RED used four explicit files -> exit `1`, **4 failed / 274
+  passed (278)**. The failures were exactly the absent selector replay fields, omitted restoration
+  files, missing A2 files in the pending-restoration aggregate, and retained/non-dirty A3 durable
+  settings.
+- Focused GREEN of the same four-file command -> exit `0`, **4 files / 278 tests passed**. During
+  implementation, one run exposed six pre-existing promotion fixtures whose durable comparison had
+  not yet mirrored the newly expanded selector shape, plus the new effect test froze `Date.now()` and
+  therefore prevented RxJS debounce time from advancing. Production comparison was completed and
+  the test clock freeze removed; no pre-existing behavioral assertion changed.
+- Fresh affected command (11 explicit files) -> exit `0`, **11 files / 509 tests passed**.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no output.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no output.
+- `npm run lint` -> exit `0`, `All files pass linting.`
+
+No full repository test suite or build was run. The evidence above is implementer evidence only;
+Track A still requires fresh independent review and any independently owned final gates.

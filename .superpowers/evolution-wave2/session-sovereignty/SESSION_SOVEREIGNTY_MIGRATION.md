@@ -351,3 +351,25 @@ Accepted focused RED/GREEN counts were A-R5 **3 failed / 187 passed (190) -> 190
 **1 failed / 119 passed (120) -> 120/120**. Final focused evidence passed **2 files / 192 tests**;
 fresh affected evidence passed **10 files / 430 tests**; app/spec tsc and lint exited `0`. No full
 suite, build, final gates, or independent acceptance is claimed.
+
+## Replay-only A-R7 addendum from `9960638` (2026-08-28)
+
+The physical migration layout, O-7 policy, owner guards, cloud schema, and `requiredDatasets` wire
+contract remain unchanged. The final persistence gap was corrected in `4651aeb`:
+
+1. The existing lightweight workspace snapshot now includes custom timeframe, playback speed, and
+   replay resolution. The existing active-payload comparison includes those fields and `files`, and
+   the same transaction writes the coherent live values while applying the existing monotonic dirty
+   clock policy. A replay-settings/files-only edit therefore survives cold local construction and is
+   flush-eligible; cloud flatten carries its exact replay values.
+2. Files are now a required part of `MaterializedSessionAggregate`. Guarded archive restoration,
+   cloud promotion, and compensation all write the files captured with their aggregate. A controlled
+   A3 replay-settings/files-only edit while A2 restoration waits leaves exact A3 in NgRx; A2 restores
+   completely, then ordinary persistence writes exact A3 without a stale archive consequence.
+3. File names remain local informational workspace metadata. Cloud payloads continue to reference
+   market data through `requiredDatasets`; no session payload version or database migration changed.
+
+Accepted RED/GREEN was **4 failed / 274 passed (278) -> 278/278** across the selector, Sessions page,
+real fake-indexeddb workspace service, and real fake-indexeddb workspace effect specs. Fresh affected
+evidence passed **11 files / 509 tests**; app/spec tsc and lint exited `0`. No full suite, build,
+final gates, or independent acceptance is claimed.
