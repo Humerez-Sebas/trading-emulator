@@ -134,6 +134,31 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       `,
       options: [{ allowImports: true }],
     },
+    {
+      name: 'allows late named data-only aliases and exports',
+      code: `
+        export type Public = D;
+        export type { D };
+        import type { CandlestickData as D } from 'lightweight-charts';
+      `,
+      options: [{ allowImports: true }],
+    },
+    {
+      name: 'allows a late namespace-qualified nested data-only alias',
+      code: `
+        export type Public = LC.CandlestickData['close'];
+        import type * as LC from 'lightweight-charts';
+      `,
+      options: [{ allowImports: true }],
+    },
+    {
+      name: 'allows a late namespace-indexed nested data-only alias',
+      code: `
+        export type Public = LC['CandlestickData']['close'];
+        import type * as LC from 'lightweight-charts';
+      `,
+      options: [{ allowImports: true }],
+    },
   ],
   invalid: [
     {
@@ -228,6 +253,51 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       code: `
         import type * as LC from 'lightweight-charts';
         export type Public = LC;
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamespaceImport' }],
+    },
+    {
+      name: 'rejects a late named handle alias',
+      code: `
+        export type Public = H;
+        import type { IChartApi as H } from 'lightweight-charts';
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects a late namespace-qualified nested handle alias',
+      code: `
+        export type Public = LC.ISeriesApi<'Candlestick'>['createPriceLine'];
+        import type * as LC from 'lightweight-charts';
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'ISeriesApi' } }],
+    },
+    {
+      name: 'rejects a late namespace-indexed nested handle alias',
+      code: `
+        export type Public = LC['IChartApi']['priceScale'];
+        import type * as LC from 'lightweight-charts';
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects a late source-less named handle export',
+      code: `
+        export type { H };
+        import type { IChartApi as H } from 'lightweight-charts';
+      `,
+      options: [{ allowImports: true }],
+      errors: [{ messageId: 'forbiddenNamedImport', data: { name: 'IChartApi' } }],
+    },
+    {
+      name: 'rejects a late source-less namespace export',
+      code: `
+        export type { LC };
+        import type * as LC from 'lightweight-charts';
       `,
       options: [{ allowImports: true }],
       errors: [{ messageId: 'forbiddenNamespaceImport' }],

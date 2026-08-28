@@ -55,6 +55,21 @@ const noChartHandles = {
       context.report({ node, messageId: 'forbiddenNamedImport', data: { name } });
     }
 
+    function trackImportBindings(node) {
+      if (node.source.value !== 'lightweight-charts') return;
+
+      for (const specifier of node.specifiers) {
+        if (specifier.type === 'ImportNamespaceSpecifier') {
+          importedHandleLocals.set(specifier.local.name, null);
+        } else if (specifier.type === 'ImportSpecifier') {
+          const name = importedName(specifier);
+          if (FORBIDDEN_HANDLES.has(name)) {
+            importedHandleLocals.set(specifier.local.name, name);
+          }
+        }
+      }
+    }
+
     function trackedTypeRoot(type) {
       if (type.type === 'TSIndexedAccessType') {
         const name = trackedTypeRoot(type.objectType);
@@ -96,21 +111,17 @@ const noChartHandles = {
     }
 
     return {
+      Program(node) {
+        if (!allowImports) return;
+        for (const statement of node.body) {
+          if (statement.type === 'ImportDeclaration') trackImportBindings(statement);
+        }
+      },
       ImportDeclaration(node) {
         if (node.source.value !== 'lightweight-charts') return;
+        if (allowImports) return;
 
         for (const specifier of node.specifiers) {
-          if (allowImports) {
-            if (specifier.type === 'ImportNamespaceSpecifier') {
-              importedHandleLocals.set(specifier.local.name, null);
-            } else if (specifier.type === 'ImportSpecifier') {
-              const name = importedName(specifier);
-              if (FORBIDDEN_HANDLES.has(name)) {
-                importedHandleLocals.set(specifier.local.name, name);
-              }
-            }
-            continue;
-          }
           if (specifier.type === 'ImportNamespaceSpecifier') {
             context.report({ node: specifier, messageId: 'forbiddenNamespaceImport' });
             continue;
