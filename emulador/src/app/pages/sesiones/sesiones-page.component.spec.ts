@@ -81,6 +81,20 @@ function folder(p: Partial<SessionFolder> = {}): SessionFolder {
   return { id: 'f1', name: 'Estrategia A', order: 0, ...p };
 }
 
+function completeWorkspaceMeta(p: Partial<WorkspaceMeta>): WorkspaceMeta {
+  const meta = workspaceMeta(p);
+  const fallback = singlePanelLayoutFor(meta.symbol, meta.activeTf ?? 'M1');
+  return {
+    ...meta,
+    customTfMinutes: p.customTfMinutes ?? null,
+    playbackSpeed: p.playbackSpeed ?? 500,
+    replayResolution: p.replayResolution ?? null,
+    layout: p.layout ?? fallback.layout,
+    panels: p.panels ?? fallback.panels,
+    linkGroups: p.linkGroups ?? [],
+  };
+}
+
 function summary(p: Partial<SessionSummary> = {}): SessionSummary {
   return {
     id: 'cloud-1',
@@ -398,6 +412,31 @@ describe('SesionesPageComponent', () => {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
+  }
+
+  function overrideLiveAggregate(meta: WorkspaceMeta): void {
+    const fallback = singlePanelLayoutFor(meta.symbol, meta.activeTf ?? 'M1');
+    store.overrideSelector(selectCurrentTime, meta.currentTime);
+    store.overrideSelector(selectTradingData, meta.trading ?? defaultTradingData());
+    store.overrideSelector(selectSavedSessions, meta.sessions ?? []);
+    store.overrideSelector(tradingFeature.selectActiveSessionId, meta.activeSessionId ?? null);
+    store.overrideSelector(marketFeature.selectCustomTf, meta.customTfMinutes ?? null);
+    store.overrideSelector(selectMsPerCandle, meta.playbackSpeed ?? 500);
+    store.overrideSelector(selectResolutionMinutes, meta.replayResolution ?? null);
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      files: meta.files,
+      activeTf: meta.activeTf,
+      selectedTfs: meta.selectedTfs,
+      currentTime: meta.currentTime,
+      drawings: meta.drawings,
+      trading: meta.trading ?? defaultTradingData(),
+      sessions: meta.sessions ?? [],
+      activeSessionId: meta.activeSessionId ?? null,
+      layout: meta.layout ?? fallback.layout,
+      panels: meta.panels ?? fallback.panels,
+      linkGroups: Object.fromEntries((meta.linkGroups ?? []).map((group) => [group.id, group])),
+    });
+    store.refreshState();
   }
 
   afterEach(() => {
@@ -1052,7 +1091,7 @@ describe('SesionesPageComponent', () => {
   });
 
   it('open: same-symbol materialization rejects an unpersisted same-id live A edit', async () => {
-    const activeA = workspaceMeta({
+    const activeA = completeWorkspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: 'active-a',
       activeClientUpdatedAt: 700,
@@ -1087,13 +1126,13 @@ describe('SesionesPageComponent', () => {
       currentAsset: 'EURUSD',
       liveTrading: activeA.trading,
       db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
         getMeta: vi.fn(async () => durable),
         promoteSessionIfUnchanged,
       },
       sync: { fetchPayload },
     });
-    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
-    store.refreshState();
+    overrideLiveAggregate(activeA);
     await settle();
 
     const opening = component.open(
@@ -1117,8 +1156,157 @@ describe('SesionesPageComponent', () => {
     expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
   });
 
+  it('open: rejects pre-existing live A2 over durable A1 before promotion or B hydration', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const durableA1: WorkspaceMeta = {
+      ...workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: 700,
+        activeSyncedAt: 650,
+        currentTime: 100,
+        trading: { ...defaultTradingData(), sessionName: 'A1', balance: 11000 },
+      }),
+      customTfMinutes: 15,
+      playbackSpeed: 500,
+      replayResolution: null,
+      selectedTfs: ['M1'],
+      layout: aView.layout,
+      panels: aView.panels,
+      linkGroups: [],
+    };
+    const liveA2: WorkspaceMeta = {
+      ...durableA1,
+      currentTime: 150,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      trading: { ...durableA1.trading!, sessionName: 'A2 not persisted', balance: 13000 },
+    };
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 90,
+      playbackSpeed: 100,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const promoteSessionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      currentTime: liveA2.currentTime,
+      liveTrading: liveA2.trading,
+      liveSessions: liveA2.sessions,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([durableA1]),
+        getMeta: vi.fn().mockResolvedValue(durableA1),
+        promoteSessionIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    overrideLiveAggregate(liveA2);
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+
+    expect(promoteSessionIfUnchanged).not.toHaveBeenCalled();
+    expect(store.selectSignal(selectTradingData)()).toEqual(liveA2.trading);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+    expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('open: promotes and hydrates B when captured live A exactly matches durable A', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const bView = singlePanelLayoutFor('EURUSD', 'H1');
+    const activeA: WorkspaceMeta = {
+      ...workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: 700,
+        activeSyncedAt: 650,
+        currentTime: 100,
+        trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+      }),
+      customTfMinutes: 15,
+      playbackSpeed: 500,
+      replayResolution: null,
+      selectedTfs: ['M1'],
+      layout: aView.layout,
+      panels: aView.panels,
+      linkGroups: [],
+    };
+    const payload = {
+      schemaVersion: 2 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      drawings: { EURUSD: { version: 1 as const, items: [] } },
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+      layout: bView.layout,
+      panels: bView.panels,
+      linkGroups: [],
+    };
+    const promotedB = {
+      ...activeA,
+      activeTf: payload.activeTf,
+      selectedTfs: payload.selectedTfs,
+      currentTime: payload.currentTime,
+      customTfMinutes: payload.customTfMinutes,
+      playbackSpeed: payload.playbackSpeed,
+      replayResolution: payload.replayResolution,
+      trading: payload.trading,
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      layout: bView.layout,
+      panels: bView.panels,
+    };
+    const promoteSessionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      currentTime: activeA.currentTime,
+      liveTrading: activeA.trading,
+      liveSessions: activeA.sessions,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        getWorkspace: vi.fn().mockResolvedValue({ ...promotedB, series: {} }),
+        promoteSessionIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    overrideLiveAggregate(activeA);
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+
+    expect(promoteSessionIfUnchanged).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+  });
+
   it('open: compensates a same-id live A edit made while promotion is pending', async () => {
-    const activeA = workspaceMeta({
+    const activeA = completeWorkspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: 'active-a',
       activeClientUpdatedAt: 700,
@@ -1200,6 +1388,7 @@ describe('SesionesPageComponent', () => {
       },
     );
     const db = {
+      listMetas: vi.fn().mockResolvedValue([activeA]),
       getMeta: vi.fn(async () => durable),
       promoteSessionIfUnchanged,
       compensatePromotionIfUnchanged,
@@ -1210,8 +1399,7 @@ describe('SesionesPageComponent', () => {
       db,
       sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
     });
-    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
-    store.refreshState();
+    overrideLiveAggregate(activeA);
     await settle();
 
     const opening = component.open(
@@ -1252,7 +1440,7 @@ describe('SesionesPageComponent', () => {
   });
 
   it('open: compensates an A edit made while the post-promotion owner assertion is pending', async () => {
-    const activeA = workspaceMeta({
+    const activeA = completeWorkspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: 'active-a',
       activeClientUpdatedAt: 700,
@@ -1293,6 +1481,7 @@ describe('SesionesPageComponent', () => {
       currentAsset: 'EURUSD',
       liveTrading: activeA.trading,
       db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
         getMeta: vi.fn().mockResolvedValue(activeA),
         getWorkspace: vi.fn().mockResolvedValue({ ...promotedB, series: {} }),
         promoteSessionIfUnchanged: vi.fn().mockResolvedValue(true),
@@ -1300,8 +1489,7 @@ describe('SesionesPageComponent', () => {
       },
       sync: { fetchPayload: vi.fn().mockResolvedValue(payload), assertExpectedOwner },
     });
-    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
-    store.refreshState();
+    overrideLiveAggregate(activeA);
     await settle();
 
     const opening = component.open(
@@ -1324,7 +1512,7 @@ describe('SesionesPageComponent', () => {
   });
 
   it('open: compensates an A edit made while the promoted workspace read is pending', async () => {
-    const activeA = workspaceMeta({
+    const activeA = completeWorkspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: 'active-a',
       activeClientUpdatedAt: 700,
@@ -1369,6 +1557,7 @@ describe('SesionesPageComponent', () => {
       currentAsset: 'EURUSD',
       liveTrading: activeA.trading,
       db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
         getMeta: vi.fn().mockResolvedValue(activeA),
         getWorkspace,
         promoteSessionIfUnchanged: vi.fn().mockResolvedValue(true),
@@ -1376,8 +1565,7 @@ describe('SesionesPageComponent', () => {
       },
       sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
     });
-    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
-    store.refreshState();
+    overrideLiveAggregate(activeA);
     await settle();
 
     const opening = component.open(
@@ -1400,7 +1588,7 @@ describe('SesionesPageComponent', () => {
   });
 
   it('open: live Supabase owner drift after promotion prevents compensation and hydration', async () => {
-    const activeA = workspaceMeta({
+    const activeA = completeWorkspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: 'active-a',
       activeClientUpdatedAt: 700,
@@ -1446,6 +1634,7 @@ describe('SesionesPageComponent', () => {
       currentAsset: 'EURUSD',
       liveTrading: activeA.trading,
       db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
         getMeta: vi.fn().mockResolvedValue(activeA),
         promoteSessionIfUnchanged,
         compensatePromotionIfUnchanged,
@@ -1456,8 +1645,7 @@ describe('SesionesPageComponent', () => {
         fetchPayload: vi.fn().mockResolvedValue(payload),
       },
     });
-    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
-    store.refreshState();
+    overrideLiveAggregate(activeA);
     await settle();
 
     const opening = component.open(
@@ -1487,7 +1675,7 @@ describe('SesionesPageComponent', () => {
   it('open: same-symbol cloud B really hydrates B while A is archived without a mixed aggregate', async () => {
     const aView = singlePanelLayoutFor('EURUSD', 'M1');
     const bView = singlePanelLayoutFor('EURUSD', 'H1');
-    const activeA = workspaceMeta({
+    const activeA = completeWorkspaceMeta({
       symbol: 'EURUSD',
       activeSessionId: 'active-a',
       activeClientUpdatedAt: 700,
@@ -1536,14 +1724,14 @@ describe('SesionesPageComponent', () => {
       currentAsset: 'EURUSD',
       liveTrading: activeA.trading,
       db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
         getMeta: vi.fn().mockResolvedValue(activeA),
         getWorkspace,
         updateMetaIfUnchanged,
       },
       sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
     });
-    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
-    store.refreshState();
+    overrideLiveAggregate(activeA);
     await settle();
 
     await component.open(

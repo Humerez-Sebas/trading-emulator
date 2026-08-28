@@ -286,10 +286,14 @@ export class SesionesPageComponent {
   private liveLoadedTfs = this.store.selectSignal(selectLoadedTfs);
   private liveWorkspaceAggregate = this.store.selectSignal(selectWorkspaceMetaSnapshot);
 
-  private serializeLiveAggregate(): string {
+  private serializeLiveAggregate(
+    revision?: Pick<WorkspaceMeta, 'activeClientUpdatedAt' | 'activeSyncedAt'>,
+  ): string {
     return JSON.stringify({
       workspace: this.liveWorkspaceAggregate(),
       activeSessionId: this.liveActiveSessionId(),
+      activeClientUpdatedAt: revision?.activeClientUpdatedAt,
+      activeSyncedAt: revision?.activeSyncedAt,
       trading: this.liveTrading(),
       currentTime: this.currentTime(),
       customTfMinutes: this.liveCustomTf(),
@@ -301,6 +305,55 @@ export class SesionesPageComponent {
   private liveAggregateStillMatches(symbol: string, expected: string | null): boolean {
     if (symbol !== this.currentAsset()) return expected === null;
     return expected !== null && this.serializeLiveAggregate() === expected;
+  }
+
+  private captureLiveAggregateWithRevision(symbol: string): string | null {
+    if (symbol !== this.currentAsset()) return null;
+    const activeSessionId = this.liveActiveSessionId() ?? null;
+    const revision = this.metas().find((meta) => meta.symbol === symbol);
+    if (!revision || (revision.activeSessionId ?? null) !== activeSessionId) return null;
+    return this.serializeLiveAggregate(revision);
+  }
+
+  private capturedLiveAggregateStillMatches(symbol: string, expected: string | null): boolean {
+    if (symbol !== this.currentAsset()) return expected === null;
+    return expected !== null && this.captureLiveAggregateWithRevision(symbol) === expected;
+  }
+
+  private durableActiveMatchesCapturedLive(
+    symbol: string,
+    durable: WorkspaceMeta | undefined,
+    expected: string | null,
+  ): boolean {
+    if (!durable || expected === null) return false;
+    const linkGroups = Object.fromEntries(
+      (durable.linkGroups ?? []).map((group) => [group.id, group]),
+    );
+    return (
+      JSON.stringify({
+        workspace: {
+          files: durable.files,
+          activeTf: durable.activeTf,
+          selectedTfs: durable.selectedTfs,
+          currentTime: durable.currentTime,
+          drawings: durable.drawings,
+          trading: durable.trading,
+          sessions: durable.sessions ?? [],
+          activeSessionId: durable.activeSessionId ?? null,
+          layout: durable.layout,
+          panels: durable.panels,
+          linkGroups,
+        },
+        activeSessionId: durable.activeSessionId ?? null,
+        activeClientUpdatedAt: durable.activeClientUpdatedAt,
+        activeSyncedAt: durable.activeSyncedAt,
+        trading: durable.trading,
+        currentTime: durable.currentTime,
+        customTfMinutes: durable.customTfMinutes,
+        playbackSpeed: durable.playbackSpeed,
+        replayResolution: durable.replayResolution,
+      }) === expected && durable.symbol === symbol
+    );
   }
 
   /** Flat list of every session as a card (live state wins for the open asset). */
@@ -870,7 +923,9 @@ export class SesionesPageComponent {
     if (!card.id) return;
     try {
       const expectedLiveAggregate =
-        card.symbol === this.currentAsset() ? this.serializeLiveAggregate() : null;
+        card.symbol === this.currentAsset()
+          ? this.captureLiveAggregateWithRevision(card.symbol)
+          : null;
       const expectedOwnerId = await this.sync.captureOwner();
       const expectedMeta = await this.db.getMeta(card.symbol);
       await this.sync.assertExpectedOwner(expectedOwnerId);
@@ -932,7 +987,13 @@ export class SesionesPageComponent {
       syncedAt: card.createdAt,
     };
     await this.sync.assertExpectedOwner(expectedOwnerId);
-    if (!this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)) return;
+    if (!this.capturedLiveAggregateStillMatches(card.symbol, expectedLiveAggregate)) return;
+    if (
+      card.symbol === this.currentAsset() &&
+      !this.durableActiveMatchesCapturedLive(card.symbol, expectedMeta, expectedLiveAggregate)
+    ) {
+      return;
+    }
     const committed = await this.db.promoteSessionIfUnchanged(card.symbol, expectedMeta, {
       session,
       activeTf: restored.activeTf,
@@ -945,7 +1006,7 @@ export class SesionesPageComponent {
     });
     if (!committed) return;
     await this.sync.assertExpectedOwner(expectedOwnerId);
-    if (!this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)) {
+    if (!this.capturedLiveAggregateStillMatches(card.symbol, expectedLiveAggregate)) {
       await this.compensatePromotion(
         card,
         expectedOwnerId,
@@ -961,7 +1022,7 @@ export class SesionesPageComponent {
       if (
         card.symbol !== this.currentAsset() ||
         (expectedMeta?.activeSessionId ?? null) !== (this.liveActiveSessionId() ?? null) ||
-        !this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)
+        !this.capturedLiveAggregateStillMatches(card.symbol, expectedLiveAggregate)
       ) {
         await this.compensatePromotion(
           card,
@@ -1011,7 +1072,7 @@ export class SesionesPageComponent {
     const activeSessionId = this.liveActiveSessionId();
     if (
       expectedLiveAggregate === null ||
-      this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate) ||
+      this.capturedLiveAggregateStillMatches(card.symbol, expectedLiveAggregate) ||
       card.symbol !== this.currentAsset() ||
       !expectedMeta?.activeSessionId ||
       activeSessionId !== expectedMeta.activeSessionId
