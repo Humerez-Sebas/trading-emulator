@@ -13,10 +13,7 @@ import {
 import { Candle, RenderModel } from './render-model';
 import { ChartEventBus, ChartEventSource, ChartPointerEvent } from './chart-event-bus';
 import { Capability, CapabilityApiMap } from './capability';
-import {
-  createBuiltInCapability,
-  type BuiltInCapabilityId,
-} from './capability-registry';
+import { createBuiltInCapability, type BuiltInCapabilityId } from './capability-registry';
 import { hexToRgba } from './color-utils';
 
 export interface ChartApplyHandle {

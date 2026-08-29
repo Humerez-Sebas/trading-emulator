@@ -164,8 +164,8 @@ type ContainsRawHandle<T, Depth extends unknown[] = []> = Depth['length'] extend
         ? ContainsRawHandle<Item, [...Depth, unknown]>
         : T extends object
           ? true extends {
-                [Key in keyof T]: ContainsRawHandle<T[Key], [...Depth, unknown]>;
-              }[keyof T]
+              [Key in keyof T]: ContainsRawHandle<T[Key], [...Depth, unknown]>;
+            }[keyof T]
             ? true
             : false
           : false;
@@ -225,9 +225,7 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
 
       getCallback()?.(raw);
 
-      expect(seen).toEqual([
-        { time: 1_700_000_000, logical: 12, point: { x: 10, y: 20 } },
-      ]);
+      expect(seen).toEqual([{ time: 1_700_000_000, logical: 12, point: { x: 10, y: 20 } }]);
       expect(seen[0]).not.toBe(raw);
     });
 
@@ -331,7 +329,9 @@ describe('ChartEngine — narrow boundary contract (RFC-004/RFC-005)', () => {
 
   describe('built-in capability registration', () => {
     it('accepts only the closed built-in ID contract at compile time', () => {
-      expectTypeOf<Parameters<ChartEngineType['registerCapability']>[0]>().toEqualTypeOf<BuiltInCapabilityId>();
+      expectTypeOf<
+        Parameters<ChartEngineType['registerCapability']>[0]
+      >().toEqualTypeOf<BuiltInCapabilityId>();
       const rejectedRegistration = (target: ChartEngineType) => {
         // @ts-expect-error executable constructors are not a public registration contract
         target.registerCapability(ProbeCapability);
