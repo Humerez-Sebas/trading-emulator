@@ -28,7 +28,8 @@ Controller-owned raw, unpiped final gates from `emulador/` at `646a441`:
 | `npm run lint` | 0 | Local RuleTester ran; Angular lint reported `All files pass linting.` |
 | `npm run build` | 0 | Initial total `651.83 kB`; only the known 500 kB budget warning (`151.83 kB` over). No unexpected or Vitest chunk type. |
 
-Evidence correction: fresh final verification caught a transcription error in the test count.
+Evidence correction: repeated raw full-suite outputs consistently reported 186 files / 2457
+tests, and fresh final verification caught the recorded count as a transcription error.
 The accepted `b06fb62` baseline of 185 files / 2450 tests plus one file and seven tests
 (`capability-registry.spec.ts` +5, `chart-engine.boundary.spec.ts` net +2, frozen scene unchanged)
 yields 186 files / 2457 tests; no test or application change caused this correction.
