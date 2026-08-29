@@ -1,11 +1,17 @@
 import { IChartApi, ISeriesApi } from 'lightweight-charts';
-import { Capability } from '../capability';
+import { Capability, DrawingsCapabilityApi } from '../capability';
 import { ChartEventBus } from '../chart-event-bus';
 import { RenderModel } from '../render-model';
 import { DrawingsPrimitive } from './drawings-primitive';
 
 export class DrawingsCapability implements Capability {
   readonly id = 'drawings';
+  readonly publicApi: DrawingsCapabilityApi = {
+    timeForX: (x) => this.timeForX(x),
+    xForTime: (timeUtc) => this.xForTime(timeUtc),
+    hitTestDrawing: (x, y) => this.hitTestDrawing(x, y),
+    hitTestHandle: (x, y) => this.hitTestHandle(x, y),
+  };
 
   private chart: IChartApi | null = null;
   private bus: ChartEventBus | null = null;

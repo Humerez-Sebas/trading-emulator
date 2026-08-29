@@ -29,11 +29,21 @@ import { layoutFeature } from '../../state/layout/layout.reducer';
  * `chart-panel.component.spec.ts` / `workspace-viewport.component.spec.ts`).
  * There is no DI seam for the engine here, so this spec stubs the hook itself
  * (`ChartComponent.prototype.ngAfterViewInit`) and scaffolds the handful of
- * private fields (`series`, `engine`, `lineDrag`, `lastTradeView`) the four
+ * private fields (`engine`, `lineDrag`, `lastTradeView`) the four
  * guarded methods read — the guard logic under test is pure signal
  * composition, not rendering. `container` is Angular's REAL (detached) view
  * child: static `@ViewChild` resolution isn't part of the stubbed hook, so
  * `getBoundingClientRect()`/`.style` work exactly as a real element would.
+ *
+ * RFC-004/RFC-005 (migration-bridge removal): this file used to scaffold
+ * `component.series = { coordinateToPrice: ... }`, because `ChartComponent` held the raw
+ * `ISeriesApi` handed to it by `ChartEngine.seriesApi`. Both bridge getters are gone and the
+ * component holds no lightweight-charts handle at all, so the same price lookup is now
+ * `engine.priceForY(y)` and the stub moved onto `component.engine`. The returned prices
+ * (90 / 95) and EVERY assertion in this file are unchanged — only the collaborator being
+ * faked changed. `paneRect` is deliberately absent from these stubs: `inPane` calls
+ * `this.engine?.paneRect?.()` and must keep failing OPEN (`undefined`), which is the
+ * behaviour these tests have always relied on.
  */
 
 const TRADE_CTX = {
@@ -127,7 +137,14 @@ function setup(descriptor: PanelDescriptor | null, asset: string | null) {
 describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
   it('regression: order options are present when the panel resolves to the book symbol', () => {
     const { component } = setup(blankDescriptor, 'US30');
-    component.series = { coordinateToPrice: () => 90 };
+    component.engine = {
+      priceForY: () => 90,
+      // `handleContextMenu` asks the trading capability for a closed trade box under
+      // the cursor (pre-existing call). Returning undefined reproduces exactly what
+      // happened when `engine` itself was undefined here: no box, `boxId: null`.
+      getCapability: () => undefined,
+      destroy: () => {},
+    };
     component.handleContextMenu({ clientX: 10, clientY: 10 } as unknown as MouseEvent);
 
     expect(component.menu()).not.toBeNull();
@@ -137,7 +154,14 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
   describe('T-3: symbol mismatch (panel = NAS100, book = US30)', () => {
     it('handleContextMenu offers no order options (menu still opens)', () => {
       const { component } = setup(mismatchedDescriptor, 'US30');
-      component.series = { coordinateToPrice: () => 90 };
+      component.engine = {
+        priceForY: () => 90,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.handleContextMenu({ clientX: 10, clientY: 10 } as unknown as MouseEvent);
 
       // the menu itself still opens (Fit / "Ir a fecha…" / "Programar fin…" are not
@@ -166,7 +190,14 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
     it('dragTradeLine dispatches no modifyPosition/modifyOrder', () => {
       const { component } = setup(mismatchedDescriptor, 'US30');
       const dispatch = vi.spyOn(store, 'dispatch');
-      component.series = { coordinateToPrice: () => 95 };
+      component.engine = {
+        priceForY: () => 95,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.lineDrag = { id: 'p1', target: 'position', field: 'sl' };
       component.lastTradeView = {
         positions: [
@@ -192,8 +223,6 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
     it('cancel/close dispatch neither cancelOrder nor closePosition', () => {
       const { component } = setup(mismatchedDescriptor, 'US30');
       const dispatch = vi.spyOn(store, 'dispatch');
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 95 };
       component.engine = {
         getCapability: () => ({
           hitTestDelete: () => ({ id: 'p1', target: 'order', price: 100 }),
@@ -216,7 +245,14 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
   describe('R18-2: mapper never configured (descriptor() == null)', () => {
     it('offers no order options', () => {
       const { component } = setup(null, 'US30');
-      component.series = { coordinateToPrice: () => 90 };
+      component.engine = {
+        priceForY: () => 90,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.handleContextMenu({ clientX: 10, clientY: 10 } as unknown as MouseEvent);
 
       expect(component.menu()!.options).toEqual([]);
@@ -243,7 +279,14 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
   describe('RFC-018 §8 (binding UI rule): hideTrades:true, symbol matches the book', () => {
     it('handleContextMenu offers no order options', () => {
       const { component } = setup(hiddenDescriptor, 'US30');
-      component.series = { coordinateToPrice: () => 90 };
+      component.engine = {
+        priceForY: () => 90,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.handleContextMenu({ clientX: 10, clientY: 10 } as unknown as MouseEvent);
 
       expect(component.menu()).not.toBeNull();
@@ -270,7 +313,14 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
     it('dragTradeLine dispatches nothing — menu and dispatch agree', () => {
       const { component } = setup(hiddenDescriptor, 'US30');
       const dispatch = vi.spyOn(store, 'dispatch');
-      component.series = { coordinateToPrice: () => 95 };
+      component.engine = {
+        priceForY: () => 95,
+        // `handleContextMenu` asks the trading capability for a closed trade box under
+        // the cursor (pre-existing call). Returning undefined reproduces exactly what
+        // happened when `engine` itself was undefined here: no box, `boxId: null`.
+        getCapability: () => undefined,
+        destroy: () => {},
+      };
       component.lineDrag = { id: 'p1', target: 'position', field: 'sl' };
       component.lastTradeView = {
         positions: [
@@ -296,8 +346,6 @@ describe('ChartComponent — RFC-018 T-3 execution guard (D18.D)', () => {
     it('cancel/close dispatch nothing — menu and dispatch agree', () => {
       const { component } = setup(hiddenDescriptor, 'US30');
       const dispatch = vi.spyOn(store, 'dispatch');
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 95 };
       component.engine = {
         getCapability: () => ({
           hitTestDelete: () => ({ id: 'p1', target: 'order', price: 100 }),
