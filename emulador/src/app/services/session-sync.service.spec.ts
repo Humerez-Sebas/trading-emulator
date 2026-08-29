@@ -1485,6 +1485,30 @@ describe('SessionSyncService — pull consequences use current local revisions',
     expect((await db.getMeta('EURUSD'))?.currentTime).toBe(20);
   });
 
+  it('does not clear changed active files when persistence has not yet advanced its clock', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      files: { M1: 'old.csv' },
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({ ...original, files: { M1: 'newer.csv' } });
+    pause.release.resolve();
+    await pending;
+
+    const after = await db.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('active');
+    expect(after?.files).toEqual({ M1: 'newer.csv' });
+  });
+
   it('reconstructs the active id without replacing concurrent persistence', async () => {
     const db = await freshDb();
     const original = workspaceMeta({

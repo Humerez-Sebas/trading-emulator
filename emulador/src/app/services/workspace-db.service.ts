@@ -91,6 +91,7 @@ function sameActivePayload(current: WorkspaceMeta, expected: WorkspaceMeta | und
   if (!expected) return false;
   return (
     JSON.stringify({
+      files: current.files,
       currentTime: current.currentTime,
       activeTf: current.activeTf,
       customTfMinutes: current.customTfMinutes,
@@ -104,6 +105,7 @@ function sameActivePayload(current: WorkspaceMeta, expected: WorkspaceMeta | und
       linkGroups: current.linkGroups,
     }) ===
     JSON.stringify({
+      files: expected.files,
       currentTime: expected.currentTime,
       activeTf: expected.activeTf,
       customTfMinutes: expected.customTfMinutes,

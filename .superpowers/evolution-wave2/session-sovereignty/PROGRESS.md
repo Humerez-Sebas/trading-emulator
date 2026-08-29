@@ -854,3 +854,42 @@ The controller independently ran all final gates raw and unpiped from `emulador/
 
 No push, merge, dependency, or remote change was made. The worktree was clean at accepted
 implementation head `d72c51d`.
+
+## 2026-08-29 post-closeout Low correction from `b621854`
+
+The final independent acceptance at implementation head `d72c51d` and documentation head
+`b621854` remains historical evidence. This bounded post-closeout correction addresses only the
+accepted Low in `sameActivePayload()`; the new post-closeout head is the commit containing this
+section (`git rev-parse HEAD` is authoritative because a commit cannot embed its own SHA).
+
+- Root mechanism: D1 snapshots the complete owner-local active `WorkspaceMeta`, then
+  `removeSessionIfUnchanged()` transactionally compares that snapshot before clearing the active
+  identity. The equality covered replay, trading, drawings, layout, panels, and link groups but
+  omitted local informational `files`, so a files-only edit at unchanged clocks could be cleared.
+- Boundary decision: both comparison operands are local `WorkspaceMeta` values. Adding `files`
+  strengthens the documented complete-active-payload invariant without adding files to the cloud
+  payload, changing `requiredDatasets`, embedding candles, or changing a persisted/wire schema.
+- Patch: add `files` to both existing ordered objects compared through `JSON.stringify`; no new
+  equality mechanism or compatibility path was introduced.
+- Regression: a controlled complete empty pull snapshots active A, pauses at owner revalidation,
+  writes otherwise-identical A with only `files` changed and clocks unchanged, then proves D1 keeps
+  A active with the newer files.
+
+TDD and fresh gates, raw and unpiped from `emulador/`:
+
+- The first draft asserted only retained files and passed `77/77` because D1 retains unrelated
+  workspace fields while clearing active identity; before production edits, the assertion was
+  corrected to require active A. Accepted RED:
+  `npx ng test --watch=false --include=src/app/services/session-sync.service.spec.ts` -> exit `1`,
+  **1 failed / 76 passed (77)**, `expected undefined to be 'active'`.
+- Focused GREEN with the same command -> exit `0`, **1 file / 77 tests passed**.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no diagnostics.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no diagnostics.
+- `npx ng test --watch=false` -> exit `0`, **186 files / 2563 tests passed**.
+- `npm run lint` -> exit `0`, `All files pass linting.`
+- `npm run build` -> exit `0`, initial bundle **669.99 kB**; only the known 500 kB budget
+  warning by **169.99 kB**, with no unexpected or Vitest production chunk.
+
+No dependency, lockfile, Supabase, Vercel, schema, remote, other-worktree, push, merge, rebase,
+cherry-pick, deployment, reset, branch, or worktree-management change was made. This is bounded
+post-closeout implementer evidence and does not rewrite the original independent acceptance.
