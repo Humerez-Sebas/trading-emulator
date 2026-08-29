@@ -29,7 +29,7 @@ Controller-owned raw, unpiped final gates from `emulador/` at `646a441`:
 | `npm run build` | 0 | Initial total `651.83 kB`; only the known 500 kB budget warning (`151.83 kB` over). No unexpected or Vitest chunk type. |
 
 Branch disposition remains **MERGE AS-IS** only when the owner chooses normal integration,
-with fresh combined gates after any conflict resolution.
+with fresh combined gates after integration (and after any conflict resolution).
 
 ## Scope Delivered
 

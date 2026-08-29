@@ -55,7 +55,7 @@ npm run build                            exit 0, initial 651.83 kB
 ```
 
 Branch disposition remains **MERGE AS-IS** only when the owner chooses normal integration,
-with fresh combined gates after any conflict resolution.
+with fresh combined gates after integration (and after any conflict resolution).
 
 ## Targeted Evidence
 
@@ -208,7 +208,9 @@ npm run build                            exit 0, initial 651.83 kB
 - Both mutations were patch-restored; `capability.ts` SHA-256 matched before/after:
   `6D11CAE1E7A0866B56C69C0380E7F3D297DED3BADA6CDD48F67482EC0292563D`.
 
-### Current Checks
+### Historical Pre-Acceptance Implementation Checks
+
+These bounded checks were recorded during the C-R5/C-R6 implementation closeout:
 
 ```text
 affected chart/frozen suites                   exit 0, 28 files / 311 tests
@@ -217,8 +219,8 @@ npx tsc -p tsconfig.spec.json --noEmit         exit 0, no diagnostics
 npm run lint                                   exit 0, RuleTester + All files pass linting
 ```
 
-No full-suite or build gate was run for C-R5/C-R6 in this implementation closeout. Independent
-acceptance remains pending.
+At that pre-acceptance closeout, no full-suite or build gate had been run for C-R5/C-R6 and
+independent acceptance was still pending. The final accepted record above supersedes that status.
 
 ## Final Track C Review Correction
 
