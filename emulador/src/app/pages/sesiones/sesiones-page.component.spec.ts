@@ -1552,11 +1552,11 @@ describe('SesionesPageComponent', () => {
     ) => void;
     const getWorkspace = vi.fn(
       () =>
-        new Promise<
-          ReturnType<typeof workspaceMeta> & { series: Record<string, never> }
-        >((resolve) => {
-          resolveWorkspace = resolve;
-        }),
+        new Promise<ReturnType<typeof workspaceMeta> & { series: Record<string, never> }>(
+          (resolve) => {
+            resolveWorkspace = resolve;
+          },
+        ),
     );
     const compensatePromotionIfUnchanged = vi.fn().mockResolvedValue(true);
     create({
@@ -1768,12 +1768,9 @@ describe('SesionesPageComponent', () => {
     const dispatchedActions = dispatch.mock.calls.map(
       (call: unknown[]) => call[0] as { type: string },
     );
-    const restoredAction = dispatchedActions
-      .find(
-        (action: { type: string }) => action.type === WorkspacesActions.workspaceRestored.type,
-      ) as
-      | ReturnType<typeof WorkspacesActions.workspaceRestored>
-      | undefined;
+    const restoredAction = dispatchedActions.find(
+      (action: { type: string }) => action.type === WorkspacesActions.workspaceRestored.type,
+    ) as ReturnType<typeof WorkspacesActions.workspaceRestored> | undefined;
     expect(restoredAction).toBeDefined();
     const trading = dispatchedActions.reduce(tradingFeature.reducer, undefined);
     const layout = dispatchedActions.reduce(layoutFeature.reducer, undefined);
@@ -2161,7 +2158,9 @@ describe('SesionesPageComponent', () => {
     );
     let resolvePrompt!: (name: string) => void;
     create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
-    dialogsStub.prompt.mockImplementation(() => new Promise((resolve) => (resolvePrompt = resolve)));
+    dialogsStub.prompt.mockImplementation(
+      () => new Promise((resolve) => (resolvePrompt = resolve)),
+    );
     await settle();
 
     const renaming = component.rename(
@@ -2269,9 +2268,7 @@ describe('SesionesPageComponent', () => {
       currentAsset: 'XAUUSD',
       liveSessions: [saved],
       db: {
-        getMeta: vi
-          .fn()
-          .mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+        getMeta: vi.fn().mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
       },
     });
     dialogsStub.deleteSession.mockResolvedValue(true);
@@ -2478,9 +2475,9 @@ describe('SesionesPageComponent', () => {
 
   it('remove current active uses one exact delete transaction and never pre-reads or separately queues', async () => {
     const deleteSessionIfUnchanged = vi.fn().mockResolvedValue(null);
-    const getMeta = vi.fn().mockResolvedValue(
-      workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'active-b' }),
-    );
+    const getMeta = vi
+      .fn()
+      .mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'active-b' }));
     const addPendingDelete = vi.fn().mockResolvedValue(undefined);
     create({
       currentAsset: 'XAUUSD',
@@ -2793,21 +2790,21 @@ describe('SesionesPageComponent', () => {
     const putFolder = vi.fn(async (next: SessionFolder) => {
       live = next;
     });
-    const replaceFolderIfUnchanged = vi.fn(
-      async (expected: SessionFolder, next: SessionFolder) => {
-        if (
-          live.clientUpdatedAt !== expected.clientUpdatedAt ||
-          live.syncedAt !== expected.syncedAt
-        ) {
-          return false;
-        }
-        live = next;
-        return true;
-      },
-    );
+    const replaceFolderIfUnchanged = vi.fn(async (expected: SessionFolder, next: SessionFolder) => {
+      if (
+        live.clientUpdatedAt !== expected.clientUpdatedAt ||
+        live.syncedAt !== expected.syncedAt
+      ) {
+        return false;
+      }
+      live = next;
+      return true;
+    });
     let resolvePrompt!: (name: string) => void;
     create({ db: { putFolder, replaceFolderIfUnchanged } });
-    dialogsStub.prompt.mockImplementation(() => new Promise((resolve) => (resolvePrompt = resolve)));
+    dialogsStub.prompt.mockImplementation(
+      () => new Promise((resolve) => (resolvePrompt = resolve)),
+    );
     await settle();
 
     const renaming = component.renameFolder(captured);
@@ -2834,18 +2831,16 @@ describe('SesionesPageComponent', () => {
     const deleteFolder = vi.fn(async () => {
       live = undefined;
     });
-    const deleteFolderIfUnchanged = vi.fn(
-      async (expected: SessionFolder) => {
-        if (
-          live?.clientUpdatedAt !== expected.clientUpdatedAt ||
-          live?.syncedAt !== expected.syncedAt
-        ) {
-          return false;
-        }
-        live = undefined;
-        return true;
-      },
-    );
+    const deleteFolderIfUnchanged = vi.fn(async (expected: SessionFolder) => {
+      if (
+        live?.clientUpdatedAt !== expected.clientUpdatedAt ||
+        live?.syncedAt !== expected.syncedAt
+      ) {
+        return false;
+      }
+      live = undefined;
+      return true;
+    });
     let resolveConfirm!: (confirmed: boolean) => void;
     create({
       authStatus: 'authenticated',
@@ -3170,9 +3165,7 @@ describe('SesionesPageComponent', () => {
       currentAsset: 'XAUUSD',
       liveSessions: [saved],
       db: {
-        getMeta: vi
-          .fn()
-          .mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+        getMeta: vi.fn().mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
       },
     });
     await settle();
@@ -3394,9 +3387,7 @@ describe('SesionesPageComponent', () => {
       currentAsset: 'XAUUSD',
       liveSessions: [saved],
       db: {
-        getMeta: vi
-          .fn()
-          .mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+        getMeta: vi.fn().mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
       },
     });
     await settle();
@@ -3909,9 +3900,7 @@ describe('SesionesPageComponent', () => {
       },
     );
     let releaseReconciliation!: () => void;
-    const reconciliationWaiting = new Promise<void>(
-      (resolve) => (releaseReconciliation = resolve),
-    );
+    const reconciliationWaiting = new Promise<void>((resolve) => (releaseReconciliation = resolve));
     const reconcileArchivedSessionIfUnchanged = vi.fn(
       async (
         _symbol: string,
@@ -3956,9 +3945,7 @@ describe('SesionesPageComponent', () => {
           replayResolution: restored.session.replayResolution,
           drawings: restored.drawings,
           trading: restored.session.trading,
-          sessions: (latest.sessions ?? []).filter(
-            (session) => session.id !== restored.session.id,
-          ),
+          sessions: (latest.sessions ?? []).filter((session) => session.id !== restored.session.id),
           activeSessionId: restored.session.id,
           activeClientUpdatedAt: restored.session.clientUpdatedAt,
           activeSyncedAt: restored.session.syncedAt,
@@ -4058,9 +4045,7 @@ describe('SesionesPageComponent', () => {
       },
     );
     let releaseReconciliation!: () => void;
-    const reconciliationWaiting = new Promise<void>(
-      (resolve) => (releaseReconciliation = resolve),
-    );
+    const reconciliationWaiting = new Promise<void>((resolve) => (releaseReconciliation = resolve));
     const reconcileArchivedSessionIfUnchanged = vi.fn(async () => {
       await reconciliationWaiting;
       return true;

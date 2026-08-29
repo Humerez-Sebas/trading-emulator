@@ -283,7 +283,10 @@ describe('mergeLessonsPull', () => {
 // ---------------------------------------------------------------------------
 
 function makeService(client: unknown): SessionSyncService {
-  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService(fixedOwnerIdentity('owner-test')));
+  return new SessionSyncService(
+    { client } as unknown as SupabaseService,
+    new WorkspaceDbService(fixedOwnerIdentity('owner-test')),
+  );
 }
 
 describe('SessionSyncService.pushLessons', () => {

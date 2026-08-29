@@ -1,11 +1,7 @@
 /* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
 import { inject, Injectable } from '@angular/core';
 import { Candle, Timeframe } from '../models';
-import {
-  defaultTradingData,
-  SavedSession,
-  SessionFolder,
-} from '../state/trading/trading.models';
+import { defaultTradingData, SavedSession, SessionFolder } from '../state/trading/trading.models';
 import { AssetMeta, Workspace, WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import {
   ADOPTION_MARKER_KEY,
@@ -438,9 +434,7 @@ export class WorkspaceDbService {
         replayResolution: restored.session.replayResolution,
         drawings: restored.drawings,
         trading: restored.session.trading,
-        sessions: (current.sessions ?? []).filter(
-          (session) => session.id !== restored.session.id,
-        ),
+        sessions: (current.sessions ?? []).filter((session) => session.id !== restored.session.id),
         activeSessionId: restored.session.id,
         activeClientUpdatedAt: restored.session.clientUpdatedAt,
         activeSyncedAt: restored.session.syncedAt,

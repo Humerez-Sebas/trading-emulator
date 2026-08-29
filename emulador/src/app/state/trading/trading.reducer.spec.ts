@@ -657,14 +657,11 @@ describe('trading reducer: deleteActiveSession', () => {
   });
 
   it('uses the replacement active id already committed by IndexedDB', () => {
-    const next = reducer(
-      state({ activeSessionId: 'old-active', history: [closed()] }),
-      {
-        type: TradingActions.deleteActiveSessionCommitted.type,
-        deletedId: 'old-active',
-        replacementActiveSessionId: 'active-next',
-      } as never,
-    );
+    const next = reducer(state({ activeSessionId: 'old-active', history: [closed()] }), {
+      type: TradingActions.deleteActiveSessionCommitted.type,
+      deletedId: 'old-active',
+      replacementActiveSessionId: 'active-next',
+    } as never);
 
     expect(next.activeSessionId).toBe('active-next');
   });

@@ -1080,9 +1080,7 @@ function buildFlattenInput(meta: WorkspaceMeta): FlattenInput {
           s.customTfMinutes === undefined ? (meta.customTfMinutes ?? null) : s.customTfMinutes,
         playbackSpeed: s.playbackSpeed ?? meta.playbackSpeed ?? 1,
         replayResolution:
-          s.replayResolution === undefined
-            ? (meta.replayResolution ?? null)
-            : s.replayResolution,
+          s.replayResolution === undefined ? (meta.replayResolution ?? null) : s.replayResolution,
         drawings: { version: 2, items: meta.drawings ?? [] },
         notes: [],
         selectedTfs: meta.selectedTfs ?? [],

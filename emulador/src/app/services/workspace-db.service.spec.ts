@@ -320,7 +320,9 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
     const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
     await sync.flushDirty();
 
-    const row = upsert.mock.calls.map(([candidate]) => candidate).find(({ id }) => id === 'active-a');
+    const row = upsert.mock.calls
+      .map(([candidate]) => candidate)
+      .find(({ id }) => id === 'active-a');
     expect(row?.payload).toEqual(
       expect.objectContaining({
         trading: expect.objectContaining({ sessionName: 'Latest A', balance: 12000 }),
@@ -407,7 +409,9 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
     const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
     await sync.flushDirty();
 
-    const row = upsert.mock.calls.map(([candidate]) => candidate).find(({ id }) => id === 'active-a');
+    const row = upsert.mock.calls
+      .map(([candidate]) => candidate)
+      .find(({ id }) => id === 'active-a');
     expect(row?.clientUpdatedAt).toBe(102);
     expect(row?.payload).toEqual(
       expect.objectContaining({
@@ -1577,21 +1581,17 @@ describe('WorkspaceDbService — atomic quarantine adoption', () => {
       if ((value as { key?: string }).key === ADOPTION_MARKER_KEY) {
         throw new Error('marker interrupted');
       }
-      return key === undefined
-        ? originalPut.call(this, value)
-        : originalPut.call(this, value, key);
+      return key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
     });
     const atomicDb = svc as WorkspaceDbService & {
       adoptQuarantined(claim: {
         metas?: WorkspaceMeta[];
-        folders?: typeof folder[];
+        folders?: (typeof folder)[];
       }): Promise<void>;
     };
 
     await expect(
-      Promise.resolve().then(() =>
-        atomicDb.adoptQuarantined({ metas: [meta], folders: [folder] }),
-      ),
+      Promise.resolve().then(() => atomicDb.adoptQuarantined({ metas: [meta], folders: [folder] })),
     ).rejects.toThrow(/marker interrupted/);
     putSpy.mockRestore();
     expect(await svc.getMeta('EURUSD')).toBeUndefined();

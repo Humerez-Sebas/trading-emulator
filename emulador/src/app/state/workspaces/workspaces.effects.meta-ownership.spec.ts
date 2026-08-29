@@ -188,10 +188,7 @@ describe('A5 — WorkspaceMeta sync-clock ownership across writers', () => {
     expect(cold!.activeClientUpdatedAt).toBeGreaterThan(101);
     expect(cold!.activeClientUpdatedAt).toBeGreaterThan(cold!.activeSyncedAt!);
 
-    const sync = new SessionSyncService(
-      { client: syncClient } as SupabaseService,
-      coldDb,
-    );
+    const sync = new SessionSyncService({ client: syncClient } as SupabaseService, coldDb);
     const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
     await sync.flushDirty();
 
