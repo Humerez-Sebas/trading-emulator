@@ -136,7 +136,7 @@ canonical repo (never `.claude/worktrees/`).
 | :--- | :--- | :--- | :--- | :--- |
 | A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | **ACCEPTED** @ `b62185429a76802d53cbe8836d88ac6ee74aa07f` (implementation `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`) |
 | B | Multi-symbol feasibility | `trading-emulator-multisymbol` | `agent/multisymbol-feasibility` | **VERIFIED RESEARCH** @ `3ae5935` |
-| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | **ACCEPTED** @ `91882e0aaf0fb170670455c7392494dbcc23e212` (implementation `646a441d0fb373dc3d3d555220ebb99006e6a542`) |
+| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | **ACCEPTED** @ `717171749aa9af81211c7999553684d05f798ac2` (implementation `646a441d0fb373dc3d3d555220ebb99006e6a542`) |
 | D | Unit semantics & UI contract | `trading-emulator-unit-semantics` | `agent/unit-semantics` | **VERIFIED** @ `1984e5d` |
 | E | Clock authority | `trading-emulator-clock-authority` | `agent/clock-authority` | **VERIFIED / OWNER-GATED** @ `cee6cff` |
 
@@ -332,7 +332,7 @@ mutation occurred.
 ## FINAL INDEPENDENT VERIFICATION — AGENT C (engine boundary)
 
 Branch `agent/engine-boundary-restoration`, final documentation head
-`91882e0aaf0fb170670455c7392494dbcc23e212`, worktree clean. Accepted implementation head:
+`717171749aa9af81211c7999553684d05f798ac2`, worktree clean. Accepted implementation head:
 `646a441d0fb373dc3d3d555220ebb99006e6a542`; later commits update evidence only.
 
 The RFC-004/RFC-005 chart/series bridge is retired. `registerCapability` accepts only a closed
@@ -345,11 +345,15 @@ including nested qualified/indexed forms and exports declared before imports. It
 suite is part of `npm run lint`.
 
 Independent whole-range review ended **ACCEPTED** with zero Critical/High/Medium findings. Final
-controller gates, raw and unpiped at `646a441`: app tsc 0; spec tsc 0; full suite 0 at **185 files /
-2467 tests passed**; lint 0 including `RuleTester`; build 0 at **651.83 kB**, with only the known
+controller gates, raw and unpiped at `646a441`: app tsc 0; spec tsc 0; full suite 0 at **186 files /
+2457 tests passed**; lint 0 including `RuleTester`; build 0 at **651.83 kB**, with only the known
 500 kB budget warning by **151.83 kB** and no unexpected or Vitest chunk. The sole residual Low
 is bounded lexical-shadowing over-reporting in the syntax-only detector, for example an imported
 forbidden `H` plus unrelated `export type P<H> = H`; no production occurrence was found.
+
+Repeated raw suite outputs agreed: relative to historical `b06fb62` at 185/2450, +1 file/+7 tests
+reconciles as registry spec +5, boundary net +2, and unchanged frozen-scene count. This corrects a
+documentation transcription only; no application or test code changed.
 
 Branch disposition remains **MERGE AS-IS** through normal owner-chosen integration, with fresh
 combined gates after integration regardless of whether conflicts occur. `emulador/package.json`
@@ -413,7 +417,7 @@ mutation occurred.
 - **2026-08-29 resumed final closeout** — Track A independently accepted implementation
   `d72c51d` with zero Critical/High/Medium findings and final documentation head `b621854`;
   Track C independently accepted implementation `646a441` with zero Critical/High/Medium
-  findings and final documentation head `91882e0`. Both specialist worktrees and the integration
+  findings and final documentation head `7171717`. Both specialist worktrees and the integration
   worktree reconciled clean before central edits. Integration remained at pre-final-doc head
   `37a43b2519e6d35f7fab2288b88ee4f377307c72`; no specialist branch was merged into integration
   or `develop`, so no combined runtime compatibility is claimed. Canonical

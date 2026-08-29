@@ -91,12 +91,15 @@ sizing; their distance labels use different display vocabularies.
 | Landing | `161e9f5` | Local DOM/browser and authenticated remote HTML readback | Static build 0, 6 files / 139.1 kB |
 | A sovereignty | `b62185429a76802d53cbe8836d88ac6ee74aa07f` docs (`d72c51de012cb77a3fbd23e4ea208b03ad3a81c2` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; one latent Low | tsc app/spec 0; 186 files / 2562 passed; lint 0; build 669.96 kB, known warning +169.96 kB |
 | B multi-symbol | `3ae5935` | Orchestrator re-derived central claims and refutations | Docs only; no app gates claimed |
-| C engine | `91882e0aaf0fb170670455c7392494dbcc23e212` docs (`646a441d0fb373dc3d3d555220ebb99006e6a542` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; one bounded Low | tsc app/spec 0; 185 files / 2467 passed; lint 0 including RuleTester; build 651.83 kB, known warning +151.83 kB |
+| C engine | `717171749aa9af81211c7999553684d05f798ac2` docs (`646a441d0fb373dc3d3d555220ebb99006e6a542` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; one bounded Low | tsc app/spec 0; 186 files / 2457 passed; lint 0 including RuleTester; build 651.83 kB, known warning +151.83 kB |
 | D units | `1984e5d` | Orchestrator re-derived arithmetic and scope; four negative probes fail, one refuted | tsc app/spec 0; 184 files / 2452 tests; lint 0 |
 | E clock | `cee6cff` | Orchestrator verified scope, mechanism, 5 expected failures / 9 locks | tsc app/spec 0; 184 files / 2431 total cases; lint 0 |
 
 Build sizes include only the known 500 kB initial-budget warning. No accepted closeout build
-showed a Vitest sentinel or unexpected chunk type. A's residual Low is that
+showed a Vitest sentinel or unexpected chunk type. Repeated Track C raw suites agreed on
+186/2457: versus historical `b06fb62` at 185/2450, registry +5 and boundary net +2 account for
+the +1 file/+7 tests while frozen-scene stayed unchanged; this corrected documentation only, not
+application or test code. A's residual Low is that
 `sameActivePayload()` omits `files`; it is latent because current file writers advance the exact
 revision clocks. C's residual Low is a syntax-only lexical-shadowing false positive, such as an
 imported forbidden `H` followed by unrelated `export type P<H> = H`; no production occurrence

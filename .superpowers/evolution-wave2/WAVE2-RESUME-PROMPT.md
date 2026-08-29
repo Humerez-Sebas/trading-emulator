@@ -20,7 +20,7 @@ into `agent/evolution-wave2-base` or `develop`, and no combined runtime compatib
   `37a43b2519e6d35f7fab2288b88ee4f377307c72`.
 - Track A final documentation head: `b62185429a76802d53cbe8836d88ac6ee74aa07f`;
   accepted implementation head: `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`.
-- Track C final documentation head: `91882e0aaf0fb170670455c7392494dbcc23e212`;
+- Track C final documentation head: `717171749aa9af81211c7999553684d05f798ac2`;
   accepted implementation head: `646a441d0fb373dc3d3d555220ebb99006e6a542`.
 
 ## Track Dispositions
@@ -30,7 +30,7 @@ into `agent/evolution-wave2-base` or `develop`, and no combined runtime compatib
 | Landing | `161e9f5` | Separate deployed static branch; keep separate from emulator runtime integration. |
 | A session sovereignty | `b62185429a76802d53cbe8836d88ac6ee74aa07f` docs / `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2` implementation | **MERGE AS-IS** through normal owner-chosen integration; run fresh combined gates. |
 | B multi-symbol | `3ae5935` | **RESEARCH ONLY**; no runtime implementation. |
-| C engine boundary | `91882e0aaf0fb170670455c7392494dbcc23e212` docs / `646a441d0fb373dc3d3d555220ebb99006e6a542` implementation | **MERGE AS-IS** through normal owner-chosen integration; run fresh combined gates. |
+| C engine boundary | `717171749aa9af81211c7999553684d05f798ac2` docs / `646a441d0fb373dc3d3d555220ebb99006e6a542` implementation | **MERGE AS-IS** through normal owner-chosen integration; run fresh combined gates. |
 | D unit semantics | `1984e5d` | **MERGE AS-IS**. |
 | E clock authority | `cee6cff` | **VERIFIED / OWNER-GATED**; owner decisions D-E1 through D-E4 remain required. |
 | Central integration | final closeout commit after `37a43b2` | Documentation/evidence branch only; not the final Wave 2 runtime bundle. |
