@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { NEW_YORK_ZONE_ID } from '../domain/chart/display-time';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
@@ -96,13 +96,47 @@ describe('selectWorkspaceSnapshot', () => {
 
 // ---- selectWorkspaceMetaSnapshot ----
 describe('selectWorkspaceMetaSnapshot', () => {
+  it('carries the active replay settings with the lightweight workspace payload', () => {
+    const projector = selectWorkspaceMetaSnapshot.projector as unknown as (
+      ...args: unknown[]
+    ) => Record<string, unknown>;
+    const result = projector(
+      { H1: 'file.csv' },
+      'H1',
+      ['M5', 'H1'],
+      45,
+      3600,
+      250,
+      5,
+      [],
+      defaultTradingData(),
+      [],
+      'sess-42',
+      createInitialLayoutState().workspace,
+      createInitialLayoutState().panels,
+      {},
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        customTfMinutes: 45,
+        currentTime: 3600,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      }),
+    );
+  });
+
   it('bundles correct keys (incl. selectedTfs + activeSessionId) and has NO series field', () => {
     const trading = defaultTradingData();
     const result = selectWorkspaceMetaSnapshot.projector(
       { H1: 'file.csv' },
       'H1',
       ['M5', 'H1'],
+      null,
       3600,
+      500,
+      null,
       [],
       trading,
       [],
@@ -124,7 +158,10 @@ describe('selectWorkspaceMetaSnapshot', () => {
       {},
       null,
       null,
+      null,
       0,
+      500,
+      null,
       [],
       defaultTradingData(),
       [],
@@ -141,7 +178,10 @@ describe('selectWorkspaceMetaSnapshot', () => {
       {},
       null,
       null,
+      null,
       0,
+      500,
+      null,
       [],
       defaultTradingData(),
       [],
@@ -158,7 +198,10 @@ describe('selectWorkspaceMetaSnapshot', () => {
       {},
       null,
       null,
+      null,
       0,
+      500,
+      null,
       [],
       defaultTradingData(),
       [],
@@ -490,6 +533,18 @@ describe('selectTradePanelView', () => {
 
 // ---- selectFloatingPnl ----
 describe('selectFloatingPnl', () => {
+  // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+  // the sub-TF pricing test below forces four selectors on the module-level NgRx
+  // singleton, which TestBed.resetTestingModule() does not undo. This file is the
+  // one the documented `selectFloatingPnl` leak incident (120.5 instead of 50)
+  // VICTIMISED, and it was also leaking selectors of its own. Additive hook only:
+  // no assertion in this file is modified.
+  let mockStore: MockStore | null = null;
+  afterEach(() => {
+    mockStore?.resetSelectors();
+    mockStore = null;
+  });
+
   it('returns null when there are no positions', () => {
     expect(selectFloatingPnl.projector([], candle(0, 100, 101, 99, 100), 100)).toBeNull();
   });
@@ -519,6 +574,7 @@ describe('selectFloatingPnl', () => {
   it('prices off the replay-series candle (live sub-TF), not the display candle', async () => {
     TestBed.configureTestingModule({ providers: [provideMockStore()] });
     const store = TestBed.inject(MockStore);
+    mockStore = store; // hand the afterEach above a handle to release the overrides
     store.overrideSelector(selectReplaySeries, [candle(0, 100, 105, 99, 105)]); // sub-TF close = 105
     store.overrideSelector(selectReplayIndex, 0);
     store.overrideSelector(tradingFeature.selectPositions, [

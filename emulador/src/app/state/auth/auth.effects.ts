@@ -1,9 +1,11 @@
+import { DOCUMENT } from '@angular/common';
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { Actions, createEffect, ofType, ROOT_EFFECTS_INIT } from '@ngrx/effects';
-import { from, of } from 'rxjs';
-import { catchError, exhaustMap, map, tap } from 'rxjs/operators';
+import { EMPTY, from, of } from 'rxjs';
+import { catchError, exhaustMap, map, mergeMap, tap } from 'rxjs/operators';
 import { SupabaseAuthService } from '../../auth/supabase-auth.service';
+import { OwnerIdentityService } from '../../services/owner-identity.service';
 import { AuthActions } from './auth.actions';
 
 /** User-facing message (Spanish) from a Supabase/auth error. */
@@ -20,6 +22,8 @@ export class AuthEffects {
   private actions$ = inject(Actions);
   private auth = inject(SupabaseAuthService);
   private router = inject(Router);
+  private document = inject(DOCUMENT);
+  private owner = inject(OwnerIdentityService);
 
   init$ = createEffect(() =>
     this.actions$.pipe(
@@ -44,8 +48,22 @@ export class AuthEffects {
     this.actions$.pipe(
       ofType(AuthActions.login),
       exhaustMap(({ email, password, returnUrl }) =>
-        from(this.auth.signIn(email, password)).pipe(
-          map((user) => AuthActions.authSuccess({ user, returnUrl })),
+        from(this.owner.ownerId()).pipe(
+          mergeMap((currentOwnerId) =>
+            from(this.auth.signIn(email, password)).pipe(
+              mergeMap((user) => {
+                if (currentOwnerId && currentOwnerId !== user.id) {
+                  const target =
+                    returnUrl?.startsWith('/') && !returnUrl.startsWith('//')
+                      ? returnUrl
+                      : '/mercados';
+                  this.document.location.assign(target);
+                  return EMPTY;
+                }
+                return of(AuthActions.authSuccess({ user, returnUrl }));
+              }),
+            ),
+          ),
           catchError((e) => of(AuthActions.authFailure({ error: describeError(e) }))),
         ),
       ),

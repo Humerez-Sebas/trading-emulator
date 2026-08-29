@@ -104,6 +104,11 @@ describe('JournalDataService', () => {
   }
 
   afterEach(() => {
+    // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+    // resetTestingModule() replaces the injector but does NOT undo overrideSelector,
+    // which writes to the module-level memoized selector shared by every spec file
+    // in this vitest worker. `store` is assigned by the setup helper, so guard it.
+    store?.resetSelectors();
     TestBed.resetTestingModule();
     vi.restoreAllMocks();
   });

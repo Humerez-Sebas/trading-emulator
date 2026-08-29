@@ -119,6 +119,10 @@ describe('ReflectionCabinPageComponent', () => {
   });
 
   afterEach(() => {
+    // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+    // forced selector results live on the module-level memoized selector and are
+    // not undone by TestBed teardown — release them or they poison later spec files.
+    store.resetSelectors();
     vi.restoreAllMocks();
   });
 

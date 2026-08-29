@@ -191,6 +191,10 @@ export interface SavedSession {
   createdAt: number;
   /** Replay cursor (UTC seconds) to restore when reopening the session. */
   currentTime: number;
+  customTfMinutes?: number | null;
+  /** Playback delay in milliseconds per candle. */
+  playbackSpeed?: number;
+  replayResolution?: number | null;
   trading: TradingData;
   /** LWW edit time, epoch ms (spec §10). Absent until first synced. */
   clientUpdatedAt?: number;

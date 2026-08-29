@@ -10,6 +10,7 @@ import {
 } from './session-sync.service';
 import type { SupabaseService } from '../auth/supabase.service';
 import { WorkspaceDbService } from './workspace-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
 import type { Lesson } from '../state/lessons/lessons.models';
 import type { SceneSpec } from '../domain/reflection/scene-spec';
 
@@ -282,14 +283,14 @@ describe('mergeLessonsPull', () => {
 // ---------------------------------------------------------------------------
 
 function makeService(client: unknown): SessionSyncService {
-  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService());
+  return new SessionSyncService({ client } as unknown as SupabaseService, new WorkspaceDbService(fixedOwnerIdentity('owner-test')));
 }
 
 describe('SessionSyncService.pushLessons', () => {
   it('upserts each lesson with user_id, snake_case keys, ISO client_updated_at, onConflict: id', async () => {
     const upsertCalls: { table: string; row: unknown; opts: unknown }[] = [];
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: (table: string) => ({
         upsert: (row: unknown, opts: unknown) => {
           upsertCalls.push({ table, row, opts });
@@ -306,7 +307,7 @@ describe('SessionSyncService.pushLessons', () => {
     expect(upsertCalls[0].table).toBe('lessons');
     expect(upsertCalls[0].opts).toEqual({ onConflict: 'id' });
     const row = upsertCalls[0].row as Record<string, unknown>;
-    expect(row['user_id']).toBe('user-1');
+    expect(row['user_id']).toBe('owner-test');
     expect(row['id']).toBe('l1');
     expect(row['client_updated_at']).toBe(new Date(1_700_050_000_000).toISOString());
     expect(row['repeat_field']).toBe(l.repeat);
@@ -315,7 +316,7 @@ describe('SessionSyncService.pushLessons', () => {
   it('is a no-op for an empty array (no network call)', async () => {
     let called = false;
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => {
         called = true;
         return { upsert: () => Promise.resolve({ data: null, error: null }) };
@@ -330,7 +331,7 @@ describe('SessionSyncService.pushLessons', () => {
 
   it('rejects on the first row error (no partial-success stamping by the caller)', async () => {
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({
         upsert: () => Promise.resolve({ data: null, error: { message: 'boom' } }),
       }),
@@ -370,7 +371,7 @@ describe('SessionSyncService.pullLessons', () => {
   it('maps every returned row via dbRowToLesson', async () => {
     const row = dbRow({ id: 'cloud-1' });
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({
         select: () => Promise.resolve({ data: [row], error: null }),
       }),
@@ -385,7 +386,7 @@ describe('SessionSyncService.pullLessons', () => {
   it('selects every DbLessonRow field (honest cast idiom)', async () => {
     let capturedCols: string | undefined;
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({
         select: (cols: string) => {
           capturedCols = cols;
@@ -418,7 +419,7 @@ describe('SessionSyncService.pullLessons', () => {
 
   it('throws Error(error.message) on a DB error', async () => {
     const client = {
-      auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'owner-test' } } } }) },
       from: () => ({ select: () => Promise.resolve({ data: null, error: { message: 'boom' } }) }),
     };
     const service = makeService(client);

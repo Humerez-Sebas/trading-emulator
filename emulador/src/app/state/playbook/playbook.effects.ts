@@ -24,6 +24,7 @@ import { PlaybookActions } from './playbook.actions';
 import { selectPlaybookRules } from './playbook.selectors';
 import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
+import { OwnerIdentityService } from '../../services/owner-identity.service';
 
 @Injectable()
 export class PlaybookEffects {
@@ -31,6 +32,7 @@ export class PlaybookEffects {
   private store = inject(Store);
   private db = inject(PlaybookDbService);
   private sync = inject(SessionSyncService);
+  private owner = inject(OwnerIdentityService);
 
   /**
    * Bootstrap hydration: dispatch PlaybookActions.hydrate on app initialization,
@@ -50,12 +52,7 @@ export class PlaybookEffects {
   hydrate$ = createEffect(() =>
     this.actions$.pipe(
       ofType(PlaybookActions.hydrate),
-      switchMap(() =>
-        from(this.db.loadAll()).pipe(
-          map((rules) => PlaybookActions.hydrated({ rules })),
-          catchError(() => from([PlaybookActions.hydrated({ rules: [] })])),
-        ),
-      ),
+      switchMap(() => from(this.loadRules()).pipe(catchError(() => EMPTY))),
     ),
   );
 
@@ -78,7 +75,7 @@ export class PlaybookEffects {
           PlaybookActions.rulesSynced,
         ),
         withLatestFrom(this.store.select(selectPlaybookRules)),
-        concatMap(([, rules]) => from(this.db.upsertMany(rules)).pipe(catchError(() => EMPTY))),
+        concatMap(([, rules]) => from(this.persistRules(rules)).pipe(catchError(() => EMPTY))),
       ),
     { dispatch: false },
   );
@@ -130,10 +127,13 @@ export class PlaybookEffects {
    * syncedAt` afterward — still dirty, picked up by the next push cycle
    * (mid-flight-edit safety, verified in playbook.effects.spec.ts).
    */
-  private async pushDirtyRules(rules: PlaybookRule[]): Promise<void> {
+  private async pushDirtyRules(rules: PlaybookRule[], expectedOwnerId?: string): Promise<void> {
     const dirty = rules.filter(isPlaybookRuleDirty);
     if (!dirty.length) return;
+    expectedOwnerId ??= await this.sync.captureOwner();
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     await this.sync.pushPlaybookRules(dirty);
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     this.store.dispatch(
       PlaybookActions.rulesSynced({
         stamps: dirty.map((r) => ({ id: r.id, syncedAt: r.clientUpdatedAt! })),
@@ -158,7 +158,9 @@ export class PlaybookEffects {
       this.actions$.pipe(
         ofType(AuthActions.sessionResolved, AuthActions.authSuccess),
         filter((action) => action.user != null),
-        exhaustMap(() => from(this.pullAndMergeRules()).pipe(catchError(() => EMPTY))),
+        exhaustMap((action) =>
+          from(this.pullAndMergeRules(action.user!.id)).pipe(catchError(() => EMPTY)),
+        ),
       ),
     { dispatch: false },
   );
@@ -172,12 +174,36 @@ export class PlaybookEffects {
    * NEW mutation action to re-trigger `pushDirty$` — only this post-merge
    * flush notices it's still dirty and re-pushes it.
    */
-  private async pullAndMergeRules(): Promise<void> {
+  private async pullAndMergeRules(expectedOwnerId: string): Promise<void> {
     const remote = await this.sync.pullPlaybookRules();
-    const local = await this.db.loadAll();
+    await this.sync.assertExpectedOwner(expectedOwnerId);
+    const local = await this.db.loadAll(expectedOwnerId);
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     const { rules, toUpsertLocally } = mergePlaybookPull(local, remote);
-    if (toUpsertLocally.length) await this.db.upsertMany(toUpsertLocally);
+    if (toUpsertLocally.length) {
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      await this.db.upsertMany(toUpsertLocally, expectedOwnerId);
+    }
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     this.store.dispatch(PlaybookActions.hydrated({ rules }));
-    await this.pushDirtyRules(rules);
+    await this.pushDirtyRules(rules, expectedOwnerId);
+  }
+
+  private async loadRules() {
+    const expectedOwnerId = await this.sync.captureOwner();
+    try {
+      const rules = await this.db.loadAll(expectedOwnerId);
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      return PlaybookActions.hydrated({ rules });
+    } catch {
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      return PlaybookActions.hydrated({ rules: [] });
+    }
+  }
+
+  private async persistRules(rules: PlaybookRule[]): Promise<void> {
+    const expectedOwnerId = await this.owner.ownerId();
+    if (!expectedOwnerId) return;
+    await this.db.upsertMany(rules, expectedOwnerId);
   }
 }

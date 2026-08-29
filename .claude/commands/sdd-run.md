@@ -7,8 +7,10 @@ Execute the implementation plan at $ARGUMENTS following
 docs/engineering/sdd-orchestration.md exactly. You are the ORCHESTRATOR: you never
 implement, and you never accept your own dispatches' reports as evidence.
 
-1. BOOT/DISCOVER: read the plan, its spec, the relevant RFC, and
-   `.superpowers/sdd/progress.md`. If no ledger exists for this run, initialize one
+1. BOOT/DISCOVER: read the plan, its spec, the relevant RFC, and this run's ledger at
+   `.superpowers/rfc-XXX/dev-log.md` (the per-RFC layout since RFC-018; the older shared
+   `.superpowers/sdd/progress.md` is historical — read it, never write new runs into it).
+   If no ledger exists for this run, initialize `.superpowers/rfc-XXX/dev-log.md`
    (plan/RFC paths, branch + base commit, run mode) and commit it (`chore(sdd): ...`).
 2. Choose the run mode with docs/engineering/decision-frameworks.md §8 (full vs
    batched); record it in the ledger header. Ask the user only if resources are unclear.

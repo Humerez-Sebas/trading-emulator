@@ -140,8 +140,7 @@ export function winRateOf(t: TradingData): number | undefined {
 }
 
 /**
- * Default view for a session with no live `view` (archived sessions never
- * carry one — see `FlattenSession.view` doc). `layout`/`panels`/`linkGroups`
+ * Default view for a legacy session with no captured `view`. `layout`/`panels`/`linkGroups`
  * default to Task 1's own single-panel migration shape (reusing
  * `singlePanelLayoutFor`, already audited) rather than inventing a second
  * "empty layout" shape; `linkGroups: []` matches `migrateV1ToV2`'s default.

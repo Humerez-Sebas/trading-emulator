@@ -56,7 +56,8 @@ Applies PHILOSOPHY §3.4 (reversibility & ceremony) and §5.3 (smallest green st
 Ceremony is high because this deploys to production (Vercel) on merge.
 
 1. Confirm every RFC of the block is merged to develop and its final audit is PASS in
-   the ledger (`.superpowers/sdd/progress.md`).
+   that RFC's ledger (`.superpowers/rfc-XXX/dev-log.md`; for RFC-017 and earlier, the
+   older shared `.superpowers/sdd/progress.md`).
 2. From fresh `origin/develop`, run ALL gates (tsc app+spec, `ng test`, lint, format,
    prod build) — the release PR re-establishes evidence; it does not inherit it.
 3. Diff review develop..main for: forbidden-file drift, dependency changes

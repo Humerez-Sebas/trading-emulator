@@ -3,6 +3,9 @@ const eslint = require('@eslint/js');
 const { defineConfig } = require('eslint/config');
 const tseslint = require('typescript-eslint');
 const angular = require('angular-eslint');
+// Local rule, plain ESLint AST — no new dependency. See the file header for
+// the law it encodes and the limits of what it proves.
+const selectorIsolation = require('./eslint-rules/require-reset-selectors');
 
 module.exports = defineConfig([
   {
@@ -37,9 +40,14 @@ module.exports = defineConfig([
   {
     // Test files legitimately use `any` and empty functions for mocks/stubs.
     files: ['**/*.spec.ts', 'src/app/testing/**/*.ts'],
+    plugins: { 'selector-isolation': selectorIsolation },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-empty-function': 'off',
+      // A forced selector result survives TestBed.resetTestingModule() and
+      // leaks across spec files under vitest isolate:false. 19 spec files had
+      // drifted before this rule existed; the backlog is now clear.
+      'selector-isolation/require-reset-selectors': 'error',
     },
   },
   {

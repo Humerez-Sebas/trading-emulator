@@ -1,7 +1,7 @@
 import { createActionGroup, emptyProps, props } from '@ngrx/store';
 import { Candle } from '../../models';
 import { ExecutionCosts } from './execution-costs';
-import { ClosedTrade, OrderSide, PendingType, TradingData } from './trading.models';
+import { ClosedTrade, OrderSide, PendingType, SavedSession, TradingData } from './trading.models';
 
 export const TradingActions = createActionGroup({
   source: 'Trading',
@@ -80,7 +80,17 @@ export const TradingActions = createActionGroup({
      * user override; absent/undefined ⇒ `null` (legacy zero-cost session,
      * V-1 anchor unaffected).
      */
-    'New Session': props<{ currentCursor: number; executionCosts?: ExecutionCosts | null }>(),
+    'New Session': props<{
+      currentCursor: number;
+      executionCosts?: ExecutionCosts | null;
+      replacementActiveSessionId?: string;
+      archivedClientUpdatedAt?: number;
+      archivedSyncedAt?: number;
+      customTfMinutes?: number | null;
+      playbackSpeed?: number;
+      replayResolution?: number | null;
+      archivedSession?: SavedSession;
+    }>(),
     /** Names the ACTIVE session (kept when it gets archived). */
     'Set Session Name': props<{ name: string | null }>(),
     /** Archives the active session and restores a saved one. */
@@ -88,6 +98,10 @@ export const TradingActions = createActionGroup({
     'Delete Session': props<{ id: string }>(),
     /** Deletes the ACTIVE/in-progress session: resets it to a fresh empty session (no archive). */
     'Delete Active Session': emptyProps(),
+    'Delete Active Session Committed': props<{
+      deletedId: string;
+      replacementActiveSessionId: string;
+    }>(),
     /**
      * Renames an ARCHIVED session (the active one uses Set Session Name).
      * `clientUpdatedAt` (epoch ms, from the dispatcher) stamps the edited

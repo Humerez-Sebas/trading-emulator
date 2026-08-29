@@ -4,10 +4,10 @@
 | :--- | :--- |
 | Status | Foundational (normative, living document) |
 | Date | 2026-07-09 |
-| Phase | 0 of the Mastery Block (see [ROADMAP.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/ROADMAP.md)) |
-| Authority | Establishes the knowledge-conservation doctrine for Phases 1-3 (RFC-014/015/016). Sits below explicit owner direction; supersedes the interpretive data-capture framing of [strategic_audit.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/strategic_audit.md) Part 9 (see Section 9) |
-| Language authority | [UBIQUITOUS_LANGUAGE.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/UBIQUITOUS_LANGUAGE.md) |
-| Upstream sources | [TRAINING_WORKFLOW.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRAINING_WORKFLOW.md), [DOMAIN_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/DOMAIN_MODEL.md), [EVENT_STORMING.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/EVENT_STORMING.md), [PRODUCT_PRINCIPLES.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/PRODUCT_PRINCIPLES.md) |
+| Phase | 0 of the Mastery Block (see [ROADMAP.md](./ROADMAP.md)) |
+| Authority | Establishes the knowledge-conservation doctrine for Phases 1-3 (RFC-014/015/016). Sits below explicit owner direction; supersedes the interpretive data-capture framing of [strategic_audit.md](./strategic_audit.md) Part 9 (see Section 9) |
+| Language authority | [UBIQUITOUS_LANGUAGE.md](./UBIQUITOUS_LANGUAGE.md) |
+| Upstream sources | [TRAINING_WORKFLOW.md](./TRAINING_WORKFLOW.md), [DOMAIN_MODEL.md](./DOMAIN_MODEL.md), [EVENT_STORMING.md](./EVENT_STORMING.md), [PRODUCT_PRINCIPLES.md](./PRODUCT_PRINCIPLES.md) |
 
 ---
 
@@ -43,7 +43,7 @@ The emulator disappears during practice. All behavioral and execution telemetry 
 recorded passively and invisibly; the trader is never prompted, blocked, or asked to
 fill a form, tag, or note while operating. Annotation exists exclusively in cold
 review, after the session, and is always optional. This sharpens
-[PRODUCT_PRINCIPLES.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/PRODUCT_PRINCIPLES.md)
+[PRODUCT_PRINCIPLES.md](./PRODUCT_PRINCIPLES.md)
 P11 from "automatic first" to "automatic only, during practice".
 
 ### 1.3 What "knowledge" is, then
@@ -76,10 +76,10 @@ truthful, and permanent.
 
 **Trade Record.**
 The immutable fact of one execution, exactly as defined in
-[DOMAIN_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/DOMAIN_MODEL.md)
+[DOMAIN_MODEL.md](./DOMAIN_MODEL.md)
 Section 3.1: identity-continuous (`PendingOrder -> Position -> ClosedTrade`),
 append-only, produced atomically by the fill engine
-([fill-engine.ts](file:///C:/Users/78701/Desktop/trading-emulator/emulador/src/app/state/trading/fill-engine.ts)).
+([fill-engine.ts](../../emulador/src/app/state/trading/fill-engine.ts)).
 A Trade Record is *evidence*, not knowledge: a thousand records teach nothing by
 themselves.
 
@@ -118,7 +118,7 @@ telemetry expired, records deleted — the lesson remains (Section 5).
 
 ### 2.2 The conservation asymmetry (error-cost asymmetry applied)
 
-Per [PHILOSOPHY.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/engineering/PHILOSOPHY.md)
+Per [PHILOSOPHY.md](../engineering/PHILOSOPHY.md)
 Section 3.5, not all data loss costs the same:
 
 | Tier | Loss cost | Ceremony |
@@ -203,7 +203,7 @@ trader):
   maximum available favorable excursion actually realized.
 
 These quantities measure the Geometric Tolerance Profile
-([TRAINING_WORKFLOW.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRAINING_WORKFLOW.md)
+([TRAINING_WORKFLOW.md](./TRAINING_WORKFLOW.md)
 Section 4) against what the market actually did — the physical substrate for the
 trader's own judgment about stop and target placement.
 
@@ -373,7 +373,7 @@ What remains, and why it remains — all physical, geometry-derived quantities:
   improvising.
 
 *Current status note (honest accounting):* `computeSessionStats`
-([fill-engine.ts](file:///C:/Users/78701/Desktop/trading-emulator/emulador/src/app/state/trading/fill-engine.ts))
+([fill-engine.ts](../../emulador/src/app/state/trading/fill-engine.ts))
 computes `winRate` and `profitFactor` today (DOMAIN_MODEL I-11). They remain as
 transient, session-local descriptive output for now; this document demotes them
 normatively (excluded from permanent knowledge, no cross-session trending), and
@@ -386,7 +386,7 @@ change.
 
 The black box is an *observer* of existing domain facts — the same
 `dispatch: false` orchestration pattern the sync layer already uses
-([EVENT_STORMING.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/EVENT_STORMING.md)
+([EVENT_STORMING.md](./EVENT_STORMING.md)
 Section 4). It adds no domain behavior and no new write path into trading state:
 
 ```
@@ -434,7 +434,7 @@ provides it together with the base-resolution loop.
 ## 9. Relationship to the Corpus and Supersessions
 
 - **Supersedes** the interpretive capture proposals of
-  [strategic_audit.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/strategic_audit.md)
+  [strategic_audit.md](./strategic_audit.md)
   Part 9 Section 2: pointer/stress "behavior signatures", playback-rewind "honesty
   and discipline" scoring, and mandatory session-start mood tags (a session-start
   prompt violates S2; behavioral scoring violates S1). Rewinds ARE still recorded —
@@ -443,31 +443,31 @@ provides it together with the base-resolution loop.
   operates as an on-demand lens over recorded facts at the trader's explicit
   request, never as an autonomous judge, and never writes into the permanent
   knowledge tier. Its RFC must demonstrate compliance with N-1/N-6.
-- **Extends** [PRODUCT_PRINCIPLES.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/PRODUCT_PRINCIPLES.md)
+- **Extends** [PRODUCT_PRINCIPLES.md](./PRODUCT_PRINCIPLES.md)
   P11 (automatic-first) with S2's stricter form, and realizes TRAINING_WORKFLOW
   Section 1 step 7 (Registro y Reevaluación) as the amendment loop.
 - **Consumes** DOMAIN_MODEL invariants unchanged; adds N-1..N-6 on top. The
   fill-engine and persistence invariants (I-1..I-15) are untouched by this
   document.
-- **Is projected by** [EXPERIENCE_DOMAINS.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/EXPERIENCE_DOMAINS.md)
+- **Is projected by** [EXPERIENCE_DOMAINS.md](./EXPERIENCE_DOMAINS.md)
   (2026-07-19) onto the experience plane: its Market → Trade → Conversation →
   Knowledge taxonomy maps this document's three knowledge forms (Facts ↔ Trade,
   Scenes ↔ Conversation as its cold-review species, Lessons ↔ Knowledge) and adds
   the live-interaction generalization of the Reflective Scene. S1/S2 and N-1..N-6
   govern every tier unchanged; this document remains supreme on conservation. The
   on-pane rendering of Facts and Conversation-tier reveals is governed by
-  [TEDS_GRAMMAR.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TEDS_GRAMMAR.md).
+  [TEDS_GRAMMAR.md](./TEDS_GRAMMAR.md).
 
 ---
 
 ## 10. References
 
-- [TRAINING_WORKFLOW.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRAINING_WORKFLOW.md) — the cognitive cycle this model serves.
-- [UBIQUITOUS_LANGUAGE.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/UBIQUITOUS_LANGUAGE.md) — term authority (Knowledge Conservation section).
-- [DOMAIN_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/DOMAIN_MODEL.md) — aggregates and invariants I-1..I-15.
-- [EVENT_STORMING.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/EVENT_STORMING.md) — the fact fabric the black box observes.
-- [PRODUCT_PRINCIPLES.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/PRODUCT_PRINCIPLES.md) — P7 (simulation honesty), P11 (automatic first).
-- [ARCHITECTURE_VISION.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/ARCHITECTURE_VISION.md) — offline-first planes the knowledge tiers map onto.
-- [RFC-014_AND_BEYOND.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/RFC-014_AND_BEYOND.md) — the Mastery Block RFC drafts (Phases 1-3).
-- [strategic_audit.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/strategic_audit.md) — Parts 5, 7, 9 (superseded framings noted above).
-- [PHILOSOPHY.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/engineering/PHILOSOPHY.md) — Sections 2.7 (executable invariants), 3.2 (decision identity), 3.5 (error-cost asymmetry).
+- [TRAINING_WORKFLOW.md](./TRAINING_WORKFLOW.md) — the cognitive cycle this model serves.
+- [UBIQUITOUS_LANGUAGE.md](./UBIQUITOUS_LANGUAGE.md) — term authority (Knowledge Conservation section).
+- [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) — aggregates and invariants I-1..I-15.
+- [EVENT_STORMING.md](./EVENT_STORMING.md) — the fact fabric the black box observes.
+- [PRODUCT_PRINCIPLES.md](./PRODUCT_PRINCIPLES.md) — P7 (simulation honesty), P11 (automatic first).
+- [ARCHITECTURE_VISION.md](./ARCHITECTURE_VISION.md) — offline-first planes the knowledge tiers map onto.
+- [RFC-014_AND_BEYOND.md](./RFC-014_AND_BEYOND.md) — the Mastery Block RFC drafts (Phases 1-3).
+- [strategic_audit.md](./strategic_audit.md) — Parts 5, 7, 9 (superseded framings noted above).
+- [PHILOSOPHY.md](../engineering/PHILOSOPHY.md) — Sections 2.7 (executable invariants), 3.2 (decision identity), 3.5 (error-cost asymmetry).

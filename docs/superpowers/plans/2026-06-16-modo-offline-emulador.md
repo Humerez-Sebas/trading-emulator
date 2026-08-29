@@ -1,6 +1,31 @@
 # Modo offline completo del emulador + branch protection — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> ## STATUS: REMOVED — do NOT implement this plan
+>
+> This plan was executed in June 2026 and then **the feature it built was deleted from the
+> product.** Guest entry, the `offline` build configuration and the offline CSV catalogue
+> no longer exist. Implementing it again would reintroduce something the owner explicitly
+> retired.
+>
+> **Superseded by:** [`2026-06-23-retire-fastapi-offline.md`](./2026-06-23-retire-fastapi-offline.md)
+> ("Remove the now-dead FastAPI backend, the static *offline* build and the *guest* mode …
+> and **requires login**"), merged in PR #9 (`32cb4bb`, 2026-06-24). The load-bearing
+> commits are `8e51f1a` *feat(auth): require login — remove guest mode and the offline auth
+> status*, `7f3c07a` *chore(env): drop offline build + dead env flags
+> (backendUrl/dataSource/guest)* and `5e0274a` *refactor(db): remove the offline CSV catalog*.
+>
+> **Contradicts current law:** `CLAUDE.md:7` — "Login is required; there is no guest/offline
+> mode." Verified at `a2ca53b`: `grep -rn "guestModeEnabled\|offlineOnly" emulador/src/`
+> returns 0 hits, `emulador/angular.json` has no `offline` build configuration, and
+> `emulador/src/app/auth/auth.guard.ts:11` states "Login is required: there is no
+> guest/offline fallback."
+>
+> The body below is left **verbatim** as the historical record of what was built and why.
+> Read it as history; do not execute it. The branch-protection half of this plan is a
+> separate matter and remains **unresolved** — neither `main` nor `develop` is protected
+> today; that is an owner dashboard task with no MCP/CLI path.
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. *(Overridden by the STATUS banner above — this instruction no longer applies to this file.)*
 
 **Goal:** Permitir desplegar el frontend del emulador 100% estático (sin backend, $0) con entrada de invitado y creación de sesiones por CSV centralizada en el wizard, persistiendo un catálogo de símbolos en IndexedDB; y proteger `main` para que ningún PR mergee con CI en rojo.
 

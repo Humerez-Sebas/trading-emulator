@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| **Estado** | Diseño aprobado tras Design Review — implementación pendiente |
+| **Estado** | **CURRENT — Implementado (2026-08-05)**, mergeado a `main` en PR #54 (`b8d220f`) y refinado por PR #55 (`ad69d7d`, ventana flotante 320×340). Bitácora del run: `.superpowers/rfc-020/dev-log.md`. |
 | **Fecha** | 2026-08-02 |
 | **Bloque** | Producto (product-track) — fuera de la secuencia Mastery Block |
 | **Documentos Rectores** | [PHILOSOPHY.md](../../engineering/PHILOSOPHY.md), [DOMAIN_MODEL.md](../DOMAIN_MODEL.md) §5 I-1, [ARCHITECTURE_VISION.md](../ARCHITECTURE_VISION.md) §3.2-3.3, [DESIGN.md](../../../DESIGN.md), [PRODUCT.md](../../../PRODUCT.md) |

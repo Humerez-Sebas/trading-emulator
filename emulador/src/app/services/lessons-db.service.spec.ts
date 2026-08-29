@@ -2,6 +2,8 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MAX_EVIDENCE_SCENES } from '../domain/reflection/scene-spec';
 import { LessonsDbService } from './lessons-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
+import { ownerPlaybookDbName, ownerWorkspaceDbName } from './owner-scope';
 import { Lesson } from '../state/lessons/lessons.models';
 
 function lesson(id: string, over: Partial<Lesson> = {}): Lesson {
@@ -22,7 +24,7 @@ function lesson(id: string, over: Partial<Lesson> = {}): Lesson {
 describe('LessonsDbService', () => {
   let svc: LessonsDbService;
   beforeEach(async () => {
-    svc = new LessonsDbService();
+    svc = new LessonsDbService(fixedOwnerIdentity('owner-test'));
     await svc.clear();
   });
 
@@ -110,9 +112,13 @@ describe('LessonsDbService', () => {
 
   it('survives deletion of the OTHER databases (P-3, J-4)', async () => {
     await svc.upsert(lesson('keep'));
+    // Session Sovereignty V2: the siblings are per-owner now, so the P-3/J-4
+    // intent ("lessons survive when every other store is wiped") only holds if
+    // the names actually deleted are this owner's.
+    indexedDB.deleteDatabase(ownerWorkspaceDbName('owner-test'));
     indexedDB.deleteDatabase('emulador-workspaces');
     indexedDB.deleteDatabase('emulador-telemetry');
-    indexedDB.deleteDatabase('emulador-playbook');
+    indexedDB.deleteDatabase(ownerPlaybookDbName('owner-test'));
     await new Promise((r) => setTimeout(r, 100));
     expect((await svc.loadAll()).map((l) => l.id)).toEqual(['keep']);
   });

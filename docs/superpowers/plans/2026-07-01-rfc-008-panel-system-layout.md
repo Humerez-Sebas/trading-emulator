@@ -1,6 +1,22 @@
 # RFC-008 Panel System & Layout Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> ## STATUS: HISTORICAL — executed and shipped; do NOT re-run
+>
+> **Delivered 2026-07-02**, merged to `develop` in PR #26 (`204b261`); released to `main`
+> inside the multi-chart block release PR #36 (`dbaaae1`). The NgRx `layout` feature this
+> plan introduces already exists at `emulador/src/app/state/layout/layout.reducer.ts`
+> (added by `f4b4956`, *RFC-008 Task 1*).
+>
+> This file is the **record of how the panel system was built**, not a task list. Its
+> checkboxes describe finished work. For the binding architecture read
+> [RFC-008](../../architecture/rfcs/008-panel-system-and-layout-foundation.md) and the
+> frozen vision in
+> [008-012](../../architecture/rfcs/008-012-multi-chart-panel-system-vision.md); for the
+> current shape of the code read `docs/engineering/domain/workspace-panels.md`. The code
+> has moved on since (RFC-009..013, 017..019) — where this plan and the code disagree, the
+> code and the RFCs win.
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. *(Overridden by the STATUS banner above — this instruction no longer applies to this file.)*
 
 **Goal:** Render N chart panels inside one Session via a tab-bar + single-level-grid host (`WorkspaceViewport`), with per-panel reactive derivation (`ChartModelMapper` local, D8) and the `ChartSyncBus` skeleton — without touching the audited mono-core render path.
 

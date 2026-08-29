@@ -149,14 +149,14 @@ export interface SessionView {
   linkGroups: LinkGroup[];
 }
 
-/** One session handed to flatten. `view` is present for the active/live session; archived sessions omit it. */
+/** One session handed to flatten. Every archived row also carries its captured replay view. */
 export interface FlattenSession {
   id: string | null; // null => mint a uuid (active session on first sync)
   name: string | null; // sessionName; null => auto-named
   createdAt: number; // epoch ms
   cursor: number; // unix seconds
   trading: TradingData;
-  view?: SessionView; // active only
+  view?: SessionView;
   clientUpdatedAt: number; // epoch ms (LWW key)
   lastOpenedAt?: number | null; // epoch ms
 }
