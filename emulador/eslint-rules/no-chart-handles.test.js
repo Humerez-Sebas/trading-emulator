@@ -159,6 +159,14 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
       `,
       options: [{ allowImports: true }],
     },
+    {
+      name: 'allows a generic type parameter that shadows an imported handle alias',
+      code: `
+        import type { IChartApi as H } from 'lightweight-charts';
+        export type Public<H> = H;
+      `,
+      options: [{ allowImports: true }],
+    },
   ],
   invalid: [
     {

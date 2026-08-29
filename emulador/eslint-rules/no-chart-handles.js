@@ -70,9 +70,9 @@ const noChartHandles = {
       }
     }
 
-    function trackedTypeRoot(type) {
+    function trackedTypeRoot(type, shadowedNames) {
       if (type.type === 'TSIndexedAccessType') {
-        const name = trackedTypeRoot(type.objectType);
+        const name = trackedTypeRoot(type.objectType, shadowedNames);
         if (name !== null) return name;
         if (
           type.indexType.type === 'TSLiteralType' &&
@@ -86,6 +86,7 @@ const noChartHandles = {
 
       if (type.type !== 'TSTypeReference') return undefined;
       if (type.typeName.type === 'Identifier') {
+        if (shadowedNames.has(type.typeName.name)) return undefined;
         return importedHandleLocals.get(type.typeName.name);
       }
 
@@ -93,6 +94,7 @@ const noChartHandles = {
       while (qualifiedName.left.type === 'TSQualifiedName') {
         qualifiedName = qualifiedName.left;
       }
+      if (shadowedNames.has(qualifiedName.left.name)) return undefined;
       const name = importedHandleLocals.get(qualifiedName.left.name);
       if (name !== null) return name;
       return FORBIDDEN_HANDLES.has(qualifiedName.right.name)
@@ -100,8 +102,8 @@ const noChartHandles = {
         : undefined;
     }
 
-    function reportTrackedTypeRoot(node, type) {
-      const name = trackedTypeRoot(type);
+    function reportTrackedTypeRoot(node, type, shadowedNames) {
+      const name = trackedTypeRoot(type, shadowedNames);
       if (name === undefined) return;
       if (name === null) {
         context.report({ node, messageId: 'forbiddenNamespaceImport' });
@@ -150,7 +152,10 @@ const noChartHandles = {
       },
       TSTypeAliasDeclaration(node) {
         if (node.parent.type !== 'ExportNamedDeclaration') return;
-        reportTrackedTypeRoot(node, node.typeAnnotation);
+        const shadowedNames = new Set(
+          node.typeParameters?.params.map((parameter) => parameter.name.name) ?? [],
+        );
+        reportTrackedTypeRoot(node, node.typeAnnotation, shadowedNames);
       },
       ExportNamedDeclaration(node) {
         for (const specifier of node.specifiers) {

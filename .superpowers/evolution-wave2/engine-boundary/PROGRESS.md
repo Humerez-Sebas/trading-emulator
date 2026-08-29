@@ -276,3 +276,40 @@ independent acceptance was still pending. The final accepted record above supers
   lockfile remains changed.
 - This correction does not claim independent acceptance or a final full-gate run. No full
   Angular suite or build was run.
+
+## 2026-08-29 post-closeout Low correction from `7171717`
+
+The final independent acceptance at implementation head `646a441` and documentation head
+`7171717` remains historical evidence. This bounded post-closeout correction addresses only its
+residual generic-shadowing Low; the new post-closeout head is the commit containing this section
+(`git rev-parse HEAD` is authoritative because a commit cannot embed its own SHA).
+
+- Root mechanism: trusted chart-domain imports are precollected into one local-binding map so legal
+  late imports are enforceable. Exported alias inspection resolved an immediate identifier root
+  against that map without accounting for a same-name generic parameter introduced by the alias,
+  so `import type { IChartApi as H } ...; export type P<H> = H` falsely resolved lexical `H` to
+  the imported handle.
+- Patch: `TSTypeAliasDeclaration` passes only its declared generic parameter names into the existing
+  immediate structural-root resolver. Identifier and qualified roots stop at those lexical shadows;
+  all other named, namespace, qualified, indexed, source-less export, and late-import resolution is
+  unchanged. No type checker, recursive local type flow, dependency, runtime package, or suppression
+  was introduced.
+- Regression: the exact imported `H` plus exported `P<H> = H` example is now a RuleTester valid case.
+  Every existing invalid named/namespace/qualified/indexed/late-import case remains in the same run.
+
+TDD and fresh gates, raw and unpiped from `emulador/`:
+
+- RED: `node eslint-rules/no-chart-handles.test.js` -> exit `1`; RuleTester valid case 9 received
+  exactly one `forbiddenNamedImport` diagnostic (`IChartApi`) at the exported alias.
+- GREEN with the same command -> exit `0`, no output.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no diagnostics.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no diagnostics.
+- `npx ng test --watch=false` -> exit `0`, **186 files / 2457 tests passed**.
+- `npm run lint` -> exit `0`; RuleTester ran before Angular lint and Angular reported
+  `All files pass linting.`
+- `npm run build` -> exit `0`, initial bundle **651.83 kB**; only the known 500 kB budget
+  warning by **151.83 kB**, with no unexpected or Vitest production chunk.
+
+No production TypeScript, dependency, lockfile, remote, other-worktree, push, merge, rebase,
+cherry-pick, deployment, reset, branch, or worktree-management change was made. This is bounded
+post-closeout implementer evidence and does not rewrite the original independent acceptance.
