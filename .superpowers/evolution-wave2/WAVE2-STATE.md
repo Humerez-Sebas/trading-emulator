@@ -352,8 +352,11 @@ is bounded lexical-shadowing over-reporting in the syntax-only detector, for exa
 forbidden `H` plus unrelated `export type P<H> = H`; no production occurrence was found.
 
 Branch disposition remains **MERGE AS-IS** through normal owner-chosen integration, with fresh
-combined gates after integration regardless of whether conflicts occur. Package and lockfile
-contents remained unchanged. No push, PR, deployment, or `develop` mutation occurred.
+combined gates after integration regardless of whether conflicts occur. `emulador/package.json`
+changed only its `lint` script so `npm run lint` executes
+`node eslint-rules/no-chart-handles.test.js` before `ng lint`; dependency declarations, the
+dependency set, and `package-lock.json` remained unchanged. No push, PR, deployment, or `develop`
+mutation occurred.
 
 ## OWNER DECISIONS BINDING THIS WAVE
 
