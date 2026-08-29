@@ -2,11 +2,34 @@
 
 ## Verdict
 
-**C-R5/C-R6 are implemented; independent acceptance and final five-gate verification are
-pending.** The earlier acceptance at `b06fb62` was superseded when the 2026-08-20 whole-range
-review found the constructor-retention and exported-alias bypasses. The RFC-004/RFC-005
-raw-handle bridge remains retired with no intentional behavior change, but this implementer
-report does not claim independent acceptance or a fresh final full-gate run.
+**ACCEPTED at implementation head `646a441d0fb373dc3d3d555220ebb99006e6a542`.** Independent
+whole-range review found zero Critical, High, or Medium issues, and the controller's raw,
+unpiped final five-gate run passed. The earlier acceptance at `b06fb62`, subsequent rejection,
+and correction evidence remain below as historical records rather than the current verdict.
+
+## Final Acceptance Record
+
+- Independent whole-range verdict: `ACCEPTED` at clean implementation head `646a441`, with
+  zero Critical/High/Medium findings.
+- One residual Low is bounded and non-blocking: lexical shadowing can produce a false positive
+  in the syntax-only detector. For example, an imported forbidden alias `H` followed by an
+  unrelated exported generic `export type P<H> = H` can be reported. No production occurrence
+  was found; this does not represent general type-flow coverage.
+- The worktree was clean at the accepted implementation head before this evidence-only edit.
+- No dependency/lockfile, push, merge, deploy, or remote change occurred.
+
+Controller-owned raw, unpiped final gates from `emulador/` at `646a441`:
+
+| Gate | Exit | Evidence |
+|---|---:|---|
+| `npx tsc -p tsconfig.app.json --noEmit` | 0 | No diagnostics. |
+| `npx tsc -p tsconfig.spec.json --noEmit` | 0 | No diagnostics. |
+| `npx ng test --watch=false` | 0 | 185 files; 2467 tests passed. |
+| `npm run lint` | 0 | Local RuleTester ran; Angular lint reported `All files pass linting.` |
+| `npm run build` | 0 | Initial total `651.83 kB`; only the known 500 kB budget warning (`151.83 kB` over). No unexpected or Vitest chunk type. |
+
+Branch disposition remains **MERGE AS-IS** only when the owner chooses normal integration,
+with fresh combined gates after any conflict resolution.
 
 ## Scope Delivered
 
@@ -324,6 +347,10 @@ normal import visitor retains all non-domain reporting, including exact one-repo
 
 ## Residual Risk
 
+- The accepted residual Low is lexical-shadowing over-reporting in the syntax-only detector:
+  an imported forbidden alias can be shadowed by an unrelated exported generic parameter of
+  the same name. No production occurrence was found; the false positive is bounded and
+  non-blocking, and is not evidence of general type-flow coverage.
 - The import detector does not perform general type-flow analysis or inspect runtime dynamic
   `import()` / CommonJS `require()` expressions. This TypeScript ESM app has zero measured
   production use of those forms; static imports, TypeScript import types, and direct

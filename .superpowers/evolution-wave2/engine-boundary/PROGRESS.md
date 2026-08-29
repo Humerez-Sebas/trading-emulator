@@ -7,10 +7,10 @@ Checkpoint: `a736da843a4d35490fd93007d14e9da6ff4ad932`
 
 ## Status
 
-**C-R5/C-R6 IMPLEMENTED; INDEPENDENT ACCEPTANCE AND FINAL FIVE GATES PENDING.** The prior
-acceptance at `b06fb62` covered C-R1 through C-R4 but was superseded by the 2026-08-20
-whole-range findings. Current implementation checks are green; this ledger does not claim a
-new independent verdict or final full-gate run.
+**FINAL ACCEPTED at implementation head `646a441d0fb373dc3d3d555220ebb99006e6a542`.** An
+independent whole-range review reported zero Critical, High, or Medium findings. The controller
+then ran all five final gates raw and unpiped from `emulador/`; all exited `0`. Historical
+rejections, superseded acceptance, and implementation-only evidence remain recorded below.
 
 - [x] 22 production bridge call sites migrated to narrow contracts.
 - [x] `chartApi` and `seriesApi` deleted; no generic getter/handle replacement added.
@@ -28,6 +28,34 @@ new independent verdict or final full-gate run.
 - [x] `ENGINE_PUBLIC_CONTRACT.md` and `ENGINE_BOUNDARY_RESTORATION_REPORT.md` created.
 - [x] Historical five-gate evidence retained and clearly separated from current C-R5/C-R6
   implementation checks.
+- [x] Independent whole-range review accepted clean implementation head `646a441`.
+- [x] Controller-owned final five-gate run passed at `646a441`.
+
+## Final Accepted Record
+
+- Accepted implementation head: `646a441d0fb373dc3d3d555220ebb99006e6a542`.
+- Independent whole-range verdict: `ACCEPTED`, with zero Critical/High/Medium findings.
+- Residual Low, bounded and non-blocking: lexical shadowing can cause a false positive in the
+  syntax-only detector. For example, after importing a forbidden alias `H`, an unrelated
+  exported generic such as `export type P<H> = H` can be reported. No production occurrence
+  was found. This is not a claim of general type-flow coverage.
+- The worktree was clean at the accepted implementation head before this evidence-only edit.
+- No dependency/lockfile, push, merge, deploy, or remote change occurred.
+
+Controller-owned raw, unpiped final gates from `emulador/` at `646a441`:
+
+```text
+npx tsc -p tsconfig.app.json --noEmit   exit 0, no diagnostics
+npx tsc -p tsconfig.spec.json --noEmit  exit 0, no diagnostics
+npx ng test --watch=false               exit 0, 185 files / 2467 tests passed
+npm run lint                             exit 0, local RuleTester ran; All files pass linting
+npm run build                            exit 0, initial 651.83 kB
+  only known warning: 500 kB budget exceeded by 151.83 kB
+  no unexpected or Vitest chunk type
+```
+
+Branch disposition remains **MERGE AS-IS** only when the owner chooses normal integration,
+with fresh combined gates after any conflict resolution.
 
 ## Targeted Evidence
 
