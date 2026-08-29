@@ -12,7 +12,7 @@ opened by fixing.
 | Fact | Value |
 | :--- | :--- |
 | Wave 1 baseline (`develop`) | `a2ca53b44f678dd285cd90f31ee644696664f32a` |
-| Drift check at session open | NONE — `develop` == `origin/develop` == `a2ca53b` |
+| Drift check at session open and 2026-08-29 final reconciliation | NONE — `develop` == `origin/develop` == `a2ca53b` |
 | Wave 2 integration branch | `agent/evolution-wave2-base` |
 | Integration worktree | `C:\Users\78701\Desktop\trading-emulator-wave2-base` |
 | **`WAVE2_BASE_SHA`** | **`894d72be95f8ad4b8d63e629114e486e825b13d7`** |
@@ -134,9 +134,9 @@ canonical repo (never `.claude/worktrees/`).
 
 | Agent | Track | Worktree | Branch | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | **ACCEPTED** @ `2630294` |
+| A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | **ACCEPTED** @ `b62185429a76802d53cbe8836d88ac6ee74aa07f` (implementation `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`) |
 | B | Multi-symbol feasibility | `trading-emulator-multisymbol` | `agent/multisymbol-feasibility` | **VERIFIED RESEARCH** @ `3ae5935` |
-| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | **ACCEPTED** @ `66211cc` |
+| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | **ACCEPTED** @ `91882e0aaf0fb170670455c7392494dbcc23e212` (implementation `646a441d0fb373dc3d3d555220ebb99006e6a542`) |
 | D | Unit semantics & UI contract | `trading-emulator-unit-semantics` | `agent/unit-semantics` | **VERIFIED** @ `1984e5d` |
 | E | Clock authority | `trading-emulator-clock-authority` | `agent/clock-authority` | **VERIFIED / OWNER-GATED** @ `cee6cff` |
 
@@ -306,52 +306,54 @@ vocabulary strings and the persisted rename are explicitly NOT in it and remain 
 
 ## FINAL INDEPENDENT VERIFICATION — AGENT A (session sovereignty)
 
-Branch `agent/session-sovereignty-v2`, final head
-`263029491b16c1cc87c3002fb339c47824759173`, worktree clean. Accepted implementation head:
-`498646b`; the final commit updates evidence only.
+Branch `agent/session-sovereignty-v2`, final documentation head
+`b62185429a76802d53cbe8836d88ac6ee74aa07f`, worktree clean. Accepted implementation head:
+`d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`; the later commit updates evidence only.
 
 The original account-switch defect and A5 trading-metadata race are fixed with owner-partitioned
 workspace/playbook/lesson databases, preserved shared market-data stores, read-only legacy
 quarantine, exact-count evidence-based adoption, hard document boundaries on owner changes,
-transaction-local revision guards, and monotonic complete active-payload clocks. Three bounded
-independent-review loops found and resolved stale pull consequences, active-trading revision
-coverage, stale active-id reconstruction, non-monotonic clocks, and external return-target issues.
+transaction-local revision guards, and monotonic complete active-payload clocks. Later correction
+work made replay settings and local `files` part of coherent persistence/materialization and closed
+the final archive-reconciliation and cloud-promotion transaction/consequence windows.
 
-Independent reviewer verdict: **ACCEPTED**, zero Critical/High/Medium findings. Fresh closeout
-gates at `498646b`: app tsc 0; spec tsc 0; full suite 0 at **186 files / 2483 tests**; lint 0;
-build 0 at **661.05 kB**, only the known 500 kB budget warning, with no Vitest sentinel or
-unexpected chunk type. Restored mutations independently proved owner partitioning, A5 dirty
-stamps, exact-revision acknowledgement, direct-login hard boundaries, and v1 source retention.
+Independent reviewer verdict: **ACCEPTED**, zero Critical/High/Medium findings. Final controller
+gates, raw and unpiped at `d72c51d`: app tsc 0; spec tsc 0; full suite 0 at **186 files / 2562
+tests passed**; lint 0; build 0 at **669.96 kB**, with only the known 500 kB budget warning by
+**169.96 kB** and no unexpected or Vitest production chunk. The sole residual Low is that
+`sameActivePayload()` omits `files`; it is latent and non-blocking because every current `files`
+writer advances the exact revision clocks used by that guard.
 
-Branch disposition: **MERGE AS-IS**, subject to normal conflict resolution and fresh combined
-gates when the owner chooses integration. No Supabase migration, dependency, lockfile, recovery
-UI, cross-tab framework, push, PR, deployment, or `develop` mutation occurred.
+Branch disposition remains **MERGE AS-IS** through normal owner-chosen integration, with fresh
+combined gates after integration regardless of whether conflicts occur. No Supabase migration,
+dependency, lockfile, recovery UI, cross-tab framework, push, PR, deployment, or `develop`
+mutation occurred.
 
 ## FINAL INDEPENDENT VERIFICATION — AGENT C (engine boundary)
 
-Branch `agent/engine-boundary-restoration`, final head
-`66211cc4828f42ceea4b9289024bfab743ec7fcd`, worktree clean. Accepted implementation head:
-`b06fb62`; the final commit updates evidence only.
+Branch `agent/engine-boundary-restoration`, final documentation head
+`91882e0aaf0fb170670455c7392494dbcc23e212`, worktree clean. Accepted implementation head:
+`646a441d0fb373dc3d3d555220ebb99006e6a542`; later commits update evidence only.
 
-The RFC-004/RFC-005 chart/series bridge is retired. `registerCapability` keeps construction
-inside the engine and returns `void`; `getCapability` exposes only mapped handle-free facades.
-Raw library pointer callbacks are copied into data-only `ChartPointerEvent` values. Hosts receive
-a subscribe-only event source on a bus physically distinct from the private capability bus.
-The local ESLint rule now covers named/namespace imports, dot/indexed TypeScript import types,
-direct and two-step re-exports including aliases, while allowing data-only types and legitimate
-domain ownership imports. Its `RuleTester` suite is part of `npm run lint`.
+The RFC-004/RFC-005 chart/series bridge is retired. `registerCapability` accepts only a closed
+built-in ID registry, keeps construction inside the chart domain, and returns `void`;
+`getCapability` exposes only mapped handle-free facades. Raw library pointer callbacks are copied
+into data-only `ChartPointerEvent` values. Hosts receive a subscribe-only event source on a bus
+physically distinct from the private capability bus. The local ESLint rule covers named/namespace
+imports, dot/indexed TypeScript import types, direct and two-step re-exports, and exported aliases,
+including nested qualified/indexed forms and exports declared before imports. Its `RuleTester`
+suite is part of `npm run lint`.
 
-Independent review required multiple bounded loops and ended **ACCEPTED** with zero
-Critical/High/Medium findings. The sole Low, intentionally ruled no-fix, is that the detector
-enforces the four C-R2 handle interfaces rather than attempting to classify every mutable API
-exported by lightweight-charts. Fresh final gates: app tsc 0; spec tsc 0; full suite 0 at
-**185 files / 2450 tests**; lint 0 including local rule tests; build 0 at **651.83 kB**, only
-the known budget warning, no unexpected/Vitest chunk type. Required generic-leak and prohibited
-import mutations failed, were inverse-restored, and returned green.
+Independent whole-range review ended **ACCEPTED** with zero Critical/High/Medium findings. Final
+controller gates, raw and unpiped at `646a441`: app tsc 0; spec tsc 0; full suite 0 at **185 files /
+2467 tests passed**; lint 0 including `RuleTester`; build 0 at **651.83 kB**, with only the known
+500 kB budget warning by **151.83 kB** and no unexpected or Vitest chunk. The sole residual Low
+is bounded lexical-shadowing over-reporting in the syntax-only detector, for example an imported
+forbidden `H` plus unrelated `export type P<H> = H`; no production occurrence was found.
 
-Branch disposition: **MERGE AS-IS**, subject to normal conflict resolution and fresh combined
-gates when integrated. An earlier `npm ci` succeeded; package and lockfile contents remained
-unchanged. No push, PR, deployment, or `develop` mutation occurred.
+Branch disposition remains **MERGE AS-IS** through normal owner-chosen integration, with fresh
+combined gates after integration regardless of whether conflicts occur. Package and lockfile
+contents remained unchanged. No push, PR, deployment, or `develop` mutation occurred.
 
 ## OWNER DECISIONS BINDING THIS WAVE
 
@@ -405,3 +407,13 @@ unchanged. No push, PR, deployment, or `develop` mutation occurred.
   mutation. No post-rejection final gates were accepted. Integration remains at `cbe52fc` before
   this documentation commit; `develop == origin/develop == a2ca53b`. No merge, push, reset,
   rebase, deployment, remote-system change, or completed-track mutation occurred.
+- **2026-08-29 resumed final closeout** — Track A independently accepted implementation
+  `d72c51d` with zero Critical/High/Medium findings and final documentation head `b621854`;
+  Track C independently accepted implementation `646a441` with zero Critical/High/Medium
+  findings and final documentation head `91882e0`. Both specialist worktrees and the integration
+  worktree reconciled clean before central edits. Integration remained at pre-final-doc head
+  `37a43b2519e6d35f7fab2288b88ee4f377307c72`; no specialist branch was merged into integration
+  or `develop`, so no combined runtime compatibility is claimed. Canonical
+  `develop == origin/develop == a2ca53b44f678dd285cd90f31ee644696664f32a`; unrelated untracked
+  `.superpowers/audit-2026-08-10/` remained untouched. No push, PR, merge, deployment, Supabase,
+  Vercel, dependency/lockfile, remote, or completed-track change occurred.

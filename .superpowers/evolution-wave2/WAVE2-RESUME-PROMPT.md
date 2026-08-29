@@ -1,116 +1,83 @@
-# Wave 2 Closeout - Cold Resume Prompt
+# Wave 2 Closeout - Final Index And Handoff
 
-## Mission
+## Status
 
-Resume the Engineering Evolution Wave 2 closeout. This is not a new wave, another audit, or
-permission for broad refactoring. Finish only the remaining bounded Track A findings, then the
-remaining bounded Track C findings, verify each independently, and repair central synthesis.
-Never mutate `develop`; never push.
+Engineering Evolution Wave 2 is closed through 2026-08-29. There is no remaining Wave 2
+implementation task. Track A and Track C completed their bounded correction cycles, independent
+whole-range reviews, final raw gates, and evidence-only documentation commits.
 
-## Git State At Pause
+This is an evidence closeout, not a combined release branch. No specialist branch has been merged
+into `agent/evolution-wave2-base` or `develop`, and no combined runtime compatibility is claimed.
 
-- Canonical repo: `C:\Users\78701\Desktop\trading-emulator`
-- `develop == origin/develop == a2ca53b44f678dd285cd90f31ee644696664f32a`
-- Specialist base: `894d72be95f8ad4b8d63e629114e486e825b13d7`
-- Integration: `C:\Users\78701\Desktop\trading-emulator-wave2-base`, branch
-  `agent/evolution-wave2-base`; this pause commit follows `cbe52fc`
-- Track A: `C:\Users\78701\Desktop\trading-emulator-session-sovereignty`, branch
-  `agent/session-sovereignty-v2`, head `fefea658a9cd169b4d93654d21895c22a43d3190`, clean
-- Track C: `C:\Users\78701\Desktop\trading-emulator-engine-boundary`, branch
-  `agent/engine-boundary-restoration`, head
-  `66211cc4828f42ceea4b9289024bfab743ec7fcd`, clean
+## Authoritative Git State
 
-Run Git reconciliation first. Git wins over every progress document. If `develop` moved or A/C
-is unexpectedly dirty, stop and reconcile without resetting or discarding anything.
+- Canonical repo: `C:\Users\78701\Desktop\trading-emulator`.
+- `develop == origin/develop == a2ca53b44f678dd285cd90f31ee644696664f32a`.
+- Canonical unrelated untracked `.superpowers/audit-2026-08-10/` remains untouched.
+- Specialist base: `894d72be95f8ad4b8d63e629114e486e825b13d7`.
+- Integration worktree: `C:\Users\78701\Desktop\trading-emulator-wave2-base`, branch
+  `agent/evolution-wave2-base`; pre-final-documentation head
+  `37a43b2519e6d35f7fab2288b88ee4f377307c72`.
+- Track A final documentation head: `b62185429a76802d53cbe8836d88ac6ee74aa07f`;
+  accepted implementation head: `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`.
+- Track C final documentation head: `91882e0aaf0fb170670455c7392494dbcc23e212`;
+  accepted implementation head: `646a441d0fb373dc3d3d555220ebb99006e6a542`.
 
-```powershell
-git -C C:\Users\78701\Desktop\trading-emulator fetch
-git -C C:\Users\78701\Desktop\trading-emulator rev-parse HEAD
-git -C C:\Users\78701\Desktop\trading-emulator rev-parse origin/develop
-git -C C:\Users\78701\Desktop\trading-emulator worktree list --porcelain
-git -C C:\Users\78701\Desktop\trading-emulator-session-sovereignty status --short
-git -C C:\Users\78701\Desktop\trading-emulator-session-sovereignty rev-parse HEAD
-git -C C:\Users\78701\Desktop\trading-emulator-engine-boundary status --short
-git -C C:\Users\78701\Desktop\trading-emulator-engine-boundary rev-parse HEAD
-git -C C:\Users\78701\Desktop\trading-emulator-wave2-base status --short
-git -C C:\Users\78701\Desktop\trading-emulator-wave2-base rev-parse HEAD
-```
+## Track Dispositions
 
-## Read First
+| Track | Head / accepted implementation | Final disposition |
+|---|---|---|
+| Landing | `161e9f5` | Separate deployed static branch; keep separate from emulator runtime integration. |
+| A session sovereignty | `b62185429a76802d53cbe8836d88ac6ee74aa07f` docs / `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2` implementation | **MERGE AS-IS** through normal owner-chosen integration; run fresh combined gates. |
+| B multi-symbol | `3ae5935` | **RESEARCH ONLY**; no runtime implementation. |
+| C engine boundary | `91882e0aaf0fb170670455c7392494dbcc23e212` docs / `646a441d0fb373dc3d3d555220ebb99006e6a542` implementation | **MERGE AS-IS** through normal owner-chosen integration; run fresh combined gates. |
+| D unit semantics | `1984e5d` | **MERGE AS-IS**. |
+| E clock authority | `cee6cff` | **VERIFIED / OWNER-GATED**; owner decisions D-E1 through D-E4 remain required. |
+| Central integration | final closeout commit after `37a43b2` | Documentation/evidence branch only; not the final Wave 2 runtime bundle. |
 
-1. `docs/engineering/PHILOSOPHY.md`
-2. `.superpowers/evolution-wave2/WAVE2-STATE.md`
-3. `.superpowers/evolution-wave2/TRACK-A-CLOSEOUT-BRIEF.md`
-4. `.superpowers/evolution-wave2/TRACK-C-CLOSEOUT-BRIEF.md`
-5. Track A/C specialist `PROGRESS.md` files
-6. Relevant session-sync, chart-engine, testing, and anti-pattern guides
+Track A and C were independently accepted with zero Critical/High/Medium findings. A retains one
+latent, non-blocking Low: `sameActivePayload()` omits `files`, while every current file writer
+advances the exact revision clocks. C retains one bounded, non-blocking Low: lexical shadowing can
+false-positive in its syntax-only detector, for example imported forbidden `H` plus unrelated
+`export type P<H> = H`; there is no production occurrence.
 
-The earlier central `ACCEPTED` text and `WAVE2-SYNTHESIS.md` are stale snapshots.
+## Central Artifacts
 
-## Remaining Work
+- Final state ledger: `.superpowers/evolution-wave2/WAVE2-STATE.md`.
+- Final synthesis and integration guidance: `.superpowers/evolution-wave2/WAVE2-SYNTHESIS.md`.
+- Final index and handoff: `.superpowers/evolution-wave2/WAVE2-RESUME-PROMPT.md`.
+- Historical pause handoff: `.superpowers/evolution-wave2/WAVE2-CLOSEOUT-RESUME.md`.
+- Historical correction briefs: `.superpowers/evolution-wave2/TRACK-A-CLOSEOUT-BRIEF.md` and
+  `.superpowers/evolution-wave2/TRACK-C-CLOSEOUT-BRIEF.md`.
+- Final A evidence remains on its specialist branch under
+  `.superpowers/evolution-wave2/session-sovereignty/`.
+- Final C evidence remains on its specialist branch under
+  `.superpowers/evolution-wave2/engine-boundary/`.
 
-### Track A First
+Old closeout briefs, pause instructions, earlier acceptance snapshots, and rejection records are
+historical evidence. They must remain preserved, but they must not override the final A/C specialist
+evidence and accepted heads listed above.
 
-Execute only A-R5 and A-R6 in the 2026-08-20 addendum:
+## Immutable Safety And History
 
-- Archive reconciliation must fail safe if a second live edit arrives during its second
-  transaction; restore latest A active and do not dispatch archive.
-- Cloud promotion must refuse to start when captured live A is already ahead of durable A.
+- The 2026-08-20 A/C rejection record is preserved; it explains the later correction contracts.
+- Completed Landing/B/D/E conclusions are settled and must not be reopened or reinterpreted by this
+  closeout.
+- XAUUSD sizing and index `ExecutionCosts.pointSize = 1` remain correct; unit divergence is
+  vocabulary, not lot-size arithmetic.
+- Storage/pipeline UTC reads remain correct; multi-symbol trading remains a frozen non-goal while
+  view-only secondary panels remain permitted.
+- No push, PR, merge, rebase, reset, deployment, Supabase, Vercel, dependency, lockfile, remote, or
+  worktree-pruning change was made in the resumed closeout.
 
-Use TDD, commit explicit paths, request a fresh independent review of `894d72b..new HEAD`, and
-resolve only verified in-scope Critical/High/Medium findings. After zero remain, independently
-run all five raw gates from Track A `emulador/` and record exact exits/counts/build size.
+## Future Owner Actions
 
-### Track C Second
+1. Choose whether and when to integrate D, A, and C through the repository's normal branch flow.
+2. Run fresh combined gates after each specialist integration and after final composition,
+   regardless of whether any conflict occurred. Individual specialist gates do not prove the
+   composed runtime.
+3. Resolve E's owner decisions D-E1 through D-E4 before behavioral clock remediation.
+4. Decide whether to promote B's research into a Spanish normative RFC and choose its product scope.
+5. Handle landing deployment access/alias decisions separately from emulator runtime integration.
 
-Execute only C-R5 and C-R6 in the 2026-08-20 addendum:
-
-- Close the caller-supplied capability-constructor/static-field raw-series escape.
-- Detect exported forbidden type-alias declarations, including namespace-qualified forms.
-
-Use TDD, repeat/restore the constructor and lint mutations, request a fresh independent review
-of `894d72b..new HEAD`, and resolve only verified in-scope Critical/High/Medium findings. After
-zero remain, independently run all five raw gates.
-
-Five gates, raw and unpiped from each specialist `emulador/`:
-
-```powershell
-npx tsc -p tsconfig.app.json --noEmit
-npx tsc -p tsconfig.spec.json --noEmit
-npx ng test --watch=false
-npm run lint
-npm run build
-```
-
-### Central Closeout Last
-
-Reconcile exact heads, logs, stats, reports, restored probes, and clean worktrees. Then update
-`WAVE2-STATE.md`, replace the stale synthesis notice and evidence, and convert this file into the
-concise final index. Commit explicit central paths only. Return the owner-facing table and
-dispositions. Do not merge or push specialist branches.
-
-## Completed Tracks - Read Only
-
-- Landing `agent/landing-product-showcase` at `161e9f5`
-- B `agent/multisymbol-feasibility` at `3ae5935`, research only
-- D `agent/unit-semantics` at `1984e5d`, complete
-- E `agent/clock-authority` at `cee6cff`, verified / owner-gated
-
-## Settled - Do Not Reopen
-
-- XAUUSD Lotaje sizing and index `ExecutionCosts.pointSize = 1` are correct.
-- Unit differences are vocabulary/transcription, not lot-size arithmetic bugs.
-- Storage/pipeline UTC reads are correct; `utc-4` winter behavior is intentional.
-- Multi-symbol trading remains the frozen non-goal; view-only secondary panels are allowed.
-- `syncTimeRange` logical-index transport and F19-2 remain future defects.
-
-## Safety
-
-- No commit, merge, rebase, or reset on `develop`.
-- No push, PR, deployment, Vercel, Supabase, dependency, lockfile, or worktree-pruning change.
-- No `git add -A`; use explicit pathspecs.
-- Do not rewrite specialist interruption/WIP history.
-- No broad refactor, recovery UI, auth listener, or cross-tab framework.
-- Do not claim acceptance from progress files or old gates. Reviews and gates must be fresh.
-
-Wave 2 is paused safely and is **not closed**.
+Do not infer that any specialist commit is already present on integration or `develop`.

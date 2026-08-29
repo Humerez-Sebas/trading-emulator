@@ -1,13 +1,10 @@
 # Engineering Evolution Wave 2 - Final Synthesis
 
-> **STALE ACCEPTANCE SNAPSHOT:** Fresh reviews on 2026-08-20 rejected Track A at `fefea65`
-> and Track C at `66211cc`. Preserve this document as historical synthesis only. Current scope
-> and restart order are authoritative in `WAVE2-RESUME-PROMPT.md` and the two closeout briefs.
-
-Campaign: 2026-08-12 to 2026-08-13. Specialist base:
+Campaign: 2026-08-12 to 2026-08-29. Specialist base:
 `894d72be95f8ad4b8d63e629114e486e825b13d7`. Integration branch:
-`agent/evolution-wave2-base`. Nothing in this closeout was merged into or pushed from
-`develop`.
+`agent/evolution-wave2-base`; pre-final-documentation head
+`37a43b2519e6d35f7fab2288b88ee4f377307c72`. Nothing in this closeout was merged into or
+pushed from `develop`.
 
 ## A. Executive Verdict
 
@@ -33,8 +30,8 @@ they compared same-named factors rather than the user-visible product.
 - Landing branched separately from `a2ca53b` and touched no `emulador/` path.
 - No A/C/D/E/B branch was merged into integration during closeout. Therefore this report does
   not claim combined runtime compatibility beyond each independently verified branch.
-- No push, PR, Supabase change, dependency addition, lockfile mutation, worktree pruning, or
-  `develop`/`main` mutation occurred.
+- No push, PR, merge, deployment, Supabase, Vercel, dependency/lockfile, remote, worktree-pruning,
+  or `develop`/`main` mutation occurred in the resumed closeout.
 
 ## C. Delivered Implementation
 
@@ -44,14 +41,19 @@ read-only quarantine and is copied only when an exact-count RLS response proves 
 id belongs to the current owner. Owner changes cross a hard document boundary; stale tabs fail
 closed around cloud I/O. Session/folder acknowledgements are exact-revision and transactional;
 active payload clocks are complete and monotonic. The original wrong-owner deletion/upload/
-exposure mechanisms and A5 lost-dirty-stamp race are closed.
+exposure mechanisms and A5 lost-dirty-stamp race are closed. Later corrections make replay
+settings and local `files` part of coherent persistence/materialization, preserve them through
+archive restoration and promotion, and fail safe across the final archive-reconciliation and
+cloud-promotion transaction/consequence windows.
 
 **Engine boundary (C).** `chartApi`/`seriesApi` bridges and host-owned price-line handles are
 gone. Engine-owned capability construction returns no concrete instance; host interaction uses
 explicit drawings/trading facades. Library pointer events are sanitized to data-only values and
-cross through a subscribe-only host bus separate from the capability bus. A local lint detector
-mechanically blocks the four retired raw-handle types through imports, TypeScript import types,
-and direct/two-step re-exports; its own tests run inside the lint gate.
+cross through a subscribe-only host bus separate from the capability bus. Capability construction
+uses a closed built-in ID registry, so callers cannot supply executable constructors. A local lint
+detector mechanically blocks the four retired raw-handle types through imports, TypeScript import
+types, direct/two-step re-exports, and exported aliases, including nested qualified/indexed forms
+and exports declared before imports; its own tests run inside the lint gate.
 
 **Unit semantics (D).** A 35-test cross-surface contract proves that five instrument fixtures
 reconstruct the same `priceDelta` even when displayed numbers use different units. No arithmetic,
@@ -87,22 +89,26 @@ sizing; their distance labels use different display vocabularies.
 | Track | Final head | Independent evidence | Final gates |
 |---|---|---|---|
 | Landing | `161e9f5` | Local DOM/browser and authenticated remote HTML readback | Static build 0, 6 files / 139.1 kB |
-| A sovereignty | `2630294` (`498646b` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; five restored mutations | tsc app/spec 0; 186 files / 2483 tests; lint 0; build 661.05 kB |
+| A sovereignty | `b62185429a76802d53cbe8836d88ac6ee74aa07f` docs (`d72c51de012cb77a3fbd23e4ea208b03ad3a81c2` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; one latent Low | tsc app/spec 0; 186 files / 2562 passed; lint 0; build 669.96 kB, known warning +169.96 kB |
 | B multi-symbol | `3ae5935` | Orchestrator re-derived central claims and refutations | Docs only; no app gates claimed |
-| C engine | `66211cc` (`b06fb62` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; required mutations restored | tsc app/spec 0; 185 files / 2450 tests; lint 0; build 651.83 kB |
+| C engine | `91882e0aaf0fb170670455c7392494dbcc23e212` docs (`646a441d0fb373dc3d3d555220ebb99006e6a542` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; one bounded Low | tsc app/spec 0; 185 files / 2467 passed; lint 0 including RuleTester; build 651.83 kB, known warning +151.83 kB |
 | D units | `1984e5d` | Orchestrator re-derived arithmetic and scope; four negative probes fail, one refuted | tsc app/spec 0; 184 files / 2452 tests; lint 0 |
 | E clock | `cee6cff` | Orchestrator verified scope, mechanism, 5 expected failures / 9 locks | tsc app/spec 0; 184 files / 2431 total cases; lint 0 |
 
 Build sizes include only the known 500 kB initial-budget warning. No accepted closeout build
-showed a Vitest sentinel or unexpected chunk type.
+showed a Vitest sentinel or unexpected chunk type. A's residual Low is that
+`sameActivePayload()` omits `files`; it is latent because current file writers advance the exact
+revision clocks. C's residual Low is a syntax-only lexical-shadowing false positive, such as an
+imported forbidden `H` followed by unrelated `export type P<H> = H`; no production occurrence
+was found. Neither Low blocks its branch disposition.
 
 ## F. Branch Dispositions
 
 | Branch | Disposition | Reason / condition |
 |---|---|---|
-| `agent/session-sovereignty-v2` | **MERGE AS-IS** | Highest-severity reachable fix; independently accepted. Run fresh combined gates after conflict resolution. |
-| `agent/engine-boundary-restoration` | **MERGE AS-IS** | Independently accepted; mechanical boundary detector included. Run fresh combined gates. |
-| `agent/unit-semantics` | **MERGE AS-IS** | No arithmetic/persistence/UI behavior change; 35-test executable contract. |
+| `agent/session-sovereignty-v2` | **MERGE AS-IS** | Highest-severity reachable fix; independently accepted. Use normal owner-chosen integration and run fresh combined gates after integration, regardless of conflicts. |
+| `agent/engine-boundary-restoration` | **MERGE AS-IS** | Independently accepted; mechanical boundary detector included. Use normal owner-chosen integration and run fresh combined gates after integration, regardless of conflicts. |
+| `agent/unit-semantics` | **MERGE AS-IS** | No arithmetic/persistence/UI behavior change; 35-test executable contract. Run fresh combined gates after integration. |
 | `agent/multisymbol-feasibility` | **RESEARCH ONLY** | No runtime implementation. Promote only after owner chooses view-only scope and RFC identity; translate normative RFC to Spanish. |
 | `agent/clock-authority` | **MERGE AFTER D-E1 through D-E4** | Evidence is valuable, but behavioral remediation and final terminology are owner authority. The probe/docs may be cherry-picked separately if desired. |
 | `agent/landing-product-showcase` | **MERGE AS-IS, SEPARATELY** | Static site is corrected and deployed in its own project; keep separate from emulator runtime integration. |
@@ -144,12 +150,13 @@ showed a Vitest sentinel or unexpected chunk type.
    original-base evidence.
 2. Integrate the verified Wave 1 baseline changes if they have not landed by another route.
 3. Integrate D first because it adds cross-surface regression coverage with minimal production
-   change.
-4. Integrate A as its own high-risk change and run all five gates plus owner-switch mutations.
-5. Integrate C as its own high-risk change and run all five gates plus lint-rule and generic
-   capability mutations.
-6. Run a fresh combined full suite/build after A+C+D compose. Individual green branches are not
-   evidence of combined green behavior.
+   change, then run fresh combined gates even if integration had no conflict.
+4. Integrate A as its own high-risk change and run all five combined gates plus owner-switch
+   mutations, regardless of whether conflict resolution was needed.
+5. Integrate C as its own high-risk change and run all five combined gates plus lint-rule and
+   generic capability mutations, regardless of whether conflict resolution was needed.
+6. Run a fresh combined full suite/build again after the final A+C+D composition. Individual
+   green branches and conflict-free integration are not evidence of combined green behavior.
 7. Keep B and E out of runtime release until their listed decisions are made. Integrate landing
    through its separate static-site path.
 
