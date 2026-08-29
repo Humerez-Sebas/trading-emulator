@@ -1,19 +1,25 @@
-# Engineering Evolution Wave 2 - Final Synthesis
+# Engineering Evolution Wave 2 - Controlled Integration Synthesis
 
 Campaign: 2026-08-12 to 2026-08-29. Specialist base:
 `894d72be95f8ad4b8d63e629114e486e825b13d7`. Integration branch:
-`agent/evolution-wave2-base`; pre-final-documentation head
-`37a43b2519e6d35f7fab2288b88ee4f377307c72`. Nothing in this closeout was merged into or
+`integration/evolution-wave2`; worktree
+`C:\Users\78701\Desktop\trading-emulator-wave2-integration`; pre-reconciliation tip
+`80ac7b68871412dab83d3a04a4696a18b2340489`. Nothing in this integration was merged into or
 pushed from `develop`.
 
 ## A. Executive Verdict
 
-Wave 2 is closed as an evidence campaign, not as a combined release branch. It produced three
-bounded implementation branches ready for normal integration (A, C, D), two research or
-owner-gated branches (B, E), and one separately deployed static landing branch. Track A removed
-a reachable cross-account data-loss/exposure path. Track C restored the chart-engine ownership
-boundary beyond the original bridge getters. Track D made unit semantics executable without
-changing arithmetic.
+Phase 7 reconciles the controlled A+C integration rather than declaring a release. Post-Low Track
+A and Track C, followed by Central's documentation/evidence-only head, are now composed on
+`integration/evolution-wave2`. Both formerly residual Low findings are resolved. Stage gates and
+a combined semantic matrix passed on the composed tree, but the final independent audit and
+pipeline gates are **PENDING**; this implementer document must not represent either as passed.
+
+Track D remains a separately verified implementation branch, B remains research-only, E remains
+owner-gated, and Landing remains a separately deployed static branch. Their dispositions are
+unchanged and this reconciliation does not reopen them. Track A removed a reachable cross-account
+data-loss/exposure path. Track C restored the chart-engine ownership boundary beyond the original
+bridge getters. Track D made unit semantics executable without changing arithmetic.
 
 The main conclusion is methodological: names, green gates, and implementer reports are not
 enough. The highest-value results came from reconstructing ownership at real boundaries and
@@ -22,16 +28,21 @@ they compared same-named factors rather than the user-visible product.
 
 ## B. Baseline And Scope
 
-- `develop == origin/develop == a2ca53b44f678dd285cd90f31ee644696664f32a` at open, pause,
-  and final reconciliation.
-- `agent/evolution-wave2-base` started at `894d72b`, containing the three independently
-  verified Wave 1 branches. Combined baseline gates were 183 files / 2417 tests, all green.
-- All five specialists branched from exactly `894d72b` into sibling worktrees.
+- `origin/main` is `ad69d7dd582bfa5c977b3816fb46101335df6c35`; `origin/develop` and the
+  Wave 1 base are `a2ca53b44f678dd285cd90f31ee644696664f32a`. The range
+  `origin/develop..origin/main` is empty, so parity is valid.
+- All five specialists branched from exactly `894d72b` into sibling worktrees. Pairwise A/C/Central
+  merge bases all resolve to `894d72b`; Central changed only documentation/evidence after it.
 - Landing branched separately from `a2ca53b` and touched no `emulador/` path.
-- No A/C/D/E/B branch was merged into integration during closeout. Therefore this report does
-  not claim combined runtime compatibility beyond each independently verified branch.
-- No push, PR, merge, deployment, Supabase, Vercel, dependency/lockfile, remote, worktree-pruning,
-  or `develop`/`main` mutation occurred in the resumed closeout.
+- A current head `8e4fec1942c49c11424ec95f25a4aeed9226892e` was integrated by
+  `97f9f1ebffeaf2f1c74c0b119a825dd23723e0d6`; C current head
+  `44027a4557c16d4260cbf1c216a01f307d069b46` was integrated by
+  `10c2d1d241b6c1a0ee73992c3e27299ee0b75a3f`.
+- Central historical head `6974f769b0f1d2c5a084cbc0aad1c69a0e79b020` was integrated by
+  `80ac7b68871412dab83d3a04a4696a18b2340489`. Its base-relative delta is the six Wave 2 evidence
+  files plus intentional root `PROGRESS.md` deletion.
+- No push, PR, deployment, Supabase, Vercel, dependency/lockfile, remote, worktree-pruning, or
+  `develop`/`main` mutation occurred in controlled integration.
 
 ## C. Delivered Implementation
 
@@ -86,36 +97,61 @@ sizing; their distance labels use different display vocabularies.
 
 ## E. Verification Matrix
 
+### Current controlled-integration evidence
+
+| Stage | Integrated heads and correction | Fresh evidence on integration |
+|---|---|---|
+| A | A post-Low `8e4fec1` via `97f9f1e`; Prettier-only correction `bbc06482b9a71bc5957cbb3508a629fdc8467139` | Focused 5 files / 171 tests; full 186 / 2563; tsc app/spec 0; lint 0; format 0; build 669.99 kB, known warning +169.99 kB |
+| A+C | C post-Low `44027a4` via `10c2d1d`; Prettier-only correction `7215f2659af1dc26fd53bd172b43eef8fea19744` | RuleTester 0; focused Engine 7 files / 87 tests; full 189 / 2603; tsc app/spec 0; lint 0; format 0; build 669.99 kB, known warning +169.99 kB |
+
+The A stage initially failed `format:check` on eight A-owned files while `origin/develop` passed
+and the untouched A head failed identically. The C stage likewise initially failed on four C-owned
+files while pre-C integration passed and untouched C failed identically. The two corrections were
+format-only and applied Prettier to those inherited specialist files.
+
+The combined automated semantic matrix passed **9 files / 280 tests** on the actual A+C tree,
+covering auth transitions/hard logout, A-B-A storage isolation, open/restore, replay,
+layout/drawings/panels persistence, chart-boundary interaction, and placement preview. No manual
+browser smoke was run, and no single browser-level end-to-end test spans all ten steps.
+
+**Final independent audit: PENDING. Pipeline gates: PENDING.** The current tip after this document
+is committed becomes the dedicated reconciliation commit. Its SHA cannot be recorded inside the
+commit before it exists; the later audit-result follow-up must record the exact final audited tip.
+
+### Historical specialist evidence
+
 | Track | Final head | Independent evidence | Final gates |
 |---|---|---|---|
 | Landing | `161e9f5` | Local DOM/browser and authenticated remote HTML readback | Static build 0, 6 files / 139.1 kB |
-| A sovereignty | `b62185429a76802d53cbe8836d88ac6ee74aa07f` docs (`d72c51de012cb77a3fbd23e4ea208b03ad3a81c2` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; one latent Low | tsc app/spec 0; 186 files / 2562 passed; lint 0; build 669.96 kB, known warning +169.96 kB |
+| A sovereignty | `b62185429a76802d53cbe8836d88ac6ee74aa07f` docs (`d72c51de012cb77a3fbd23e4ea208b03ad3a81c2` implementation) | Historical independent review `ACCEPTED`, 0 Critical/High/Medium; one then-live Low | tsc app/spec 0; 186 files / 2562 passed; lint 0; build 669.96 kB, known warning +169.96 kB |
 | B multi-symbol | `3ae5935` | Orchestrator re-derived central claims and refutations | Docs only; no app gates claimed |
-| C engine | `717171749aa9af81211c7999553684d05f798ac2` docs (`646a441d0fb373dc3d3d555220ebb99006e6a542` implementation) | Independent review `ACCEPTED`, 0 Critical/High/Medium; one bounded Low | tsc app/spec 0; 186 files / 2457 passed; lint 0 including RuleTester; build 651.83 kB, known warning +151.83 kB |
+| C engine | `717171749aa9af81211c7999553684d05f798ac2` docs (`646a441d0fb373dc3d3d555220ebb99006e6a542` implementation) | Historical independent review `ACCEPTED`, 0 Critical/High/Medium; one then-live Low | tsc app/spec 0; 186 files / 2457 passed; lint 0 including RuleTester; build 651.83 kB, known warning +151.83 kB |
 | D units | `1984e5d` | Orchestrator re-derived arithmetic and scope; four negative probes fail, one refuted | tsc app/spec 0; 184 files / 2452 tests; lint 0 |
 | E clock | `cee6cff` | Orchestrator verified scope, mechanism, 5 expected failures / 9 locks | tsc app/spec 0; 184 files / 2431 total cases; lint 0 |
 
+The table immediately above is preserved specialist chronology, not current integrated authority.
 Build sizes include only the known 500 kB initial-budget warning. No accepted closeout build
-showed a Vitest sentinel or unexpected chunk type. Repeated Track C raw suites agreed on
+showed a Vitest sentinel or unexpected chunk type. Repeated historical Track C raw suites agreed on
 186/2457: versus historical `b06fb62` at 185/2450, registry +5 and boundary net +2 account for
 the +1 file/+7 tests while frozen-scene stayed unchanged; this corrected documentation only, not
-application or test code. A's residual Low is that
+application or test code. At that historical A head, the residual Low was that
 `sameActivePayload()` omits `files`; it is latent because current file writers advance the exact
-revision clocks. C's residual Low is a syntax-only lexical-shadowing false positive, such as an
-imported forbidden `H` followed by unrelated `export type P<H> = H`; no production occurrence
-was found. Neither Low blocks its branch disposition.
+revision clocks. At that historical C head, the residual Low was a syntax-only lexical-shadowing
+false positive, such as an imported forbidden `H` followed by unrelated `export type P<H> = H`;
+no production occurrence was found. Both findings are **RESOLVED** at the post-Low heads integrated
+above.
 
 ## F. Branch Dispositions
 
 | Branch | Disposition | Reason / condition |
 |---|---|---|
-| `agent/session-sovereignty-v2` | **MERGE AS-IS** | Highest-severity reachable fix; independently accepted. Use normal owner-chosen integration and run fresh combined gates after integration, regardless of conflicts. |
-| `agent/engine-boundary-restoration` | **MERGE AS-IS** | Independently accepted; mechanical boundary detector included. Use normal owner-chosen integration and run fresh combined gates after integration, regardless of conflicts. |
+| `agent/session-sovereignty-v2` | **INTEGRATED, FINAL AUDIT PENDING** | Post-Low head `8e4fec1` is present through merge `97f9f1e`; inherited formatting was corrected by `bbc0648`. |
+| `agent/engine-boundary-restoration` | **INTEGRATED, FINAL AUDIT PENDING** | Post-Low head `44027a4` is present through merge `10c2d1d`; inherited formatting was corrected by `7215f26`. |
 | `agent/unit-semantics` | **MERGE AS-IS** | No arithmetic/persistence/UI behavior change; 35-test executable contract. Run fresh combined gates after integration. |
 | `agent/multisymbol-feasibility` | **RESEARCH ONLY** | No runtime implementation. Promote only after owner chooses view-only scope and RFC identity; translate normative RFC to Spanish. |
 | `agent/clock-authority` | **MERGE AFTER D-E1 through D-E4** | Evidence is valuable, but behavioral remediation and final terminology are owner authority. The probe/docs may be cherry-picked separately if desired. |
 | `agent/landing-product-showcase` | **MERGE AS-IS, SEPARATELY** | Static site is corrected and deployed in its own project; keep separate from emulator runtime integration. |
-| `agent/evolution-wave2-base` | **DO NOT TREAT AS THE FINAL WAVE BUNDLE** | It contains the Wave 1 baseline and orchestration docs, but intentionally does not contain A/C/D/E/B specialist merges. |
+| `integration/evolution-wave2` | **CONTROLLED A+C BUNDLE; FINAL AUDIT PENDING** | Contains post-Low A+C and Central evidence. It is not a release and does not include D/B/E/Landing. |
 
 ## G. Owner Decisions
 
@@ -147,23 +183,19 @@ was found. Neither Low blocks its branch disposition.
 - Human dashboard task: make required checks enforceable on `develop` PRs if desired. CI now
   runs there, but branch protection was not changed.
 
-## I. Recommended Integration Sequence
+## I. Controlled-Integration Handoff
 
-1. Start from current `origin/develop`, reconcile any drift, and preserve this campaign's
-   original-base evidence.
-2. Integrate the verified Wave 1 baseline changes if they have not landed by another route.
-3. Integrate D first because it adds cross-surface regression coverage with minimal production
-   change, then run fresh combined gates even if integration had no conflict.
-4. Integrate A as its own high-risk change and run all five combined gates plus owner-switch
-   mutations, regardless of whether conflict resolution was needed.
-5. Integrate C as its own high-risk change and run all five combined gates plus lint-rule and
-   generic capability mutations, regardless of whether conflict resolution was needed.
-6. Run a fresh combined full suite/build again after the final A+C+D composition. Individual
-   green branches and conflict-free integration are not evidence of combined green behavior.
-7. Keep B and E out of runtime release until their listed decisions are made. Integrate landing
-   through its separate static-site path.
+1. Treat post-Low A+C plus Central as already integrated on `integration/evolution-wave2`; do not
+   re-merge specialist branches or reapply the two Prettier-only corrections.
+2. Have a separate final auditor inspect the exact reconciliation tip and independently run the
+   required branch-final gates. This implementer has not performed or passed that audit.
+3. Run the pending pipeline gates in the controller/auditor phase and record exact evidence.
+4. Record the exact audited commit SHA in the later audit-result follow-up; do not rewrite this
+   reconciliation commit to self-reference its own SHA.
+5. Keep D, B, E, and Landing at their existing dispositions. They are outside this A+C controlled
+   integration and Phase 7 does not reopen them.
 
-No merge, PR, or push is performed by this synthesis.
+No push, PR, release merge, or remote-system mutation is performed by this reconciliation.
 
 ## J. Engineering Lessons
 
@@ -199,6 +231,7 @@ No merge, PR, or push is performed by this synthesis.
 - Track E: `clock-authority/CLOCK_AUTHORITY_INVESTIGATION.md`,
   `CLOCK_SEMANTICS_CONTRACT.md`, `PROGRESS.md`
 
-Specialist artifacts remain on their respective branches until explicitly integrated. The
-central synthesis records their verified heads and dispositions without pretending their files
-already exist together on one branch.
+A/C and Central artifacts now exist together on `integration/evolution-wave2`. B/D/E artifacts
+remain on their respective specialist branches, and Landing remains separate. No dependency or
+lockfile changes were introduced by A/C/Central; C changed `emulador/package.json` only so its
+RuleTester runs inside `npm run lint`.

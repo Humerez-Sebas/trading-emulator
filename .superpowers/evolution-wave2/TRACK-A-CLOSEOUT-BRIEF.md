@@ -1,5 +1,12 @@
 # Track A Closeout Brief
 
+> **SUPERSEDED HISTORICAL BRIEF (2026-08-29).** Preserve the body below as the record of
+> earlier correction work; do not resume from it. The historical accepted docs head was
+> `b62185429a76802d53cbe8836d88ac6ee74aa07f` (implementation `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`).
+> The current post-Low head is `8e4fec1942c49c11424ec95f25a4aeed9226892e`, the
+> `sameActivePayload()` omitted-`files` Low is resolved, and Track A was integrated by merge
+> commit `97f9f1ebffeaf2f1c74c0b119a825dd23723e0d6`. Final branch audit remains pending.
+
 Use this brief only to resume Track A after the 2026-08-13 pause.
 
 ## Workspace

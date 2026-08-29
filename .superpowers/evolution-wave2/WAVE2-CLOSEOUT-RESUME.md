@@ -1,5 +1,10 @@
 # Wave 2 Closeout Resume
 
+> **SUPERSEDED HISTORICAL HANDOFF (2026-08-29).** This document preserves the
+> pre-integration pause chronology and must not be executed. Track A and Track C are now
+> integrated on `integration/evolution-wave2`; use `WAVE2-RESUME-PROMPT.md` for the current
+> controlled-integration handoff. Final independent audit and pipeline gates remain pending.
+
 Paste this file into a fresh session. It assumes zero conversational memory.
 
 ## Mission

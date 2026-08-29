@@ -44,8 +44,9 @@ Applies PHILOSOPHY §3.4 (reversibility & ceremony) and §5.3 (smallest green st
 - PR body: what/why, evidence (test counts, gates), deviations from plan, and anything
   flagged for reviewer attention. End with the standard generated-with footer.
 - CI (`.github/workflows/ci.yml`) runs pipeline (ruff + pytest + pip-audit) and frontend
-  (lint + format + `ng test` + build + informational npm audit) on PRs to main and pushes
-  to main. Vercel production deploy runs ONLY on push to main after checks pass
+  (lint + format + `ng test` + build + informational npm audit) on PRs targeting `main`
+  or `develop`, and on pushes to `main`. Vercel production deploy runs ONLY on pushes to
+  `main` after checks pass
   (Vercel's own main auto-deploy is disabled to avoid double deploys; PR previews stay
   native Vercel).
 - Branch protection on `main` requires the CI checks. Changing protection rules has no

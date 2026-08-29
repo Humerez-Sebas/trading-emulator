@@ -11,15 +11,72 @@ opened by fixing.
 
 | Fact | Value |
 | :--- | :--- |
-| Wave 1 baseline (`develop`) | `a2ca53b44f678dd285cd90f31ee644696664f32a` |
-| Drift check at session open and 2026-08-29 final reconciliation | NONE — `develop` == `origin/develop` == `a2ca53b` |
-| Wave 2 integration branch | `agent/evolution-wave2-base` |
-| Integration worktree | `C:\Users\78701\Desktop\trading-emulator-wave2-base` |
+| Wave 1 / `origin/develop` base | `a2ca53b44f678dd285cd90f31ee644696664f32a` |
+| Current `origin/main` | `ad69d7dd582bfa5c977b3816fb46101335df6c35` |
+| Main/develop parity check | VALID — `origin/develop..origin/main` is empty |
 | **`WAVE2_BASE_SHA`** | **`894d72be95f8ad4b8d63e629114e486e825b13d7`** |
+| Controlled-integration branch | `integration/evolution-wave2` |
+| Controlled-integration worktree | `C:\Users\78701\Desktop\trading-emulator-wave2-integration` |
+| Pre-reconciliation tip | `80ac7b68871412dab83d3a04a4696a18b2340489` |
 
-Nothing has been merged into `develop`. Nothing has been pushed to `origin`.
+Nothing has been merged into `develop` by this integration. Nothing has been pushed to
+`origin`.
 
-### How the baseline was built
+## CURRENT CONTROLLED-INTEGRATION AUTHORITY — PHASE 7
+
+This section supersedes older operational status, `MERGE AS-IS`, current-head, and residual-Low
+claims below. Those records remain as dated specialist chronology; the integrated state here is
+the authority for the next controller and the later independent auditor.
+
+### Topology and integration history
+
+- A, C, and Central have the same specialist base:
+  `894d72be95f8ad4b8d63e629114e486e825b13d7`. Pairwise A/C/Central merge-base checks all resolve
+  to that commit. Central's later branch work was documentation/evidence only.
+- Track A's historical accepted docs head was
+  `b62185429a76802d53cbe8836d88ac6ee74aa07f`, with implementation
+  `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`. Its current post-Low head is
+  `8e4fec1942c49c11424ec95f25a4aeed9226892e`; the `sameActivePayload()` omitted-`files` Low is
+  **RESOLVED**. Merge commit `97f9f1ebffeaf2f1c74c0b119a825dd23723e0d6` integrated A.
+- The first A stage failed `format:check` on eight A-owned files. `origin/develop` passed, and the
+  untouched A head failed identically, establishing inherited specialist formatting rather than
+  merge damage. Correction `bbc06482b9a71bc5957cbb3508a629fdc8467139` applied Prettier only.
+  Final A-stage evidence: focused **5 files / 171 tests**, full **186 files / 2563 tests**, app and
+  spec tsc 0, lint 0, format 0, and build **669.99 kB** with only the known **+169.99 kB** initial
+  budget warning.
+- Track C's historical accepted docs head was
+  `717171749aa9af81211c7999553684d05f798ac2`, with implementation
+  `646a441d0fb373dc3d3d555220ebb99006e6a542`. Its current post-Low head is
+  `44027a4557c16d4260cbf1c216a01f307d069b46`; the generic/lexical alias-shadowing false-positive
+  Low is **RESOLVED**. Merge commit `10c2d1d241b6c1a0ee73992c3e27299ee0b75a3f` integrated C.
+- The first C stage failed `format:check` on four C-owned files. The pre-C integration tree passed,
+  and the untouched C head failed identically. Correction
+  `7215f2659af1dc26fd53bd172b43eef8fea19744` applied Prettier only. Final A+C-stage evidence:
+  RuleTester 0, focused Engine suite **7 files / 87 tests**, full **189 files / 2603 tests**, app
+  and spec tsc 0, lint 0, format 0, and build **669.99 kB** with only the known **+169.99 kB**
+  warning.
+- Central historical head `6974f769b0f1d2c5a084cbc0aad1c69a0e79b020` was integrated by
+  `80ac7b68871412dab83d3a04a4696a18b2340489`. Relative to the shared base it changed only the six
+  Wave 2 evidence files plus the intentional root `PROGRESS.md` deletion.
+
+### Composition evidence and remaining gates
+
+The combined automated semantic matrix passed **9 files / 280 tests** on the actual A+C tree. It
+covers auth transitions and hard logout, A-B-A storage isolation, open/restore, replay,
+layout/drawings/panels persistence, chart-boundary interaction, and placement preview. This is
+strong composed semantic evidence, but no manual browser smoke was run and no single browser-level
+end-to-end test spans all ten steps. Do not imply either form of coverage exists.
+
+No dependency or lockfile changes were introduced by A, C, or Central. C changed
+`emulador/package.json` only to extend the `lint` script; dependency declarations and
+`package-lock.json` are unchanged.
+
+**Final independent audit: PENDING. Pipeline gates: PENDING.** The integrated branch must not be
+represented as finally audited or released. The current tip becomes the dedicated documentation
+reconciliation commit created from pre-reconciliation tip `80ac7b6`; its SHA cannot be embedded
+before the commit exists. Record the exact final audited tip in the later audit-result follow-up.
+
+### How the original specialist baseline was built
 
 | # | Commit | What |
 | :-- | :--- | :--- |
@@ -134,9 +191,9 @@ canonical repo (never `.claude/worktrees/`).
 
 | Agent | Track | Worktree | Branch | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | **ACCEPTED** @ `b62185429a76802d53cbe8836d88ac6ee74aa07f` (implementation `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`) |
+| A | Session Sovereignty V2 | `trading-emulator-session-sovereignty` | `agent/session-sovereignty-v2` | **HISTORICAL ACCEPTANCE** @ `b62185429a76802d53cbe8836d88ac6ee74aa07f` (implementation `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`); current integrated state is above |
 | B | Multi-symbol feasibility | `trading-emulator-multisymbol` | `agent/multisymbol-feasibility` | **VERIFIED RESEARCH** @ `3ae5935` |
-| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | **ACCEPTED** @ `717171749aa9af81211c7999553684d05f798ac2` (implementation `646a441d0fb373dc3d3d555220ebb99006e6a542`) |
+| C | Engine boundary restoration | `trading-emulator-engine-boundary` | `agent/engine-boundary-restoration` | **HISTORICAL ACCEPTANCE** @ `717171749aa9af81211c7999553684d05f798ac2` (implementation `646a441d0fb373dc3d3d555220ebb99006e6a542`); current integrated state is above |
 | D | Unit semantics & UI contract | `trading-emulator-unit-semantics` | `agent/unit-semantics` | **VERIFIED** @ `1984e5d` |
 | E | Clock authority | `trading-emulator-clock-authority` | `agent/clock-authority` | **VERIFIED / OWNER-GATED** @ `cee6cff` |
 
@@ -304,7 +361,10 @@ Branch disposition: **MERGE AS-IS.** The production delta is two comment/doc cor
 a module-private rename, guarded by 35 new cross-surface tests, with all four gates green. The
 vocabulary strings and the persisted rename are explicitly NOT in it and remain owner-gated.
 
-## FINAL INDEPENDENT VERIFICATION — AGENT A (session sovereignty)
+## HISTORICAL FINAL INDEPENDENT VERIFICATION — AGENT A (session sovereignty)
+
+> Superseded for current status by Phase 7 above. This section records the pre-Low specialist
+> acceptance and its then-live residual finding; it is not the integrated branch verdict.
 
 Branch `agent/session-sovereignty-v2`, final documentation head
 `b62185429a76802d53cbe8836d88ac6ee74aa07f`, worktree clean. Accepted implementation head:
@@ -329,7 +389,10 @@ combined gates after integration regardless of whether conflicts occur. No Supab
 dependency, lockfile, recovery UI, cross-tab framework, push, PR, deployment, or `develop`
 mutation occurred.
 
-## FINAL INDEPENDENT VERIFICATION — AGENT C (engine boundary)
+## HISTORICAL FINAL INDEPENDENT VERIFICATION — AGENT C (engine boundary)
+
+> Superseded for current status by Phase 7 above. This section records the pre-Low specialist
+> acceptance and its then-live residual finding; it is not the integrated branch verdict.
 
 Branch `agent/engine-boundary-restoration`, final documentation head
 `717171749aa9af81211c7999553684d05f798ac2`, worktree clean. Accepted implementation head:
@@ -424,3 +487,11 @@ mutation occurred.
   `develop == origin/develop == a2ca53b44f678dd285cd90f31ee644696664f32a`; unrelated untracked
   `.superpowers/audit-2026-08-10/` remained untouched. No push, PR, merge, deployment, Supabase,
   Vercel, dependency/lockfile, remote, or completed-track change occurred.
+- **2026-08-29 controlled integration and Phase 7 reconciliation** — On
+  `integration/evolution-wave2`, post-Low A (`8e4fec1`) and C (`44027a4`) were integrated by
+  `97f9f1e` and `10c2d1d`; inherited format failures were corrected with Prettier-only commits
+  `bbc0648` and `7215f26`. Central evidence head `6974f76` followed through `80ac7b6`. A-stage and
+  A+C-stage frontend gates passed with the counts recorded in the current-authority section, and
+  the combined semantic matrix passed 9 files / 280 tests. No manual browser smoke or one-test
+  ten-step browser E2E was performed. This reconciliation follows `80ac7b6`; final independent
+  audit and pipeline gates remain pending.
