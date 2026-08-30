@@ -1,16 +1,19 @@
 // @ts-check
 'use strict';
 
+const path = require('node:path');
+
 /**
  * Prevent raw lightweight-charts handles from crossing out of the chart domain.
  *
  * Scope is set in eslint.config.js: production TypeScript under src/app, excluding specs.
- * Chart-domain files may import owned handles but may not export them; non-domain files may
- * neither import nor export them. The rule permits lightweight-charts payload/data types while
- * rejecting the four handle types the retired RFC-004/RFC-005 bridge exposed through static
- * imports, TypeScript import types, direct re-exports, and exported aliases of tracked
- * bindings. Namespace imports and star re-exports are rejected because they can expose
- * handles without a named specifier.
+ * Outside the chart domain, the rule rejects the four handle types exposed by the retired
+ * RFC-004/RFC-005 bridge, the createChart factory, and relative dependency edges to chart-domain
+ * modules other than the five established host-facing modules below. Chart-domain files remain
+ * trusted owners: they may import handles and expose handle-bearing signatures for internal
+ * sibling composition. Direct re-exports and direct exported aliases rooted in tracked library
+ * bindings remain rejected. This is intentionally syntax- and dependency-edge enforcement, not
+ * arbitrary type-flow, dynamic import/require, or TypeScript path-alias analysis.
  */
 
 const FORBIDDEN_HANDLES = new Set([
@@ -20,12 +23,39 @@ const FORBIDDEN_HANDLES = new Set([
   'ISeriesMarkersPluginApi',
 ]);
 
+const HOST_FACING_CHART_MODULES = new Set([
+  'chart-engine',
+  'chart-event-bus',
+  'chart-sync-bus',
+  'render-model',
+  'display-time',
+]);
+
+function resolveChartDomainModule(filename, source) {
+  if (!source.startsWith('.')) return null;
+
+  const pathApi = /^[A-Za-z]:[\\/]/.test(filename) || filename.includes('\\') ? path.win32 : path;
+  const portableSource = source.replace(/[\\/]/g, pathApi.sep);
+  const resolved = pathApi.resolve(pathApi.dirname(filename), portableSource);
+  const normalized = resolved.replace(/\\/g, '/').replace(/\.ts$/i, '');
+  const marker = '/src/app/domain/chart';
+  const markerIndex = normalized.toLowerCase().lastIndexOf(marker);
+  if (markerIndex === -1) return null;
+
+  const suffix = normalized.slice(markerIndex + marker.length);
+  if (suffix !== '' && !suffix.startsWith('/')) return null;
+
+  const module = suffix.replace(/^\//, '');
+  if (HOST_FACING_CHART_MODULES.has(module)) return null;
+  return module || 'domain/chart';
+}
+
 /** @type {import('eslint').Rule.RuleModule} */
 const noChartHandles = {
   meta: {
     type: 'problem',
     docs: {
-      description: 'Disallow importing raw lightweight-charts handles outside the chart domain.',
+      description: 'Enforce handle-free imports across the chart-domain public boundary.',
     },
     schema: [
       {
@@ -36,9 +66,13 @@ const noChartHandles = {
     ],
     messages: {
       forbiddenNamedImport:
-        'Do not import {{name}} outside src/app/domain/chart. Use a narrow ChartEngine or Capability contract instead.',
+        'Do not import {{name}} outside src/app/domain/chart. Use a narrow ChartEngine or host-facing chart contract instead.',
       forbiddenNamespaceImport:
         'Do not namespace-import lightweight-charts outside src/app/domain/chart; it bypasses raw-handle import checks. Import only the specific payload/data types needed.',
+      forbiddenChartFactoryImport:
+        'Do not import createChart outside src/app/domain/chart. ChartEngine owns chart construction.',
+      forbiddenChartInternalImport:
+        'Do not import internal chart-domain module {{module}} outside src/app/domain/chart. Use an established host-facing chart contract.',
     },
   },
 
@@ -120,6 +154,21 @@ const noChartHandles = {
         }
       },
       ImportDeclaration(node) {
+        if (!allowImports) {
+          const internalModule = resolveChartDomainModule(
+            context.filename,
+            String(node.source.value),
+          );
+          if (internalModule !== null) {
+            context.report({
+              node: node.source,
+              messageId: 'forbiddenChartInternalImport',
+              data: { module: internalModule },
+            });
+            return;
+          }
+        }
+
         if (node.source.value !== 'lightweight-charts') return;
         if (allowImports) return;
 
@@ -130,7 +179,12 @@ const noChartHandles = {
           }
           if (specifier.type !== 'ImportSpecifier') continue;
 
-          reportNamed(specifier, importedName(specifier));
+          const name = importedName(specifier);
+          if (name === 'createChart') {
+            context.report({ node: specifier, messageId: 'forbiddenChartFactoryImport' });
+          } else {
+            reportNamed(specifier, name);
+          }
         }
       },
       TSImportType(node) {

@@ -47,6 +47,17 @@ ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
       name: 'allows a data-only direct re-export',
       code: `export type { CandlestickData } from 'lightweight-charts';`,
     },
+    ...[
+      'chart-engine',
+      'chart-event-bus',
+      'chart-sync-bus',
+      'render-model',
+      'display-time',
+    ].map((module) => ({
+      name: `allows the established host-facing ${module} module`,
+      filename: 'src/app/components/chart/public-contract.ts',
+      code: `import type { PublicContract } from '../../domain/chart/${module}';`,
+    })),
   ],
   invalid: [
     ...['IChartApi', 'ISeriesApi', 'IPriceLine', 'ISeriesMarkersPluginApi'].map((handle) => ({
@@ -84,6 +95,63 @@ ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
       code: `export type * from 'lightweight-charts';`,
       errors: [{ messageId: 'forbiddenNamespaceImport' }],
     },
+    {
+      name: 'rejects createChart outside the chart domain',
+      filename: 'src/app/components/chart/raw-chart.ts',
+      code: `import { createChart } from 'lightweight-charts';`,
+      errors: [{ messageId: 'forbiddenChartFactoryImport' }],
+    },
+    {
+      name: 'rejects an aliased createChart outside the chart domain',
+      filename: 'src/app/pages/reflection/raw-chart.ts',
+      code: `import { createChart as buildChart } from 'lightweight-charts';`,
+      errors: [{ messageId: 'forbiddenChartFactoryImport' }],
+    },
+    {
+      name: 'rejects deriving the init chart from the internal capability contract',
+      filename: 'src/app/components/chart/capability-leak.ts',
+      code: `
+        import type { Capability } from '../../domain/chart/capability';
+        export type LeakedChart = Parameters<Capability['init']>[0];
+      `,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects a sibling-relative internal capability import from a Windows filename',
+      filename: 'C:\\repo\\emulador\\src\\app\\domain\\reflection\\capability-leak.ts',
+      code: `import type { Capability } from '../chart/capability';`,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects the internal capability registry with an optional TypeScript extension',
+      filename: 'src/app/components/chart/capability-leak.ts',
+      code: `import { createBuiltInCapability } from '../../domain/chart/capability-registry.ts';`,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects a nested concrete capability import',
+      filename: 'src/app/pages/reflection/capability-leak.ts',
+      code: `import { TradingCapability } from '../../domain/chart/capabilities/trading-capability';`,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects the internal raw-handle coordinate helpers',
+      filename: 'src/app/components/chart/capability-leak.ts',
+      code: `import { timeForX } from '../../domain/chart/time-coordinates';`,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects importing the chart-domain root',
+      filename: 'src/app/components/chart/capability-leak.ts',
+      code: `import * as ChartDomain from '../../domain/chart';`,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects importing the chart-domain index',
+      filename: 'src/app/components/chart/capability-leak.ts',
+      code: `import * as ChartDomain from '../../domain/chart/index';`,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
   ],
 });
 
@@ -92,6 +160,17 @@ domainRuleTester.run('no-chart-handles (trusted chart-domain imports)', engineBo
     {
       name: 'allows the chart domain to import handles it owns',
       code: `import type { IChartApi } from 'lightweight-charts';`,
+      options: [{ allowImports: true }],
+    },
+    {
+      name: 'allows an exported internal interface to use an owned chart handle',
+      filename: 'src/app/domain/chart/internal-capability.ts',
+      code: `
+        import type { IChartApi } from 'lightweight-charts';
+        export interface InternalCapability {
+          init(chart: IChartApi): void;
+        }
+      `,
       options: [{ allowImports: true }],
     },
     {
