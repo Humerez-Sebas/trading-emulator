@@ -17,6 +17,16 @@ function describeError(e: unknown): string {
   return 'Algo salió mal, inténtalo de nuevo';
 }
 
+function hardNavigationTarget(returnUrl: string | null, baseURI: string): string {
+  if (!returnUrl?.startsWith('/')) return '/mercados';
+  try {
+    const base = new URL(baseURI);
+    return new URL(returnUrl, baseURI).origin === base.origin ? returnUrl : '/mercados';
+  } catch {
+    return '/mercados';
+  }
+}
+
 @Injectable()
 export class AuthEffects {
   private actions$ = inject(Actions);
@@ -53,12 +63,7 @@ export class AuthEffects {
             from(this.auth.signIn(email, password)).pipe(
               mergeMap((user) => {
                 if (currentOwnerId !== user.id) {
-                  const target =
-                    returnUrl?.startsWith('/') &&
-                    !returnUrl.startsWith('//') &&
-                    !returnUrl.includes('\\')
-                      ? returnUrl
-                      : '/mercados';
+                  const target = hardNavigationTarget(returnUrl, this.document.baseURI);
                   this.document.location.assign(target);
                   return EMPTY;
                 }

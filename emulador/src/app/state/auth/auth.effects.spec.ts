@@ -45,7 +45,10 @@ describe('AuthEffects', () => {
         provideMockStore(),
         { provide: SupabaseAuthService, useValue: auth },
         { provide: Router, useValue: router },
-        { provide: DOCUMENT, useValue: { location: { assign } } },
+        {
+          provide: DOCUMENT,
+          useValue: { baseURI: 'https://app.example/login', location: { assign } },
+        },
         { provide: OwnerIdentityService, useValue: fixedOwnerIdentity('u1') },
       ],
     });
@@ -206,7 +209,7 @@ describe('AuthEffects', () => {
       expect(assign).not.toHaveBeenCalled();
     });
 
-    it.each(['https://evil.example', '//evil.example', '/\\evil.example'])(
+    it.each(['https://evil.example', '//evil.example', '/\\evil.example', '/\n/evil.example'])(
       'rejects external return target %s',
       async (returnUrl) => {
         auth.signIn.mockResolvedValue({ id: 'u2', email: 'b@example.com' });
@@ -216,6 +219,17 @@ describe('AuthEffects', () => {
         sub.unsubscribe();
       },
     );
+
+    it('preserves a same-origin return target containing a backslash in query data', async () => {
+      auth.signIn.mockResolvedValue({ id: 'u2', email: 'b@example.com' });
+      const returnUrl = '/home?next=\\value';
+      const sub = effects.login$.subscribe();
+
+      actions$.next(AuthActions.login({ email: 'b@example.com', password: 'pass12', returnUrl }));
+      await vi.waitFor(() => expect(assign).toHaveBeenCalledWith(returnUrl));
+
+      sub.unsubscribe();
+    });
   });
 
   describe('navigateAfterAuth$', () => {
