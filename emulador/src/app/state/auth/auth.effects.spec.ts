@@ -206,7 +206,7 @@ describe('AuthEffects', () => {
       expect(assign).not.toHaveBeenCalled();
     });
 
-    it.each(['https://evil.example', '//evil.example'])(
+    it.each(['https://evil.example', '//evil.example', '/\\evil.example'])(
       'rejects external return target %s',
       async (returnUrl) => {
         auth.signIn.mockResolvedValue({ id: 'u2', email: 'b@example.com' });

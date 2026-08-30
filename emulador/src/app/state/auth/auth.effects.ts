@@ -54,7 +54,9 @@ export class AuthEffects {
               mergeMap((user) => {
                 if (currentOwnerId !== user.id) {
                   const target =
-                    returnUrl?.startsWith('/') && !returnUrl.startsWith('//')
+                    returnUrl?.startsWith('/') &&
+                    !returnUrl.startsWith('//') &&
+                    !returnUrl.includes('\\')
                       ? returnUrl
                       : '/mercados';
                   this.document.location.assign(target);
