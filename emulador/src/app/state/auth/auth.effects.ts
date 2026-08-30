@@ -52,7 +52,7 @@ export class AuthEffects {
           mergeMap((currentOwnerId) =>
             from(this.auth.signIn(email, password)).pipe(
               mergeMap((user) => {
-                if (currentOwnerId && currentOwnerId !== user.id) {
+                if (currentOwnerId !== user.id) {
                   const target =
                     returnUrl?.startsWith('/') && !returnUrl.startsWith('//')
                       ? returnUrl

@@ -149,6 +149,24 @@ describe('AuthEffects', () => {
       );
     });
 
+    it('ownerless explicit login crosses a hard boundary before authSuccess', async () => {
+      vi.spyOn(TestBed.inject(OwnerIdentityService), 'ownerId').mockResolvedValue(null);
+      auth.signIn.mockResolvedValue(mockUser);
+      const emitted: unknown[] = [];
+      const sub = effects.login$.subscribe((action) => emitted.push(action));
+
+      actions$.next(
+        AuthActions.login({ email: 'a@b.com', password: 'pass12', returnUrl: '/home' }),
+      );
+      await vi.waitFor(() => expect(assign.mock.calls.length + emitted.length).toBe(1));
+
+      expect({ assigned: assign.mock.calls, emitted }).toEqual({
+        assigned: [['/home']],
+        emitted: [],
+      });
+      sub.unsubscribe();
+    });
+
     it('A-authenticated direct login as B crosses a hard boundary before authSuccess', async () => {
       auth.signIn.mockResolvedValue({ id: 'u2', email: 'b@example.com' });
       const emitted: unknown[] = [];
