@@ -1,11 +1,18 @@
 # Track C Closeout Brief
 
-> **SUPERSEDED HISTORICAL BRIEF (2026-08-29).** Preserve the body below as the record of
-> earlier correction work; do not resume from it. The historical accepted docs head was
-> `717171749aa9af81211c7999553684d05f798ac2` (implementation `646a441d0fb373dc3d3d555220ebb99006e6a542`).
-> The current post-Low head is `44027a4557c16d4260cbf1c216a01f307d069b46`, the generic/
-> lexical alias-shadowing false-positive Low is resolved, and Track C was integrated by merge
-> commit `10c2d1d241b6c1a0ee73992c3e27299ee0b75a3f`. Final branch audit remains pending.
+> **SUPERSEDED HISTORICAL BRIEF (final authority updated 2026-08-30).** Preserve the body below as
+> earlier correction chronology; do not resume from it. The historical accepted docs head remains
+> `717171749aa9af81211c7999553684d05f798ac2` (implementation
+> `646a441d0fb373dc3d3d555220ebb99006e6a542`); post-Low head
+> `44027a4557c16d4260cbf1c216a01f307d069b46` resolved the alias-shadowing Low and was integrated by
+> merge `10c2d1d241b6c1a0ee73992c3e27299ee0b75a3f`. The first whole-range audit at reconciliation
+> commit `531da9e24b7cdf43ba6190231f9da0219e13623a` was BLOCKED because inferred/internal dependency
+> edges escaped the chart detector. Corrections `f83b3d1` and `3e903ae` enforce `createChart`/
+> internal imports, static TypeScript import types/re-exports, `createChart` re-exports, and `.js`
+> specifier normalization; final RuleTester coverage is 64 scenarios, and every final chart review
+> ended with no findings. A NEW whole-branch audit through runtime/code tip `3e903ae` passed with
+> zero Critical/High/Medium; current candidate disposition is READY FOR PR TO DEVELOP. No PR,
+> push, or `develop` mutation occurred.
 
 Use this brief only after Track A reaches independent acceptance.
 

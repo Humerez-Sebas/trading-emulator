@@ -1,9 +1,14 @@
 # Wave 2 Closeout Resume
 
-> **SUPERSEDED HISTORICAL HANDOFF (2026-08-29).** This document preserves the
-> pre-integration pause chronology and must not be executed. Track A and Track C are now
-> integrated on `integration/evolution-wave2`; use `WAVE2-RESUME-PROMPT.md` for the current
-> controlled-integration handoff. Final independent audit and pipeline gates remain pending.
+> **SUPERSEDED HISTORICAL HANDOFF (final authority updated 2026-08-30).** This document preserves
+> the pre-integration pause chronology and must not be executed. Track A and Track C are integrated
+> on `integration/evolution-wave2`; use `WAVE2-RESUME-PROMPT.md` for current authority. The first
+> whole-range audit at reconciliation commit `531da9e24b7cdf43ba6190231f9da0219e13623a` was BLOCKED
+> by two Medium findings; after the recorded auth/chart correction chains, a NEW independent audit
+> of `a2ca53b..3e903aedbd44d43b3d0f31a22ffa3496f9dc1f06` passed with 0 Critical / 0 High /
+> 0 Medium / 1 Low, and pipeline gates passed. The candidate is READY FOR PR TO DEVELOP; no PR,
+> push, or `develop` mutation has occurred. The sole Low and inherited informational npm advisories
+> remain recorded in the current handoff.
 
 Paste this file into a fresh session. It assumes zero conversational memory.
 

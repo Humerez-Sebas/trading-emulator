@@ -7,13 +7,24 @@ Campaign: 2026-08-12 to 2026-08-29. Specialist base:
 `80ac7b68871412dab83d3a04a4696a18b2340489`. Nothing in this integration was merged into or
 pushed from `develop`.
 
+> **CURRENT AUTHORITY — FINAL AUDIT RESULT (2026-08-30).** This documentation-only follow-up is
+> after final runtime/code audited tip `3e903aedbd44d43b3d0f31a22ffa3496f9dc1f06`. It supersedes
+> the Phase 7 pending status while preserving the reconciliation and failed-audit chronology below.
+
 ## A. Executive Verdict
 
-Phase 7 reconciles the controlled A+C integration rather than declaring a release. Post-Low Track
-A and Track C, followed by Central's documentation/evidence-only head, are now composed on
-`integration/evolution-wave2`. Both formerly residual Low findings are resolved. Stage gates and
-a combined semantic matrix passed on the composed tree, but the final independent audit and
-pipeline gates are **PENDING**; this implementer document must not represent either as passed.
+The controlled A+C integration is a **candidate READY FOR PR TO DEVELOP**. A NEW independent
+whole-branch auditor inspected `origin/develop` `a2ca53b44f678dd285cd90f31ee644696664f32a`
+through exact runtime/code audited tip `3e903aedbd44d43b3d0f31a22ffa3496f9dc1f06` and returned
+**PASS — 0 Critical / 0 High / 0 Medium / 1 Low**. Pipeline gates are PASS. This is candidate PR
+readiness, not a release: no PR, push, merge into `develop`, deployment, or remote mutation has
+occurred.
+
+The reconciliation commit was `531da9e24b7cdf43ba6190231f9da0219e13623a`. Its first
+independent whole-range audit was **BLOCKED** by two Medium findings: ownerless explicit login did
+not rehydrate workspace NgRx, and the chart boundary detector allowed inferred/internal dependency
+edges. The correction and re-audit chronology is retained below rather than rewriting that failed
+audit as a pass.
 
 Track D remains a separately verified implementation branch, B remains research-only, E remains
 owner-gated, and Landing remains a separately deployed static branch. Their dispositions are
@@ -114,9 +125,38 @@ covering auth transitions/hard logout, A-B-A storage isolation, open/restore, re
 layout/drawings/panels persistence, chart-boundary interaction, and placement preview. No manual
 browser smoke was run, and no single browser-level end-to-end test spans all ten steps.
 
-**Final independent audit: PENDING. Pipeline gates: PENDING.** The current tip after this document
-is committed becomes the dedicated reconciliation commit. Its SHA cannot be recorded inside the
-commit before it exists; the later audit-result follow-up must record the exact final audited tip.
+### Final audit chronology and evidence
+
+- Auth `40191dee2974263dffeb7c65f144fd1e4559ebdd` hard reloads `null -> user`.
+  `3a447c6078f14c88fa987595f8bc7a59fbbfd7e4` was an intermediate backslash blacklist;
+  `894dab7030063aeeb5730ca92e781cdfe2599277` supersedes it with WHATWG same-origin
+  return-target validation. The final focused auth suite passed **23 tests**, and the full suite
+  contains four net-new auth regressions versus 2603.
+- Chart `f83b3d14d3dcb32906c5b5c296c98181379c2258` enforced `createChart`/internal
+  dependency imports. `3e903aedbd44d43b3d0f31a22ffa3496f9dc1f06` extended enforcement to
+  static TypeScript import types, re-exports, `createChart` re-exports, and `.js` specifier
+  normalization. Final RuleTester coverage is **64 scenarios**.
+- Every per-fix review ended with no findings on the final auth and chart states. A NEW independent
+  auditor then reviewed the complete `a2ca53b..3e903ae` range and returned the final PASS.
+
+Fresh auditor gates at `3e903ae`: app tsc PASS; spec tsc PASS; Angular **189 files / 2607 tests**
+PASS; lint plus chart RuleTester PASS; format PASS; build PASS at **670.12 kB**; pipeline pytest
+**121 passed**; Ruff check and format PASS; `pip-audit` reports no known vulnerabilities; diff
+check clean; worktree clean.
+
+The sole Low is initial-bundle growth from base **651.60 kB** to final **670.12 kB**,
+**+18.52 kB (+2.84%)**. The build passes with the accepted budget warning. This result does not
+attribute the growth to Arrow/parquet.
+
+> **NON-BLOCKING INHERITED OBSERVATION:** `npm audit` reported **25 advisories (1 critical, 19
+> high, 2 moderate, 3 low)**. Dependency declarations and `package-lock.json` are unchanged in
+> `base..tip`; CI explicitly treats `npm audit` as informational. This is prominently recorded
+> but is not a candidate finding.
+
+There is no dependency/lockfile, migration, RLS, Edge Function, Supabase schema, or pipeline
+dependency delta. No manual browser smoke and no single browser-level test spanning all ten
+account-lifecycle steps remain explicit limitations. The auditor determined they do not block
+candidate PR readiness given the composed automated evidence and full fresh gates.
 
 ### Historical specialist evidence
 
@@ -145,13 +185,13 @@ above.
 
 | Branch | Disposition | Reason / condition |
 |---|---|---|
-| `agent/session-sovereignty-v2` | **INTEGRATED, FINAL AUDIT PENDING** | Post-Low head `8e4fec1` is present through merge `97f9f1e`; inherited formatting was corrected by `bbc0648`. |
-| `agent/engine-boundary-restoration` | **INTEGRATED, FINAL AUDIT PENDING** | Post-Low head `44027a4` is present through merge `10c2d1d`; inherited formatting was corrected by `7215f26`. |
+| `agent/session-sovereignty-v2` | **INTEGRATED; FINAL STATE REVIEWED WITH NO FINDINGS** | Post-Low head `8e4fec1` is present through merge `97f9f1e`; inherited formatting was corrected by `bbc0648`; final auth corrections are in audited integration tip `3e903ae`. |
+| `agent/engine-boundary-restoration` | **INTEGRATED; FINAL STATE REVIEWED WITH NO FINDINGS** | Post-Low head `44027a4` is present through merge `10c2d1d`; inherited formatting was corrected by `7215f26`; final detector corrections are in audited integration tip `3e903ae`. |
 | `agent/unit-semantics` | **MERGE AS-IS** | No arithmetic/persistence/UI behavior change; 35-test executable contract. Run fresh combined gates after integration. |
 | `agent/multisymbol-feasibility` | **RESEARCH ONLY** | No runtime implementation. Promote only after owner chooses view-only scope and RFC identity; translate normative RFC to Spanish. |
 | `agent/clock-authority` | **MERGE AFTER D-E1 through D-E4** | Evidence is valuable, but behavioral remediation and final terminology are owner authority. The probe/docs may be cherry-picked separately if desired. |
 | `agent/landing-product-showcase` | **MERGE AS-IS, SEPARATELY** | Static site is corrected and deployed in its own project; keep separate from emulator runtime integration. |
-| `integration/evolution-wave2` | **CONTROLLED A+C BUNDLE; FINAL AUDIT PENDING** | Contains post-Low A+C and Central evidence. It is not a release and does not include D/B/E/Landing. |
+| `integration/evolution-wave2` | **CANDIDATE READY FOR PR TO DEVELOP** | Whole-branch PASS at runtime/code tip `3e903ae`; 0 Critical/High/Medium, 1 Low. It is not a release and does not include D/B/E/Landing. |
 
 ## G. Owner Decisions
 
@@ -187,15 +227,16 @@ above.
 
 1. Treat post-Low A+C plus Central as already integrated on `integration/evolution-wave2`; do not
    re-merge specialist branches or reapply the two Prettier-only corrections.
-2. Have a separate final auditor inspect the exact reconciliation tip and independently run the
-   required branch-final gates. This implementer has not performed or passed that audit.
-3. Run the pending pipeline gates in the controller/auditor phase and record exact evidence.
-4. Record the exact audited commit SHA in the later audit-result follow-up; do not rewrite this
-   reconciliation commit to self-reference its own SHA.
+2. Treat `3e903aedbd44d43b3d0f31a22ffa3496f9dc1f06` as the exact final runtime/code audited tip. This
+   later documentation-only commit records that SHA and does not alter the audited runtime state.
+3. Preserve the first `531da9e` BLOCKED audit and its two Medium findings as chronology; the later
+   independent PASS follows the complete correction chain rather than replacing that evidence.
+4. Pipeline gates are PASS. Preserve the browser-level limitations and inherited informational
+   `npm audit` observation in any candidate PR description.
 5. Keep D, B, E, and Landing at their existing dispositions. They are outside this A+C controlled
    integration and Phase 7 does not reopen them.
 
-No push, PR, release merge, or remote-system mutation is performed by this reconciliation.
+No push, PR, release merge, or remote-system mutation is performed by this audit-result follow-up.
 
 ## J. Engineering Lessons
 

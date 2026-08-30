@@ -1,11 +1,18 @@
 # Track A Closeout Brief
 
-> **SUPERSEDED HISTORICAL BRIEF (2026-08-29).** Preserve the body below as the record of
-> earlier correction work; do not resume from it. The historical accepted docs head was
-> `b62185429a76802d53cbe8836d88ac6ee74aa07f` (implementation `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`).
-> The current post-Low head is `8e4fec1942c49c11424ec95f25a4aeed9226892e`, the
-> `sameActivePayload()` omitted-`files` Low is resolved, and Track A was integrated by merge
-> commit `97f9f1ebffeaf2f1c74c0b119a825dd23723e0d6`. Final branch audit remains pending.
+> **SUPERSEDED HISTORICAL BRIEF (final authority updated 2026-08-30).** Preserve the body below as
+> earlier correction chronology; do not resume from it. The historical accepted docs head remains
+> `b62185429a76802d53cbe8836d88ac6ee74aa07f` (implementation
+> `d72c51de012cb77a3fbd23e4ea208b03ad3a81c2`); post-Low head
+> `8e4fec1942c49c11424ec95f25a4aeed9226892e` resolved the omitted-`files` Low and was integrated by
+> merge `97f9f1ebffeaf2f1c74c0b119a825dd23723e0d6`. The first whole-range audit at reconciliation
+> commit `531da9e24b7cdf43ba6190231f9da0219e13623a` was BLOCKED because ownerless explicit login did
+> not rehydrate workspace NgRx. Auth corrections `40191de` -> intermediate `3a447c6` -> superseding
+> WHATWG same-origin validation `894dab7` closed it; the final focused auth suite passed 23 tests,
+> the full suite has four net-new auth regressions versus 2603, and every final auth review ended
+> with no findings. A NEW whole-branch audit through runtime/code tip `3e903ae` passed with zero
+> Critical/High/Medium; current candidate disposition is READY FOR PR TO DEVELOP. No PR, push, or
+> `develop` mutation occurred.
 
 Use this brief only to resume Track A after the 2026-08-13 pause.
 

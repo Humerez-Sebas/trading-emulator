@@ -22,11 +22,75 @@ opened by fixing.
 Nothing has been merged into `develop` by this integration. Nothing has been pushed to
 `origin`.
 
-## CURRENT CONTROLLED-INTEGRATION AUTHORITY — PHASE 7
+## CURRENT FINAL AUDIT AUTHORITY — PHASE 8
 
-This section supersedes older operational status, `MERGE AS-IS`, current-head, and residual-Low
-claims below. Those records remain as dated specialist chronology; the integrated state here is
-the authority for the next controller and the later independent auditor.
+This documentation-only follow-up is after the final runtime/code audited tip
+`3e903aedbd44d43b3d0f31a22ffa3496f9dc1f06`; it records that tip rather than attempting to
+self-embed this follow-up commit's SHA. This section supersedes every Phase 7 `PENDING`,
+`MERGE AS-IS`, current-head, and residual-Low claim below while preserving them as chronology.
+
+**Final independent whole-branch audit: PASS — 0 Critical / 0 High / 0 Medium / 1 Low.** A NEW
+independent auditor inspected `origin/develop`
+`a2ca53b44f678dd285cd90f31ee644696664f32a` through exact runtime/code audited tip
+`3e903aedbd44d43b3d0f31a22ffa3496f9dc1f06`. Disposition: **candidate READY FOR PR TO DEVELOP**.
+No PR, push, merge into `develop`, release, deployment, or remote-system mutation has occurred.
+D, B, E, and Landing remain unchanged and outside this A+C bundle.
+
+### Audit and correction chronology
+
+- Reconciliation commit `531da9e24b7cdf43ba6190231f9da0219e13623a` recorded the composed
+  pre-audit state.
+- The first independent whole-range audit at `531da9e` returned **BLOCKED** with two Medium
+  implementation/enforcement findings: ownerless explicit login did not rehydrate workspace
+  NgRx, and the chart boundary detector allowed inferred/internal dependency edges. This failed
+  audit is part of the authority chain and is not replaced or hidden by the later PASS.
+- Auth correction `40191dee2974263dffeb7c65f144fd1e4559ebdd` hard reloads the
+  `null -> user` transition. `3a447c6078f14c88fa987595f8bc7a59fbbfd7e4` was an intermediate
+  backslash blacklist; `894dab7030063aeeb5730ca92e781cdfe2599277` supersedes it with WHATWG
+  same-origin return-target validation. The final focused auth suite passed **23 tests**; the full
+  suite contains four net-new auth regressions versus 2603.
+- Chart correction `f83b3d14d3dcb32906c5b5c296c98181379c2258` enforced
+  `createChart`/internal dependency imports. `3e903aedbd44d43b3d0f31a22ffa3496f9dc1f06`
+  extended enforcement to static TypeScript import types, re-exports, `createChart` re-exports,
+  and `.js` specifier normalization. Final RuleTester coverage is **64 scenarios**.
+- Every per-fix review ended with no findings on the final auth and chart states. A new auditor,
+  independent of those correction reviews, then issued the whole-branch PASS above.
+
+### Fresh auditor gates at `3e903ae`
+
+| Gate | Final result |
+| :--- | :--- |
+| App TypeScript | PASS |
+| Spec TypeScript | PASS |
+| Angular suite | PASS — **189 files / 2607 tests** |
+| Lint + chart RuleTester | PASS — **64 RuleTester scenarios** |
+| Format | PASS |
+| Build | PASS — initial bundle **670.12 kB** |
+| Pipeline pytest | PASS — **121 tests** |
+| Ruff check / format | PASS / PASS |
+| `pip-audit` | PASS — no known vulnerabilities |
+| Diff check | clean |
+| Worktree | clean |
+
+The sole Low is measured initial-bundle growth from base **651.60 kB** to final **670.12 kB**:
+**+18.52 kB (+2.84%)**. The build passes with the accepted budget warning. No cause is assigned
+to Arrow/parquet or any other package in this audit result.
+
+> **PROMINENT NON-BLOCKING INHERITED OBSERVATION:** `npm audit` reported **25 inherited
+> advisories (1 critical, 19 high, 2 moderate, 3 low)**. Dependency declarations and the lockfile
+> are unchanged in `base..tip`, and CI explicitly treats `npm audit` as informational. The auditor
+> therefore recorded this separately, not as a candidate finding.
+
+There is no dependency/lockfile, migration, RLS, Edge Function, Supabase schema, or pipeline
+dependency delta. No manual browser smoke was run, and no single browser-level test spans all ten
+account-lifecycle steps. Those are explicit limitations; the auditor determined they do not block
+candidate PR readiness given the composed automated evidence and fresh full gates. Pipeline gates
+are PASS, not pending.
+
+## HISTORICAL CONTROLLED-INTEGRATION AUTHORITY — PHASE 7 (SUPERSEDED)
+
+This section formerly superseded older operational status, `MERGE AS-IS`, current-head, and
+residual-Low claims. It is now a pre-audit historical snapshot superseded by Phase 8 above.
 
 ### Topology and integration history
 
@@ -71,10 +135,11 @@ No dependency or lockfile changes were introduced by A, C, or Central. C changed
 `emulador/package.json` only to extend the `lint` script; dependency declarations and
 `package-lock.json` are unchanged.
 
-**Final independent audit: PENDING. Pipeline gates: PENDING.** The integrated branch must not be
-represented as finally audited or released. The current tip becomes the dedicated documentation
-reconciliation commit created from pre-reconciliation tip `80ac7b6`; its SHA cannot be embedded
-before the commit exists. Record the exact final audited tip in the later audit-result follow-up.
+**Historical Phase 7 status: final independent audit PENDING; pipeline gates PENDING.** At that
+time the integrated branch could not be represented as finally audited or released. The dedicated
+reconciliation commit created from pre-reconciliation tip `80ac7b6` became
+`531da9e24b7cdf43ba6190231f9da0219e13623a`; Phase 8 above records the later audit result and exact
+runtime/code audited tip.
 
 ### How the original specialist baseline was built
 
@@ -494,4 +559,12 @@ mutation occurred.
   A+C-stage frontend gates passed with the counts recorded in the current-authority section, and
   the combined semantic matrix passed 9 files / 280 tests. No manual browser smoke or one-test
   ten-step browser E2E was performed. This reconciliation follows `80ac7b6`; final independent
-  audit and pipeline gates remain pending.
+  audit and pipeline gates were pending at this historical checkpoint.
+- **2026-08-30 final audit-result follow-up** — Reconciliation commit `531da9e` first received a
+  whole-range **BLOCKED** audit with two Medium findings. The auth correction chain `40191de` ->
+  `3a447c6` -> `894dab7` and chart correction chain `f83b3d1` -> `3e903ae` closed them; every final
+  per-fix review had no findings. A NEW independent auditor inspected `a2ca53b..3e903ae`, reran the
+  full frontend, build, pipeline, security, diff, and cleanliness gates, and returned **PASS — 0
+  Critical / 0 High / 0 Medium / 1 Low**. The Low is initial-bundle growth of 18.52 kB (2.84%).
+  Inherited `npm audit` advisories remain a prominent non-blocking observation. Candidate is
+  **READY FOR PR TO DEVELOP**; no PR, push, or `develop` mutation occurred.
