@@ -119,19 +119,22 @@ internal signature such as `Parameters<Capability['init']>[0]`. The correction e
 that can provide a syntax-only guarantee instead of pretending to interpret those inferred or
 utility types:
 
-- Outside `domain/chart`, a static named import of `createChart` is rejected, including aliases.
-- Relative imports are resolved against the importing filename. Only `chart-engine`,
-  `chart-event-bus`, `chart-sync-bus`, `render-model`, and `display-time` may cross from
-  `domain/chart` to a production host; the domain root/index and every other chart module remain
-  internal.
+- Outside `domain/chart`, a static named import or re-export of `createChart` is rejected,
+  including aliases.
+- Relative static sources in import declarations, TypeScript import types, and named/star
+  re-exports are resolved against the importing filename. `.ts` and `.js` suffixes are normalized
+  before comparison. Only `chart-engine`, `chart-event-bus`, `chart-sync-bus`, `render-model`, and
+  `display-time` may cross from `domain/chart` to a production host; the domain root/index and
+  every other chart module remain internal.
 - Inside `domain/chart`, raw handles and exported handle-bearing signatures remain legitimate for
   sibling composition. The detector does not broadly reject interfaces, functions, constructors,
   or other declarations merely because TypeScript requires them to be exported across files.
 
 This is a post-audit extension to the executable contract, not a rewrite of the historical
 acceptance and gate evidence above. Its residual limits remain explicit: it does not analyze
-dynamic `import()`, CommonJS `require()`, arbitrary local/dependency type flow, or future TypeScript
-path aliases unless they are separately covered by the dependency-edge resolver.
+runtime dynamic `import()` expressions (`ImportExpression`), CommonJS `require()`, arbitrary
+local/dependency type flow, or future TypeScript path aliases unless they are separately covered by
+the dependency-edge resolver.
 
 It deliberately does not reflect over runtime own fields: TypeScript `private` fields such
 as `chart` and `mainSeries` exist at runtime but are excluded from `keyof ChartEngine` and

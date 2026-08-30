@@ -58,6 +58,26 @@ ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
       filename: 'src/app/components/chart/public-contract.ts',
       code: `import type { PublicContract } from '../../domain/chart/${module}';`,
     })),
+    {
+      name: 'allows a TypeScript import type from a host-facing chart module',
+      filename: 'src/app/components/chart/public-contract.ts',
+      code: `export type Engine = import('../../domain/chart/chart-engine').ChartEngine;`,
+    },
+    {
+      name: 'allows a named re-export from a host-facing chart module',
+      filename: 'src/app/components/chart/public-contract.ts',
+      code: `export { ChartEngine } from '../../domain/chart/chart-engine';`,
+    },
+    {
+      name: 'allows a star re-export from a host-facing chart module',
+      filename: 'src/app/components/chart/public-contract.ts',
+      code: `export * from '../../domain/chart/chart-event-bus';`,
+    },
+    {
+      name: 'allows a JavaScript specifier for a host-facing TypeScript module',
+      filename: 'src/app/components/chart/public-contract.ts',
+      code: `import { ChartEngine } from '../../domain/chart/chart-engine.js';`,
+    },
   ],
   invalid: [
     ...['IChartApi', 'ISeriesApi', 'IPriceLine', 'ISeriesMarkersPluginApi'].map((handle) => ({
@@ -151,6 +171,40 @@ ruleTester.run('no-chart-handles', engineBoundary.rules['no-chart-handles'], {
       filename: 'src/app/components/chart/capability-leak.ts',
       code: `import * as ChartDomain from '../../domain/chart/index';`,
       errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects a TypeScript import type from an internal chart module',
+      filename: 'src/app/components/chart/capability-leak.ts',
+      code: `
+        export type LeakedChart = Parameters<
+          import('../../domain/chart/capability').Capability['init']
+        >[0];
+      `,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects a named re-export from an internal chart module',
+      filename: 'src/app/components/chart/capability-leak.ts',
+      code: `export { Capability } from '../../domain/chart/capability';`,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects a star re-export from an internal chart module',
+      filename: 'src/app/components/chart/capability-leak.ts',
+      code: `export * from '../../domain/chart/capability-registry';`,
+      errors: [{ messageId: 'forbiddenChartInternalImport' }],
+    },
+    {
+      name: 'rejects a createChart named re-export',
+      filename: 'src/app/components/chart/raw-chart.ts',
+      code: `export { createChart } from 'lightweight-charts';`,
+      errors: [{ messageId: 'forbiddenChartFactoryImport' }],
+    },
+    {
+      name: 'rejects an aliased createChart named re-export',
+      filename: 'src/app/components/chart/raw-chart.ts',
+      code: `export { createChart as buildChart } from 'lightweight-charts';`,
+      errors: [{ messageId: 'forbiddenChartFactoryImport' }],
     },
   ],
 });
