@@ -71,10 +71,12 @@ def resample_anchors(df_m1: pd.DataFrame) -> dict[str, pd.DataFrame]:
     def _resample_tf(rule: str) -> pd.DataFrame:
         resampled = df.resample(rule, label="left", closed="left").agg(_OHLC_AGG).dropna()
         # Convertir el DatetimeIndex de vuelta a epoch segundos int64.
+        # asi8 devuelve la resolucion interna del indice (s en pandas 2, us en
+        # pandas 3): fijar la unidad antes, o H1/D1 salen en microsegundos.
         resampled.insert(
             0,
             "time",
-            resampled.index.asi8,
+            resampled.index.as_unit("s").asi8,
         )
         resampled = resampled.reset_index(drop=True)
         return resampled[["time", "open", "high", "low", "close"]]
