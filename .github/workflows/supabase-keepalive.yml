@@ -1,0 +1,47 @@
+name: Supabase keep-alive
+
+# Supabase pauses Free-plan projects after ~7 days of low database activity,
+# which takes auth down for every environment (it happened in 2026-09/11 and
+# blocked login until the project was restored by hand). One small read per
+# day through PostgREST counts as activity. A failed run (paused project →
+# DNS/5xx) is also the alert: GitHub emails the repo owner on failure.
+#
+# Scheduled workflows only run from the default branch (main), and GitHub
+# disables them in public repos after 60 days without repo activity — it
+# emails before doing so; re-enable from the Actions tab.
+on:
+  schedule:
+    - cron: '23 13 * * *'
+  workflow_dispatch:
+
+# least privilege: only reads the public environment file
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Ping Supabase (PostgREST read)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # the public URL + anon key already ship in the frontend bundle; reading
+      # them from the env file keeps a single source of truth across rotations
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: emulador/src/environments
+      - name: Read public Supabase config
+        run: |
+          f=emulador/src/environments/environment.prod.ts
+          url=$(grep -oE "supabaseUrl: '[^']+'" "$f" | cut -d"'" -f2)
+          key=$(grep -A1 'supabaseAnonKey:' "$f" | grep -oE "'[^']+'" | head -1 | tr -d "'")
+          test -n "$url" && test -n "$key" || { echo "::error::Supabase config not found in $f"; exit 1; }
+          echo "SUPABASE_URL=$url" >> "$GITHUB_ENV"
+          echo "SUPABASE_ANON_KEY=$key" >> "$GITHUB_ENV"
+      # RLS returns [] to the anon role, but the query still runs on Postgres
+      - name: Query the database
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-delay 20 --retry-all-errors --max-time 30 \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/sessions?select=id&limit=1"
