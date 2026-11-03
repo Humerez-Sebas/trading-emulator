@@ -15,12 +15,12 @@
   "private": true,
   "packageManager": "npm@11.6.1",
   "dependencies": {
-    "@angular/common": "^21.2.0",
-    "@angular/compiler": "^21.2.0",
-    "@angular/core": "^21.2.0",
-    "@angular/forms": "^21.2.0",
-    "@angular/platform-browser": "^21.2.0",
-    "@angular/router": "^21.2.0",
+    "@angular/common": "^21.2.26",
+    "@angular/compiler": "^21.2.26",
+    "@angular/core": "^21.2.26",
+    "@angular/forms": "^21.2.26",
+    "@angular/platform-browser": "^21.2.26",
+    "@angular/router": "^21.2.26",
     "@ngrx/effects": "^21.1.1",
     "@ngrx/store": "^21.1.1",
     "@supabase/supabase-js": "^2.108.2",
@@ -31,11 +31,11 @@
     "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@angular/build": "^21.2.14",
-    "@angular/cli": "^21.2.14",
-    "@angular/compiler-cli": "^21.2.0",
+    "@angular/build": "^21.2.29",
+    "@angular/cli": "^21.2.29",
+    "@angular/compiler-cli": "^21.2.26",
     "@eslint/js": "^10.0.1",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.12",
     "angular-eslint": "21.4.0",
     "eslint": "^10.3.0",
     "fake-indexeddb": "^6.2.5",
@@ -43,6 +43,6 @@
     "prettier": "^3.8.4",
     "typescript": "~5.9.2",
     "typescript-eslint": "8.59.2",
-    "vitest": "^4.0.8"
+    "vitest": "^4.1.12"
   }
 }
