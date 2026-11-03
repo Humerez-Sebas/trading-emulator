@@ -30,7 +30,10 @@ describe('WorkspacesEffects — switchAsset(executionCosts) RFC-014 T6b', () => 
     files: {},
     activeTf: null,
     selectedTfs: undefined,
+    customTfMinutes: null,
     currentTime: 0,
+    playbackSpeed: 500,
+    replayResolution: null,
     drawings: [],
     trading: defaultTradingData(),
     sessions: [],
@@ -63,6 +66,11 @@ describe('WorkspacesEffects — switchAsset(executionCosts) RFC-014 T6b', () => 
   });
 
   afterEach(() => {
+    // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+    // resetTestingModule() replaces the injector but does NOT undo overrideSelector,
+    // which writes to the module-level memoized selector shared by every spec file
+    // in this vitest worker. `store` is assigned by the setup helper, so guard it.
+    store?.resetSelectors();
     localStorage.removeItem(CURRENT_KEY);
     TestBed.resetTestingModule();
     vi.restoreAllMocks();

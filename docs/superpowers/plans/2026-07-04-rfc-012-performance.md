@@ -1,6 +1,23 @@
 # RFC-012 Performance Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> ## STATUS: HISTORICAL — executed and shipped; do NOT re-run
+>
+> **Delivered 2026-07-04**, merged to `develop` in PR #31 (`3844957`); released to `main`
+> inside the multi-chart block release PR #36 (`dbaaae1`). All five tasks landed —
+> `4ef3930` (shared candle-series reference identity), `1c60b3c` (hidden-panel update
+> gating), `499a48a` (lazy `ChartEngine` creation on first show), `e480da8` (inactive-tab
+> panels create no engine) and `df49278` (8-panel replay fan-out profiling) — with the
+> final audit PASS and a profiling-arithmetic correction recorded in `72618ff`.
+>
+> This file is the **record of how the 8-panel worst case was hardened**, not a task list.
+> Its checkboxes describe finished work, and its inline profiling numbers are a **snapshot
+> taken at `3844957`**, not a live budget: re-measure before citing them. The frozen
+> non-goals it honours by omission (no web workers, no partial-viewport virtualization) are
+> still binding via `CLAUDE.md` invariant 6 and the frozen vision doc — they are revocable
+> only by an explicit new RFC. For current performance guidance read
+> `docs/engineering/performance.md`.
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. *(Overridden by the STATUS banner above — this instruction no longer applies to this file.)*
 
 **Goal:** Harden the RFC-008..011 multi-panel system for its worst case — `MAX_PANELS_PER_TAB = 8` panels inside one tab (`emulador/src/app/state/layout/layout.models.ts`) — by turning four behaviours that today exist only *incidentally* in the audited engine and its RFC-008/009 wrappers into **invariants verified by tests**, and by profiling the 8-panel case with a deterministic, spy-counting proof suite (no wall-clock timing, per the freeze-on-last precedent) so any further optimization is justified by a measured gap rather than added speculatively. The four formalized behaviours are exactly the RFC's Decision points 1-4:
 

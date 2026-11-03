@@ -40,6 +40,11 @@ describe('EmuladorPageComponent', () => {
   }
 
   afterEach(() => {
+    // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+    // resetTestingModule() discards the injector but overrideSelector wrote to the
+    // module-level memoized selector itself, which is shared by every spec file in
+    // this vitest worker — release it explicitly. `store` is assigned by create().
+    store?.resetSelectors();
     TestBed.resetTestingModule();
   });
 
@@ -155,6 +160,10 @@ describe('EmuladorPageComponent template (RFC-013 Task 5)', () => {
   }
 
   afterEach(() => {
+    // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+    // same reason as the describe above — resetTestingModule() does not undo
+    // overrideSelector's write to the module-level memoized selector.
+    store?.resetSelectors();
     TestBed.resetTestingModule();
   });
 

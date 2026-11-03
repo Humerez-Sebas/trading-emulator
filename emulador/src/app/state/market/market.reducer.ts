@@ -87,7 +87,7 @@ export const marketFeature = createFeature({
         files: workspace.files,
         activeTf: workspace.activeTf,
         selectedTfs: workspace.selectedTfs ?? null,
-        customTf: null,
+        customTf: workspace.customTfMinutes ?? null,
         customSeries: [],
         resolutionSeries: [],
         resolutionFor: null,

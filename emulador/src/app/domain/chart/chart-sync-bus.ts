@@ -1,5 +1,6 @@
-import { LogicalRange, MouseEventParams, Time } from 'lightweight-charts';
+import { LogicalRange } from 'lightweight-charts';
 import { Observable, Subject } from 'rxjs';
+import { ChartPointerEvent } from './chart-event-bus';
 
 /**
  * RFC-008: payloads of the per-panel interaction events forwarded to the bus.
@@ -7,7 +8,7 @@ import { Observable, Subject } from 'rxjs';
  * crosshair and visible-range participate in cross-panel sync, RFC-010).
  */
 export interface PanelSyncEventMap {
-  CrosshairMoved: MouseEventParams<Time>;
+  CrosshairMoved: ChartPointerEvent;
   VisibleRangeChanged: LogicalRange | null;
 }
 

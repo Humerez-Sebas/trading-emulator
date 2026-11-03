@@ -104,7 +104,14 @@ function setup() {
 }
 
 /** A stub `engine` whose `paneRect()` reports a pane narrower/shorter than the
- * container — the axis strip is [paneWidth, Infinity) x, [paneHeight, Infinity) y. */
+ * container — the axis strip is [paneWidth, Infinity) x, [paneHeight, Infinity) y.
+ *
+ * RFC-004/RFC-005 (bridge removal): `priceForY` / `yForPrice` moved ONTO this stub. They used
+ * to be scaffolded per-test as `component.series = { coordinateToPrice, priceToCoordinate }`,
+ * because `ChartComponent` held the raw `ISeriesApi` from `engine.seriesApi`. It no longer
+ * holds any lightweight-charts handle, so the same two conversions are now engine queries.
+ * The returned values (100 / 250) are the ones every one of those per-test stubs used.
+ * No assertion in this file changed. */
 function stubEngine(
   paneWidth: number,
   paneHeight: number,
@@ -112,6 +119,8 @@ function stubEngine(
 ) {
   return {
     paneRect: () => ({ width: paneWidth, height: paneHeight }),
+    priceForY: () => 100,
+    yForPrice: () => 250,
     setInteractivity: vi.fn(),
     getCapability: (id: string) => {
       if (id === 'drawings') {
@@ -158,8 +167,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
               : undefined,
       });
       component.engine = engine;
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
       component.panelDrawings = {
         items: [
           {
@@ -206,8 +213,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
               : undefined,
       });
       component.engine = engine;
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
       component.lineDrag = null;
 
       component.handleMouseDown({
@@ -239,8 +244,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
             : undefined,
     });
     component.engine = engine;
-    component.chart = {};
-    component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
     component.panelDrawings = {
       items: [
         {
@@ -283,8 +286,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
             : undefined,
       });
       component.engine = engine;
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
       component.container.nativeElement.style.cursor = 'pointer'; // pre-set to a non-default value
 
       component.handleHoverFeedback({
@@ -308,8 +309,6 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
             : undefined,
       });
       component.engine = engine;
-      component.chart = {};
-      component.series = { coordinateToPrice: () => 100, priceToCoordinate: () => 250 };
 
       component.handleHoverFeedback({ clientX: 300, clientY: 250 } as unknown as MouseEvent);
 
@@ -320,8 +319,7 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
   describe('handleContextMenu: right-click on the price-axis strip', () => {
     it('opens no menu (not a chart gesture)', () => {
       const { component } = setup();
-      component.engine = stubEngine(700, 500);
-      component.series = { coordinateToPrice: () => 90 };
+      component.engine = stubEngine(700, 500, { priceForY: () => 90 });
 
       component.handleContextMenu({ clientX: 750, clientY: 250 } as unknown as MouseEvent);
 
@@ -330,8 +328,7 @@ describe('ChartComponent pane-space guard (RFC-019 Task 3, D19.A)', () => {
 
     it('regression: right-click inside the pane still opens the menu', () => {
       const { component } = setup();
-      component.engine = stubEngine(700, 500);
-      component.series = { coordinateToPrice: () => 90 };
+      component.engine = stubEngine(700, 500, { priceForY: () => 90 });
 
       component.handleContextMenu({ clientX: 300, clientY: 250 } as unknown as MouseEvent);
 

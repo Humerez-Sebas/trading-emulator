@@ -24,6 +24,7 @@ import {
 } from '../../services/session-sync.service';
 import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
+import { OwnerIdentityService } from '../../services/owner-identity.service';
 
 @Injectable()
 export class LessonsEffects {
@@ -31,6 +32,7 @@ export class LessonsEffects {
   private store = inject(Store);
   private db = inject(LessonsDbService);
   private sync = inject(SessionSyncService);
+  private owner = inject(OwnerIdentityService);
 
   /**
    * Bootstrap hydration: dispatch LessonsActions.hydrate on app initialization
@@ -51,12 +53,7 @@ export class LessonsEffects {
   hydrate$ = createEffect(() =>
     this.actions$.pipe(
       ofType(LessonsActions.hydrate),
-      switchMap(() =>
-        from(this.db.loadAll()).pipe(
-          map((lessons) => LessonsActions.hydrated({ lessons })),
-          catchError(() => from([LessonsActions.hydrated({ lessons: [] })])),
-        ),
-      ),
+      switchMap(() => from(this.loadLessons()).pipe(catchError(() => EMPTY))),
     ),
   );
 
@@ -75,7 +72,9 @@ export class LessonsEffects {
           LessonsActions.lessonsSynced,
         ),
         withLatestFrom(this.store.select(selectLessons)),
-        concatMap(([, lessons]) => from(this.db.upsertMany(lessons)).pipe(catchError(() => EMPTY))),
+        concatMap(([, lessons]) =>
+          from(this.persistLessons(lessons)).pipe(catchError(() => EMPTY)),
+        ),
       ),
     { dispatch: false },
   );
@@ -121,10 +120,13 @@ export class LessonsEffects {
    * syncedAt` afterward — still dirty, picked up by the next push cycle
    * (mid-flight-edit safety, same idiom as playbook.effects.spec.ts).
    */
-  private async pushDirtyLessons(lessons: Lesson[]): Promise<void> {
+  private async pushDirtyLessons(lessons: Lesson[], expectedOwnerId?: string): Promise<void> {
     const dirty = lessons.filter(isLessonDirty);
     if (!dirty.length) return;
+    expectedOwnerId ??= await this.sync.captureOwner();
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     await this.sync.pushLessons(dirty);
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     this.store.dispatch(
       LessonsActions.lessonsSynced({
         stamps: dirty.map((l) => ({ id: l.id, syncedAt: l.clientUpdatedAt! })),
@@ -148,7 +150,9 @@ export class LessonsEffects {
       this.actions$.pipe(
         ofType(AuthActions.sessionResolved, AuthActions.authSuccess),
         filter((action) => action.user != null),
-        exhaustMap(() => from(this.pullAndMergeLessons()).pipe(catchError(() => EMPTY))),
+        exhaustMap((action) =>
+          from(this.pullAndMergeLessons(action.user!.id)).pipe(catchError(() => EMPTY)),
+        ),
       ),
     { dispatch: false },
   );
@@ -162,12 +166,36 @@ export class LessonsEffects {
    * has no NEW mutation action to re-trigger `pushDirty$` — only this
    * post-merge flush notices it's still dirty and re-pushes it.
    */
-  private async pullAndMergeLessons(): Promise<void> {
+  private async pullAndMergeLessons(expectedOwnerId: string): Promise<void> {
     const remote = await this.sync.pullLessons();
-    const local = await this.db.loadAll();
+    await this.sync.assertExpectedOwner(expectedOwnerId);
+    const local = await this.db.loadAll(expectedOwnerId);
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     const { lessons, toUpsertLocally } = mergeLessonsPull(local, remote);
-    if (toUpsertLocally.length) await this.db.upsertMany(toUpsertLocally);
+    if (toUpsertLocally.length) {
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      await this.db.upsertMany(toUpsertLocally, expectedOwnerId);
+    }
+    await this.sync.assertExpectedOwner(expectedOwnerId);
     this.store.dispatch(LessonsActions.hydrated({ lessons }));
-    await this.pushDirtyLessons(lessons);
+    await this.pushDirtyLessons(lessons, expectedOwnerId);
+  }
+
+  private async loadLessons() {
+    const expectedOwnerId = await this.sync.captureOwner();
+    try {
+      const lessons = await this.db.loadAll(expectedOwnerId);
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      return LessonsActions.hydrated({ lessons });
+    } catch {
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      return LessonsActions.hydrated({ lessons: [] });
+    }
+  }
+
+  private async persistLessons(lessons: Lesson[]): Promise<void> {
+    const expectedOwnerId = await this.owner.ownerId();
+    if (!expectedOwnerId) return;
+    await this.db.upsertMany(lessons, expectedOwnerId);
   }
 }

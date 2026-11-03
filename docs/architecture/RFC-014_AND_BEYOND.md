@@ -4,7 +4,7 @@
 | :--- | :--- |
 | Status | Draft RFC bundle, revision 2 (each RFC graduates to `docs/architecture/rfcs/` on acceptance) |
 | Date | 2026-07-10 (revision 2; revision 1: 2026-07-09) |
-| Authority basis | Owner directive of 2026-07 (knowledge-conservation reorientation); [TRADER_KNOWLEDGE_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRADER_KNOWLEDGE_MODEL.md) (Phase 0); Stages 1-5 of the architecture corpus; [strategic_audit.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/strategic_audit.md) Part 7 (engine critique) |
+| Authority basis | Owner directive of 2026-07 (knowledge-conservation reorientation); [TRADER_KNOWLEDGE_MODEL.md](./TRADER_KNOWLEDGE_MODEL.md) (Phase 0); Stages 1-5 of the architecture corpus; [strategic_audit.md](./strategic_audit.md) Part 7 (engine critique) |
 | Language note | Drafted in English with the architecture corpus by explicit owner directive; on graduation to `docs/architecture/rfcs/`, repo convention (Spanish RFCs) applies unless the owner re-confirms English |
 
 ---
@@ -52,7 +52,7 @@ Absorbed and retired concepts from the audit roadmap:
 Workflow: each RFC is architectural work — branch `feature/rfc-XXX-*`, PR to
 `develop`, released to `main` as a whole-block release PR
 (`docs/engineering/git-workflow.md`). Frozen non-goals
-([ARCHITECTURE_VISION.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/ARCHITECTURE_VISION.md)
+([ARCHITECTURE_VISION.md](./ARCHITECTURE_VISION.md)
 Section 8.3) and the verification gates apply to every phase.
 
 ---
@@ -328,8 +328,8 @@ may start by momentum; all inherit the N-invariants where they touch knowledge.
 
 ## References
 
-- [TRADER_KNOWLEDGE_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRADER_KNOWLEDGE_MODEL.md) — Phase 0 foundation (ontology, black box, cabin, schemas, S1/S2, N-invariants).
-- [ROADMAP.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/ROADMAP.md) — Mastery Block sequencing.
-- [strategic_audit.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/strategic_audit.md) — Part 7 (engine critique; still authoritative), Parts 5/8/9 (feature and numbering framings superseded as noted in Section 0 and TRADER_KNOWLEDGE_MODEL Section 9).
-- [DOMAIN_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/DOMAIN_MODEL.md) (I-1..I-15), [EVENT_STORMING.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/EVENT_STORMING.md) (Section 8), [PRODUCT_PRINCIPLES.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/PRODUCT_PRINCIPLES.md) (P7, P8, P10-P12), [ARCHITECTURE_VISION.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/ARCHITECTURE_VISION.md).
-- [replay-trading.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/engineering/domain/replay-trading.md) (realism invariant, fold pipeline), [git-workflow.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/engineering/git-workflow.md) (RFC branch discipline).
+- [TRADER_KNOWLEDGE_MODEL.md](./TRADER_KNOWLEDGE_MODEL.md) — Phase 0 foundation (ontology, black box, cabin, schemas, S1/S2, N-invariants).
+- [ROADMAP.md](./ROADMAP.md) — Mastery Block sequencing.
+- [strategic_audit.md](./strategic_audit.md) — Part 7 (engine critique; still authoritative), Parts 5/8/9 (feature and numbering framings superseded as noted in Section 0 and TRADER_KNOWLEDGE_MODEL Section 9).
+- [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) (I-1..I-15), [EVENT_STORMING.md](./EVENT_STORMING.md) (Section 8), [PRODUCT_PRINCIPLES.md](./PRODUCT_PRINCIPLES.md) (P7, P8, P10-P12), [ARCHITECTURE_VISION.md](./ARCHITECTURE_VISION.md).
+- [replay-trading.md](../engineering/domain/replay-trading.md) (realism invariant, fold pipeline), [git-workflow.md](../engineering/git-workflow.md) (RFC branch discipline).

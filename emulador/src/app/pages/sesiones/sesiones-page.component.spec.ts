@@ -3,31 +3,48 @@ import { Router } from '@angular/router';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SesionesPageComponent, SessionCard, reorderFolders } from './sesiones-page.component';
-import { WorkspaceDbService } from '../../services/workspace-db.service';
+import {
+  MaterializedSessionAggregate,
+  WorkspaceDbService,
+} from '../../services/workspace-db.service';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { ReplayActions } from '../../state/replay/replay.actions';
+import { MarketActions } from '../../state/market/market.actions';
 import { WorkspacesActions } from '../../state/workspaces/workspaces.actions';
 import {
   selectCurrentAsset,
   selectCurrentTime,
+  selectMsPerCandle,
+  selectResolutionMinutes,
   selectTradingData,
   selectSavedSessions,
+  selectWorkspaceMetaSnapshot,
 } from '../../state/selectors';
 import { authFeature } from '../../state/auth/auth.reducer';
 import { workspaceDbStub } from '../../testing/workspace-db.stub';
 import { workspaceMeta, savedSession, closed } from '../../testing/fixtures';
-import { defaultTradingData, SessionFolder, TradingData } from '../../state/trading/trading.models';
+import {
+  defaultTradingData,
+  SavedSession,
+  SessionFolder,
+  TradingData,
+} from '../../state/trading/trading.models';
 import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { DialogService } from '../../components/ui/dialog.service';
 import { SessionService } from '../../services/session.service';
 import { SessionSyncService } from '../../services/session-sync.service';
 import { SessionSummary } from '../../services/session-sync.models';
 import { singlePanelLayoutFor } from '../../services/session-migration';
+import { layoutFeature } from '../../state/layout/layout.reducer';
+import { marketFeature } from '../../state/market/market.reducer';
+import { replayFeature } from '../../state/replay/replay.reducer';
+import { workspacesFeature } from '../../state/workspaces/workspaces.reducer';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { DataOnboardingService } from '../../services/market-data/data-onboarding.service';
 import { ManifestService } from '../../services/market-data/manifest.service';
 import type { DatasetRecord } from '../../services/market-data-db';
+import type { SupabaseService } from '../../auth/supabase.service';
 
 function dataset(p: Partial<DatasetRecord> = {}): DatasetRecord {
   return {
@@ -62,6 +79,20 @@ function card(p: Partial<SessionCard> = {}): SessionCard {
 
 function folder(p: Partial<SessionFolder> = {}): SessionFolder {
   return { id: 'f1', name: 'Estrategia A', order: 0, ...p };
+}
+
+function completeWorkspaceMeta(p: Partial<WorkspaceMeta>): WorkspaceMeta {
+  const meta = workspaceMeta(p);
+  const fallback = singlePanelLayoutFor(meta.symbol, meta.activeTf ?? 'M1');
+  return {
+    ...meta,
+    customTfMinutes: p.customTfMinutes ?? null,
+    playbackSpeed: p.playbackSpeed ?? 500,
+    replayResolution: p.replayResolution ?? null,
+    layout: p.layout ?? fallback.layout,
+    panels: p.panels ?? fallback.panels,
+    linkGroups: p.linkGroups ?? [],
+  };
 }
 
 function summary(p: Partial<SessionSummary> = {}): SessionSummary {
@@ -99,6 +130,8 @@ describe('SesionesPageComponent', () => {
   let syncStub: {
     listSummaries: ReturnType<typeof vi.fn>;
     fetchPayload: ReturnType<typeof vi.fn>;
+    captureOwner: ReturnType<typeof vi.fn>;
+    assertExpectedOwner: ReturnType<typeof vi.fn>;
     flushDirty: ReturnType<typeof vi.fn>;
     flushPendingDeletes: ReturnType<typeof vi.fn>;
   };
@@ -117,6 +150,8 @@ describe('SesionesPageComponent', () => {
       sync?: Partial<{
         listSummaries: ReturnType<typeof vi.fn>;
         fetchPayload: ReturnType<typeof vi.fn>;
+        captureOwner: ReturnType<typeof vi.fn>;
+        assertExpectedOwner: ReturnType<typeof vi.fn>;
         flushDirty: ReturnType<typeof vi.fn>;
         flushPendingDeletes: ReturnType<typeof vi.fn>;
       }>;
@@ -125,6 +160,190 @@ describe('SesionesPageComponent', () => {
   ) {
     dbStub = workspaceDbStub();
     if (opts.db) Object.assign(dbStub, opts.db);
+    if (opts.db && !opts.db.replaceFolderIfUnchanged) {
+      const putFolder = dbStub.putFolder as unknown as (folder: SessionFolder) => Promise<void>;
+      dbStub.replaceFolderIfUnchanged = vi.fn(async (_expected, next) => {
+        if (next) await putFolder(next);
+        return true;
+      });
+    }
+    if (opts.db && !('deleteFolderIfUnchanged' in opts.db)) {
+      const deleteFolder = dbStub.deleteFolder as unknown as (id: string) => Promise<void>;
+      const addPendingDelete = dbStub.addPendingDelete as unknown as (pending: {
+        entity: 'folder';
+        id: string;
+      }) => Promise<void>;
+      dbStub.deleteFolderIfUnchanged = vi.fn(async (expected, enqueuePending) => {
+        await deleteFolder(expected.id);
+        if (enqueuePending) {
+          await addPendingDelete({ entity: 'folder', id: expected.id });
+        }
+        return true;
+      });
+    }
+    if (opts.db && !opts.db.updateMeta) {
+      const getMeta = dbStub.getMeta as unknown as (
+        symbol: string,
+      ) => Promise<WorkspaceMeta | undefined>;
+      const putMeta = dbStub.putMeta as unknown as (meta: WorkspaceMeta) => Promise<void>;
+      dbStub.updateMeta = vi.fn(
+        async (
+          symbol: string,
+          update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+        ) => {
+          const next = update(await getMeta(symbol));
+          if (next) await putMeta(next);
+        },
+      );
+    }
+    if (opts.db && !opts.db.replaceSessionIfUnchanged) {
+      const updateMeta = dbStub.updateMeta as unknown as (
+        symbol: string,
+        update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+      ) => Promise<void>;
+      dbStub.replaceSessionIfUnchanged = vi.fn(async (symbol, expected, update) => {
+        let committed = false;
+        await updateMeta(symbol, (current) => {
+          if (!current) return undefined;
+          const exact =
+            expected.kind === 'active'
+              ? current.activeSessionId === expected.id &&
+                current.activeClientUpdatedAt === expected.clientUpdatedAt &&
+                current.activeSyncedAt === expected.syncedAt
+              : current.sessions?.some(
+                  (session) =>
+                    session.id === expected.id &&
+                    session.clientUpdatedAt === expected.clientUpdatedAt &&
+                    session.syncedAt === expected.syncedAt,
+                );
+          if (!exact) return undefined;
+          committed = true;
+          return update(current);
+        });
+        return committed;
+      });
+    }
+    if (opts.db && !opts.db.deleteSessionIfUnchanged) {
+      const updateMeta = dbStub.updateMeta as unknown as (
+        symbol: string,
+        update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+      ) => Promise<void>;
+      const addPendingDelete = dbStub.addPendingDelete as unknown as (pending: {
+        entity: 'session';
+        id: string;
+      }) => Promise<void>;
+      dbStub.deleteSessionIfUnchanged = vi.fn(async (symbol, expected, enqueue) => {
+        let result: {
+          deletedId: string;
+          replacementActiveSessionId?: string;
+        } | null = null;
+        await updateMeta(symbol, (current) => {
+          if (!current) return undefined;
+          const exact =
+            expected.kind === 'active'
+              ? current.activeSessionId === expected.id &&
+                current.activeClientUpdatedAt === expected.clientUpdatedAt &&
+                current.activeSyncedAt === expected.syncedAt
+              : current.sessions?.some(
+                  (session) =>
+                    session.id === expected.id &&
+                    session.clientUpdatedAt === expected.clientUpdatedAt &&
+                    session.syncedAt === expected.syncedAt,
+                );
+          if (!exact) return undefined;
+          if (expected.kind === 'active') {
+            const replacementActiveSessionId = 'replacement-active';
+            result = { deletedId: expected.id, replacementActiveSessionId };
+            return {
+              ...current,
+              trading: defaultTradingData(current.trading?.initialBalance),
+              activeSessionId: replacementActiveSessionId,
+              activeClientUpdatedAt: undefined,
+              activeSyncedAt: undefined,
+            };
+          }
+          result = { deletedId: expected.id };
+          return {
+            ...current,
+            sessions: (current.sessions ?? []).filter((session) => session.id !== expected.id),
+          };
+        });
+        if (result && enqueue) await addPendingDelete({ entity: 'session', id: expected.id });
+        return result;
+      });
+    }
+    if (opts.db && !opts.db.updateMetaIfUnchanged) {
+      const updateMeta = dbStub.updateMeta as unknown as (
+        symbol: string,
+        update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+      ) => Promise<void>;
+      dbStub.updateMetaIfUnchanged = vi.fn(async (symbol, expected, update) => {
+        let committed = false;
+        await updateMeta(symbol, (current) => {
+          if (JSON.stringify(current) !== JSON.stringify(expected)) return undefined;
+          const next = update(current);
+          committed = next !== undefined;
+          return next;
+        });
+        return committed;
+      });
+    }
+    if (opts.db && !opts.db.promoteSessionIfUnchanged) {
+      const updateMetaIfUnchanged = dbStub.updateMetaIfUnchanged as unknown as (
+        symbol: string,
+        expected: WorkspaceMeta | undefined,
+        update: (meta: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+      ) => Promise<boolean>;
+      dbStub.promoteSessionIfUnchanged = vi.fn(async (symbol, expected, materialized) =>
+        updateMetaIfUnchanged(symbol, expected, (current) => {
+          const meta = current ?? workspaceMeta({ symbol, sessions: [] });
+          const active = meta.trading;
+          const keepActive =
+            active != null &&
+            (active.orders.length > 0 ||
+              active.positions.length > 0 ||
+              active.history.length > 0 ||
+              active.sessionName != null ||
+              active.sessionEnded);
+          const sessions = (meta.sessions ?? []).filter(
+            (session) => session.id !== materialized.session.id,
+          );
+          if (keepActive && meta.activeSessionId) {
+            sessions.push({
+              id: meta.activeSessionId,
+              name: active.sessionName ?? `Sesión ${sessions.length + 1}`,
+              createdAt: materialized.archivedAt,
+              currentTime: meta.currentTime,
+              customTfMinutes: meta.customTfMinutes,
+              playbackSpeed: meta.playbackSpeed,
+              replayResolution: meta.replayResolution,
+              trading: active,
+              clientUpdatedAt: meta.activeClientUpdatedAt,
+              syncedAt: meta.activeSyncedAt,
+            });
+          }
+          return {
+            ...meta,
+            activeTf: materialized.activeTf,
+            selectedTfs: materialized.selectedTfs,
+            currentTime: materialized.session.currentTime,
+            customTfMinutes: materialized.session.customTfMinutes,
+            playbackSpeed: materialized.session.playbackSpeed,
+            replayResolution: materialized.session.replayResolution,
+            drawings: materialized.drawings,
+            trading: materialized.session.trading,
+            sessions,
+            activeSessionId: materialized.session.id,
+            activeClientUpdatedAt: materialized.session.clientUpdatedAt,
+            activeSyncedAt: materialized.session.syncedAt,
+            layout: materialized.layout,
+            panels: materialized.panels,
+            linkGroups: materialized.linkGroups,
+            lastModified: materialized.archivedAt,
+          };
+        }),
+      );
+    }
     routerStub = { navigateByUrl: vi.fn().mockResolvedValue(undefined) };
     // Default: every dialog resolves to "cancelled" — tests opt in per case.
     dialogsStub = {
@@ -141,6 +360,8 @@ describe('SesionesPageComponent', () => {
     syncStub = {
       listSummaries: vi.fn().mockResolvedValue([]),
       fetchPayload: vi.fn().mockResolvedValue(undefined),
+      captureOwner: vi.fn().mockResolvedValue('owner-a'),
+      assertExpectedOwner: vi.fn().mockResolvedValue(undefined),
       flushDirty: vi.fn().mockResolvedValue(undefined),
       flushPendingDeletes: vi.fn().mockResolvedValue(undefined),
       ...opts.sync,
@@ -165,6 +386,23 @@ describe('SesionesPageComponent', () => {
     store.overrideSelector(selectCurrentTime, opts.currentTime ?? 0);
     store.overrideSelector(selectTradingData, opts.liveTrading ?? defaultTradingData());
     store.overrideSelector(selectSavedSessions, opts.liveSessions ?? []);
+    const view = singlePanelLayoutFor(opts.currentAsset ?? '', 'M1');
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      files: {},
+      activeTf: null,
+      selectedTfs: undefined,
+      customTfMinutes: null,
+      currentTime: opts.currentTime ?? 0,
+      playbackSpeed: 500,
+      replayResolution: null,
+      drawings: [],
+      trading: opts.liveTrading ?? defaultTradingData(),
+      sessions: opts.liveSessions ?? [],
+      activeSessionId: null,
+      layout: view.layout,
+      panels: view.panels,
+      linkGroups: {},
+    });
     store.overrideSelector(authFeature.selectStatus, opts.authStatus ?? 'anonymous');
     store.refreshState();
 
@@ -179,7 +417,41 @@ describe('SesionesPageComponent', () => {
     await Promise.resolve();
   }
 
+  function overrideLiveAggregate(meta: WorkspaceMeta): void {
+    const fallback = singlePanelLayoutFor(meta.symbol, meta.activeTf ?? 'M1');
+    store.overrideSelector(selectCurrentTime, meta.currentTime);
+    store.overrideSelector(selectTradingData, meta.trading ?? defaultTradingData());
+    store.overrideSelector(selectSavedSessions, meta.sessions ?? []);
+    store.overrideSelector(tradingFeature.selectActiveSessionId, meta.activeSessionId ?? null);
+    store.overrideSelector(marketFeature.selectCustomTf, meta.customTfMinutes ?? null);
+    store.overrideSelector(selectMsPerCandle, meta.playbackSpeed ?? 500);
+    store.overrideSelector(selectResolutionMinutes, meta.replayResolution ?? null);
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      files: meta.files,
+      activeTf: meta.activeTf,
+      selectedTfs: meta.selectedTfs,
+      customTfMinutes: meta.customTfMinutes ?? null,
+      currentTime: meta.currentTime,
+      playbackSpeed: meta.playbackSpeed ?? 500,
+      replayResolution: meta.replayResolution ?? null,
+      drawings: meta.drawings,
+      trading: meta.trading ?? defaultTradingData(),
+      sessions: meta.sessions ?? [],
+      activeSessionId: meta.activeSessionId ?? null,
+      layout: meta.layout ?? fallback.layout,
+      panels: meta.panels ?? fallback.panels,
+      linkGroups: Object.fromEntries((meta.linkGroups ?? []).map((group) => [group.id, group])),
+    });
+    store.refreshState();
+  }
+
   afterEach(() => {
+    // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+    // resetTestingModule() replaces the injector but does NOT undo overrideSelector,
+    // which writes to the module-level memoized selector shared by every spec file
+    // in this vitest worker. `store` is assigned by create(), which not every test
+    // calls, so guard it.
+    store?.resetSelectors();
     TestBed.resetTestingModule();
     vi.restoreAllMocks();
   });
@@ -503,7 +775,7 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({
         type: WorkspacesActions.switchAsset.type,
         symbol: 'XAUUSD',
-        thenOpenSession: 'cloud-1',
+        thenOpenSession: undefined,
       }),
     );
   });
@@ -544,10 +816,9 @@ describe('SesionesPageComponent', () => {
 
     expect(putMeta).toHaveBeenCalled();
     const metaArg = putMeta.mock.calls[0][0];
-    const session = metaArg.sessions.find((s: { id: string }) => s.id === 'cloud-1');
-    expect(session).toBeTruthy();
-    expect(session.clientUpdatedAt).toBe(cloudUpdatedAtMs);
-    expect(session.syncedAt).toBe(cloudUpdatedAtMs);
+    expect(metaArg.activeSessionId).toBe('cloud-1');
+    expect(metaArg.activeClientUpdatedAt).toBe(cloudUpdatedAtMs);
+    expect(metaArg.activeSyncedAt).toBe(cloudUpdatedAtMs);
   });
 
   it('open: a cloud-only card surfaces a Spanish error when the fetch fails (no restore dispatch)', async () => {
@@ -644,8 +915,886 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({
         type: WorkspacesActions.switchAsset.type,
         symbol: 'XAUUSD',
-        thenOpenSession: 'cloud-1',
+        thenOpenSession: undefined,
       }),
+    );
+    expect(syncStub.assertExpectedOwner).toHaveBeenCalledWith('owner-a');
+  });
+
+  it('open: owner drift during a cloud payload dataset download prevents materialization and open', async () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'XAUUSD', timeframe: 'H1' as const }],
+    };
+    let owner = 'owner-a';
+    const updateMeta = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'US30',
+      db: { updateMeta, listDatasets: vi.fn().mockResolvedValue([]) },
+      sync: {
+        fetchPayload: vi.fn().mockResolvedValue(payload),
+        captureOwner: vi.fn().mockResolvedValue('owner-a'),
+        assertExpectedOwner: vi.fn(async (expected: string) => {
+          if (owner !== expected) throw new Error('owner drift');
+        }),
+      },
+      onboarding: {
+        runJobs: vi.fn().mockImplementation(async () => {
+          owner = 'owner-b';
+        }),
+      },
+    });
+    await settle();
+
+    await component.open(card({ symbol: 'XAUUSD', id: 'cloud-1', cloudOnly: true }));
+    await component.confirmDownload();
+
+    expect(updateMeta).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+    expect(component.downloadError()).toBe('owner drift');
+  });
+
+  it('open: a same-owner workspace revision created during download survives and stale payload does not open', async () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: defaultTradingData(),
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'EURUSD', timeframe: 'H1' as const }],
+    };
+    const initialLayout = singlePanelLayoutFor('EURUSD', 'M1');
+    const newerLayout = singlePanelLayoutFor('EURUSD', 'H1');
+    let latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-local',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'Before' },
+      layout: initialLayout.layout,
+      panels: initialLayout.panels,
+      linkGroups: [],
+    });
+    const getMeta = vi.fn(async () => latest);
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        const next = update(latest);
+        if (next) latest = next;
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: { getMeta, updateMeta, listDatasets: vi.fn().mockResolvedValue([]) },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+      onboarding: {
+        runJobs: vi.fn().mockImplementation(async () => {
+          latest = {
+            ...latest,
+            activeClientUpdatedAt: 101,
+            trading: { ...latest.trading!, sessionName: 'Newer', balance: 12000 },
+            layout: newerLayout.layout,
+            panels: newerLayout.panels,
+          };
+        }),
+      },
+    });
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-1', cloudOnly: true, createdAt: 500 }),
+    );
+    await component.confirmDownload();
+
+    expect(latest.activeClientUpdatedAt).toBe(101);
+    expect(latest.trading?.sessionName).toBe('Newer');
+    expect(latest.layout).toEqual(newerLayout.layout);
+    expect(latest.sessions).toEqual([]);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.switchAsset.type }),
+    );
+  });
+
+  it('open: successful delayed materialization archives the prior dirty active revision coherently', async () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'Cloud' },
+      currentTime: 250,
+      activeTf: null,
+      customTfMinutes: null,
+      playbackSpeed: 1,
+      drawings: [],
+      notes: [],
+      selectedTfs: [],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [{ symbol: 'EURUSD', timeframe: 'H1' as const }],
+    };
+    let latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-local',
+      activeClientUpdatedAt: 200,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'Local dirty', balance: 12000 },
+    });
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        const next = update(latest);
+        if (next) latest = next;
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn(async () => latest),
+        updateMeta,
+        listDatasets: vi.fn().mockResolvedValue([]),
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-1', cloudOnly: true, createdAt: 500 }),
+    );
+    await component.confirmDownload();
+
+    expect(latest.activeSessionId).toBe('cloud-1');
+    expect(latest.activeClientUpdatedAt).toBe(500);
+    expect(latest.activeSyncedAt).toBe(500);
+    expect(latest.trading?.sessionName).toBe('Cloud');
+    expect(latest.sessions?.find((session) => session.id === 'active-local')).toEqual(
+      expect.objectContaining({
+        clientUpdatedAt: 200,
+        syncedAt: 100,
+        trading: expect.objectContaining({ sessionName: 'Local dirty', balance: 12000 }),
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: WorkspacesActions.switchAsset.type,
+        symbol: 'EURUSD',
+        thenOpenSession: undefined,
+      }),
+    );
+  });
+
+  it('open: same-symbol materialization rejects an unpersisted same-id live A edit', async () => {
+    const activeA = completeWorkspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    let resolvePayload!: (value: typeof payload) => void;
+    const fetchPayload = vi.fn(
+      () => new Promise<typeof payload>((resolve) => (resolvePayload = resolve)),
+    );
+    let durable = activeA;
+    const promoteSessionIfUnchanged = vi.fn(async () => {
+      durable = { ...durable, activeSessionId: 'cloud-b', trading: payload.trading };
+      return true;
+    });
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
+        getMeta: vi.fn(async () => durable),
+        promoteSessionIfUnchanged,
+      },
+      sync: { fetchPayload },
+    });
+    overrideLiveAggregate(activeA);
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(fetchPayload).toHaveBeenCalledOnce());
+    store.overrideSelector(selectTradingData, {
+      ...activeA.trading!,
+      sessionName: 'A edited live',
+      balance: 13000,
+    });
+    store.refreshState();
+    resolvePayload(payload);
+    await opening;
+
+    expect(promoteSessionIfUnchanged).not.toHaveBeenCalled();
+    expect(durable).toEqual(activeA);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+    expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('open: rejects pre-existing live A2 over durable A1 before promotion or B hydration', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const durableA1: WorkspaceMeta = {
+      ...workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: 700,
+        activeSyncedAt: 650,
+        currentTime: 100,
+        trading: { ...defaultTradingData(), sessionName: 'A1', balance: 11000 },
+      }),
+      customTfMinutes: 15,
+      playbackSpeed: 500,
+      replayResolution: null,
+      selectedTfs: ['M1'],
+      layout: aView.layout,
+      panels: aView.panels,
+      linkGroups: [],
+    };
+    const liveA2: WorkspaceMeta = {
+      ...durableA1,
+      currentTime: 150,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      trading: { ...durableA1.trading!, sessionName: 'A2 not persisted', balance: 13000 },
+    };
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 90,
+      playbackSpeed: 100,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const promoteSessionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      currentTime: liveA2.currentTime,
+      liveTrading: liveA2.trading,
+      liveSessions: liveA2.sessions,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([durableA1]),
+        getMeta: vi.fn().mockResolvedValue(durableA1),
+        promoteSessionIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    overrideLiveAggregate(liveA2);
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+
+    expect(promoteSessionIfUnchanged).not.toHaveBeenCalled();
+    expect(store.selectSignal(selectTradingData)()).toEqual(liveA2.trading);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+    expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('open: promotes and hydrates B when captured live A exactly matches durable A', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const bView = singlePanelLayoutFor('EURUSD', 'H1');
+    const activeA: WorkspaceMeta = {
+      ...workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: 700,
+        activeSyncedAt: 650,
+        currentTime: 100,
+        trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+      }),
+      customTfMinutes: 15,
+      playbackSpeed: 500,
+      replayResolution: null,
+      selectedTfs: ['M1'],
+      layout: aView.layout,
+      panels: aView.panels,
+      linkGroups: [],
+    };
+    const payload = {
+      schemaVersion: 2 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      drawings: { EURUSD: { version: 1 as const, items: [] } },
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+      layout: bView.layout,
+      panels: bView.panels,
+      linkGroups: [],
+    };
+    const promotedB = {
+      ...activeA,
+      activeTf: payload.activeTf,
+      selectedTfs: payload.selectedTfs,
+      currentTime: payload.currentTime,
+      customTfMinutes: payload.customTfMinutes,
+      playbackSpeed: payload.playbackSpeed,
+      replayResolution: payload.replayResolution,
+      trading: payload.trading,
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      layout: bView.layout,
+      panels: bView.panels,
+    };
+    const promoteSessionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      currentTime: activeA.currentTime,
+      liveTrading: activeA.trading,
+      liveSessions: activeA.sessions,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        getWorkspace: vi.fn().mockResolvedValue({ ...promotedB, series: {} }),
+        promoteSessionIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    overrideLiveAggregate(activeA);
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+
+    expect(promoteSessionIfUnchanged).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+  });
+
+  it('open: compensates a same-id live A edit made while promotion is pending', async () => {
+    const activeA = completeWorkspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    let durable = activeA;
+    let resolvePromotion!: () => void;
+    const promoteSessionIfUnchanged = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolvePromotion = () => {
+            durable = {
+              ...durable,
+              activeTf: payload.activeTf,
+              currentTime: payload.currentTime,
+              customTfMinutes: payload.customTfMinutes,
+              playbackSpeed: payload.playbackSpeed,
+              trading: payload.trading,
+              sessions: [
+                savedSession({
+                  id: 'active-a',
+                  name: 'A',
+                  currentTime: 100,
+                  trading: activeA.trading,
+                  clientUpdatedAt: 700,
+                  syncedAt: 650,
+                }),
+              ],
+              activeSessionId: 'cloud-b',
+              activeClientUpdatedAt: 900,
+              activeSyncedAt: 900,
+            };
+            resolve(true);
+          };
+        }),
+    );
+    const compensatePromotionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _expectedOwnerId: string,
+        promoted: SavedSession,
+        restored: MaterializedSessionAggregate,
+      ) => {
+        durable = {
+          ...durable,
+          activeTf: restored.activeTf,
+          selectedTfs: restored.selectedTfs,
+          currentTime: restored.session.currentTime,
+          customTfMinutes: restored.session.customTfMinutes,
+          playbackSpeed: restored.session.playbackSpeed,
+          replayResolution: restored.session.replayResolution,
+          drawings: restored.drawings,
+          trading: restored.session.trading,
+          sessions: [promoted],
+          activeSessionId: restored.session.id,
+          activeClientUpdatedAt: restored.session.clientUpdatedAt,
+          activeSyncedAt: restored.session.syncedAt,
+          layout: restored.layout,
+          panels: restored.panels,
+          linkGroups: restored.linkGroups,
+        };
+        return true;
+      },
+    );
+    const db = {
+      listMetas: vi.fn().mockResolvedValue([activeA]),
+      getMeta: vi.fn(async () => durable),
+      promoteSessionIfUnchanged,
+      compensatePromotionIfUnchanged,
+    } as unknown as Partial<ReturnType<typeof workspaceDbStub>>;
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db,
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    overrideLiveAggregate(activeA);
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(promoteSessionIfUnchanged).toHaveBeenCalledOnce());
+    const latestA = {
+      ...activeA.trading!,
+      sessionName: 'A edited while promotion is pending',
+      balance: 13000,
+    };
+    store.overrideSelector(selectTradingData, latestA);
+    store.refreshState();
+    resolvePromotion();
+    await opening;
+
+    expect(compensatePromotionIfUnchanged).toHaveBeenCalledOnce();
+    expect(durable).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: expect.any(Number),
+        activeSyncedAt: 650,
+        trading: latestA,
+      }),
+    );
+    expect(durable.sessions).toEqual([
+      expect.objectContaining({
+        id: 'cloud-b',
+        clientUpdatedAt: 900,
+        syncedAt: 900,
+        trading: payload.trading,
+      }),
+    ]);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+    expect(routerStub.navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('open: compensates an A edit made while the post-promotion owner assertion is pending', async () => {
+    const activeA = completeWorkspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const promotedB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      currentTime: 200,
+      trading: payload.trading,
+    });
+    let releaseOwner!: () => void;
+    const ownerPending = new Promise<void>((resolve) => (releaseOwner = resolve));
+    let assertions = 0;
+    const assertExpectedOwner = vi.fn(async () => {
+      assertions += 1;
+      if (assertions === 3) await ownerPending;
+    });
+    const compensatePromotionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        getWorkspace: vi.fn().mockResolvedValue({ ...promotedB, series: {} }),
+        promoteSessionIfUnchanged: vi.fn().mockResolvedValue(true),
+        compensatePromotionIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload), assertExpectedOwner },
+    });
+    overrideLiveAggregate(activeA);
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(assertExpectedOwner).toHaveBeenCalledTimes(3));
+    store.overrideSelector(selectTradingData, {
+      ...activeA.trading!,
+      sessionName: 'A edited during owner assertion',
+      balance: 13000,
+    });
+    store.refreshState();
+    releaseOwner();
+    await opening;
+
+    expect(compensatePromotionIfUnchanged).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+  });
+
+  it('open: compensates an A edit made while the promoted workspace read is pending', async () => {
+    const activeA = completeWorkspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    const promotedB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      currentTime: 200,
+      trading: payload.trading,
+    });
+    let resolveWorkspace!: (
+      workspace: ReturnType<typeof workspaceMeta> & { series: Record<string, never> },
+    ) => void;
+    const getWorkspace = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof workspaceMeta> & { series: Record<string, never> }>(
+          (resolve) => {
+            resolveWorkspace = resolve;
+          },
+        ),
+    );
+    const compensatePromotionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        getWorkspace,
+        promoteSessionIfUnchanged: vi.fn().mockResolvedValue(true),
+        compensatePromotionIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    overrideLiveAggregate(activeA);
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(getWorkspace).toHaveBeenCalledOnce());
+    store.overrideSelector(selectTradingData, {
+      ...activeA.trading!,
+      sessionName: 'A edited during workspace read',
+      balance: 13000,
+    });
+    store.refreshState();
+    resolveWorkspace({ ...promotedB, series: {} });
+    await opening;
+
+    expect(compensatePromotionIfUnchanged).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+  });
+
+  it('open: live Supabase owner drift after promotion prevents compensation and hydration', async () => {
+    const activeA = completeWorkspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+    });
+    const payload = {
+      schemaVersion: 1 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      drawings: [],
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+    };
+    let owner = 'owner-a';
+    let authReads = 0;
+    let releasePostPromotionAuth!: () => void;
+    const postPromotionAuthPending = new Promise<void>(
+      (resolve) => (releasePostPromotionAuth = resolve),
+    );
+    const getSession = vi.fn(async () => {
+      authReads += 1;
+      if (authReads === 4) await postPromotionAuthPending;
+      return { data: { session: { user: { id: owner } } } };
+    });
+    const dbOwnerGuard = vi.fn().mockResolvedValue(undefined);
+    const liveSync = new SessionSyncService(
+      { client: { auth: { getSession } } } as unknown as SupabaseService,
+      { assertOwner: dbOwnerGuard } as unknown as WorkspaceDbService,
+    );
+    let resolvePromotion!: () => void;
+    const promoteSessionIfUnchanged = vi.fn(
+      () => new Promise<boolean>((resolve) => (resolvePromotion = () => resolve(true))),
+    );
+    const compensatePromotionIfUnchanged = vi.fn().mockResolvedValue(true);
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        promoteSessionIfUnchanged,
+        compensatePromotionIfUnchanged,
+      },
+      sync: {
+        captureOwner: vi.fn(liveSync.captureOwner.bind(liveSync)),
+        assertExpectedOwner: vi.fn(liveSync.assertExpectedOwner.bind(liveSync)),
+        fetchPayload: vi.fn().mockResolvedValue(payload),
+      },
+    });
+    overrideLiveAggregate(activeA);
+    await settle();
+
+    const opening = component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+    await vi.waitFor(() => expect(promoteSessionIfUnchanged).toHaveBeenCalledOnce());
+    store.overrideSelector(selectTradingData, {
+      ...activeA.trading!,
+      sessionName: 'A edited before owner drift',
+      balance: 13000,
+    });
+    store.refreshState();
+    resolvePromotion();
+    await vi.waitFor(() => expect(getSession).toHaveBeenCalledTimes(4));
+    owner = 'owner-b';
+    releasePostPromotionAuth();
+    await opening;
+
+    expect(getSession).toHaveBeenCalled();
+    expect(dbOwnerGuard).toHaveBeenCalledWith('owner-a');
+    expect(compensatePromotionIfUnchanged).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: WorkspacesActions.workspaceRestored.type }),
+    );
+  });
+
+  it('open: same-symbol cloud B really hydrates B while A is archived without a mixed aggregate', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const bView = singlePanelLayoutFor('EURUSD', 'H1');
+    const activeA = completeWorkspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+      layout: aView.layout,
+      panels: aView.panels,
+      linkGroups: [],
+      drawings: [],
+    });
+    const payload = {
+      schemaVersion: 2 as const,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+      currentTime: 200,
+      activeTf: 'H1' as const,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      drawings: { EURUSD: { version: 1 as const, items: [] } },
+      notes: [],
+      selectedTfs: ['H1' as const],
+      startRange: 0,
+      endRange: 0,
+      requiredDatasets: [],
+      layout: bView.layout,
+      panels: bView.panels,
+      linkGroups: [],
+    };
+    let latest = activeA;
+    const updateMetaIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        expected: WorkspaceMeta,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        if (JSON.stringify(latest) !== JSON.stringify(expected)) return false;
+        const next = update(latest);
+        if (!next) return false;
+        latest = next;
+        return true;
+      },
+    );
+    const getWorkspace = vi.fn(async () => ({ ...latest, series: {} }));
+    create({
+      currentAsset: 'EURUSD',
+      liveTrading: activeA.trading,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([activeA]),
+        getMeta: vi.fn().mockResolvedValue(activeA),
+        getWorkspace,
+        updateMetaIfUnchanged,
+      },
+      sync: { fetchPayload: vi.fn().mockResolvedValue(payload) },
+    });
+    overrideLiveAggregate(activeA);
+    await settle();
+
+    await component.open(
+      card({ symbol: 'EURUSD', id: 'cloud-b', cloudOnly: true, createdAt: 900 }),
+    );
+
+    expect(latest.activeSessionId).toBe('cloud-b');
+    expect(latest.activeClientUpdatedAt).toBe(900);
+    expect(latest.activeSyncedAt).toBe(900);
+    expect(latest.trading).toEqual(expect.objectContaining({ sessionName: 'B', balance: 12000 }));
+    expect(latest.layout).toEqual(bView.layout);
+    expect(latest).toEqual(
+      expect.objectContaining({
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      }),
+    );
+    expect(latest.sessions).toEqual([
+      expect.objectContaining({
+        id: 'active-a',
+        clientUpdatedAt: 700,
+        syncedAt: 650,
+        trading: expect.objectContaining({ sessionName: 'A', balance: 11000 }),
+      }),
+    ]);
+
+    const dispatchedActions = dispatch.mock.calls.map(
+      (call: unknown[]) => call[0] as { type: string },
+    );
+    const restoredAction = dispatchedActions.find(
+      (action: { type: string }) => action.type === WorkspacesActions.workspaceRestored.type,
+    ) as ReturnType<typeof WorkspacesActions.workspaceRestored> | undefined;
+    expect(restoredAction).toBeDefined();
+    const trading = dispatchedActions.reduce(tradingFeature.reducer, undefined);
+    const layout = dispatchedActions.reduce(layoutFeature.reducer, undefined);
+    const marketBefore = marketFeature.reducer(
+      undefined,
+      MarketActions.changeCustomTimeframe({ minutes: 90 }),
+    );
+    const market = dispatchedActions.reduce(marketFeature.reducer, marketBefore);
+    const replayBefore = replayFeature.reducer(
+      replayFeature.reducer(undefined, ReplayActions.changeSpeed({ msPerCandle: 1000 })),
+      ReplayActions.setReplayResolution({ minutes: 15 }),
+    );
+    const replay = dispatchedActions.reduce(replayFeature.reducer, replayBefore);
+    const workspaces = dispatchedActions.reduce(workspacesFeature.reducer, undefined);
+    expect(trading.activeSessionId).toBe('cloud-b');
+    expect(trading.sessionName).toBe('B');
+    expect(trading.balance).toBe(12000);
+    expect(layout.workspace).toEqual(bView.layout);
+    expect(market.customTf).toBe(45);
+    expect(replay.msPerCandle).toBe(250);
+    expect(replay.resolutionMinutes).toBe(5);
+    expect(workspaces.current).toBe('EURUSD');
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.switchSession.type }),
     );
   });
 
@@ -695,7 +1844,7 @@ describe('SesionesPageComponent', () => {
       expect.objectContaining({
         type: WorkspacesActions.switchAsset.type,
         symbol: 'XAUUSD',
-        thenOpenSession: 'cloud-1',
+        thenOpenSession: undefined,
       }),
     );
   });
@@ -829,15 +1978,37 @@ describe('SesionesPageComponent', () => {
   // ---- rename ----
 
   it('rename current-asset active → setSessionName', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const meta = workspaceMeta({
+      symbol: 'XAUUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 10,
+      activeSyncedAt: 9,
+    });
+    create({ currentAsset: 'XAUUSD', db: { getMeta: vi.fn().mockResolvedValue(meta) } });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
-    await component.rename(card({ symbol: 'XAUUSD', id: null }));
+    await component.rename(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        clientUpdatedAt: 10,
+        syncedAt: 9,
+      }),
+    );
     expect(dispatch).toHaveBeenCalledWith(TradingActions.setSessionName({ name: 'Nuevo' }));
   });
 
   it('rename current-asset archived → renameSession (with clientUpdatedAt)', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const saved = savedSession({ id: 's1' });
+    const meta = workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] });
+    create({
+      currentAsset: 'XAUUSD',
+      liveSessions: [saved],
+      db: { getMeta: vi.fn().mockResolvedValue(meta) },
+    });
     dialogsStub.prompt.mockResolvedValue('Nuevo');
     await settle();
     await component.rename(card({ symbol: 'XAUUSD', id: 's1' }));
@@ -895,6 +2066,158 @@ describe('SesionesPageComponent', () => {
     expect(syncStub.flushDirty).toHaveBeenCalled();
   });
 
+  it('rename off-screen active advances the transactional dirty clock and flushes', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-1',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'Anterior' },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await component.rename(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-1',
+        active: true,
+        name: 'Anterior',
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+    );
+
+    expect(written?.trading?.sessionName).toBe('Nuevo');
+    expect(written?.activeClientUpdatedAt).toBeGreaterThan(500);
+    expect(written?.activeSyncedAt).toBe(500);
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('rename uses the transaction-local meta and preserves newer active revisions', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 800,
+      trading: { ...defaultTradingData(), balance: 12345 },
+      sessions: [savedSession({ id: 's1', clientUpdatedAt: 100, syncedAt: 100 })],
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: {
+        getMeta: vi.fn().mockResolvedValue(workspaceMeta({ symbol: 'EURUSD' })),
+        updateMeta,
+        listMetas: vi.fn().mockResolvedValue([]),
+      },
+    });
+    dialogsStub.prompt.mockResolvedValue('Nuevo');
+    await settle();
+
+    await component.rename(
+      card({ symbol: 'EURUSD', id: 's1', clientUpdatedAt: 100, syncedAt: 100 }),
+    );
+
+    expect(updateMeta).toHaveBeenCalledOnce();
+    expect(written?.activeClientUpdatedAt).toBe(900);
+    expect(written?.activeSyncedAt).toBe(800);
+    expect(written?.trading?.balance).toBe(12345);
+    expect(written?.sessions?.[0].name).toBe('Nuevo');
+  });
+
+  it('rename does not let a pending active card A rename replacement B with equal clocks', async () => {
+    const replacement = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'B' },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(replacement);
+      },
+    );
+    let resolvePrompt!: (name: string) => void;
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    dialogsStub.prompt.mockImplementation(
+      () => new Promise((resolve) => (resolvePrompt = resolve)),
+    );
+    await settle();
+
+    const renaming = component.rename(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        name: 'A',
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+    );
+    resolvePrompt('Renamed A');
+    await renaming;
+
+    expect(written).toBeUndefined();
+    expect(replacement.trading?.sessionName).toBe('B');
+  });
+
+  it('rename current active requires the exact captured clocks before dispatch', async () => {
+    const replaceSessionIfUnchanged = vi.fn().mockResolvedValue(false);
+    create({
+      currentAsset: 'XAUUSD',
+      db: { replaceSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    dialogsStub.prompt.mockResolvedValue('Renamed A');
+    await settle();
+
+    await component.rename(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 500,
+        syncedAt: 400,
+      }),
+    );
+
+    expect(replaceSessionIfUnchanged).toHaveBeenCalledWith(
+      'XAUUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 500,
+        syncedAt: 400,
+      },
+      expect.any(Function),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.setSessionName.type }),
+    );
+  });
+
   it('rename off-screen archived does NOT flush when not authenticated', async () => {
     const meta = workspaceMeta({ symbol: 'EURUSD', sessions: [savedSession({ id: 's1' })] });
     const getMeta = vi.fn().mockResolvedValue(meta);
@@ -940,7 +2263,14 @@ describe('SesionesPageComponent', () => {
   });
 
   it('remove confirmed current-asset → deleteSession', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const saved = savedSession({ id: 's1' });
+    create({
+      currentAsset: 'XAUUSD',
+      liveSessions: [saved],
+      db: {
+        getMeta: vi.fn().mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+      },
+    });
     dialogsStub.deleteSession.mockResolvedValue(true);
     await settle();
     await component.remove(card({ symbol: 'XAUUSD', id: 's1' }));
@@ -993,7 +2323,15 @@ describe('SesionesPageComponent', () => {
     dialogsStub.deleteSession.mockResolvedValue(true);
     await settle();
 
-    await component.remove(card({ symbol: 'EURUSD', id: null, active: true }));
+    await component.remove(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'cloud-active',
+        active: true,
+        syncedAt: 123,
+      }),
+    );
 
     const written = putMeta.mock.calls.at(-1)![0] as {
       trading: TradingData;
@@ -1007,8 +2345,264 @@ describe('SesionesPageComponent', () => {
     expect(syncStub.flushPendingDeletes).toHaveBeenCalled();
   });
 
+  it('remove archived uses the transaction-local meta without erasing newer active state', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeClientUpdatedAt: 901,
+      activeSyncedAt: 800,
+      trading: { ...defaultTradingData(), balance: 12000 },
+      sessions: [savedSession({ id: 's1' }), savedSession({ id: 'newer' })],
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(card({ symbol: 'EURUSD', id: 's1' }));
+
+    expect(written?.sessions?.map((session) => session.id)).toEqual(['newer']);
+    expect(written?.activeClientUpdatedAt).toBe(901);
+    expect(written?.activeSyncedAt).toBe(800);
+    expect(written?.trading?.balance).toBe(12000);
+  });
+
+  it('remove ignores a stale archived card when that session has a newer revision', async () => {
+    const latestSession = savedSession({ id: 's1', clientUpdatedAt: 900, syncedAt: 800 });
+    const latest = workspaceMeta({ symbol: 'EURUSD', sessions: [latestSession] });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(latest);
+      },
+    );
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(
+      card({ symbol: 'EURUSD', id: 's1', clientUpdatedAt: 700, syncedAt: 700 }),
+    );
+
+    expect(written).toBeUndefined();
+    expect(dbStub.addPendingDelete).not.toHaveBeenCalled();
+  });
+
+  it('remove ignores a stale active card when active trading has a newer revision', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-1',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 800,
+      trading: { ...defaultTradingData(), balance: 12000 },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(latest);
+      },
+    );
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        active: true,
+        clientUpdatedAt: 700,
+        syncedAt: 700,
+      }),
+    );
+
+    expect(written).toBeUndefined();
+    expect(dbStub.addPendingDelete).not.toHaveBeenCalled();
+  });
+
+  it('remove does not let pending active card A reset or queue replacement B with equal clocks', async () => {
+    const replacement = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(replacement);
+      },
+    );
+    let resolveDelete!: (confirmed: boolean) => void;
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    dialogsStub.deleteSession.mockImplementation(
+      () => new Promise((resolve) => (resolveDelete = resolve)),
+    );
+    await settle();
+
+    const removing = component.remove(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+    );
+    resolveDelete(true);
+    await removing;
+
+    expect(written).toBeUndefined();
+    expect(replacement.trading?.sessionName).toBe('B');
+    expect(dbStub.addPendingDelete).not.toHaveBeenCalledWith({
+      entity: 'session',
+      id: 'active-b',
+    });
+  });
+
+  it('remove current active uses one exact delete transaction and never pre-reads or separately queues', async () => {
+    const deleteSessionIfUnchanged = vi.fn().mockResolvedValue(null);
+    const getMeta = vi
+      .fn()
+      .mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'active-b' }));
+    const addPendingDelete = vi.fn().mockResolvedValue(undefined);
+    create({
+      currentAsset: 'XAUUSD',
+      authStatus: 'authenticated',
+      db: { deleteSessionIfUnchanged, getMeta, addPendingDelete },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 600,
+        syncedAt: 500,
+      }),
+    );
+
+    expect(deleteSessionIfUnchanged).toHaveBeenCalledWith(
+      'XAUUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 600,
+        syncedAt: 500,
+      },
+      true,
+    );
+    expect(getMeta).not.toHaveBeenCalled();
+    expect(addPendingDelete).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.deleteActiveSessionCommitted.type }),
+    );
+  });
+
+  it('remove current active dispatches the exact replacement id committed by IndexedDB', async () => {
+    const deleteSessionIfUnchanged = vi.fn().mockResolvedValue({
+      deletedId: 'active-a',
+      replacementActiveSessionId: 'active-next',
+    });
+    create({
+      currentAsset: 'XAUUSD',
+      authStatus: 'authenticated',
+      db: { deleteSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    await component.remove(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 600,
+        syncedAt: 500,
+      }),
+    );
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.deleteActiveSessionCommitted.type,
+        deletedId: 'active-a',
+        replacementActiveSessionId: 'active-next',
+      }),
+    );
+    expect(syncStub.flushPendingDeletes).toHaveBeenCalledOnce();
+  });
+
+  it('remove dispatches committed A after NgRx switches to B during the DB await', async () => {
+    let release!: (result: { deletedId: string; replacementActiveSessionId: string }) => void;
+    const deleteSessionIfUnchanged = vi.fn(
+      () =>
+        new Promise<{ deletedId: string; replacementActiveSessionId: string }>((resolve) => {
+          release = resolve;
+        }),
+    );
+    create({
+      currentAsset: 'XAUUSD',
+      authStatus: 'authenticated',
+      db: { deleteSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    dialogsStub.deleteSession.mockResolvedValue(true);
+    await settle();
+
+    const removing = component.remove(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 600,
+        syncedAt: 500,
+      }),
+    );
+    await Promise.resolve();
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-b');
+    store.refreshState();
+    release({ deletedId: 'active-a', replacementActiveSessionId: 'db-replacement' });
+    await removing;
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.deleteActiveSessionCommitted.type,
+        deletedId: 'active-a',
+        replacementActiveSessionId: 'db-replacement',
+      }),
+    );
+  });
+
   it('remove ACTIVE current-asset session dispatches deleteActiveSession', async () => {
-    const meta = workspaceMeta({ symbol: 'XAUUSD', activeSessionId: 'a1' });
+    const meta = workspaceMeta({
+      symbol: 'XAUUSD',
+      activeSessionId: 'a1',
+      activeClientUpdatedAt: 10,
+      activeSyncedAt: 10,
+    });
     create({
       currentAsset: 'XAUUSD',
       authStatus: 'authenticated',
@@ -1019,12 +2613,28 @@ describe('SesionesPageComponent', () => {
         listMetas: vi.fn().mockResolvedValue([]),
       },
     });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'a1');
+    store.refreshState();
     dialogsStub.deleteSession.mockResolvedValue(true);
     await settle();
 
-    await component.remove(card({ symbol: 'XAUUSD', id: null, active: true }));
+    await component.remove(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'a1',
+        active: true,
+        clientUpdatedAt: 10,
+        syncedAt: 10,
+      }),
+    );
 
-    expect(dispatch).toHaveBeenCalledWith(TradingActions.deleteActiveSession());
+    expect(dispatch).toHaveBeenCalledWith(
+      TradingActions.deleteActiveSessionCommitted({
+        deletedId: 'a1',
+        replacementActiveSessionId: 'replacement-active',
+      }),
+    );
   });
 
   it('remove off-screen card does NOT touch sync when not authenticated', async () => {
@@ -1158,6 +2768,54 @@ describe('SesionesPageComponent', () => {
     );
   });
 
+  it('renameFolder advances beyond equal/backward wall time', async () => {
+    const putFolder = vi.fn().mockResolvedValue(undefined);
+    create({ db: { putFolder } });
+    dialogsStub.prompt.mockResolvedValue('Nueva');
+    await settle();
+    vi.spyOn(Date, 'now').mockReturnValue(100);
+
+    await component.renameFolder(
+      folder({ id: 'f1', name: 'Vieja', clientUpdatedAt: 500, syncedAt: 700 }),
+    );
+
+    expect(putFolder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'f1', name: 'Nueva', clientUpdatedAt: 701 }),
+    );
+  });
+
+  it('renameFolder does not overwrite a newer folder created while its dialog is pending', async () => {
+    const captured = folder({ clientUpdatedAt: 100, syncedAt: 100, name: 'Captured' });
+    let live = captured;
+    const putFolder = vi.fn(async (next: SessionFolder) => {
+      live = next;
+    });
+    const replaceFolderIfUnchanged = vi.fn(async (expected: SessionFolder, next: SessionFolder) => {
+      if (
+        live.clientUpdatedAt !== expected.clientUpdatedAt ||
+        live.syncedAt !== expected.syncedAt
+      ) {
+        return false;
+      }
+      live = next;
+      return true;
+    });
+    let resolvePrompt!: (name: string) => void;
+    create({ db: { putFolder, replaceFolderIfUnchanged } });
+    dialogsStub.prompt.mockImplementation(
+      () => new Promise((resolve) => (resolvePrompt = resolve)),
+    );
+    await settle();
+
+    const renaming = component.renameFolder(captured);
+    live = { ...captured, name: 'Newer', clientUpdatedAt: 200 };
+    resolvePrompt('Stale rename');
+    await renaming;
+
+    expect(live.name).toBe('Newer');
+    expect(live.clientUpdatedAt).toBe(200);
+  });
+
   it('deleteFolder (confirmed) removes it', async () => {
     const deleteFolder = vi.fn().mockResolvedValue(undefined);
     create({ db: { deleteFolder } });
@@ -1165,6 +2823,41 @@ describe('SesionesPageComponent', () => {
     await settle();
     await component.deleteFolder(folder({ id: 'f1' }));
     expect(deleteFolder).toHaveBeenCalledWith('f1');
+  });
+
+  it('deleteFolder does not remove or queue a folder updated while confirmation is pending', async () => {
+    const captured = folder({ clientUpdatedAt: 100, syncedAt: 100, name: 'Captured' });
+    let live: SessionFolder | undefined = captured;
+    const deleteFolder = vi.fn(async () => {
+      live = undefined;
+    });
+    const deleteFolderIfUnchanged = vi.fn(async (expected: SessionFolder) => {
+      if (
+        live?.clientUpdatedAt !== expected.clientUpdatedAt ||
+        live?.syncedAt !== expected.syncedAt
+      ) {
+        return false;
+      }
+      live = undefined;
+      return true;
+    });
+    let resolveConfirm!: (confirmed: boolean) => void;
+    create({
+      authStatus: 'authenticated',
+      db: { deleteFolder, deleteFolderIfUnchanged } as never,
+    });
+    dialogsStub.confirm.mockImplementation(
+      () => new Promise((resolve) => (resolveConfirm = resolve)),
+    );
+    await settle();
+
+    const deleting = component.deleteFolder(captured);
+    live = { ...captured, name: 'Newer', clientUpdatedAt: 200 };
+    resolveConfirm(true);
+    await deleting;
+
+    expect(live?.name).toBe('Newer');
+    expect(dbStub.addPendingDelete).not.toHaveBeenCalled();
   });
 
   // ---- folder CRUD: cloud sync (Task 12) ----
@@ -1287,6 +2980,19 @@ describe('SesionesPageComponent', () => {
       expect(byId.get('d')!.clientUpdatedAt).toBeUndefined(); // still last, order unchanged (4000)
     });
 
+    it('bumps changed folders monotonically beyond prior clocks', () => {
+      const result = reorderFolders(
+        [
+          folder({ id: 'a', order: 1000, clientUpdatedAt: 500, syncedAt: 700 }),
+          folder({ id: 'b', order: 2000 }),
+        ],
+        'b',
+        'a',
+        100,
+      );
+      expect(result.find((f) => f.id === 'a')?.clientUpdatedAt).toBe(701);
+    });
+
     it('does not mutate the input array or its folder objects', () => {
       const a = folder({ id: 'a', name: 'A', order: 1000 });
       const b = folder({ id: 'b', name: 'B', order: 2000 });
@@ -1337,13 +3043,13 @@ describe('SesionesPageComponent', () => {
   });
 
   it('dropping a dragged folder onto another persists the reordered folders and syncs when authenticated', async () => {
-    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const replaceFoldersIfUnchanged = vi.fn().mockResolvedValue(true);
     const a = folder({ id: 'a', name: 'A', order: 1000 });
     const b = folder({ id: 'b', name: 'B', order: 2000 });
     const c = folder({ id: 'c', name: 'C', order: 3000 });
     create({
       authStatus: 'authenticated',
-      db: { putFolder, listFolders: vi.fn().mockResolvedValue([a, b, c]) },
+      db: { replaceFoldersIfUnchanged, listFolders: vi.fn().mockResolvedValue([a, b, c]) },
     });
     await settle();
 
@@ -1354,19 +3060,66 @@ describe('SesionesPageComponent', () => {
       ev,
     );
 
-    expect(putFolder).toHaveBeenCalled();
+    expect(replaceFoldersIfUnchanged).toHaveBeenCalledOnce();
+    expect(replaceFoldersIfUnchanged.mock.calls[0][0]).toHaveLength(3);
     expect(component.folders().map((f) => f.id)).toEqual(['c', 'a', 'b']);
     expect(syncStub.flushDirty).toHaveBeenCalled();
     expect(component.draggingFolder()).toBeNull();
   });
 
+  it('folder reorder does not overwrite a folder concurrently updated after the drag snapshot', async () => {
+    const a = folder({ id: 'a', name: 'A', order: 1000, clientUpdatedAt: 100, syncedAt: 100 });
+    const b = folder({ id: 'b', name: 'B', order: 2000, clientUpdatedAt: 100, syncedAt: 100 });
+    const live = new Map([
+      [a.id, a],
+      [b.id, b],
+    ]);
+    const replaceFoldersIfUnchanged = vi.fn(
+      async (changes: { expected: SessionFolder; next: SessionFolder }[]) => {
+        const exact = changes.every(({ expected }) => {
+          const current = live.get(expected.id);
+          return (
+            current?.clientUpdatedAt === expected.clientUpdatedAt &&
+            current?.syncedAt === expected.syncedAt
+          );
+        });
+        if (!exact) return false;
+        for (const { next } of changes) live.set(next.id, next);
+        return true;
+      },
+    );
+    create({
+      authStatus: 'authenticated',
+      db: {
+        replaceFoldersIfUnchanged,
+        listFolders: vi.fn(async () => [...live.values()]),
+      },
+    });
+    await settle();
+    live.set(b.id, { ...b, name: 'B newer', clientUpdatedAt: 200 });
+
+    component.draggingFolder.set('b');
+    await component.onFolderDrop(
+      { key: 'a', label: 'A', folderId: 'a', count: 0, removable: true },
+      { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as DragEvent,
+    );
+
+    expect(live.get('b')?.name).toBe('B newer');
+    expect(live.get('b')?.clientUpdatedAt).toBe(200);
+    expect(live.get('a')?.order).toBe(1000);
+    expect(live.get('b')?.order).toBe(2000);
+    expect(new Set([...live.values()].map((item) => item.order)).size).toBe(live.size);
+    expect(replaceFoldersIfUnchanged).toHaveBeenCalledOnce();
+    expect(syncStub.flushDirty).not.toHaveBeenCalled();
+  });
+
   it('dropping a dragged folder does NOT sync when not authenticated', async () => {
-    const putFolder = vi.fn().mockResolvedValue(undefined);
+    const replaceFoldersIfUnchanged = vi.fn().mockResolvedValue(true);
     const a = folder({ id: 'a', name: 'A', order: 1000 });
     const b = folder({ id: 'b', name: 'B', order: 2000 });
     create({
       authStatus: 'anonymous',
-      db: { putFolder, listFolders: vi.fn().mockResolvedValue([a, b]) },
+      db: { replaceFoldersIfUnchanged, listFolders: vi.fn().mockResolvedValue([a, b]) },
     });
     await settle();
 
@@ -1377,7 +3130,7 @@ describe('SesionesPageComponent', () => {
       ev,
     );
 
-    expect(putFolder).toHaveBeenCalled();
+    expect(replaceFoldersIfUnchanged).toHaveBeenCalledOnce();
     expect(syncStub.flushDirty).not.toHaveBeenCalled();
   });
 
@@ -1407,7 +3160,14 @@ describe('SesionesPageComponent', () => {
   });
 
   it('moveToFolder current-asset → setSessionFolder (with clientUpdatedAt)', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const saved = savedSession({ id: 's1' });
+    create({
+      currentAsset: 'XAUUSD',
+      liveSessions: [saved],
+      db: {
+        getMeta: vi.fn().mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+      },
+    });
     await settle();
     await component.moveToFolder(card({ symbol: 'XAUUSD', id: 's1', folderId: null }), 'f1');
     expect(dispatch).toHaveBeenCalledWith(
@@ -1439,6 +3199,143 @@ describe('SesionesPageComponent', () => {
     expect(edited.trading.folderId).toBe('f1');
     expect(edited.clientUpdatedAt).toEqual(expect.any(Number));
     expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('moveToFolder off-screen active advances the transactional dirty clock and flushes', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-1',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 700,
+      trading: { ...defaultTradingData(), folderId: null },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      authStatus: 'authenticated',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+
+    await component.moveToFolder(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-1',
+        active: true,
+        clientUpdatedAt: 700,
+        syncedAt: 700,
+      }),
+      'f1',
+    );
+
+    expect(written?.trading?.folderId).toBe('f1');
+    expect(written?.activeClientUpdatedAt).toBeGreaterThan(700);
+    expect(written?.activeSyncedAt).toBe(700);
+    expect(syncStub.flushDirty).toHaveBeenCalled();
+  });
+
+  it('moveToFolder does not let active card A move replacement B with equal clocks', async () => {
+    const replacement = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'B', folderId: null },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(replacement);
+      },
+    );
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    await settle();
+
+    await component.moveToFolder(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+      'f1',
+    );
+
+    expect(written).toBeUndefined();
+    expect(replacement.trading?.folderId).toBeNull();
+  });
+
+  it('moveToFolder current active requires the exact captured clocks before dispatch', async () => {
+    const replaceSessionIfUnchanged = vi.fn().mockResolvedValue(false);
+    create({ currentAsset: 'XAUUSD', db: { replaceSessionIfUnchanged } });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    await component.moveToFolder(
+      card({
+        symbol: 'XAUUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        folderId: null,
+        clientUpdatedAt: 700,
+        syncedAt: 650,
+      }),
+      'f1',
+    );
+
+    expect(replaceSessionIfUnchanged).toHaveBeenCalledWith(
+      'XAUUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 700,
+        syncedAt: 650,
+      },
+      expect.any(Function),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.setSessionFolder.type }),
+    );
+  });
+
+  it('moveToFolder keeps archived clock semantics while preserving newer active revisions', async () => {
+    const latest = workspaceMeta({
+      symbol: 'EURUSD',
+      activeClientUpdatedAt: 1000,
+      activeSyncedAt: 950,
+      sessions: [savedSession({ id: 's1', clientUpdatedAt: 400, syncedAt: 400 })],
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta) => {
+        written = update(latest);
+      },
+    );
+    create({
+      currentAsset: 'US30',
+      db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) },
+    });
+    await settle();
+
+    await component.moveToFolder(
+      card({ symbol: 'EURUSD', id: 's1', clientUpdatedAt: 400, syncedAt: 400 }),
+      'f1',
+    );
+
+    expect(written?.activeClientUpdatedAt).toBe(1000);
+    expect(written?.activeSyncedAt).toBe(950);
+    expect(written?.sessions?.[0].trading.folderId).toBe('f1');
+    expect(written?.sessions?.[0].clientUpdatedAt).toBeGreaterThan(400);
   });
 
   it('moveToFolder off-screen archived does NOT flush when not authenticated', async () => {
@@ -1485,12 +3382,20 @@ describe('SesionesPageComponent', () => {
   });
 
   it('drop on a folder group moves the dragged card there', async () => {
-    create({ currentAsset: 'XAUUSD' });
+    const saved = savedSession({ id: 's1' });
+    create({
+      currentAsset: 'XAUUSD',
+      liveSessions: [saved],
+      db: {
+        getMeta: vi.fn().mockResolvedValue(workspaceMeta({ symbol: 'XAUUSD', sessions: [saved] })),
+      },
+    });
     await settle();
     const c = card({ symbol: 'XAUUSD', id: 's1', folderId: null });
     component.onDragStart(c, { dataTransfer: { setData: vi.fn() } } as unknown as DragEvent);
     const ev = { preventDefault: vi.fn() } as unknown as DragEvent;
     component.onGroupDrop({ key: 'f1', label: 'A', folderId: 'f1', cards: [] }, ev);
+    await settle();
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: TradingActions.setSessionFolder.type,
@@ -1730,14 +3635,47 @@ describe('SesionesPageComponent', () => {
   // ---- archive ----
 
   it('archive on the current-asset active card dispatches newSession', async () => {
+    const meta = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 10,
+      activeSyncedAt: 9,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    });
     create({
       currentAsset: 'NAS100',
       currentTime: 500,
-      db: { listMetas: vi.fn().mockResolvedValue([]), listFolders: vi.fn().mockResolvedValue([]) },
+      liveTrading: meta.trading,
+      db: {
+        getMeta: vi.fn().mockResolvedValue(meta),
+        listMetas: vi.fn().mockResolvedValue([]),
+        listFolders: vi.fn().mockResolvedValue([]),
+      },
     });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
     await settle();
-    await component.archive(card({ symbol: 'NAS100', id: null, active: true }));
-    expect(dispatch).toHaveBeenCalledWith(TradingActions.newSession({ currentCursor: 500 }));
+    await component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 10,
+        syncedAt: 9,
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.newSession.type,
+        currentCursor: 500,
+        archivedClientUpdatedAt: expect.any(Number),
+        archivedSyncedAt: 9,
+        replacementActiveSessionId: expect.any(String),
+      }),
+    );
+    const action = dispatch.mock.calls.at(-1)?.[0] as ReturnType<typeof TradingActions.newSession>;
+    expect(action.archivedClientUpdatedAt).toBeGreaterThan(10);
   });
 
   it('archive on an off-screen active card moves it into meta.sessions (keeps cloud id) and resets', async () => {
@@ -1759,7 +3697,15 @@ describe('SesionesPageComponent', () => {
       },
     });
     await settle();
-    await component.archive(card({ symbol: 'EURUSD', id: null, active: true }));
+    await component.archive(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'eur-active',
+        active: true,
+        syncedAt: 7,
+      }),
+    );
     const written = putMeta.mock.calls.at(-1)![0] as {
       sessions: { id: string }[];
       trading: TradingData;
@@ -1769,6 +3715,558 @@ describe('SesionesPageComponent', () => {
     expect(written.sessions[0].id).toBe('eur-active');
     expect(written.trading.history).toEqual([]);
     expect(written.activeSessionId).not.toBe('eur-active');
+  });
+
+  it('archive does not let active card A archive replacement B with equal clocks', async () => {
+    const replacement = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 500,
+      activeSyncedAt: 500,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    let written: WorkspaceMeta | undefined;
+    const updateMeta = vi.fn(
+      async (_symbol: string, update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined) => {
+        written = update(replacement);
+      },
+    );
+    create({ currentAsset: 'US30', db: { updateMeta, listMetas: vi.fn().mockResolvedValue([]) } });
+    await settle();
+
+    await component.archive(
+      card({
+        symbol: 'EURUSD',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 500,
+        syncedAt: 500,
+      }),
+    );
+
+    expect(written).toBeUndefined();
+    expect(replacement.activeSessionId).toBe('active-b');
+    expect(replacement.trading?.sessionName).toBe('B');
+  });
+
+  it('archive current active requires the exact captured clocks before dispatch', async () => {
+    const replaceSessionIfUnchanged = vi.fn().mockResolvedValue(false);
+    create({ currentAsset: 'NAS100', db: { replaceSessionIfUnchanged } });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    await component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 800,
+        syncedAt: 750,
+      }),
+    );
+
+    expect(replaceSessionIfUnchanged).toHaveBeenCalledWith(
+      'NAS100',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 800,
+        syncedAt: 750,
+      },
+      expect.any(Function),
+    );
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.newSession.type }),
+    );
+  });
+
+  it('archive reconciles an equal-clock live edit made while persistence is pending', async () => {
+    const durable = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 400,
+      trading: { ...defaultTradingData(), sessionName: 'Durable A', balance: 10000 },
+    });
+    let latest = durable;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => (release = resolve));
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        await waiting;
+        const next = update(latest);
+        if (!next) return false;
+        latest = next;
+        return true;
+      },
+    );
+    const reconcileArchivedSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _expectedActiveSessionId: string,
+        _expectedArchived: SavedSession | undefined,
+        reconciled: SavedSession,
+      ) => {
+        latest = {
+          ...latest,
+          sessions: (latest.sessions ?? [])
+            .filter((session) => session.id !== reconciled.id)
+            .concat(reconciled),
+        };
+        return true;
+      },
+    );
+    const capturedEdit = { ...defaultTradingData(), sessionName: 'Captured A', balance: 11000 };
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      liveTrading: capturedEdit,
+      db: {
+        replaceSessionIfUnchanged,
+        reconcileArchivedSessionIfUnchanged,
+      } as unknown as Partial<ReturnType<typeof workspaceDbStub>>,
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const archiving = component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+    const laterEdit = {
+      ...capturedEdit,
+      sessionName: 'Later A edit',
+      balance: 12000,
+    };
+    store.overrideSelector(selectTradingData, laterEdit);
+    store.refreshState();
+    release();
+    await archiving;
+
+    const archived = latest.sessions?.find((session) => session.id === 'active-a');
+    expect(reconcileArchivedSessionIfUnchanged).toHaveBeenCalledOnce();
+    expect(archived?.trading).toEqual(laterEdit);
+    expect(archived?.currentTime).toBe(500);
+    expect(archived?.clientUpdatedAt).toBeGreaterThan(100);
+    expect(archived?.syncedAt).toBe(100);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.newSession.type,
+        archivedClientUpdatedAt: archived?.clientUpdatedAt,
+        archivedSyncedAt: 100,
+        archivedSession: archived,
+      }),
+    );
+  });
+
+  it('archive restores A when another live edit arrives while reconciliation is pending', async () => {
+    const durable = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 400,
+      trading: { ...defaultTradingData(), sessionName: 'Durable A', balance: 10000 },
+    });
+    let latest = durable;
+    let releaseArchive!: () => void;
+    const archiveWaiting = new Promise<void>((resolve) => (releaseArchive = resolve));
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        await archiveWaiting;
+        const next = update(latest);
+        if (!next) return false;
+        latest = next;
+        return true;
+      },
+    );
+    let releaseReconciliation!: () => void;
+    const reconciliationWaiting = new Promise<void>((resolve) => (releaseReconciliation = resolve));
+    const reconcileArchivedSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _expectedActiveSessionId: string,
+        _expectedArchived: SavedSession | undefined,
+        reconciled: SavedSession,
+      ) => {
+        await reconciliationWaiting;
+        latest = {
+          ...latest,
+          sessions: (latest.sessions ?? [])
+            .filter((session) => session.id !== reconciled.id)
+            .concat(reconciled),
+        };
+        return true;
+      },
+    );
+    let releaseRestoration!: () => void;
+    const restorationWaiting = new Promise<void>((resolve) => (releaseRestoration = resolve));
+    const restoreArchivedSessionAsActiveIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        expectedActiveSessionId: string,
+        expectedArchived: SavedSession,
+        restored: MaterializedSessionAggregate,
+      ) => {
+        await restorationWaiting;
+        const archived = latest.sessions?.find((session) => session.id === expectedArchived.id);
+        if (
+          latest.activeSessionId !== expectedActiveSessionId ||
+          JSON.stringify(archived) !== JSON.stringify(expectedArchived)
+        ) {
+          return false;
+        }
+        latest = {
+          ...latest,
+          activeTf: restored.activeTf,
+          selectedTfs: restored.selectedTfs,
+          currentTime: restored.session.currentTime,
+          customTfMinutes: restored.session.customTfMinutes,
+          playbackSpeed: restored.session.playbackSpeed,
+          replayResolution: restored.session.replayResolution,
+          drawings: restored.drawings,
+          trading: restored.session.trading,
+          sessions: (latest.sessions ?? []).filter((session) => session.id !== restored.session.id),
+          activeSessionId: restored.session.id,
+          activeClientUpdatedAt: restored.session.clientUpdatedAt,
+          activeSyncedAt: restored.session.syncedAt,
+          layout: restored.layout,
+          panels: restored.panels,
+          linkGroups: restored.linkGroups,
+        };
+        return true;
+      },
+    );
+    const capturedA = { ...defaultTradingData(), sessionName: 'Captured A', balance: 11000 };
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      liveTrading: capturedA,
+      db: {
+        replaceSessionIfUnchanged,
+        reconcileArchivedSessionIfUnchanged,
+        restoreArchivedSessionAsActiveIfUnchanged,
+      } as unknown as Partial<ReturnType<typeof workspaceDbStub>>,
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const archiving = component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+    const firstEdit = { ...capturedA, sessionName: 'A1 during archive', balance: 12000 };
+    store.overrideSelector(selectTradingData, firstEdit);
+    store.refreshState();
+    releaseArchive();
+    await vi.waitFor(() => expect(reconcileArchivedSessionIfUnchanged).toHaveBeenCalledOnce());
+
+    const secondEdit = { ...firstEdit, sessionName: 'A2 during reconciliation', balance: 13000 };
+    store.overrideSelector(selectTradingData, secondEdit);
+    store.refreshState();
+    releaseReconciliation();
+    await vi.waitFor(() =>
+      expect(restoreArchivedSessionAsActiveIfUnchanged).toHaveBeenCalledOnce(),
+    );
+
+    const thirdEdit = { ...secondEdit, sessionName: 'A3 during restoration', balance: 14000 };
+    store.overrideSelector(selectTradingData, thirdEdit);
+    store.refreshState();
+    releaseRestoration();
+    await archiving;
+
+    expect(latest).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: expect.any(Number),
+        activeSyncedAt: 100,
+        trading: secondEdit,
+      }),
+    );
+    expect(latest.activeClientUpdatedAt).toBeGreaterThan(100);
+    expect(latest.sessions?.some((session) => session.id === 'active-a')).toBe(false);
+    expect(store.selectSignal(tradingFeature.selectActiveSessionId)()).toBe('active-a');
+    expect(store.selectSignal(selectTradingData)()).toEqual(thirdEdit);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.newSession.type }),
+    );
+  });
+
+  it('keeps replay-settings-and-files-only A3 live while restoration persists complete A2', async () => {
+    const trading = { ...defaultTradingData(), sessionName: 'A' };
+    const durable = completeWorkspaceMeta({
+      symbol: 'NAS100',
+      files: { H1: 'a.csv' },
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 500,
+      customTfMinutes: 15,
+      playbackSpeed: 1000,
+      replayResolution: null,
+      trading,
+    });
+    let releaseArchive!: () => void;
+    const archiveWaiting = new Promise<void>((resolve) => (releaseArchive = resolve));
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        await archiveWaiting;
+        return update(durable) !== undefined;
+      },
+    );
+    let releaseReconciliation!: () => void;
+    const reconciliationWaiting = new Promise<void>((resolve) => (releaseReconciliation = resolve));
+    const reconcileArchivedSessionIfUnchanged = vi.fn(async () => {
+      await reconciliationWaiting;
+      return true;
+    });
+    let releaseRestoration!: () => void;
+    const restorationWaiting = new Promise<void>((resolve) => (releaseRestoration = resolve));
+    const restoreArchivedSessionAsActiveIfUnchanged = vi.fn(async () => {
+      await restorationWaiting;
+      return true;
+    });
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      liveTrading: trading,
+      db: {
+        listMetas: vi.fn().mockResolvedValue([durable]),
+        replaceSessionIfUnchanged,
+        reconcileArchivedSessionIfUnchanged,
+        restoreArchivedSessionAsActiveIfUnchanged,
+      } as unknown as Partial<ReturnType<typeof workspaceDbStub>>,
+    });
+    overrideLiveAggregate(durable);
+    await settle();
+
+    const archiving = component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+    store.overrideSelector(selectMsPerCandle, 500);
+    store.refreshState();
+    releaseArchive();
+    await vi.waitFor(() => expect(reconcileArchivedSessionIfUnchanged).toHaveBeenCalledOnce());
+
+    const a2Files = { H1: 'a2.csv', M5: 'a2-m5.csv' } as const;
+    store.overrideSelector(marketFeature.selectCustomTf, 45);
+    store.overrideSelector(selectMsPerCandle, 250);
+    store.overrideSelector(selectResolutionMinutes, 5);
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      ...store.selectSignal(selectWorkspaceMetaSnapshot)(),
+      files: a2Files,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+    });
+    store.refreshState();
+    releaseReconciliation();
+    await vi.waitFor(() =>
+      expect(restoreArchivedSessionAsActiveIfUnchanged).toHaveBeenCalledOnce(),
+    );
+
+    const a3Files = { H1: 'a3.csv', M5: 'a3-m5.csv' } as const;
+    store.overrideSelector(marketFeature.selectCustomTf, 90);
+    store.overrideSelector(selectMsPerCandle, 100);
+    store.overrideSelector(selectResolutionMinutes, 1);
+    store.overrideSelector(selectWorkspaceMetaSnapshot, {
+      ...store.selectSignal(selectWorkspaceMetaSnapshot)(),
+      files: a3Files,
+      customTfMinutes: 90,
+      playbackSpeed: 100,
+      replayResolution: 1,
+    });
+    store.refreshState();
+    releaseRestoration();
+    await archiving;
+
+    expect(restoreArchivedSessionAsActiveIfUnchanged).toHaveBeenCalledWith(
+      'NAS100',
+      expect.any(String),
+      expect.any(Object),
+      expect.objectContaining({
+        files: a2Files,
+        session: expect.objectContaining({
+          customTfMinutes: 45,
+          playbackSpeed: 250,
+          replayResolution: 5,
+        }),
+      }),
+    );
+    expect(store.selectSignal(marketFeature.selectCustomTf)()).toBe(90);
+    expect(store.selectSignal(selectMsPerCandle)()).toBe(100);
+    expect(store.selectSignal(selectResolutionMinutes)()).toBe(1);
+    expect(store.selectSignal(selectWorkspaceMetaSnapshot)().files).toEqual(a3Files);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.newSession.type }),
+    );
+  });
+
+  it('archive treats replay-settings-only changes as a dirty captured payload', async () => {
+    const trading = { ...defaultTradingData(), sessionName: 'A' };
+    const durable = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 500,
+      customTfMinutes: 15,
+      playbackSpeed: 1000,
+      replayResolution: null,
+      trading,
+    });
+    let latest = durable;
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        latest = update(latest) ?? latest;
+        return latest !== durable;
+      },
+    );
+    create({
+      currentAsset: 'NAS100',
+      currentTime: 500,
+      liveTrading: trading,
+      db: { replaceSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.overrideSelector(marketFeature.selectCustomTf, 45);
+    store.overrideSelector(selectMsPerCandle, 250);
+    store.overrideSelector(selectResolutionMinutes, 5);
+    store.refreshState();
+    await settle();
+
+    await component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+
+    const archived = latest.sessions?.find((session) => session.id === 'active-a');
+    expect(archived).toEqual(
+      expect.objectContaining({
+        currentTime: 500,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+        syncedAt: 100,
+      }),
+    );
+    expect(archived?.clientUpdatedAt).toBeGreaterThan(100);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: TradingActions.newSession.type,
+        currentCursor: 500,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+        archivedClientUpdatedAt: archived?.clientUpdatedAt,
+      }),
+    );
+  });
+
+  it('archive rejects an A-to-B live transition while persistence is awaiting', async () => {
+    const durableA = workspaceMeta({
+      symbol: 'NAS100',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    });
+    let latest = durableA;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => (release = resolve));
+    const replaceSessionIfUnchanged = vi.fn(
+      async (
+        _symbol: string,
+        _revision: unknown,
+        update: (meta: WorkspaceMeta) => WorkspaceMeta | undefined,
+      ) => {
+        await waiting;
+        const next = update(latest);
+        if (!next) return false;
+        latest = next;
+        return true;
+      },
+    );
+    create({
+      currentAsset: 'NAS100',
+      liveTrading: durableA.trading,
+      db: { replaceSessionIfUnchanged },
+    });
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-a');
+    store.refreshState();
+    await settle();
+
+    const archiving = component.archive(
+      card({
+        symbol: 'NAS100',
+        id: null,
+        syncId: 'active-a',
+        active: true,
+        clientUpdatedAt: 100,
+        syncedAt: 100,
+      }),
+    );
+    store.overrideSelector(tradingFeature.selectActiveSessionId, 'active-b');
+    store.overrideSelector(selectTradingData, {
+      ...defaultTradingData(),
+      sessionName: 'B',
+      balance: 12000,
+    });
+    store.refreshState();
+    release();
+    await archiving;
+
+    expect(latest).toEqual(durableA);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: TradingActions.newSession.type }),
+    );
   });
 
   beforeEach(() => {

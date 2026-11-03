@@ -1,6 +1,8 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { PlaybookDbService } from './playbook-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
+import { ownerWorkspaceDbName } from './owner-scope';
 import { PlaybookRule } from '../state/playbook/playbook.models';
 
 function rule(id: string, over: Partial<PlaybookRule> = {}): PlaybookRule {
@@ -21,7 +23,7 @@ describe('PlaybookDbService', () => {
   let svc: PlaybookDbService;
   beforeEach(async () => {
     // Create a fresh service instance; each test suite gets its own
-    svc = new PlaybookDbService();
+    svc = new PlaybookDbService(fixedOwnerIdentity('owner-test'));
     await svc.clear(); // Clear any data from previous tests
   });
 
@@ -57,6 +59,9 @@ describe('PlaybookDbService', () => {
   it('playbook survives deletion of the OTHER databases (P-3)', async () => {
     await svc.upsert(rule('keep'));
     // Delete the other databases to ensure playbook DB is independent
+    // Session Sovereignty V2: delete this owner's siblings (the un-suffixed
+    // names no longer hold live state), so the P-3 intent still bites.
+    indexedDB.deleteDatabase(ownerWorkspaceDbName('owner-test'));
     indexedDB.deleteDatabase('emulador-workspaces');
     indexedDB.deleteDatabase('emulador-telemetry');
     // Give the deletes a moment to process

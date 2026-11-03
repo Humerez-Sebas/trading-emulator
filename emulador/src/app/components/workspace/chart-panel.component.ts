@@ -15,7 +15,7 @@ import { Store } from '@ngrx/store';
 import { UTCTimestamp } from 'lightweight-charts';
 import { ChartComponent, ChartControlHandle } from '../chart/chart.component';
 import { ChartModelMapper } from '../chart/chart-model-mapper.service';
-import { ChartEventBus, Unsubscribe } from '../../domain/chart/chart-event-bus';
+import { ChartEventSource, Unsubscribe } from '../../domain/chart/chart-event-bus';
 import { ChartSyncBus } from '../../domain/chart/chart-sync-bus';
 import { ChartRegistry } from './chart-registry.service';
 import { LayoutActions } from '../../state/layout/layout.actions';
@@ -557,7 +557,7 @@ export class ChartPanelComponent implements OnInit, OnDestroy {
   }
 
   /** Wires the wrapped chart's engine bus into the session ChartSyncBus. */
-  onChartReady(events: ChartEventBus): void {
+  onChartReady(events: ChartEventSource): void {
     this.busUnsubs.push(
       events.on('CrosshairMoved', (p) =>
         this.syncBus.emit(this.descriptor().id, 'CrosshairMoved', p),

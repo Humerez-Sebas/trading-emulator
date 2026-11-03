@@ -2,7 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe, PercentPipe, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { Store } from '@ngrx/store';
-import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { SessionRevision, WorkspaceDbService } from '../../services/workspace-db.service';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import {
   AnchorTf,
@@ -47,11 +47,13 @@ import {
   selectResolutionMinutes,
   selectSavedSessions,
   selectTradingData,
+  selectWorkspaceMetaSnapshot,
 } from '../../state/selectors';
 import { marketFeature } from '../../state/market/market.reducer';
+import { MarketActions } from '../../state/market/market.actions';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { SavedSession, SessionFolder, TradingData } from '../../state/trading/trading.models';
-import { emptyWorkspace, WorkspaceMeta } from '../../state/workspaces/workspaces.models';
+import { WorkspaceMeta } from '../../state/workspaces/workspaces.models';
 import { TrashIconComponent } from '../../components/icons/trash-icon.component';
 import { DialogService } from '../../components/ui/dialog.service';
 import { ButtonDirective } from '../../components/ui/button.directive';
@@ -78,6 +80,9 @@ type PendingDownload =
       kind: 'cloudOpen';
       card: SessionCard;
       payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3;
+      expectedOwnerId: string;
+      expectedMeta: WorkspaceMeta | undefined;
+      expectedLiveAggregate: string | null;
     };
 
 /** One row in the folder navigator sidebar. */
@@ -116,6 +121,8 @@ export interface SessionCard {
   active: boolean;
   /** Folder the session belongs to (null = "Sin carpeta"). */
   folderId: string | null;
+  clientUpdatedAt?: number;
+  syncedAt?: number;
   /** Cumulative balance series (incl. initial) for the preview sparkline. */
   equity: number[];
   /** True for a cloud-only session not yet pulled into local storage. */
@@ -143,6 +150,10 @@ function newId(): string {
 
 /** Sparse step between reassigned folder `order` values (room to insert later without a full re-sort). */
 const FOLDER_ORDER_STEP = 1000;
+
+function nextClientClock(now: number, clientUpdatedAt?: number, syncedAt?: number): number {
+  return Math.max(now, (clientUpdatedAt ?? 0) + 1, (syncedAt ?? 0) + 1);
+}
 
 /**
  * Pure reorder helper for the folder sidebar's drag-drop. Given the current
@@ -173,7 +184,7 @@ export function reorderFolders(
   return reordered.map((f, i) => {
     const order = (i + 1) * FOLDER_ORDER_STEP;
     if (order === f.order) return f;
-    return { ...f, order, clientUpdatedAt: now };
+    return { ...f, order, clientUpdatedAt: nextClientClock(now, f.clientUpdatedAt, f.syncedAt) };
   });
 }
 
@@ -273,6 +284,80 @@ export class SesionesPageComponent {
   private liveReplayResolution = this.store.selectSignal(selectResolutionMinutes);
   private liveDrawings = this.store.selectSignal(selectAllDrawings);
   private liveLoadedTfs = this.store.selectSignal(selectLoadedTfs);
+  private liveWorkspaceAggregate = this.store.selectSignal(selectWorkspaceMetaSnapshot);
+
+  private serializeLiveAggregate(
+    revision?: Pick<WorkspaceMeta, 'activeClientUpdatedAt' | 'activeSyncedAt'>,
+  ): string {
+    return JSON.stringify({
+      workspace: this.liveWorkspaceAggregate(),
+      activeSessionId: this.liveActiveSessionId(),
+      activeClientUpdatedAt: revision?.activeClientUpdatedAt,
+      activeSyncedAt: revision?.activeSyncedAt,
+      trading: this.liveTrading(),
+      currentTime: this.currentTime(),
+      customTfMinutes: this.liveCustomTf(),
+      playbackSpeed: this.livePlaybackSpeed(),
+      replayResolution: this.liveReplayResolution(),
+    });
+  }
+
+  private liveAggregateStillMatches(symbol: string, expected: string | null): boolean {
+    if (symbol !== this.currentAsset()) return expected === null;
+    return expected !== null && this.serializeLiveAggregate() === expected;
+  }
+
+  private captureLiveAggregateWithRevision(symbol: string): string | null {
+    if (symbol !== this.currentAsset()) return null;
+    const activeSessionId = this.liveActiveSessionId() ?? null;
+    const revision = this.metas().find((meta) => meta.symbol === symbol);
+    if (!revision || (revision.activeSessionId ?? null) !== activeSessionId) return null;
+    return this.serializeLiveAggregate(revision);
+  }
+
+  private capturedLiveAggregateStillMatches(symbol: string, expected: string | null): boolean {
+    if (symbol !== this.currentAsset()) return expected === null;
+    return expected !== null && this.captureLiveAggregateWithRevision(symbol) === expected;
+  }
+
+  private durableActiveMatchesCapturedLive(
+    symbol: string,
+    durable: WorkspaceMeta | undefined,
+    expected: string | null,
+  ): boolean {
+    if (!durable || expected === null) return false;
+    const linkGroups = Object.fromEntries(
+      (durable.linkGroups ?? []).map((group) => [group.id, group]),
+    );
+    return (
+      JSON.stringify({
+        workspace: {
+          files: durable.files,
+          activeTf: durable.activeTf,
+          selectedTfs: durable.selectedTfs,
+          customTfMinutes: durable.customTfMinutes,
+          currentTime: durable.currentTime,
+          playbackSpeed: durable.playbackSpeed,
+          replayResolution: durable.replayResolution,
+          drawings: durable.drawings,
+          trading: durable.trading,
+          sessions: durable.sessions ?? [],
+          activeSessionId: durable.activeSessionId ?? null,
+          layout: durable.layout,
+          panels: durable.panels,
+          linkGroups,
+        },
+        activeSessionId: durable.activeSessionId ?? null,
+        activeClientUpdatedAt: durable.activeClientUpdatedAt,
+        activeSyncedAt: durable.activeSyncedAt,
+        trading: durable.trading,
+        currentTime: durable.currentTime,
+        customTfMinutes: durable.customTfMinutes,
+        playbackSpeed: durable.playbackSpeed,
+        replayResolution: durable.replayResolution,
+      }) === expected && durable.symbol === symbol
+    );
+  }
 
   /** Flat list of every session as a card (live state wins for the open asset). */
   private allCards = computed<SessionCard[]>(() => {
@@ -298,6 +383,8 @@ export class SesionesPageComponent {
           active: true,
           folderId: trading.folderId ?? null,
           equity: equityCurve(trading),
+          clientUpdatedAt: meta.activeClientUpdatedAt,
+          syncedAt: meta.activeSyncedAt,
         });
       }
       for (const s of sessions) {
@@ -315,6 +402,8 @@ export class SesionesPageComponent {
           active: false,
           folderId: s.trading.folderId ?? null,
           equity: equityCurve(s.trading),
+          clientUpdatedAt: s.clientUpdatedAt,
+          syncedAt: s.syncedAt,
         });
       }
     }
@@ -461,6 +550,25 @@ export class SesionesPageComponent {
     // active first, then most recently touched
     return [...cards].sort(
       (a, b) => Number(b.active) - Number(a.active) || b.createdAt - a.createdAt,
+    );
+  }
+
+  private sessionRevision(card: SessionCard): SessionRevision | null {
+    const id = card.id ?? card.syncId;
+    if (!id) return null;
+    return {
+      kind: card.id === null ? 'active' : 'archived',
+      id,
+      clientUpdatedAt: card.clientUpdatedAt,
+      syncedAt: card.syncedAt,
+    };
+  }
+
+  private currentRevisionStillMatches(revision: SessionRevision): boolean {
+    if (revision.kind === 'active') return this.liveActiveSessionId() === revision.id;
+    const saved = this.liveSessions().find((session) => session.id === revision.id);
+    return (
+      saved?.clientUpdatedAt === revision.clientUpdatedAt && saved?.syncedAt === revision.syncedAt
     );
   }
 
@@ -659,7 +767,13 @@ export class SesionesPageComponent {
       if (pending.kind === 'jsonImport') {
         await this.restoreSession(pending.session);
       } else {
-        await this.materializeAndOpen(pending.card, pending.payload);
+        await this.materializeAndOpen(
+          pending.card,
+          pending.payload,
+          pending.expectedOwnerId,
+          pending.expectedMeta,
+          pending.expectedLiveAggregate,
+        );
       }
     } catch (e) {
       this.downloadError.set(
@@ -811,16 +925,36 @@ export class SesionesPageComponent {
   private async openCloudOnlySession(card: SessionCard): Promise<void> {
     if (!card.id) return;
     try {
+      const expectedLiveAggregate =
+        card.symbol === this.currentAsset()
+          ? this.captureLiveAggregateWithRevision(card.symbol)
+          : null;
+      const expectedOwnerId = await this.sync.captureOwner();
+      const expectedMeta = await this.db.getMeta(card.symbol);
+      await this.sync.assertExpectedOwner(expectedOwnerId);
       const payload = await this.sync.fetchPayload(card.id);
       const missing = missingDatasets(payload.requiredDatasets, this.localDatasets());
       if (missing.length) {
-        this.pendingDownload.set({ kind: 'cloudOpen', card, payload });
+        this.pendingDownload.set({
+          kind: 'cloudOpen',
+          card,
+          payload,
+          expectedOwnerId,
+          expectedMeta,
+          expectedLiveAggregate,
+        });
         this.downloadError.set('');
         this.downloadProgress.set(null);
         this.missing.set(missing);
         return;
       }
-      await this.materializeAndOpen(card, payload);
+      await this.materializeAndOpen(
+        card,
+        payload,
+        expectedOwnerId,
+        expectedMeta,
+        expectedLiveAggregate,
+      );
     } catch (e) {
       this.importError.set((e as Error).message || 'No se pudo descargar la sesión desde la nube.');
     }
@@ -834,6 +968,9 @@ export class SesionesPageComponent {
   private async materializeAndOpen(
     card: SessionCard,
     payload: SessionPayloadV1 | SessionPayloadV2 | SessionPayloadV3,
+    expectedOwnerId: string,
+    expectedMeta: WorkspaceMeta | undefined,
+    expectedLiveAggregate: string | null,
   ): Promise<void> {
     if (!card.id) return;
     const restored = fromPayload(payload, card.symbol);
@@ -845,29 +982,136 @@ export class SesionesPageComponent {
       name: card.name,
       createdAt: card.createdAt,
       currentTime: restored.cursor,
+      customTfMinutes: restored.customTfMinutes,
+      playbackSpeed: restored.playbackSpeed,
+      replayResolution: restored.replayResolution,
       trading: restored.trading,
       clientUpdatedAt: card.createdAt,
       syncedAt: card.createdAt,
     };
-    const meta = (await this.db.getMeta(card.symbol)) ?? emptyWorkspace(card.symbol);
-    meta.sessions = [...(meta.sessions ?? []).filter((s) => s.id !== session.id), session];
-    // RFC-011 gap fix: the cloud payload is the ONLY live production cloud-pull
-    // path (reconstructWorkspaces is spec-only dead code) — it must carry the
-    // multi-panel layout/panels/linkGroups across devices, not just the
-    // trading/cursor fields, or a fresh device silently falls back to the
-    // single-panel default on open. `restored.*` always comes from
-    // `parseSessionPayload` (via `fromPayload`), so these are always present
-    // and already consistency-validated — no extra guarding needed.
-    meta.layout = restored.layout;
-    meta.panels = restored.panels;
-    meta.linkGroups = restored.linkGroups;
-    // V3's drawing set is already flat and owner-tagged (every panel's
-    // drawings included, not just card.symbol's), so it threads straight
-    // through with no per-symbol flattening.
-    meta.drawings = restored.drawings.items;
-    await this.db.putMeta(meta);
+    await this.sync.assertExpectedOwner(expectedOwnerId);
+    if (!this.capturedLiveAggregateStillMatches(card.symbol, expectedLiveAggregate)) return;
+    if (
+      card.symbol === this.currentAsset() &&
+      !this.durableActiveMatchesCapturedLive(card.symbol, expectedMeta, expectedLiveAggregate)
+    ) {
+      return;
+    }
+    const committed = await this.db.promoteSessionIfUnchanged(card.symbol, expectedMeta, {
+      session,
+      files: expectedMeta?.files ?? {},
+      activeTf: restored.activeTf,
+      selectedTfs: restored.selectedTfs,
+      drawings: restored.drawings.items,
+      layout: restored.layout,
+      panels: restored.panels,
+      linkGroups: restored.linkGroups,
+      archivedAt: Date.now(),
+    });
+    if (!committed) return;
+    await this.sync.assertExpectedOwner(expectedOwnerId);
+    if (!this.capturedLiveAggregateStillMatches(card.symbol, expectedLiveAggregate)) {
+      await this.compensatePromotion(
+        card,
+        expectedOwnerId,
+        expectedMeta,
+        expectedLiveAggregate,
+        session,
+      );
+      return;
+    }
+    if (card.symbol === this.currentAsset()) {
+      const workspace = await this.db.getWorkspace(card.symbol);
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      if (
+        card.symbol !== this.currentAsset() ||
+        (expectedMeta?.activeSessionId ?? null) !== (this.liveActiveSessionId() ?? null) ||
+        !this.capturedLiveAggregateStillMatches(card.symbol, expectedLiveAggregate)
+      ) {
+        await this.compensatePromotion(
+          card,
+          expectedOwnerId,
+          expectedMeta,
+          expectedLiveAggregate,
+          session,
+        );
+        return;
+      }
+      if (
+        !workspace ||
+        workspace.activeSessionId !== session.id ||
+        workspace.activeClientUpdatedAt !== session.clientUpdatedAt ||
+        workspace.activeSyncedAt !== session.syncedAt
+      ) {
+        return;
+      }
+      this.store.dispatch(WorkspacesActions.workspaceRestored({ workspace }));
+      if (restored.customTfMinutes != null) {
+        this.store.dispatch(
+          MarketActions.changeCustomTimeframe({ minutes: restored.customTfMinutes }),
+        );
+      }
+      this.store.dispatch(ReplayActions.changeSpeed({ msPerCandle: restored.playbackSpeed }));
+      this.store.dispatch(
+        ReplayActions.setReplayResolution({ minutes: restored.replayResolution }),
+      );
+      await this.reload();
+      await this.sync.assertExpectedOwner(expectedOwnerId);
+      await this.router.navigateByUrl('/');
+      return;
+    }
     await this.reload();
-    await this.dispatchOpen({ ...card, cloudOnly: false, needsDownload: false });
+    await this.sync.assertExpectedOwner(expectedOwnerId);
+    await this.dispatchOpen({ ...card, id: null, cloudOnly: false, needsDownload: false });
+  }
+
+  private async compensatePromotion(
+    card: SessionCard,
+    expectedOwnerId: string,
+    expectedMeta: WorkspaceMeta | undefined,
+    expectedLiveAggregate: string | null,
+    promoted: SavedSession,
+  ): Promise<void> {
+    await this.sync.assertExpectedOwner(expectedOwnerId);
+    const activeSessionId = this.liveActiveSessionId();
+    if (
+      expectedLiveAggregate === null ||
+      this.capturedLiveAggregateStillMatches(card.symbol, expectedLiveAggregate) ||
+      card.symbol !== this.currentAsset() ||
+      !expectedMeta?.activeSessionId ||
+      activeSessionId !== expectedMeta.activeSessionId
+    ) {
+      return;
+    }
+    const now = Date.now();
+    const live = this.liveWorkspaceAggregate();
+    const trading = this.liveTrading();
+    await this.db.compensatePromotionIfUnchanged(card.symbol, expectedOwnerId, promoted, {
+      session: {
+        id: activeSessionId,
+        name: trading.sessionName ?? 'Sesión en curso',
+        createdAt: now,
+        currentTime: this.currentTime(),
+        customTfMinutes: this.liveCustomTf(),
+        playbackSpeed: this.livePlaybackSpeed(),
+        replayResolution: this.liveReplayResolution(),
+        trading,
+        clientUpdatedAt: nextClientClock(
+          now,
+          expectedMeta.activeClientUpdatedAt,
+          expectedMeta.activeSyncedAt,
+        ),
+        syncedAt: expectedMeta.activeSyncedAt,
+      },
+      files: live.files,
+      activeTf: live.activeTf,
+      selectedTfs: live.selectedTfs,
+      drawings: live.drawings,
+      layout: live.layout,
+      panels: live.panels,
+      linkGroups: Object.values(live.linkGroups),
+      archivedAt: now,
+    });
   }
 
   async rename(card: SessionCard): Promise<void> {
@@ -879,33 +1123,46 @@ export class SesionesPageComponent {
       maxLength: 60,
     });
     if (!name || name === card.name) return;
-    if (card.symbol === this.currentAsset()) {
-      if (card.id === null) this.store.dispatch(TradingActions.setSessionName({ name }));
-      else
-        this.store.dispatch(
-          TradingActions.renameSession({ id: card.id, name, clientUpdatedAt: Date.now() }),
-        );
-    } else {
-      const meta = await this.db.getMeta(card.symbol);
-      if (!meta) return;
-      if (card.id === null) {
-        if (meta.trading) meta.trading = { ...meta.trading, sessionName: name };
-      } else {
-        // stamp the edited archived session's LWW clock so the rename pushes
-        meta.sessions = (meta.sessions ?? []).map((s) =>
-          s.id === card.id
-            ? {
-                ...s,
-                name,
-                trading: { ...s.trading, sessionName: name },
-                clientUpdatedAt: Date.now(),
-              }
-            : s,
-        );
+    const revision = this.sessionRevision(card);
+    if (!revision) return;
+    const clientUpdatedAt = nextClientClock(
+      Date.now(),
+      revision.clientUpdatedAt,
+      revision.syncedAt,
+    );
+    const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
+      if (revision.kind === 'active') {
+        return {
+          ...meta,
+          trading: { ...meta.trading!, sessionName: name },
+          activeClientUpdatedAt: clientUpdatedAt,
+        };
       }
-      await this.db.putMeta(meta);
+      return {
+        ...meta,
+        sessions: (meta.sessions ?? []).map((session) =>
+          session.id === revision.id
+            ? {
+                ...session,
+                name,
+                trading: { ...session.trading, sessionName: name },
+                clientUpdatedAt,
+              }
+            : session,
+        ),
+      };
+    });
+    if (!changed) return;
+    if (card.symbol === this.currentAsset()) {
+      if (!this.currentRevisionStillMatches(revision)) return;
+      this.store.dispatch(
+        revision.kind === 'active'
+          ? TradingActions.setSessionName({ name })
+          : TradingActions.renameSession({ id: revision.id, name, clientUpdatedAt }),
+      );
+    } else {
       await this.reload();
-      if (card.id !== null) await this.syncDirty();
+      await this.syncDirty();
     }
     this.flash(`Sesión renombrada a "${name}".`);
   }
@@ -917,32 +1174,173 @@ export class SesionesPageComponent {
    */
   async archive(card: SessionCard): Promise<void> {
     if (!card.active) return;
-    if (card.symbol === this.currentAsset()) {
-      this.store.dispatch(TradingActions.newSession({ currentCursor: this.currentTime() }));
-    } else {
-      const meta = await this.db.getMeta(card.symbol);
-      const t = meta?.trading;
-      if (!meta || !t) return;
-      const real = t.orders.length > 0 || t.positions.length > 0 || t.history.length > 0;
-      if (real || t.sessionName !== null) {
-        meta.sessions = [
-          ...(meta.sessions ?? []),
-          {
-            id: meta.activeSessionId ?? newId(),
-            name: t.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
-            createdAt: Date.now(),
+    const revision = this.sessionRevision(card);
+    if (!revision || revision.kind !== 'active') return;
+    const current = card.symbol === this.currentAsset();
+    if (current && !this.currentRevisionStillMatches(revision)) return;
+    const expectedLiveAggregate = current ? this.serializeLiveAggregate() : null;
+    const intendedTrading = current ? this.liveTrading() : undefined;
+    const intendedCurrentTime = current ? this.currentTime() : undefined;
+    const intendedCustomTfMinutes = current ? this.liveCustomTf() : undefined;
+    const intendedPlaybackSpeed = current ? this.livePlaybackSpeed() : undefined;
+    const intendedReplayResolution = current ? this.liveReplayResolution() : undefined;
+    const replacementActiveSessionId = newId();
+    let archivedClientUpdatedAt = revision.clientUpdatedAt;
+    let archivedSession: SavedSession | undefined;
+    const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
+      if (current && !this.currentRevisionStillMatches(revision)) return undefined;
+      const trading = intendedTrading ?? meta.trading;
+      if (!trading) return undefined;
+      const currentTime = intendedCurrentTime ?? meta.currentTime;
+      const payloadChanged =
+        current &&
+        JSON.stringify({
+          trading,
+          currentTime,
+          customTfMinutes: intendedCustomTfMinutes,
+          playbackSpeed: intendedPlaybackSpeed,
+          replayResolution: intendedReplayResolution,
+        }) !==
+          JSON.stringify({
+            trading: meta.trading,
             currentTime: meta.currentTime,
-            trading: { ...t },
-            clientUpdatedAt: meta.activeClientUpdatedAt,
-            syncedAt: meta.activeSyncedAt,
-          },
-        ];
+            customTfMinutes: meta.customTfMinutes,
+            playbackSpeed: meta.playbackSpeed,
+            replayResolution: meta.replayResolution,
+          });
+      archivedClientUpdatedAt = payloadChanged
+        ? nextClientClock(Date.now(), revision.clientUpdatedAt, revision.syncedAt)
+        : revision.clientUpdatedAt;
+      const real =
+        trading.orders.length > 0 || trading.positions.length > 0 || trading.history.length > 0;
+      archivedSession =
+        real || trading.sessionName !== null
+          ? {
+              id: revision.id,
+              name: trading.sessionName ?? `Sesión ${(meta.sessions ?? []).length + 1}`,
+              createdAt: Date.now(),
+              currentTime,
+              customTfMinutes: current ? intendedCustomTfMinutes : meta.customTfMinutes,
+              playbackSpeed: current ? intendedPlaybackSpeed : meta.playbackSpeed,
+              replayResolution: current ? intendedReplayResolution : meta.replayResolution,
+              trading: { ...trading },
+              clientUpdatedAt: archivedClientUpdatedAt,
+              syncedAt: revision.syncedAt,
+            }
+          : undefined;
+      return {
+        ...meta,
+        sessions:
+          archivedSession === undefined
+            ? meta.sessions
+            : [...(meta.sessions ?? []), archivedSession],
+        trading: defaultTradingData(trading.initialBalance),
+        activeSessionId: replacementActiveSessionId,
+        activeClientUpdatedAt: undefined,
+        activeSyncedAt: undefined,
+      };
+    });
+    if (!changed) return;
+    if (current) {
+      if (!this.currentRevisionStillMatches(revision)) return;
+      if (!this.liveAggregateStillMatches(card.symbol, expectedLiveAggregate)) {
+        const expectedReconciledLiveAggregate = this.serializeLiveAggregate();
+        const trading = this.liveTrading();
+        const real =
+          trading.orders.length > 0 || trading.positions.length > 0 || trading.history.length > 0;
+        if (real || trading.sessionName !== null) {
+          const now = Date.now();
+          const reconciled: SavedSession = {
+            id: revision.id,
+            name:
+              trading.sessionName ??
+              archivedSession?.name ??
+              `Sesión ${(this.liveSessions() ?? []).length + 1}`,
+            createdAt: archivedSession?.createdAt ?? now,
+            currentTime: this.currentTime(),
+            customTfMinutes: this.liveCustomTf(),
+            playbackSpeed: this.livePlaybackSpeed(),
+            replayResolution: this.liveReplayResolution(),
+            trading,
+            clientUpdatedAt: nextClientClock(
+              now,
+              archivedSession?.clientUpdatedAt ?? revision.clientUpdatedAt,
+              revision.syncedAt,
+            ),
+            syncedAt: revision.syncedAt,
+          };
+          const reconciledCommit = await this.db.reconcileArchivedSessionIfUnchanged(
+            card.symbol,
+            replacementActiveSessionId,
+            archivedSession,
+            reconciled,
+          );
+          if (!reconciledCommit) return;
+          if (card.symbol !== this.currentAsset() || !this.currentRevisionStillMatches(revision)) {
+            return;
+          }
+          archivedSession = reconciled;
+          archivedClientUpdatedAt = reconciled.clientUpdatedAt;
+          if (!this.liveAggregateStillMatches(card.symbol, expectedReconciledLiveAggregate)) {
+            const latestTrading = this.liveTrading();
+            const latestWorkspace = this.liveWorkspaceAggregate();
+            const restoreTime = Date.now();
+            const restoredSession: SavedSession = {
+              id: revision.id,
+              name:
+                latestTrading.sessionName ??
+                reconciled.name ??
+                `Sesión ${(this.liveSessions() ?? []).length + 1}`,
+              createdAt: reconciled.createdAt,
+              currentTime: this.currentTime(),
+              customTfMinutes: this.liveCustomTf(),
+              playbackSpeed: this.livePlaybackSpeed(),
+              replayResolution: this.liveReplayResolution(),
+              trading: latestTrading,
+              clientUpdatedAt: nextClientClock(
+                restoreTime,
+                reconciled.clientUpdatedAt,
+                reconciled.syncedAt,
+              ),
+              syncedAt: reconciled.syncedAt,
+            };
+            await this.db.restoreArchivedSessionAsActiveIfUnchanged(
+              card.symbol,
+              replacementActiveSessionId,
+              reconciled,
+              {
+                session: restoredSession,
+                files: latestWorkspace.files,
+                activeTf: latestWorkspace.activeTf,
+                selectedTfs: latestWorkspace.selectedTfs,
+                drawings: latestWorkspace.drawings,
+                layout: latestWorkspace.layout,
+                panels: latestWorkspace.panels,
+                linkGroups: Object.values(latestWorkspace.linkGroups),
+                archivedAt: restoreTime,
+              },
+            );
+            return;
+          }
+        }
       }
-      meta.trading = defaultTradingData(t.initialBalance);
-      meta.activeSessionId = newId();
-      meta.activeClientUpdatedAt = undefined;
-      meta.activeSyncedAt = undefined;
-      await this.db.putMeta(meta);
+      this.store.dispatch(
+        TradingActions.newSession({
+          currentCursor: archivedSession ? archivedSession.currentTime : intendedCurrentTime!,
+          replacementActiveSessionId,
+          archivedClientUpdatedAt,
+          archivedSyncedAt: revision.syncedAt,
+          customTfMinutes: archivedSession
+            ? archivedSession.customTfMinutes
+            : intendedCustomTfMinutes,
+          playbackSpeed: archivedSession ? archivedSession.playbackSpeed : intendedPlaybackSpeed,
+          replayResolution: archivedSession
+            ? archivedSession.replayResolution
+            : intendedReplayResolution,
+          archivedSession,
+        }),
+      );
+    } else {
       await this.reload();
     }
     this.flash('Sesión archivada.');
@@ -959,52 +1357,44 @@ export class SesionesPageComponent {
       equity: card.equity,
     });
     if (!confirmed) return;
-    // Active "Sesión en curso" (no archived id): reset the workspace to a fresh
-    // empty session and propagate the cloud delete if it had been synced.
-    if (card.id === null) {
-      const meta = await this.db.getMeta(card.symbol);
-      const oldId = meta?.activeSessionId;
-      const wasSynced = meta?.activeSyncedAt != null;
-      if (card.symbol === this.currentAsset()) {
-        this.store.dispatch(TradingActions.deleteActiveSession());
-      } else if (meta) {
-        meta.trading = defaultTradingData(meta.trading?.initialBalance);
-        meta.activeSessionId = newId();
-        meta.activeClientUpdatedAt = undefined;
-        meta.activeSyncedAt = undefined;
-        await this.db.putMeta(meta);
-        await this.reload();
-      }
-      if (this.authStatus() === 'authenticated' && oldId && wasSynced) {
-        try {
-          await this.db.addPendingDelete({ entity: 'session', id: oldId });
-          await this.sync.flushPendingDeletes();
-        } catch {
-          // local-first: the cloud delete is retried on the next flush/pull.
-        }
-      }
-      this.flash('Sesión en curso eliminada.');
-      return;
-    }
+    const revision = this.sessionRevision(card);
+    if (!revision) return;
+    const enqueuePendingDelete =
+      this.authStatus() === 'authenticated' &&
+      (revision.kind === 'archived' || revision.syncedAt != null);
+    const deleted = await this.db.deleteSessionIfUnchanged(
+      card.symbol,
+      revision,
+      enqueuePendingDelete,
+    );
+    if (!deleted) return;
     if (card.symbol === this.currentAsset()) {
-      this.store.dispatch(TradingActions.deleteSession({ id: card.id }));
+      if (revision.kind === 'active') {
+        this.store.dispatch(
+          TradingActions.deleteActiveSessionCommitted({
+            deletedId: deleted.deletedId,
+            replacementActiveSessionId: deleted.replacementActiveSessionId!,
+          }),
+        );
+      } else {
+        if (!this.currentRevisionStillMatches(revision)) return;
+        this.store.dispatch(TradingActions.deleteSession({ id: revision.id }));
+      }
     } else {
-      const meta = await this.db.getMeta(card.symbol);
-      if (!meta) return;
-      meta.sessions = (meta.sessions ?? []).filter((s) => s.id !== card.id);
-      await this.db.putMeta(meta);
       await this.reload();
-      if (this.authStatus() === 'authenticated') {
-        try {
-          await this.db.addPendingDelete({ entity: 'session', id: card.id });
-          await this.sync.flushPendingDeletes();
-        } catch {
-          // Local delete already applied; the pending-delete record (if it made
-          // it to IndexedDB) is retried on the next flush — local-first.
-        }
+    }
+    if (enqueuePendingDelete) {
+      try {
+        await this.sync.flushPendingDeletes();
+      } catch {
+        // Local delete and its pending record already committed atomically.
       }
     }
-    this.flash(`Sesión "${card.name}" eliminada.`);
+    this.flash(
+      revision.kind === 'active'
+        ? 'Sesión en curso eliminada.'
+        : `Sesión "${card.name}" eliminada.`,
+    );
   }
 
   /**
@@ -1118,7 +1508,15 @@ export class SesionesPageComponent {
       maxLength: 40,
     });
     if (!name || name === folder.name) return;
-    await this.db.putFolder({ ...folder, name, clientUpdatedAt: Date.now() });
+    const changed = await this.db.replaceFolderIfUnchanged(folder, {
+      ...folder,
+      name,
+      clientUpdatedAt: nextClientClock(Date.now(), folder.clientUpdatedAt, folder.syncedAt),
+    });
+    if (!changed) {
+      await this.reloadFolders();
+      return;
+    }
     await this.reloadFolders();
     await this.syncDirty();
     this.flash(`Carpeta renombrada a "${name}".`);
@@ -1132,11 +1530,12 @@ export class SesionesPageComponent {
       danger: true,
     });
     if (!confirmed) return;
-    await this.db.deleteFolder(folder.id);
+    const enqueuePendingDelete = this.authStatus() === 'authenticated';
+    const deleted = await this.db.deleteFolderIfUnchanged(folder, enqueuePendingDelete);
     await this.reloadFolders();
-    if (this.authStatus() === 'authenticated') {
+    if (!deleted) return;
+    if (enqueuePendingDelete) {
       try {
-        await this.db.addPendingDelete({ entity: 'folder', id: folder.id });
         await this.sync.flushPendingDeletes();
       } catch {
         // Local delete already applied; the pending-delete record (if it made
@@ -1159,26 +1558,43 @@ export class SesionesPageComponent {
   /** Moves a session into a folder (folderId null = unassign). */
   async moveToFolder(card: SessionCard, folderId: string | null): Promise<void> {
     if (card.folderId === folderId) return;
+    const revision = this.sessionRevision(card);
+    if (!revision) return;
+    const clientUpdatedAt = nextClientClock(
+      Date.now(),
+      revision.clientUpdatedAt,
+      revision.syncedAt,
+    );
+    const changed = await this.db.replaceSessionIfUnchanged(card.symbol, revision, (meta) => {
+      if (revision.kind === 'active') {
+        return {
+          ...meta,
+          trading: { ...meta.trading!, folderId },
+          activeClientUpdatedAt: clientUpdatedAt,
+        };
+      }
+      return {
+        ...meta,
+        sessions: (meta.sessions ?? []).map((session) =>
+          session.id === revision.id
+            ? { ...session, trading: { ...session.trading, folderId }, clientUpdatedAt }
+            : session,
+        ),
+      };
+    });
+    if (!changed) return;
     if (card.symbol === this.currentAsset()) {
+      if (!this.currentRevisionStillMatches(revision)) return;
       this.store.dispatch(
-        TradingActions.setSessionFolder({ id: card.id, folderId, clientUpdatedAt: Date.now() }),
+        TradingActions.setSessionFolder({
+          id: revision.kind === 'active' ? null : revision.id,
+          folderId,
+          clientUpdatedAt,
+        }),
       );
     } else {
-      const meta = await this.db.getMeta(card.symbol);
-      if (!meta) return;
-      if (card.id === null) {
-        if (meta.trading) meta.trading = { ...meta.trading, folderId };
-      } else {
-        // stamp the edited archived session's LWW clock so the move pushes
-        meta.sessions = (meta.sessions ?? []).map((s) =>
-          s.id === card.id
-            ? { ...s, trading: { ...s.trading, folderId }, clientUpdatedAt: Date.now() }
-            : s,
-        );
-      }
-      await this.db.putMeta(meta);
       await this.reload();
-      if (card.id !== null) await this.syncDirty();
+      await this.syncDirty();
     }
     this.flash(folderId ? `Movida a "${this.folderName(folderId)}".` : 'Movida a "Sin carpeta".');
   }
@@ -1280,10 +1696,15 @@ export class SesionesPageComponent {
     const previousOrderById = new Map(previous.map((f) => [f.id, f.order]));
     const changed = reordered.filter((f) => f.order !== previousOrderById.get(f.id));
     if (!changed.length) return;
-    this.folders.set(reordered);
-    for (const f of changed) {
-      await this.db.putFolder(f);
+    const previousById = new Map(previous.map((folder) => [folder.id, folder]));
+    const committed = await this.db.replaceFoldersIfUnchanged(
+      changed.map((next) => ({ expected: previousById.get(next.id)!, next })),
+    );
+    if (!committed) {
+      await this.reloadFolders();
+      return;
     }
+    this.folders.set(reordered);
     await this.syncDirty();
   }
 

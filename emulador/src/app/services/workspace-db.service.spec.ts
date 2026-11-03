@@ -1,26 +1,78 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { WorkspaceDbService } from './workspace-db.service';
-import { series, workspaceMeta } from '../testing/fixtures';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { type MaterializedSessionAggregate, WorkspaceDbService } from './workspace-db.service';
+import { fixedOwnerIdentity, OwnerIdentityService } from './owner-identity.service';
+import { ADOPTION_MARKER_KEY, ownerWorkspaceDbName } from './owner-scope';
+import { savedSession, series, workspaceMeta } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
 import { singlePanelLayoutFor } from './session-migration';
 import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import type { LinkGroup } from '../state/link-groups/link-groups.models';
+import { SessionSyncService } from './session-sync.service';
+import type { SupabaseService } from '../auth/supabase.service';
 
 const DB_NAME = 'emulador-workspaces';
 
-/** Delete the DB and return a fresh service instance. */
-async function freshDb(): Promise<WorkspaceDbService> {
-  await new Promise<void>((res, rej) => {
-    const req = indexedDB.deleteDatabase(DB_NAME);
+/** Owner every test in this file runs as (Session Sovereignty V2: user stores are per-owner). */
+const OWNER = 'owner-test';
+
+function deleteDb(name: string): Promise<void> {
+  return new Promise<void>((res, rej) => {
+    const req = indexedDB.deleteDatabase(name);
     req.onsuccess = () => res();
     req.onerror = () => rej(req.error);
     req.onblocked = () => res(); // resolve even if blocked in test env
   });
-  return new WorkspaceDbService();
+}
+
+/**
+ * Delete BOTH databases the service now spans and return a fresh instance: the
+ * shared market-data one (`candles`/`datasets`/`series`, plus the legacy
+ * quarantine) and this owner's user database (`meta`/`folders`/`sync`).
+ */
+async function freshDb(): Promise<WorkspaceDbService> {
+  await deleteDb(DB_NAME);
+  await deleteDb(ownerWorkspaceDbName(OWNER));
+  return new WorkspaceDbService(fixedOwnerIdentity(OWNER));
 }
 
 let svc: WorkspaceDbService;
+
+type CompensatingWorkspaceDb = WorkspaceDbService & {
+  compensatePromotionIfUnchanged(
+    symbol: string,
+    expectedOwnerId: string,
+    promoted: ReturnType<typeof savedSession>,
+    restored: {
+      session: ReturnType<typeof savedSession>;
+      activeTf: 'M1';
+      selectedTfs: ['M1'];
+      drawings: [];
+      layout: ReturnType<typeof singlePanelLayoutFor>['layout'];
+      panels: ReturnType<typeof singlePanelLayoutFor>['panels'];
+      linkGroups: [];
+      archivedAt: number;
+    },
+  ): Promise<boolean>;
+};
+
+type RestoringArchivedWorkspaceDb = WorkspaceDbService & {
+  restoreArchivedSessionAsActiveIfUnchanged(
+    symbol: string,
+    expectedActiveSessionId: string,
+    expectedArchived: ReturnType<typeof savedSession>,
+    restored: {
+      session: ReturnType<typeof savedSession>;
+      activeTf: 'M1';
+      selectedTfs: ['M1'];
+      drawings: [];
+      layout: ReturnType<typeof singlePanelLayoutFor>['layout'];
+      panels: ReturnType<typeof singlePanelLayoutFor>['panels'];
+      linkGroups: [];
+      archivedAt: number;
+    },
+  ): Promise<boolean>;
+};
 
 beforeEach(async () => {
   svc = await freshDb();
@@ -69,6 +121,782 @@ describe('WorkspaceDbService — putMeta / getMeta', () => {
     expect(read?.layout).toBeUndefined();
     expect(read?.panels).toBeUndefined();
     expect(read?.linkGroups).toBeUndefined();
+  });
+
+  it('an exact-meta transaction rejects a delayed materialization after a newer write', async () => {
+    const captured = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-local',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'Captured' },
+    });
+    const newer = {
+      ...captured,
+      activeClientUpdatedAt: 101,
+      trading: { ...captured.trading!, sessionName: 'Newer' },
+    };
+    await svc.putMeta(captured);
+    await svc.putMeta(newer);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        updateMetaIfUnchanged(
+          symbol: string,
+          expected: WorkspaceMeta | undefined,
+          update: (current: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+        ): Promise<boolean>;
+      }
+    ).updateMetaIfUnchanged('EURUSD', captured, (current) => ({
+      ...current!,
+      drawings: [],
+    }));
+
+    expect(committed).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(newer);
+  });
+
+  it('an exact-meta transaction commits when the captured revision is still current', async () => {
+    const captured = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-local',
+      activeClientUpdatedAt: 200,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), sessionName: 'Dirty' },
+    });
+    await svc.putMeta(captured);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        updateMetaIfUnchanged(
+          symbol: string,
+          expected: WorkspaceMeta | undefined,
+          update: (current: WorkspaceMeta | undefined) => WorkspaceMeta | undefined,
+        ): Promise<boolean>;
+      }
+    ).updateMetaIfUnchanged('EURUSD', captured, (current) => ({
+      ...current!,
+      drawings: [],
+    }));
+
+    expect(committed).toBe(true);
+    expect(await svc.getMeta('EURUSD')).toEqual(captured);
+  });
+
+  it('rejects an active mutation when the id matches but the exact clocks changed', async () => {
+    const captured = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 90,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    });
+    const newer = {
+      ...captured,
+      activeClientUpdatedAt: 101,
+      trading: { ...captured.trading!, sessionName: 'A newer' },
+    };
+    await svc.putMeta(newer);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        replaceSessionIfUnchanged(
+          symbol: string,
+          expected: {
+            kind: 'active';
+            id: string;
+            clientUpdatedAt: number | undefined;
+            syncedAt: number | undefined;
+          },
+          update: (current: WorkspaceMeta) => WorkspaceMeta,
+        ): Promise<boolean>;
+      }
+    ).replaceSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 100,
+        syncedAt: 90,
+      },
+      (current) => ({
+        ...current,
+        trading: { ...current.trading!, sessionName: 'Stale rename' },
+      }),
+    );
+
+    expect(committed).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(newer);
+  });
+
+  it('commits an archived mutation only for the exact captured clocks', async () => {
+    const exact = savedSession({ id: 'saved-a', clientUpdatedAt: 200, syncedAt: 150 });
+    await svc.putMeta(workspaceMeta({ symbol: 'EURUSD', sessions: [exact] }));
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        replaceSessionIfUnchanged(
+          symbol: string,
+          expected: {
+            kind: 'archived';
+            id: string;
+            clientUpdatedAt: number | undefined;
+            syncedAt: number | undefined;
+          },
+          update: (current: WorkspaceMeta) => WorkspaceMeta,
+        ): Promise<boolean>;
+      }
+    ).replaceSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'archived',
+        id: exact.id,
+        clientUpdatedAt: exact.clientUpdatedAt,
+        syncedAt: exact.syncedAt,
+      },
+      (current) => ({
+        ...current,
+        sessions: current.sessions?.map((session) =>
+          session.id === exact.id ? { ...session, name: 'Renamed' } : session,
+        ),
+      }),
+    );
+
+    expect(committed).toBe(true);
+    expect((await svc.getMeta('EURUSD'))?.sessions?.[0].name).toBe('Renamed');
+  });
+
+  it('transactionally reconciles a newly archived row and flushes its latest dirty payload', async () => {
+    const captured = savedSession({
+      id: 'active-a',
+      name: 'Captured A',
+      currentTime: 500,
+      trading: { ...defaultTradingData(), sessionName: 'Captured A', balance: 11000 },
+      clientUpdatedAt: 100,
+      syncedAt: 100,
+    });
+    const latest = savedSession({
+      ...captured,
+      name: 'Latest A',
+      trading: { ...captured.trading, sessionName: 'Latest A', balance: 12000 },
+      clientUpdatedAt: 101,
+    });
+    await svc.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'active-next',
+        trading: defaultTradingData(),
+        sessions: [captured],
+      }),
+    );
+    const reconciling = svc as WorkspaceDbService & {
+      reconcileArchivedSessionIfUnchanged(
+        symbol: string,
+        expectedActiveSessionId: string,
+        expectedArchived: typeof captured,
+        reconciled: typeof latest,
+      ): Promise<boolean>;
+    };
+
+    expect(reconciling.reconcileArchivedSessionIfUnchanged).toBeTypeOf('function');
+    const committed = await reconciling.reconcileArchivedSessionIfUnchanged(
+      'EURUSD',
+      'active-next',
+      captured,
+      latest,
+    );
+
+    expect(committed).toBe(true);
+    expect((await svc.getMeta('EURUSD'))?.sessions).toContainEqual(latest);
+
+    const sync = new SessionSyncService(
+      {
+        client: {
+          auth: { getSession: async () => ({ data: { session: { user: { id: OWNER } } } }) },
+        },
+      } as SupabaseService,
+      svc,
+    );
+    const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
+    await sync.flushDirty();
+
+    const row = upsert.mock.calls
+      .map(([candidate]) => candidate)
+      .find(({ id }) => id === 'active-a');
+    expect(row?.payload).toEqual(
+      expect.objectContaining({
+        trading: expect.objectContaining({ sessionName: 'Latest A', balance: 12000 }),
+      }),
+    );
+    expect(row?.clientUpdatedAt).toBe(101);
+  });
+
+  it('restores an exact archived A as active with its latest aggregate and monotonic dirty clock', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const archivedA = savedSession({
+      id: 'active-a',
+      name: 'A1',
+      currentTime: 500,
+      trading: { ...defaultTradingData(), sessionName: 'A1', balance: 12000 },
+      clientUpdatedAt: 101,
+      syncedAt: 100,
+    });
+    const unrelated = savedSession({ id: 'saved-c', name: 'C' });
+    await svc.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'active-next',
+        trading: defaultTradingData(),
+        sessions: [unrelated, archivedA],
+      }),
+    );
+    const restoredA = savedSession({
+      ...archivedA,
+      name: 'A2',
+      currentTime: 600,
+      customTfMinutes: 45,
+      playbackSpeed: 250,
+      replayResolution: 5,
+      trading: { ...archivedA.trading, sessionName: 'A2', balance: 13000 },
+      clientUpdatedAt: 102,
+    });
+    const restoring = svc as RestoringArchivedWorkspaceDb;
+
+    expect(restoring.restoreArchivedSessionAsActiveIfUnchanged).toBeTypeOf('function');
+    const committed = await restoring.restoreArchivedSessionAsActiveIfUnchanged(
+      'EURUSD',
+      'active-next',
+      archivedA,
+      {
+        session: restoredA,
+        activeTf: 'M1',
+        selectedTfs: ['M1'],
+        drawings: [],
+        layout: view.layout,
+        panels: view.panels,
+        linkGroups: [],
+        archivedAt: 1000,
+      },
+    );
+
+    const restored = await svc.getMeta('EURUSD');
+    expect(committed).toBe(true);
+    expect(restored).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: 102,
+        activeSyncedAt: 100,
+        currentTime: 600,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+        trading: expect.objectContaining({ sessionName: 'A2', balance: 13000 }),
+        layout: view.layout,
+        panels: view.panels,
+      }),
+    );
+    expect(restored?.sessions).toEqual([unrelated]);
+    expect(restored?.activeClientUpdatedAt).toBeGreaterThan(restored?.activeSyncedAt ?? 0);
+
+    const sync = new SessionSyncService(
+      {
+        client: {
+          auth: { getSession: async () => ({ data: { session: { user: { id: OWNER } } } }) },
+        },
+      } as SupabaseService,
+      svc,
+    );
+    const upsert = vi.spyOn(sync, 'upsertSession').mockResolvedValue();
+    await sync.flushDirty();
+
+    const row = upsert.mock.calls
+      .map(([candidate]) => candidate)
+      .find(({ id }) => id === 'active-a');
+    expect(row?.clientUpdatedAt).toBe(102);
+    expect(row?.payload).toEqual(
+      expect.objectContaining({
+        trading: expect.objectContaining({ sessionName: 'A2', balance: 13000 }),
+      }),
+    );
+  });
+
+  it('restores the captured active files with the archived aggregate', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const archivedA = savedSession({
+      id: 'active-a',
+      clientUpdatedAt: 101,
+      syncedAt: 100,
+    });
+    await svc.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        files: { H1: 'stale.csv' },
+        activeSessionId: 'active-next',
+        sessions: [archivedA],
+      }),
+    );
+    const restored = {
+      session: { ...archivedA, clientUpdatedAt: 102 },
+      files: { H1: 'latest.csv', M5: 'latest-m5.csv' },
+      activeTf: 'M1' as const,
+      selectedTfs: ['M1'] as const,
+      drawings: [],
+      layout: view.layout,
+      panels: view.panels,
+      linkGroups: [],
+      archivedAt: 1000,
+    } as MaterializedSessionAggregate & { files: WorkspaceMeta['files'] };
+
+    const committed = await svc.restoreArchivedSessionAsActiveIfUnchanged(
+      'EURUSD',
+      'active-next',
+      archivedA,
+      restored,
+    );
+
+    expect(committed).toBe(true);
+    expect((await svc.getMeta('EURUSD'))?.files).toEqual(restored.files);
+  });
+
+  it('does not restore A after the exact archived row changes', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const archivedA = savedSession({
+      id: 'active-a',
+      clientUpdatedAt: 101,
+      syncedAt: 100,
+    });
+    const newerArchivedA = { ...archivedA, clientUpdatedAt: 102 };
+    const current = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-next',
+      trading: defaultTradingData(),
+      sessions: [newerArchivedA],
+    });
+    await svc.putMeta(current);
+    const restoring = svc as RestoringArchivedWorkspaceDb;
+
+    expect(restoring.restoreArchivedSessionAsActiveIfUnchanged).toBeTypeOf('function');
+    const committed = await restoring.restoreArchivedSessionAsActiveIfUnchanged(
+      'EURUSD',
+      'active-next',
+      archivedA,
+      {
+        session: { ...newerArchivedA, clientUpdatedAt: 103 },
+        activeTf: 'M1',
+        selectedTfs: ['M1'],
+        drawings: [],
+        layout: view.layout,
+        panels: view.panels,
+        linkGroups: [],
+        archivedAt: 1000,
+      },
+    );
+
+    expect(committed).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(current);
+  });
+
+  it('rejects an unclocked archived mutation when the saved row is absent', async () => {
+    const current = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      trading: { ...defaultTradingData(), sessionName: 'B' },
+      sessions: [],
+    });
+    await svc.putMeta(current);
+
+    const committed = await svc.replaceSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'archived',
+        id: 'missing-a',
+        clientUpdatedAt: undefined,
+        syncedAt: undefined,
+      },
+      (meta) => ({ ...meta, trading: { ...meta.trading!, sessionName: 'Wrong' } }),
+    );
+
+    expect(committed).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(current);
+  });
+
+  it('does not delete or enqueue an absent unclocked archived row whose id became active', async () => {
+    const active = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'same-id',
+      trading: { ...defaultTradingData(), sessionName: 'Current B', balance: 12000 },
+      sessions: [],
+    });
+    await svc.putMeta(active);
+
+    const result = await svc.deleteSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'archived',
+        id: 'same-id',
+        clientUpdatedAt: undefined,
+        syncedAt: undefined,
+      },
+      true,
+    );
+
+    expect(result).toBeNull();
+    expect(await svc.getMeta('EURUSD')).toEqual(active);
+    expect(await svc.listPendingDeletes()).toEqual([]);
+  });
+
+  it('active delete resets and queues the exact captured id in one transaction', async () => {
+    const exact = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 300,
+      activeSyncedAt: 250,
+      trading: { ...defaultTradingData(), sessionName: 'A', history: [{ profit: 5 } as never] },
+    });
+    await svc.putMeta(exact);
+
+    const result = await (
+      svc as WorkspaceDbService & {
+        deleteSessionIfUnchanged(
+          symbol: string,
+          expected: {
+            kind: 'active';
+            id: string;
+            clientUpdatedAt: number | undefined;
+            syncedAt: number | undefined;
+          },
+          enqueue: boolean,
+        ): Promise<{ deletedId: string; replacementActiveSessionId?: string } | null>;
+      }
+    ).deleteSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 300,
+        syncedAt: 250,
+      },
+      true,
+    );
+
+    const current = await svc.getMeta('EURUSD');
+    expect(result).toEqual({
+      deletedId: 'active-a',
+      replacementActiveSessionId: expect.any(String),
+    });
+    expect(current?.activeSessionId).toBe(result?.replacementActiveSessionId);
+    expect(current?.activeSessionId).not.toBe('active-a');
+    expect(current?.trading?.history).toEqual([]);
+    expect(await svc.listPendingDeletes()).toEqual([{ entity: 'session', id: 'active-a' }]);
+  });
+
+  it('an A-to-B change while delete awaits leaves B untouched and queues no session id', async () => {
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 400,
+      activeSyncedAt: 400,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    });
+    const activeB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-b',
+      activeClientUpdatedAt: 400,
+      activeSyncedAt: 400,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    await svc.putMeta(activeA);
+
+    let releaseOwner!: () => void;
+    const ownerReady = new Promise<void>((resolve) => (releaseOwner = resolve));
+    const delayed = new WorkspaceDbService({
+      ownerId: vi.fn(async () => {
+        await ownerReady;
+        return OWNER;
+      }),
+    } as never);
+    const deleting = (
+      delayed as WorkspaceDbService & {
+        deleteSessionIfUnchanged(
+          symbol: string,
+          expected: {
+            kind: 'active';
+            id: string;
+            clientUpdatedAt: number | undefined;
+            syncedAt: number | undefined;
+          },
+          enqueue: boolean,
+        ): Promise<{ deletedId: string; replacementActiveSessionId?: string } | null>;
+      }
+    ).deleteSessionIfUnchanged(
+      'EURUSD',
+      {
+        kind: 'active',
+        id: 'active-a',
+        clientUpdatedAt: 400,
+        syncedAt: 400,
+      },
+      true,
+    );
+
+    await svc.putMeta(activeB);
+    releaseOwner();
+
+    expect(await deleting).toBeNull();
+    expect(await svc.getMeta('EURUSD')).toEqual(activeB);
+    expect(await svc.listPendingDeletes()).toEqual([]);
+  });
+
+  it('promotes cloud B as one coherent aggregate while archiving A with A identity and clocks', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const bView = singlePanelLayoutFor('EURUSD', 'H1');
+    const activeA = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active-a',
+      activeClientUpdatedAt: 700,
+      activeSyncedAt: 650,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A', balance: 11000 },
+      layout: aView.layout,
+      panels: aView.panels,
+      drawings: [],
+    });
+    const cloudB = savedSession({
+      id: 'cloud-b',
+      name: 'B',
+      createdAt: 900,
+      currentTime: 200,
+      clientUpdatedAt: 900,
+      syncedAt: 900,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    await svc.putMeta(activeA);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        promoteSessionIfUnchanged(
+          symbol: string,
+          expected: WorkspaceMeta | undefined,
+          materialized: {
+            session: typeof cloudB;
+            activeTf: 'H1';
+            selectedTfs: ['H1'];
+            drawings: [];
+            layout: typeof bView.layout;
+            panels: typeof bView.panels;
+            linkGroups: [];
+            archivedAt: number;
+          },
+        ): Promise<boolean>;
+      }
+    ).promoteSessionIfUnchanged('EURUSD', activeA, {
+      session: cloudB,
+      activeTf: 'H1',
+      selectedTfs: ['H1'],
+      drawings: [],
+      layout: bView.layout,
+      panels: bView.panels,
+      linkGroups: [],
+      archivedAt: 1000,
+    });
+
+    const promoted = await svc.getMeta('EURUSD');
+    expect(committed).toBe(true);
+    expect(promoted).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'cloud-b',
+        activeClientUpdatedAt: 900,
+        activeSyncedAt: 900,
+        currentTime: 200,
+        trading: expect.objectContaining({ sessionName: 'B', balance: 12000 }),
+        layout: bView.layout,
+        panels: bView.panels,
+      }),
+    );
+    expect(promoted?.sessions).toEqual([
+      expect.objectContaining({
+        id: 'active-a',
+        name: 'A',
+        currentTime: 100,
+        clientUpdatedAt: 700,
+        syncedAt: 650,
+        trading: expect.objectContaining({ sessionName: 'A', balance: 11000 }),
+      }),
+    ]);
+    expect(JSON.stringify(promoted)).not.toMatch(/"candles"|"series"|"ohlc"|"parquet"/i);
+  });
+
+  it('compensates an exact promoted B by restoring latest A and archiving B coherently', async () => {
+    const aView = singlePanelLayoutFor('EURUSD', 'M1');
+    const bView = singlePanelLayoutFor('EURUSD', 'H1');
+    const archivedA = savedSession({
+      id: 'active-a',
+      name: 'A stale',
+      createdAt: 800,
+      currentTime: 100,
+      clientUpdatedAt: 700,
+      syncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A stale', balance: 11000 },
+    });
+    const promotedB = savedSession({
+      id: 'cloud-b',
+      name: 'B',
+      createdAt: 900,
+      currentTime: 200,
+      clientUpdatedAt: 900,
+      syncedAt: 900,
+      trading: { ...defaultTradingData(), sessionName: 'B', balance: 12000 },
+    });
+    await svc.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'cloud-b',
+        activeClientUpdatedAt: 900,
+        activeSyncedAt: 900,
+        currentTime: 200,
+        trading: promotedB.trading,
+        sessions: [archivedA],
+        layout: bView.layout,
+        panels: bView.panels,
+      }),
+    );
+    const latestA = savedSession({
+      id: 'active-a',
+      name: 'A latest',
+      createdAt: 1000,
+      currentTime: 150,
+      clientUpdatedAt: 901,
+      syncedAt: 650,
+      trading: { ...defaultTradingData(), sessionName: 'A latest', balance: 13000 },
+    });
+    const compensating = svc as CompensatingWorkspaceDb;
+
+    expect(compensating.compensatePromotionIfUnchanged).toBeTypeOf('function');
+    const committed = await compensating.compensatePromotionIfUnchanged(
+      'EURUSD',
+      OWNER,
+      promotedB,
+      {
+        session: latestA,
+        activeTf: 'M1',
+        selectedTfs: ['M1'],
+        drawings: [],
+        layout: aView.layout,
+        panels: aView.panels,
+        linkGroups: [],
+        archivedAt: 1000,
+      },
+    );
+
+    const restored = await svc.getMeta('EURUSD');
+    expect(committed).toBe(true);
+    expect(restored).toEqual(
+      expect.objectContaining({
+        activeSessionId: 'active-a',
+        activeClientUpdatedAt: 901,
+        activeSyncedAt: 650,
+        currentTime: 150,
+        trading: expect.objectContaining({ sessionName: 'A latest', balance: 13000 }),
+        layout: aView.layout,
+        panels: aView.panels,
+      }),
+    );
+    expect(restored?.sessions).toEqual([promotedB]);
+    expect(JSON.stringify(restored)).not.toMatch(/"candles"|"series"|"ohlc"|"parquet"/i);
+  });
+
+  it('compensation rejects an active drift while owner resolution is pending', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const promotedB = savedSession({
+      id: 'cloud-b',
+      clientUpdatedAt: 900,
+      syncedAt: 900,
+      trading: { ...defaultTradingData(), sessionName: 'B' },
+    });
+    const activeB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      trading: promotedB.trading,
+    });
+    const activeC = workspaceMeta({
+      ...activeB,
+      activeSessionId: 'active-c',
+      activeClientUpdatedAt: 901,
+      activeSyncedAt: 901,
+      trading: { ...defaultTradingData(), sessionName: 'C' },
+    });
+    await svc.putMeta(activeB);
+    let releaseOwner!: () => void;
+    const ownerWaiting = new Promise<void>((resolve) => (releaseOwner = resolve));
+    const delayed = new WorkspaceDbService({
+      ownerId: async () => {
+        await ownerWaiting;
+        return OWNER;
+      },
+    } as OwnerIdentityService) as CompensatingWorkspaceDb;
+    const latestA = savedSession({ id: 'active-a', clientUpdatedAt: 901, syncedAt: 650 });
+
+    expect(delayed.compensatePromotionIfUnchanged).toBeTypeOf('function');
+    const compensating = delayed.compensatePromotionIfUnchanged('EURUSD', OWNER, promotedB, {
+      session: latestA,
+      activeTf: 'M1',
+      selectedTfs: ['M1'],
+      drawings: [],
+      layout: view.layout,
+      panels: view.panels,
+      linkGroups: [],
+      archivedAt: 1000,
+    });
+    await svc.putMeta(activeC);
+    releaseOwner();
+
+    expect(await compensating).toBe(false);
+    expect(await svc.getMeta('EURUSD')).toEqual(activeC);
+  });
+
+  it('compensation rejects owner drift without touching the expected owner database', async () => {
+    const view = singlePanelLayoutFor('EURUSD', 'M1');
+    const promotedB = savedSession({
+      id: 'cloud-b',
+      clientUpdatedAt: 900,
+      syncedAt: 900,
+      trading: { ...defaultTradingData(), sessionName: 'B' },
+    });
+    const activeB = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'cloud-b',
+      activeClientUpdatedAt: 900,
+      activeSyncedAt: 900,
+      trading: promotedB.trading,
+    });
+    await svc.putMeta(activeB);
+    let releaseOwner!: () => void;
+    const ownerWaiting = new Promise<void>((resolve) => (releaseOwner = resolve));
+    const drifted = new WorkspaceDbService({
+      ownerId: async () => {
+        await ownerWaiting;
+        return 'owner-other';
+      },
+    } as OwnerIdentityService) as CompensatingWorkspaceDb;
+    const latestA = savedSession({ id: 'active-a', clientUpdatedAt: 901, syncedAt: 650 });
+
+    expect(drifted.compensatePromotionIfUnchanged).toBeTypeOf('function');
+    const compensating = drifted.compensatePromotionIfUnchanged('EURUSD', OWNER, promotedB, {
+      session: latestA,
+      activeTf: 'M1',
+      selectedTfs: ['M1'],
+      drawings: [],
+      layout: view.layout,
+      panels: view.panels,
+      linkGroups: [],
+      archivedAt: 1000,
+    });
+    releaseOwner();
+
+    await expect(compensating).rejects.toThrow(/propietario autenticado/i);
+    expect(await svc.getMeta('EURUSD')).toEqual(activeB);
   });
 });
 
@@ -196,10 +1024,201 @@ describe('WorkspaceDbService — session folders (v3)', () => {
     const folders = await svc.listFolders();
     expect(folders).toEqual([{ id: 'f1', name: 'New', order: 0 }]);
   });
+
+  it('a stale rename cannot overwrite a newer exact folder revision', async () => {
+    const captured = {
+      id: 'f1',
+      name: 'Captured',
+      order: 0,
+      clientUpdatedAt: 100,
+      syncedAt: 100,
+    };
+    const newer = { ...captured, name: 'Newer', clientUpdatedAt: 200 };
+    await svc.putFolder(captured);
+    await svc.putFolder(newer);
+
+    const committed = await svc.replaceFolderIfUnchanged(captured, {
+      ...captured,
+      name: 'Stale rename',
+      clientUpdatedAt: 101,
+    });
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([newer]);
+  });
+
+  it('rename replacement cannot recreate an absent unclocked folder', async () => {
+    const absent = { id: 'missing', name: 'Missing', order: 0 };
+
+    const committed = await svc.replaceFolderIfUnchanged(absent, {
+      ...absent,
+      name: 'Phantom rename',
+      clientUpdatedAt: 1,
+    });
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([]);
+  });
+
+  it('a stale reorder cannot overwrite a newer exact folder revision', async () => {
+    const captured = {
+      id: 'f1',
+      name: 'Captured',
+      order: 1000,
+      clientUpdatedAt: 100,
+      syncedAt: 90,
+    };
+    const newer = { ...captured, name: 'Concurrent edit', clientUpdatedAt: 200 };
+    await svc.putFolder(captured);
+    await svc.putFolder(newer);
+
+    const committed = await svc.replaceFolderIfUnchanged(captured, {
+      ...captured,
+      order: 2000,
+      clientUpdatedAt: 101,
+    });
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([newer]);
+  });
+
+  it('batch reorder writes zero rows when one participating folder changed concurrently', async () => {
+    const captured = [
+      { id: 'a', name: 'A', order: 1000, clientUpdatedAt: 100, syncedAt: 100 },
+      { id: 'b', name: 'B', order: 2000, clientUpdatedAt: 100, syncedAt: 100 },
+      { id: 'c', name: 'C', order: 3000, clientUpdatedAt: 100, syncedAt: 100 },
+    ];
+    for (const folder of captured) await svc.putFolder(folder);
+    const concurrentB = { ...captured[1], name: 'B newer', clientUpdatedAt: 200 };
+    await svc.putFolder(concurrentB);
+    const next = [
+      { ...captured[2], order: 1000, clientUpdatedAt: 101 },
+      { ...captured[0], order: 2000, clientUpdatedAt: 101 },
+      { ...captured[1], order: 3000, clientUpdatedAt: 101 },
+    ];
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        replaceFoldersIfUnchanged(
+          changes: { expected: (typeof captured)[number]; next: (typeof captured)[number] }[],
+        ): Promise<boolean>;
+      }
+    ).replaceFoldersIfUnchanged(
+      next.map((folder) => ({
+        expected: captured.find((item) => item.id === folder.id)!,
+        next: folder,
+      })),
+    );
+
+    const stored = await svc.listFolders();
+    expect(committed).toBe(false);
+    expect(stored).toEqual([captured[0], concurrentB, captured[2]]);
+    expect(new Set(stored.map((folder) => folder.order)).size).toBe(stored.length);
+  });
+
+  it('batch reorder writes zero rows when an unclocked participant is absent', async () => {
+    const present = { id: 'a', name: 'A', order: 1000 };
+    const absent = { id: 'b', name: 'B', order: 2000 };
+    await svc.putFolder(present);
+
+    const committed = await svc.replaceFoldersIfUnchanged([
+      { expected: present, next: { ...present, order: 2000, clientUpdatedAt: 1 } },
+      { expected: absent, next: { ...absent, order: 1000, clientUpdatedAt: 1 } },
+    ]);
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([present]);
+  });
+
+  it('batch reorder commits every participating folder together on exact revisions', async () => {
+    const captured = [
+      { id: 'a', name: 'A', order: 1000, clientUpdatedAt: 100, syncedAt: 100 },
+      { id: 'b', name: 'B', order: 2000, clientUpdatedAt: 100, syncedAt: 100 },
+      { id: 'c', name: 'C', order: 3000, clientUpdatedAt: 100, syncedAt: 100 },
+    ];
+    for (const folder of captured) await svc.putFolder(folder);
+    const next = [
+      { ...captured[2], order: 1000, clientUpdatedAt: 101 },
+      { ...captured[0], order: 2000, clientUpdatedAt: 101 },
+      { ...captured[1], order: 3000, clientUpdatedAt: 101 },
+    ];
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        replaceFoldersIfUnchanged(
+          changes: { expected: (typeof captured)[number]; next: (typeof captured)[number] }[],
+        ): Promise<boolean>;
+      }
+    ).replaceFoldersIfUnchanged(
+      next.map((folder) => ({
+        expected: captured.find((item) => item.id === folder.id)!,
+        next: folder,
+      })),
+    );
+
+    expect(committed).toBe(true);
+    expect(await svc.listFolders()).toEqual(next);
+  });
+
+  it('a stale delete neither removes a newer folder nor queues its cloud id', async () => {
+    const captured = {
+      id: 'f1',
+      name: 'Captured',
+      order: 0,
+      clientUpdatedAt: 100,
+      syncedAt: 100,
+    };
+    const newer = { ...captured, name: 'Newer', clientUpdatedAt: 200 };
+    await svc.putFolder(captured);
+    await svc.putFolder(newer);
+
+    const committed = await (
+      svc as WorkspaceDbService & {
+        deleteFolderIfUnchanged(folder: typeof captured, enqueue: boolean): Promise<boolean>;
+      }
+    ).deleteFolderIfUnchanged(captured, true);
+
+    expect(committed).toBe(false);
+    expect(await svc.listFolders()).toEqual([newer]);
+    expect(await svc.listPendingDeletes()).toEqual([]);
+  });
+
+  it('delete cannot enqueue a phantom cloud deletion for an absent unclocked folder', async () => {
+    const absent = { id: 'missing', name: 'Missing', order: 0 };
+
+    expect(await svc.deleteFolderIfUnchanged(absent, true)).toBe(false);
+    expect(await svc.listFolders()).toEqual([]);
+    expect(await svc.listPendingDeletes()).toEqual([]);
+  });
+
+  it('an exact folder delete commits removal and pending cloud deletion together', async () => {
+    const exact = {
+      id: 'f1',
+      name: 'Exact',
+      order: 0,
+      clientUpdatedAt: 100,
+      syncedAt: 100,
+    };
+    await svc.putFolder(exact);
+
+    expect(await svc.deleteFolderIfUnchanged(exact, true)).toBe(true);
+    expect(await svc.listFolders()).toEqual([]);
+    expect(await svc.listPendingDeletes()).toEqual([{ entity: 'folder', id: 'f1' }]);
+  });
 });
 
 describe('WorkspaceDbService — v1 → v3 migration', () => {
-  it('migrates a legacy v1 workspaces store into meta + series on v2 open', async () => {
+  // CHANGED BY Session Sovereignty V2 (the one pre-existing assertion this RFC
+  // had to rewrite, see SESSION_SOVEREIGNTY_RFC.md §"Specs this RFC changes").
+  // The v1→v3 `onupgradeneeded` migration still runs and still lands the legacy
+  // workspace in the SHARED database's `meta`/`series` stores — but `meta` there
+  // is now the QUARANTINE, not live state, because a v1 record predates user
+  // identity entirely and nothing can prove whose it is. So the migrated record
+  // must be readable as quarantine and must NOT appear as the current owner's
+  // workspace: adopting it merely because someone logged in is exactly what
+  // owner policy O-7 forbids. The series half is Market-Data domain and stays
+  // directly readable.
+  it('migrates a legacy v1 workspaces store into the quarantine + shared series', async () => {
     // 1. Pre-seed a v1 database with a whole-workspace record in a 'workspaces' store
     const legacyWorkspace = {
       symbol: 'GBPUSD',
@@ -231,22 +1250,37 @@ describe('WorkspaceDbService — v1 → v3 migration', () => {
       openReq.onerror = () => reject(openReq.error);
     });
 
-    // 2. Instantiate the v2 service — it opens v2 and triggers onupgradeneeded
-    const svc2 = new WorkspaceDbService();
+    // 2. Instantiate the v2+ service — it opens v6 and triggers onupgradeneeded
+    const svc2 = new WorkspaceDbService(fixedOwnerIdentity(OWNER));
 
-    // 3. The migration should have populated meta and series
-    const ws = await svc2.getWorkspace('GBPUSD');
-    expect(ws).toBeDefined();
-    expect(ws!.symbol).toBe('GBPUSD');
-    expect(ws!.activeTf).toBe('H1');
-    expect(ws!.currentTime).toBe(7200);
-    expect(ws!.series['H1']).toHaveLength(3);
+    // 3. The migration populated the quarantine (shared `meta`) and the series
+    const quarantined = await svc2.listQuarantinedMetas();
+    const legacy = quarantined.find((m) => m.symbol === 'GBPUSD');
+    expect(legacy).toBeDefined();
+    expect(legacy!.activeTf).toBe('H1');
+    expect(legacy!.currentTime).toBe(7200);
+    expect(legacy!.files).toEqual({ H1: 'gbpusd_h1.csv' });
 
-    const meta = await svc2.getMeta('GBPUSD');
-    expect(meta).toBeDefined();
-    expect(meta!.files).toEqual({ H1: 'gbpusd_h1.csv' });
+    // 4. …and it is NOT the current owner's workspace (O-7: no auto-adoption)
+    expect(await svc2.getMeta('GBPUSD')).toBeUndefined();
+    expect(await svc2.getWorkspace('GBPUSD')).toBeUndefined();
 
-    // 'workspaces' store should be gone (v2 only has 'meta' and 'series')
+    // The original store is recovery evidence: the projection above omitted
+    // fields that newer workspace shapes carry, so O-7 forbids deleting it.
+    const raw = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    expect(Array.from(raw.objectStoreNames)).toContain('workspaces');
+    const preserved = await new Promise<unknown>((resolve, reject) => {
+      const req = raw.transaction('workspaces', 'readonly').objectStore('workspaces').get('GBPUSD');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    expect(preserved).toEqual(legacyWorkspace);
+    raw.close();
+
     const info = await svc2.getSeriesInfo('GBPUSD', 'H1');
     expect(info!.count).toBe(3);
   });
@@ -260,8 +1294,10 @@ const DB_NAME_V5 = 'emulador-workspaces';
 
 /** Opens the raw IndexedDB after the service has warmed it up at the current DB_VERSION. */
 async function rawDb(svcInstance: WorkspaceDbService): Promise<IDBDatabase> {
-  // Trigger a no-op operation so the service opens (and upgrades) the DB first
-  await svcInstance.listMetas();
+  // Trigger a no-op operation so the service opens (and upgrades) the SHARED
+  // database first. Must be a MARKET-DATA read: Session Sovereignty V2 moved
+  // listMetas onto the per-owner database, which would open the wrong one.
+  await svcInstance.listDatasets();
   return new Promise<IDBDatabase>((resolve, reject) => {
     // Open at the same version the service uses so fake-indexeddb does not
     // try to upgrade or block on an in-progress transaction.
@@ -384,12 +1420,17 @@ describe('WorkspaceDbService — v4→v5 upgrade: data written at v4 is readable
       req.onerror = () => reject(req.error);
     });
 
-    // 2. Open at v5 via the service — should trigger upgrade and add datasets+candles
-    const svc5 = new WorkspaceDbService();
-    const ws = await svc5.getWorkspace('ETHUSD');
-    expect(ws).toBeDefined();
-    expect(ws!.symbol).toBe('ETHUSD');
-    expect(ws!.series['H1']).toHaveLength(3);
+    // 2. Open at v6 via the service — should trigger upgrade and add datasets+candles
+    const svc5 = new WorkspaceDbService(fixedOwnerIdentity(OWNER));
+    // CHANGED BY Session Sovereignty V2 (see the v1→v3 test above for the full
+    // rationale): the upgrade still preserves both halves, but a v4 `meta` row
+    // predates user identity, so it survives as QUARANTINE rather than as the
+    // current owner's workspace. The series half is Market-Data domain and is
+    // still read directly through the shared database.
+    const quarantined = await svc5.listQuarantinedMetas();
+    expect(quarantined.map((m) => m.symbol)).toContain('ETHUSD');
+    expect(await svc5.getSeriesInfo('ETHUSD', 'H1')).toEqual({ lastTime: 2 * 3600, count: 3 });
+    expect(await svc5.getMeta('ETHUSD')).toBeUndefined();
   });
 });
 
@@ -415,7 +1456,7 @@ function datasetRecord(p: Partial<DatasetRecord> = {}): DatasetRecord {
 
 /** Adds candle rows directly to the candles store (autoIncrement id). */
 async function seedCandles(records: Omit<CandleRecord, 'id'>[]): Promise<void> {
-  await svc.listMetas(); // ensure schema is open at the current DB_VERSION
+  await svc.listDatasets(); // ensure the SHARED schema is open at DB_VERSION
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onsuccess = () => resolve(req.result);
@@ -524,6 +1565,59 @@ describe('WorkspaceDbService — sync bookkeeping (v6)', () => {
     const list = await svc.listPendingDeletes();
     expect(list).toEqual([{ entity: 'session', id: 's1' }]);
     expect(await svc.getLastPullAt()).toBe(999);
+  });
+});
+
+describe('WorkspaceDbService — atomic quarantine adoption', () => {
+  it('rolls back the copied meta when the marker write is interrupted, then retries both atomically', async () => {
+    const meta = workspaceMeta({ symbol: 'EURUSD' });
+    const folder = { id: 'folder-1', name: 'Plan', order: 0 };
+    const originalPut = IDBObjectStore.prototype.put;
+    const putSpy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+      this: IDBObjectStore,
+      value: unknown,
+      key?: IDBValidKey,
+    ) {
+      if ((value as { key?: string }).key === ADOPTION_MARKER_KEY) {
+        throw new Error('marker interrupted');
+      }
+      return key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
+    });
+    const atomicDb = svc as WorkspaceDbService & {
+      adoptQuarantined(claim: {
+        metas?: WorkspaceMeta[];
+        folders?: (typeof folder)[];
+      }): Promise<void>;
+    };
+
+    await expect(
+      Promise.resolve().then(() => atomicDb.adoptQuarantined({ metas: [meta], folders: [folder] })),
+    ).rejects.toThrow(/marker interrupted/);
+    putSpy.mockRestore();
+    expect(await svc.getMeta('EURUSD')).toBeUndefined();
+    expect(await svc.listFolders()).toEqual([]);
+    expect((await svc.getAdoptionMarker()).metaKeys).toEqual([]);
+
+    await atomicDb.adoptQuarantined({ metas: [meta], folders: [folder] });
+    expect(await svc.getMeta('EURUSD')).toEqual(meta);
+    expect(await svc.listFolders()).toEqual([folder]);
+    expect((await svc.getAdoptionMarker()).metaKeys).toEqual(['EURUSD']);
+    expect((await svc.getAdoptionMarker()).folderKeys).toEqual(['folder-1']);
+  });
+
+  it('does not overwrite a live key present when the adoption transaction begins', async () => {
+    const live = workspaceMeta({ symbol: 'EURUSD', activeSessionId: 'live-session' });
+    const quarantined = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [],
+    });
+    await svc.putMeta(live);
+
+    await svc.adoptQuarantined({ metas: [quarantined] });
+
+    expect(await svc.getMeta('EURUSD')).toEqual(live);
+    expect((await svc.getAdoptionMarker()).metaKeys).toEqual([]);
   });
 });
 

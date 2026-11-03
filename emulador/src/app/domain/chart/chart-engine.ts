@@ -7,10 +7,13 @@ import {
   CrosshairMode,
   LogicalRange,
   UTCTimestamp,
+  MouseEventParams,
+  Time,
 } from 'lightweight-charts';
-import { RenderModel } from './render-model';
-import { ChartEventBus } from './chart-event-bus';
-import { Capability } from './capability';
+import { Candle, RenderModel } from './render-model';
+import { ChartEventBus, ChartEventSource, ChartPointerEvent } from './chart-event-bus';
+import { Capability, CapabilityApiMap } from './capability';
+import { createBuiltInCapability, type BuiltInCapabilityId } from './capability-registry';
 import { hexToRgba } from './color-utils';
 
 export interface ChartApplyHandle {
@@ -20,22 +23,23 @@ export interface ChartApplyHandle {
   applyVisibleRange(range: LogicalRange | null): void;
 }
 
-export class ChartEngine implements ChartApplyHandle {
-  // TODO: Eliminar esta exposición directa en RFC-004/RFC-005 una vez que DrawingsCapability y TradingCapability estén implementados.
-  public get chartApi(): IChartApi {
-    return this.chart;
-  }
-  public get seriesApi(): ISeriesApi<'Candlestick'> {
-    return this.mainSeries;
-  }
+function pointerEventOf(param: MouseEventParams<Time>): ChartPointerEvent {
+  return {
+    time: param.time,
+    logical: param.logical,
+    point: param.point ? { x: param.point.x, y: param.point.y } : undefined,
+  };
+}
 
+export class ChartEngine implements ChartApplyHandle {
   private chart: IChartApi;
   private mainSeries: ISeriesApi<'Candlestick'>;
 
-  private bus = new ChartEventBus();
+  private hostBus = new ChartEventBus();
+  private capabilityBus = new ChartEventBus();
   private capabilities = new Map<string, Capability>();
-  public get events(): ChartEventBus {
-    return this.bus;
+  public get events(): ChartEventSource {
+    return this.hostBus;
   }
 
   /** D19.A: set by `destroy()`; makes `paneRect()` return `null` post-teardown instead of
@@ -105,10 +109,10 @@ export class ChartEngine implements ChartApplyHandle {
       wickDownColor: '#ef5350',
     });
 
-    this.chart.subscribeClick((p) => this.bus.emit('ChartClicked', p));
-    this.chart.subscribeDblClick((p) => this.bus.emit('ChartClicked', p));
+    this.chart.subscribeClick((p) => this.hostBus.emit('ChartClicked', pointerEventOf(p)));
+    this.chart.subscribeDblClick((p) => this.hostBus.emit('ChartClicked', pointerEventOf(p)));
     this.chart.subscribeCrosshairMove((p) => {
-      if (!this.applyingSync) this.bus.emit('CrosshairMoved', p);
+      if (!this.applyingSync) this.hostBus.emit('CrosshairMoved', pointerEventOf(p));
     });
     this.chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
       // One-shot echo suppression (load-bearing — see `suppressNextRangeEvent`'s doc): the first
@@ -119,7 +123,7 @@ export class ChartEngine implements ChartApplyHandle {
         this.suppressNextRangeEvent = false;
         return;
       }
-      if (!this.applyingSync) this.bus.emit('VisibleRangeChanged', r);
+      if (!this.applyingSync) this.hostBus.emit('VisibleRangeChanged', r);
     });
   }
 
@@ -165,16 +169,26 @@ export class ChartEngine implements ChartApplyHandle {
     }
   }
 
-  public registerCapability(cap: Capability): void {
+  /**
+   * Builds and registers one closed, domain-owned capability ID. The registry owns concrete
+   * composition and receives the engine's main series; callers cannot supply executable code
+   * that captures that handle.
+   *
+   * Ordering note (behavior-preserving): the duplicate-id `Error` is still thrown with the
+   * same message, with construction still happening BEFORE the check. Every built-in
+   * constructor is side-effect free, so a rejected duplicate registration remains inert.
+   */
+  public registerCapability(id: BuiltInCapabilityId): void {
+    const cap = createBuiltInCapability(id, this.mainSeries);
     if (this.capabilities.has(cap.id)) {
       throw new Error(`Capability with ID "${cap.id}" is already registered.`);
     }
     this.capabilities.set(cap.id, cap);
-    cap.init(this.chart, this.bus);
+    cap.init(this.chart, this.capabilityBus);
   }
 
-  public getCapability<T extends Capability = Capability>(id: string): T | undefined {
-    return this.capabilities.get(id) as T | undefined;
+  public getCapability<K extends keyof CapabilityApiMap>(id: K): CapabilityApiMap[K] | undefined {
+    return this.capabilities.get(id)?.publicApi as CapabilityApiMap[K] | undefined;
   }
 
   public render(model: Partial<RenderModel>): void {
@@ -217,6 +231,69 @@ export class ChartEngine implements ChartApplyHandle {
     this.capabilities.forEach((cap) => cap.render(model));
   }
 
+  /**
+   * O(1) incremental paint of ONE bar (upsert by time), for normal replay advance and for
+   * the live "forming" bucket. Distinct from `render({ candles })`, which does a full
+   * `setData` of the whole window: the caller chooses per frame, and that choice is
+   * load-bearing (a large forward jump must NOT go bar-by-bar — see
+   * `ChartComponent.render`).
+   *
+   * RFC-004/RFC-005: replaces the raw `seriesApi.update(...)` the bridge used to allow.
+   * Takes the DOMAIN `Candle` (display time already applied by the caller, plain seconds);
+   * the `CandlestickData` cast stays inside the engine, exactly as in `render`.
+   */
+  public upsertCandle(candle: Candle): void {
+    this.mainSeries.update(candle as unknown as CandlestickData);
+  }
+
+  /**
+   * Price at a pane y coordinate (container CSS px), or `null` when the series cannot
+   * resolve it. Read-only geometry query — no behavior, so it does not touch kernel
+   * invariant 2 (see `paneRect`'s note, which established this reasoning).
+   */
+  public priceForY(y: number): number | null {
+    return this.mainSeries.coordinateToPrice(y) as number | null;
+  }
+
+  /** Pane y coordinate for a price, or `null` when it is not resolvable. Inverse of `priceForY`. */
+  public yForPrice(price: number): number | null {
+    return this.mainSeries.priceToCoordinate(price) as number | null;
+  }
+
+  /**
+   * Pane x coordinate for a DISPLAY time (unix seconds already shifted by the caller's
+   * display zone), via the time scale.
+   *
+   * Deliberately NOT the same mapping as `DrawingsCapability.xForTime`, which resolves by
+   * BAR INDEX and is gap-immune (see `time-coordinates.ts`). This one is the library's
+   * `timeToCoordinate`, and the single consumer (`ChartComponent.applySnap`) has always used
+   * that mapping. Preserving it is a behavior-preservation requirement, not an oversight.
+   */
+  public xForDisplayTime(displayTime: number): number | null {
+    return this.chart.timeScale().timeToCoordinate(displayTime as UTCTimestamp) as number | null;
+  }
+
+  /** Scrolls the time scale to the newest bar. */
+  public scrollToRealTime(): void {
+    this.chart.timeScale().scrollToRealTime();
+  }
+
+  /**
+   * Sets the visible logical range WITHOUT echo suppression, for the lazy-prepend "hold the
+   * view still" shift.
+   *
+   * Why this is not `applyVisibleRange`: that method arms the one-shot
+   * `suppressNextRangeEvent` flag, so the resulting `VisibleRangeChanged` bus event is
+   * swallowed. The lazy-prepend call site has never suppressed it, and the emission is
+   * OBSERVABLE — `ChartSyncBus` consumers (other panels in the link group) follow the
+   * shifted range through that event. Routing the prepend through `applyVisibleRange` would
+   * silently stop synced panels from following a prepend. Two call sites with two different
+   * echo semantics therefore need two methods.
+   */
+  public shiftVisibleRange(from: number, to: number): void {
+    this.chart.timeScale().setVisibleLogicalRange({ from, to } as unknown as LogicalRange);
+  }
+
   public setInteractivity(enabled: boolean): void {
     this.chart.applyOptions({ handleScroll: enabled, handleScale: enabled });
   }
@@ -254,7 +331,8 @@ export class ChartEngine implements ChartApplyHandle {
   public destroy(): void {
     this.capabilities.forEach((cap) => cap.destroy());
     this.capabilities.clear();
-    this.bus.destroy();
+    this.capabilityBus.destroy();
+    this.hostBus.destroy();
     this.chart.remove();
     this.destroyed = true;
   }

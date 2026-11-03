@@ -23,6 +23,7 @@ import { SettingsEffects } from './state/settings/settings.effects';
 import { WorkspacesEffects } from './state/workspaces/workspaces.effects';
 import { TradingEffects } from './state/trading/trading.effects';
 import { AuthEffects } from './state/auth/auth.effects';
+import { SessionSovereigntyEffects } from './state/auth/session-sovereignty.effects';
 import { SessionSyncEffects } from './state/sync/session-sync.effects';
 import { LayoutEffects } from './state/layout/layout.effects';
 import { TelemetryEffects } from './state/telemetry/telemetry.effects';
@@ -55,6 +56,7 @@ export const appConfig: ApplicationConfig = {
       WorkspacesEffects,
       TradingEffects,
       AuthEffects,
+      SessionSovereigntyEffects,
       SessionSyncEffects,
       LayoutEffects,
       TelemetryEffects,

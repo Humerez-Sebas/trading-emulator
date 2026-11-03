@@ -13,6 +13,7 @@ import {
 } from './frozen-scene-host.component';
 import { provideMockStore } from '@ngrx/store/testing';
 import { DARK_CHART_COLORS } from '../../state/settings/settings.models';
+import type { BuiltInCapabilityId } from '../../domain/chart/capability-registry';
 
 /**
  * R1 integration-spike spec (RFC-016 Task 7). Per the brief: "the engine
@@ -31,24 +32,17 @@ import { DARK_CHART_COLORS } from '../../state/settings/settings.models';
  * now constructs its engine through an injected `ChartEngineFactory` (see the
  * component file) instead of a bare `new ChartEngine(...)`, so this spec
  * substitutes that factory via a plain TestBed provider — no `vi.mock` at all.
- * Real `TradingCapability`/`DrawingsCapability`/`SessionCapability` are still
- * constructed against the FAKE engine's `seriesApi` (their constructors are
- * trivial — they only store the reference); their `.init()` — the only method
- * that touches real `lightweight-charts` functions like `createSeriesMarkers`
- * — is NEVER called, because the fake engine's `registerCapability` never
- * invokes it. `lightweight-charts` itself needs no mock (its module
- * evaluation alone is already proven safe by `chart-engine.spec.ts`, which
- * imports the REAL package via `importOriginal`).
+ * Capability construction remains inside the real engine's chart-domain registry. This
+ * fake records only the closed built-in IDs supplied by the host, so no executable
+ * constructor or raw series stand-in crosses the boundary.
  */
 
 class FakeChartEngine {
   static instances: FakeChartEngine[] = [];
   readonly container: HTMLElement;
-  readonly seriesApi = {};
-  readonly chartApi = {};
   readonly events = { on: () => () => {}, emit: () => {}, destroy: () => {} };
   interactivityCalls: boolean[] = [];
-  registeredCapabilities: { id: string }[] = [];
+  registeredCapabilities: BuiltInCapabilityId[] = [];
   renderCalls: Partial<RenderModel>[] = [];
   destroyed = false;
 
@@ -59,8 +53,8 @@ class FakeChartEngine {
   setInteractivity(enabled: boolean): void {
     this.interactivityCalls.push(enabled);
   }
-  registerCapability(cap: { id: string }): void {
-    this.registeredCapabilities.push(cap);
+  registerCapability(id: BuiltInCapabilityId): void {
+    this.registeredCapabilities.push(id);
   }
   render(model: Partial<RenderModel>): void {
     this.renderCalls.push(model);
@@ -255,8 +249,7 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
   it('registers exactly TradingCapability, DrawingsCapability, SessionCapability on each layer (no CountdownCapability, no new capability)', async () => {
     await mount();
     for (const engine of FakeChartEngine.instances) {
-      const ids = engine.registeredCapabilities.map((c) => c.id).sort();
-      expect(ids).toEqual(['drawings', 'session', 'trading']);
+      expect(engine.registeredCapabilities).toEqual(['trading', 'drawings', 'session']);
     }
   });
 

@@ -60,7 +60,22 @@ function reviveIfEnded(state: TradingState, time: number): Partial<TradingState>
  * sessions are named before any trade happens and must survive a switch.
  * Anonymous AND empty sessions are just noise and get dropped.
  */
-function archiveActive(state: TradingState, currentCursor: number): SavedSession[] {
+function archiveActive(
+  state: TradingState,
+  currentCursor: number,
+  clientUpdatedAt?: number,
+  syncedAt?: number,
+  customTfMinutes?: number | null,
+  playbackSpeed?: number,
+  replayResolution?: number | null,
+  archivedSession?: SavedSession,
+): SavedSession[] {
+  if (archivedSession) {
+    return [
+      ...state.savedSessions.filter((session) => session.id !== archivedSession.id),
+      archivedSession,
+    ];
+  }
   if (!hasActivity(state) && state.sessionName === null) return state.savedSessions;
   return [
     ...state.savedSessions,
@@ -75,7 +90,12 @@ function archiveActive(state: TradingState, currentCursor: number): SavedSession
         `Sesión ${state.savedSessions.length + 1} · ${shortDate(currentCursor)}`,
       createdAt: Date.now(),
       currentTime: currentCursor,
+      ...(customTfMinutes === undefined ? {} : { customTfMinutes }),
+      ...(playbackSpeed === undefined ? {} : { playbackSpeed }),
+      ...(replayResolution === undefined ? {} : { replayResolution }),
       trading: pickTradingData(state),
+      ...(clientUpdatedAt === undefined ? {} : { clientUpdatedAt }),
+      ...(syncedAt === undefined ? {} : { syncedAt }),
     },
   ];
 }
@@ -339,13 +359,35 @@ export const tradingFeature = createFeature({
     // ---- sessions ----
     on(
       TradingActions.newSession,
-      (state, { currentCursor, executionCosts }): TradingState => ({
+      (
+        state,
+        {
+          currentCursor,
+          executionCosts,
+          replacementActiveSessionId,
+          archivedClientUpdatedAt,
+          archivedSyncedAt,
+          customTfMinutes,
+          playbackSpeed,
+          replayResolution,
+          archivedSession,
+        },
+      ): TradingState => ({
         ...defaultTradingData(state.initialBalance),
         riskPct: state.riskPct,
         summaryOpen: false,
-        savedSessions: archiveActive(state, currentCursor),
+        savedSessions: archiveActive(
+          state,
+          currentCursor,
+          archivedClientUpdatedAt,
+          archivedSyncedAt,
+          customTfMinutes,
+          playbackSpeed,
+          replayResolution,
+          archivedSession,
+        ),
         // fresh blank session → fresh identity
-        activeSessionId: newId(),
+        activeSessionId: replacementActiveSessionId ?? newId(),
         // RFC-014 G1: absent/undefined ⇒ null, same as defaultTradingData's
         // own default (legacy zero-cost session, V-1 anchor unaffected).
         executionCosts: executionCosts ?? null,
@@ -388,6 +430,20 @@ export const tradingFeature = createFeature({
         savedSessions: state.savedSessions,
         activeSessionId: newId(),
       }),
+    ),
+    on(
+      TradingActions.deleteActiveSessionCommitted,
+      (state, { deletedId, replacementActiveSessionId }): TradingState => {
+        const savedSessions = state.savedSessions.filter((session) => session.id !== deletedId);
+        if (state.activeSessionId !== deletedId) return { ...state, savedSessions };
+        return {
+          ...defaultTradingData(state.initialBalance),
+          riskPct: state.riskPct,
+          summaryOpen: false,
+          savedSessions,
+          activeSessionId: replacementActiveSessionId,
+        };
+      },
     ),
     on(TradingActions.renameSession, (state, { id, name, clientUpdatedAt }): TradingState => {
       const trimmed = name.trim();

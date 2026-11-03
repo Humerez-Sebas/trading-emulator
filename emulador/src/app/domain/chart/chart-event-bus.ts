@@ -1,14 +1,25 @@
-import { LogicalRange, MouseEventParams, Time } from 'lightweight-charts';
+import { Logical, LogicalRange, Time } from 'lightweight-charts';
+
+/** Handle-free pointer data allowed to cross from ChartEngine to its hosts. */
+export interface ChartPointerEvent {
+  readonly time?: Time;
+  readonly logical?: Logical;
+  readonly point?: { readonly x: number; readonly y: number };
+}
 
 /** Payload por tipo de evento. Sin `any`: usa los tipos de la librería. */
 export interface ChartEventMap {
-  ChartClicked: MouseEventParams<Time>;
-  CrosshairMoved: MouseEventParams<Time>;
+  ChartClicked: ChartPointerEvent;
+  CrosshairMoved: ChartPointerEvent;
   VisibleRangeChanged: LogicalRange | null;
 }
 
 export type ChartEventType = keyof ChartEventMap;
 export type Unsubscribe = () => void;
+
+export interface ChartEventSource {
+  on<K extends ChartEventType>(type: K, callback: (payload: ChartEventMap[K]) => void): Unsubscribe;
+}
 
 /** Pub/sub local, agnóstico de framework. */
 export class ChartEventBus {

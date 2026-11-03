@@ -14,6 +14,7 @@ import { PlaybookRule } from './playbook.models';
 import { selectPlaybookRules } from './playbook.selectors';
 import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
+import { OwnerIdentityService } from '../../services/owner-identity.service';
 
 function rule(id: string, over: Partial<PlaybookRule> = {}): PlaybookRule {
   return {
@@ -40,23 +41,48 @@ function dispatchedAction(call: unknown[]): Action {
   return call[0] as Action;
 }
 
+async function settleEffects(): Promise<void> {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+}
+
 describe('PlaybookEffects', () => {
   let actions$: Subject<any>;
   let store: MockStore;
   let effects: PlaybookEffects;
-  let dbService: { loadAll: ReturnType<typeof vi.fn>; upsertMany: ReturnType<typeof vi.fn> };
+  let ownerId: string | null;
+  let ownerService: { ownerId: ReturnType<typeof vi.fn> };
+  let dbService: {
+    loadAll: ReturnType<typeof vi.fn>;
+    upsertMany: ReturnType<typeof vi.fn>;
+  };
   let syncService: {
+    captureOwner: ReturnType<typeof vi.fn>;
+    assertExpectedOwner: ReturnType<typeof vi.fn>;
     pushPlaybookRules: ReturnType<typeof vi.fn>;
     pullPlaybookRules: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
     actions$ = new Subject();
+    ownerId = 'owner-a';
+    ownerService = { ownerId: vi.fn(async () => ownerId) };
     dbService = {
-      loadAll: vi.fn().mockResolvedValue([]),
-      upsertMany: vi.fn().mockResolvedValue(undefined),
+      loadAll: vi.fn(async (expected?: string) => {
+        if (expected && ownerId !== expected) throw new Error('owner drift');
+        return [];
+      }),
+      upsertMany: vi.fn(async (_rules: PlaybookRule[], expected?: string) => {
+        if (expected && ownerId !== expected) throw new Error('owner drift');
+      }),
     };
     syncService = {
+      captureOwner: vi.fn(async () => {
+        if (!ownerId) throw new Error('no owner');
+        return ownerId;
+      }),
+      assertExpectedOwner: vi.fn(async (expected: string) => {
+        if (ownerId !== expected) throw new Error('owner drift');
+      }),
       pushPlaybookRules: vi.fn().mockResolvedValue(undefined),
       pullPlaybookRules: vi.fn().mockResolvedValue([]),
     };
@@ -67,6 +93,7 @@ describe('PlaybookEffects', () => {
         provideMockStore(),
         { provide: PlaybookDbService, useValue: dbService },
         { provide: SessionSyncService, useValue: syncService },
+        { provide: OwnerIdentityService, useValue: ownerService },
       ],
     });
     store = TestBed.inject(MockStore);
@@ -106,6 +133,7 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
+      await settleEffects();
       expect(results).toHaveLength(1);
       expect(results[0]).toEqual(PlaybookActions.hydrated({ rules }));
     });
@@ -120,6 +148,7 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
+      await settleEffects();
       expect(results).toHaveLength(1);
       expect(results[0]).toEqual(PlaybookActions.hydrated({ rules: [] }));
     });
@@ -137,7 +166,8 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
-      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules);
+      await settleEffects();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
     });
 
     it('calls upsertMany with current rules on updateRule', async () => {
@@ -151,7 +181,8 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
-      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules);
+      await settleEffects();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
     });
 
     it('calls upsertMany with current rules on setRuleStatus', async () => {
@@ -165,7 +196,8 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
-      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules);
+      await settleEffects();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
     });
 
     it('calls upsertMany with current rules on assignSlot', async () => {
@@ -177,7 +209,8 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
-      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules);
+      await settleEffects();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
     });
 
     it('calls upsertMany with current rules on reorderRule', async () => {
@@ -189,7 +222,8 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
-      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules);
+      await settleEffects();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
     });
 
     it('calls upsertMany with current rules on rulesSynced', async () => {
@@ -201,7 +235,8 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
-      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules);
+      await settleEffects();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
     });
 
     it('survives a DB error and keeps the stream alive for the next action', async () => {
@@ -225,8 +260,53 @@ describe('PlaybookEffects', () => {
 
       await Promise.resolve();
 
+      await settleEffects();
       // Should have called upsertMany twice (once failed, once succeeded)
       expect(dbService.upsertMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('persists to the memoized owner partition when live auth is unavailable', async () => {
+      const currentRules = [rule('offline', { clientUpdatedAt: 100 })];
+      store.overrideSelector(selectPlaybookRules, currentRules);
+      syncService.captureOwner.mockRejectedValue(new Error('token expired offline'));
+      const sub = effects.persist$.subscribe();
+
+      actions$.next(
+        PlaybookActions.updateRule({ id: 'offline', title: 'updated', clientUpdatedAt: 100 }),
+      );
+      await settleEffects();
+
+      sub.unsubscribe();
+      expect(ownerService.ownerId).toHaveBeenCalled();
+      expect(syncService.captureOwner).not.toHaveBeenCalled();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
+    });
+
+    it('does not persist A rules when owner validation observes B', async () => {
+      let resolveOwner!: (owner: string) => void;
+      let persisted = false;
+      ownerService.ownerId.mockImplementationOnce(
+        () => new Promise((resolve) => (resolveOwner = resolve)),
+      );
+      dbService.upsertMany.mockImplementationOnce(async (_rules, expected?: string) => {
+        if (expected && ownerId !== expected) throw new Error('owner drift');
+        persisted = true;
+      });
+      store.overrideSelector(selectPlaybookRules, [rule('a')]);
+      const sub = effects.persist$.subscribe();
+
+      actions$.next(
+        PlaybookActions.updateRule({ id: 'a', title: 'updated', clientUpdatedAt: 100 }),
+      );
+      await Promise.resolve();
+      ownerId = 'owner-b';
+      resolveOwner('owner-a');
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      await settleEffects();
+      expect(persisted).toBe(false);
     });
   });
 
@@ -281,6 +361,7 @@ describe('PlaybookEffects', () => {
 
       sub.unsubscribe();
 
+      await settleEffects();
       expect(dispatchSpy).toHaveBeenCalledWith(
         PlaybookActions.rulesSynced({ stamps: [{ id: 'a', syncedAt: 3000 }] }),
       );
@@ -368,6 +449,7 @@ describe('PlaybookEffects', () => {
 
       sub.unsubscribe();
 
+      await settleEffects();
       const rulesSyncedCall = dispatchSpy.mock.calls.find(
         (c) => dispatchedAction(c).type === PlaybookActions.rulesSynced.type,
       );
@@ -388,6 +470,33 @@ describe('PlaybookEffects', () => {
       expect(finalRule.syncedAt).toBe(500);
       expect(finalRule.clientUpdatedAt! > finalRule.syncedAt!).toBe(true); // still dirty
     });
+
+    it('does not stamp A rules synced when the owner changes after the cloud push returns', async () => {
+      vi.useFakeTimers();
+      let resolvePush!: () => void;
+      syncService.pushPlaybookRules.mockImplementation(
+        () => new Promise<void>((resolve) => (resolvePush = resolve)),
+      );
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      setupAuthenticated([rule('a', { clientUpdatedAt: 500, syncedAt: 100 })]);
+      const sub = effects.pushDirty$.subscribe();
+
+      actions$.next(PlaybookActions.updateRule({ id: 'a', title: 't2', clientUpdatedAt: 500 }));
+      vi.advanceTimersByTime(2000);
+      await Promise.resolve();
+      await Promise.resolve();
+      resolvePush();
+      ownerId = 'owner-b';
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      expect(
+        dispatchSpy.mock.calls.some(
+          (call) => dispatchedAction(call).type === PlaybookActions.rulesSynced.type,
+        ),
+      ).toBe(false);
+    });
   });
 
   describe('pullOnAuth$', () => {
@@ -404,7 +513,7 @@ describe('PlaybookEffects', () => {
       const dispatchSpy = vi.spyOn(store, 'dispatch');
 
       const sub = effects.pullOnAuth$.subscribe();
-      actions$.next(AuthActions.sessionResolved({ user: { id: 'u1', email: 'a@b.com' } }));
+      actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
 
       await Promise.resolve();
       await Promise.resolve();
@@ -414,10 +523,11 @@ describe('PlaybookEffects', () => {
 
       sub.unsubscribe();
 
+      await settleEffects();
       // remote-missing local-newer row is NOT written locally (already there);
       // only the cloud-only insert is.
       expect(dbService.upsertMany).toHaveBeenCalledTimes(1);
-      expect(dbService.upsertMany).toHaveBeenCalledWith([cloudOnly]);
+      expect(dbService.upsertMany).toHaveBeenCalledWith([cloudOnly], 'owner-a');
 
       const hydratedCall = dispatchSpy.mock.calls.find(
         (c) => dispatchedAction(c).type === PlaybookActions.hydrated.type,
@@ -459,7 +569,7 @@ describe('PlaybookEffects', () => {
       const sub = effects.pullOnAuth$.subscribe();
       await expect(
         (async () => {
-          actions$.next(AuthActions.sessionResolved({ user: { id: 'u1', email: 'a@b.com' } }));
+          actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
           await Promise.resolve();
           await Promise.resolve();
           await Promise.resolve();
@@ -469,6 +579,56 @@ describe('PlaybookEffects', () => {
       sub.unsubscribe();
 
       expect(dispatchSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not load, persist, hydrate, or push A pull results after owner drift', async () => {
+      let resolvePull!: (rules: PlaybookRule[]) => void;
+      syncService.pullPlaybookRules.mockImplementation(
+        () => new Promise((resolve) => (resolvePull = resolve)),
+      );
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      const sub = effects.pullOnAuth$.subscribe();
+
+      actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
+      resolvePull([rule('remote-a')]);
+      ownerId = 'owner-b';
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      expect(dbService.loadAll).not.toHaveBeenCalled();
+      expect(dbService.upsertMany).not.toHaveBeenCalled();
+      expect(syncService.pushPlaybookRules).not.toHaveBeenCalled();
+      expect(
+        dispatchSpy.mock.calls.some(
+          (call) => dispatchedAction(call).type === PlaybookActions.hydrated.type,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not persist or hydrate A merge after owner drift during local load', async () => {
+      let resolveLoad!: (rules: PlaybookRule[]) => void;
+      dbService.loadAll.mockImplementation(() => new Promise((resolve) => (resolveLoad = resolve)));
+      syncService.pullPlaybookRules.mockResolvedValue([rule('remote-a')]);
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      const sub = effects.pullOnAuth$.subscribe();
+
+      actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
+      await Promise.resolve();
+      await Promise.resolve();
+      resolveLoad([]);
+      ownerId = 'owner-b';
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+      expect(dbService.upsertMany).not.toHaveBeenCalled();
+      expect(syncService.pushPlaybookRules).not.toHaveBeenCalled();
+      expect(
+        dispatchSpy.mock.calls.some(
+          (call) => dispatchedAction(call).type === PlaybookActions.hydrated.type,
+        ),
+      ).toBe(false);
     });
   });
 });
