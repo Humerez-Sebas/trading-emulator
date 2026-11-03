@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { tableFromArrays } from 'apache-arrow';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { WorkspaceDbService } from '../services/workspace-db.service';
+import { fixedOwnerIdentity } from '../services/owner-identity.service';
 import { CANDLES_STORE, DB_NAME, type CandleRecord } from '../services/market-data-db';
 import { arrowTableToCandles, bulkInsertCandles } from './candles-writer';
 
@@ -68,8 +69,10 @@ async function resetAndInitSchema(): Promise<void> {
     del.onerror = () => resolve();
     del.onblocked = () => resolve();
   });
-  // The main thread owns the schema; warm it up via the service (opens at v5).
-  await new WorkspaceDbService().listMetas();
+  // The main thread owns the SHARED market-data schema; warm it up via a
+  // market-data read (Session Sovereignty V2 moved listMetas to the per-owner
+  // database, which would no longer create the shared `candles` store).
+  await new WorkspaceDbService(fixedOwnerIdentity('owner-test')).listDatasets();
 }
 
 /** Count rows currently in the candles store. */

@@ -147,6 +147,51 @@
               </div>
             </dl>
 
+            <section class="costs" aria-labelledby="costs-title">
+              <span id="costs-title" class="costs-label">Costes simulados</span>
+              <p class="costs-note">
+                Estimación por defecto para {{ r2Symbol() }}, editable si preferís otra referencia.
+                Costes simulados, no un feed de bróker en vivo.
+              </p>
+              <div class="costs-grid">
+                <label class="cost-field">
+                  <span class="label">Spread (pts)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputmode="decimal"
+                    [value]="effectiveExecutionCosts().spreadPoints"
+                    (input)="onSpreadOverride($event)"
+                  />
+                </label>
+                <label class="cost-field">
+                  <span class="label">Comisión ($/lote)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputmode="decimal"
+                    [value]="effectiveExecutionCosts().commissionPerLot"
+                    (input)="onCommissionOverride($event)"
+                  />
+                </label>
+                <label class="cost-field">
+                  <span class="label" title="El slippage solo se aplica en ejecuciones stop">
+                    Slippage (pts)
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputmode="decimal"
+                    [value]="effectiveExecutionCosts().slippagePoints"
+                    (input)="onSlippageOverride($event)"
+                  />
+                </label>
+              </div>
+            </section>
+
             @if (r2Error()) {
               <p class="csv-error" role="alert">{{ r2Error() }}</p>
             }

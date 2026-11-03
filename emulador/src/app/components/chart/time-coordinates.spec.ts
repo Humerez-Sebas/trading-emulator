@@ -60,23 +60,23 @@ describe('xForTime (beyond-last-bar pixel extrapolation)', () => {
   const chart = fakeChart(times.length, PX);
 
   it('maps an exact bar to its integer-logical coordinate', () => {
-    expect(xForTime(chart, { shift: 0, times, barSpacing: SPACING }, 1060)).toBe(8); // logical 1
+    expect(xForTime(chart, { times, barSpacing: SPACING }, 1060)).toBe(8); // logical 1
   });
 
   it('maps a time BETWEEN the last bar and the cursor to the right (not 0)', () => {
     // 1138 = last bar + 18s = logical 2.3 → would hit logicalToCoordinate(2.3)=null
-    const x = xForTime(chart, { shift: 0, times, barSpacing: SPACING }, 1138)!;
+    const x = xForTime(chart, { times, barSpacing: SPACING }, 1138)!;
     expect(x).toBeCloseTo(2.3 * PX, 5); // 18.4, NOT 0
-    expect(x).toBeGreaterThan(xForTime(chart, { shift: 0, times, barSpacing: SPACING }, 1120)!);
+    expect(x).toBeGreaterThan(xForTime(chart, { times, barSpacing: SPACING }, 1120)!);
   });
 
   it('extrapolates a future time linearly in pixel space', () => {
     // 1420 = last + 300s = logical 7
-    expect(xForTime(chart, { shift: 0, times, barSpacing: SPACING }, 1420)).toBeCloseTo(7 * PX, 5);
+    expect(xForTime(chart, { times, barSpacing: SPACING }, 1420)).toBeCloseTo(7 * PX, 5);
   });
 
   it('extrapolates before the first bar to a negative coordinate', () => {
     // 880 = first - 120s = logical -2
-    expect(xForTime(chart, { shift: 0, times, barSpacing: SPACING }, 880)).toBeCloseTo(-2 * PX, 5);
+    expect(xForTime(chart, { times, barSpacing: SPACING }, 880)).toBeCloseTo(-2 * PX, 5);
   });
 });

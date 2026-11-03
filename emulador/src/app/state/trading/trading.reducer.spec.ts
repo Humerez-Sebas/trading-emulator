@@ -117,18 +117,26 @@ describe('trading reducer: modifyOrder re-sizing (pending = risk % constant)', (
     expect(next.orders[0].riskUsd).toBe(100);
   });
 
-  it('keeps the previous lots/riskUsd when the SL lands on the entry (lots 0)', () => {
+  // RFC-014 Task 4a (D14.E authorized STOP exception): SL landing exactly on
+  // the entry is boundary-invalid I-14 geometry (strict `sl < entryPrice`
+  // for a buy) — the modification is now rejected outright, not merely
+  // "resized to 0". Retitled to reflect the new, intended behavior.
+  it('rejects an SL landing on the entry (invalid I-14 geometry)', () => {
     const s = state({ orders: [order()] });
     const next = reducer(s, TradingActions.modifyOrder({ id: 'o1', sl: 4000, contractSize: 100 }));
-    expect(next.orders[0].sl).toBe(4000);
+    expect(next.orders[0].sl).toBe(3990);
     expect(next.orders[0].lots).toBe(0.1);
     expect(next.orders[0].riskUsd).toBe(100);
   });
 
+  // RFC-014 Task 4a (D14.E authorized STOP exception): the fixture's SL move
+  // is now a TIGHTEN (3990 → 3995, toward entry) instead of the original
+  // widen (→ 3950), so it is accepted under I-15 — the "never re-sizes"
+  // intent (lots/riskUsd stay untouched by modifyPosition) is unchanged.
   it('modifyPosition never re-sizes an open position', () => {
     const s = state({ positions: [position()] });
-    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 3950 }));
-    expect(next.positions[0].sl).toBe(3950);
+    const next = reducer(s, TradingActions.modifyPosition({ id: 'p1', sl: 3995 }));
+    expect(next.positions[0].sl).toBe(3995);
     expect(next.positions[0].lots).toBe(0.1);
     expect(next.positions[0].riskUsd).toBe(100);
   });
@@ -647,6 +655,45 @@ describe('trading reducer: deleteActiveSession', () => {
     expect(next.activeSessionId).toBeTruthy();
     expect(next.activeSessionId).not.toBe('old-active');
   });
+
+  it('uses the replacement active id already committed by IndexedDB', () => {
+    const next = reducer(state({ activeSessionId: 'old-active', history: [closed()] }), {
+      type: TradingActions.deleteActiveSessionCommitted.type,
+      deletedId: 'old-active',
+      replacementActiveSessionId: 'active-next',
+    } as never);
+
+    expect(next.activeSessionId).toBe('active-next');
+  });
+
+  it('removes committed A from archives without resetting current B', () => {
+    const archivedA = {
+      id: 'active-a',
+      name: 'A',
+      createdAt: 1,
+      currentTime: 100,
+      trading: { ...defaultTradingData(), sessionName: 'A' },
+    };
+    const currentB = state({
+      activeSessionId: 'active-b',
+      sessionName: 'B',
+      balance: 12000,
+      history: [closed({ id: 'b-trade', profit: 2000 })],
+      savedSessions: [archivedA],
+    });
+
+    const next = reducer(currentB, {
+      type: TradingActions.deleteActiveSessionCommitted.type,
+      deletedId: 'active-a',
+      replacementActiveSessionId: 'db-replacement',
+    } as never);
+
+    expect(next.activeSessionId).toBe('active-b');
+    expect(next.sessionName).toBe('B');
+    expect(next.balance).toBe(12000);
+    expect(next.history).toEqual(currentB.history);
+    expect(next.savedSessions).toEqual([]);
+  });
 });
 
 describe('trading reducer: sessionImported', () => {
@@ -750,6 +797,84 @@ describe('trading reducer: stable activeSessionId (Part A)', () => {
     const next = reducer(s, TradingActions.newSession({ currentCursor: 100 }));
     expect(next.savedSessions).toHaveLength(1);
     expect(next.savedSessions[0].id).toBe('active-id-1');
+  });
+
+  it('uses the replacement id and archived clocks already committed by IndexedDB', () => {
+    const s = state({ history: [closed()], activeSessionId: 'active-id-1' });
+    const next = reducer(
+      s,
+      TradingActions.newSession({
+        currentCursor: 100,
+        replacementActiveSessionId: 'active-next',
+        archivedClientUpdatedAt: 500,
+        archivedSyncedAt: 400,
+      } as never),
+    );
+
+    expect(next.activeSessionId).toBe('active-next');
+    expect(next.savedSessions[0]).toEqual(
+      expect.objectContaining({
+        id: 'active-id-1',
+        clientUpdatedAt: 500,
+        syncedAt: 400,
+      }),
+    );
+  });
+
+  it('archives the exact reconciled session carried by a committed new-session consequence', () => {
+    const live = state({
+      activeSessionId: 'active-a',
+      sessionName: 'Live changed again',
+      balance: 13000,
+    });
+    const reconciled = {
+      id: 'active-a',
+      name: 'Reconciled A',
+      createdAt: 400,
+      currentTime: 500,
+      trading: {
+        ...defaultTradingData(),
+        sessionName: 'Reconciled A',
+        balance: 12000,
+      },
+      clientUpdatedAt: 101,
+      syncedAt: 100,
+    };
+
+    const next = reducer(
+      live,
+      TradingActions.newSession({
+        currentCursor: 500,
+        replacementActiveSessionId: 'active-next',
+        archivedClientUpdatedAt: 101,
+        archivedSyncedAt: 100,
+        archivedSession: reconciled,
+      } as never),
+    );
+
+    expect(next.savedSessions.find((session) => session.id === 'active-a')).toEqual(reconciled);
+  });
+
+  it('archives the replay settings captured by the committed new-session action', () => {
+    const s = state({ history: [closed()], activeSessionId: 'active-id-1' });
+    const next = reducer(
+      s,
+      TradingActions.newSession({
+        currentCursor: 100,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      } as never),
+    );
+
+    expect(next.savedSessions[0]).toEqual(
+      expect.objectContaining({
+        currentTime: 100,
+        customTfMinutes: 45,
+        playbackSpeed: 250,
+        replayResolution: 5,
+      }),
+    );
   });
 
   it('archiveActive mints a NEW id when activeSessionId is null', () => {

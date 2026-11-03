@@ -21,6 +21,10 @@ export interface Workspace {
   files: Partial<Record<Timeframe, string>>;
   activeTf: Timeframe | null;
   currentTime: number;
+  customTfMinutes?: number | null;
+  /** Playback delay in milliseconds per candle. */
+  playbackSpeed?: number;
+  replayResolution?: number | null;
   drawings: Drawing[];
   /**
    * TFs this session was created with (wizard selection). Scopes the TF

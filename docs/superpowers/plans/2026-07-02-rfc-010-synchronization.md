@@ -1,6 +1,23 @@
 # RFC-010 Synchronization Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> ## STATUS: HISTORICAL — executed and shipped; do NOT re-run
+>
+> **Delivered 2026-07-03**, merged to `develop` in PR #29 (`8e89142`); released to `main`
+> inside the multi-chart block release PR #36 (`dbaaae1`). The `linkGroups` feature and
+> `ChartSyncRouter` this plan introduces are live in
+> `emulador/src/app/state/link-groups/` and `emulador/src/app/components/workspace/`.
+>
+> This file is the **record of how link-group synchronization was built**, not a task list.
+> Its checkboxes describe finished work. Note that RFC-018 later **retired `syncTrades` as
+> a LinkGroup channel** (`62effac`, *feat(rfc-018): retire syncTrades as a LinkGroup channel
+> (D18.A)*), and RFC-017 recomposed the sync layer — so the channel set described below is
+> no longer the current one. For binding behaviour read
+> [RFC-010](../../architecture/rfcs/010-synchronization.md),
+> [RFC-017](../../architecture/rfcs/017-compositional-panel-sync.md) and
+> [RFC-018](../../architecture/rfcs/018-trade-visibility-refinement.md);
+> `syncPriceScale` remains reserved-unimplemented per the frozen vision.
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. *(Overridden by the STATUS banner above — this instruction no longer applies to this file.)*
 
 **Goal:** Give the RFC-008/009 panel host its first real cross-panel behavior: opt-in `LinkGroup`s that sync crosshair and/or visible time range between member panels (never price scale — reserved, R3), routed through the RFC-008 `ChartSyncBus` skeleton without reintroducing a feedback loop (A moves B, B moves A, ...), plus verification that the existing global replay clock (`selectReplayIndex`/`selectCurrentTime` → `lastIndexAtOrBefore` per panel, already live in `ChartModelMapper.panelChartView$`) fans out correctly to N panels with freeze-on-last for symbols with data gaps.
 

@@ -12,6 +12,7 @@ const group = (id: string): LinkGroup => ({
   color: '#ff6b6b',
   syncCrosshair: true,
   syncTimeRange: true,
+  syncDrawings: true,
 });
 
 describe('linkGroupsFeature reducer', () => {
@@ -88,6 +89,21 @@ describe('linkGroupsFeature reducer', () => {
       state = reducer(state, LinkGroupsActions.restoreGroups({ groups: [] }));
       expect(state.groups).toEqual({});
     });
+
+    it('a group missing the composition flags (predates them) normalizes to syncDrawings:false and drops any legacy syncTrades key (D18.A)', () => {
+      const legacyGroup = {
+        id: 'g1',
+        color: '#ff6b6b',
+        syncCrosshair: true,
+        syncTimeRange: true,
+      } as unknown as LinkGroup;
+      const state = reducer(
+        createInitialLinkGroupsState(),
+        LinkGroupsActions.restoreGroups({ groups: [legacyGroup] }),
+      );
+      expect(state.groups['g1'].syncDrawings).toBe(false);
+      expect('syncTrades' in state.groups['g1']).toBe(false);
+    });
   });
 
   describe('workspaceRestored (RFC-011 Task 5)', () => {
@@ -108,6 +124,23 @@ describe('linkGroupsFeature reducer', () => {
         WorkspacesActions.workspaceRestored({ workspace: emptyWorkspace('GBPUSD') }),
       );
       expect(state.groups).toEqual({});
+    });
+
+    it('a restored group missing the composition flags normalizes to syncDrawings:false and drops any legacy syncTrades key (D18.A)', () => {
+      const legacyGroup = {
+        id: 'g1',
+        color: '#ff6b6b',
+        syncCrosshair: true,
+        syncTimeRange: true,
+      } as unknown as LinkGroup;
+      const state = reducer(
+        createInitialLinkGroupsState(),
+        WorkspacesActions.workspaceRestored({
+          workspace: { ...emptyWorkspace('EURUSD'), linkGroups: [legacyGroup] },
+        }),
+      );
+      expect(state.groups['g1'].syncDrawings).toBe(false);
+      expect('syncTrades' in state.groups['g1']).toBe(false);
     });
   });
 });

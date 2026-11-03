@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper } from './chart-model-mapper.service';
 import {
   selectSeries,
   selectCurrentTime,
-  selectUtcOffset,
+  selectDisplayZone,
   selectChartView,
 } from '../../state/selectors';
 import { MAX_PANELS_PER_TAB, PanelDescriptor } from '../../state/layout/layout.models';
@@ -29,14 +30,14 @@ describe('8-panel replay profiling (RFC-012 pt 6: measured fan-out, deterministi
     store = TestBed.inject(MockStore);
     store.overrideSelector(selectSeries, { M1: m1 });
     store.overrideSelector(selectCurrentTime, 100 + 60 * 100); // cursor mid-series
-    store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
     // chartView$ (test 3) derives directly from selectChartView (chart-model-mapper.service.ts:166-173),
     // NOT from combineLatest over raw slices like panelChartView$ — it needs its own override to emit.
     store.overrideSelector(selectChartView, {
       tf: 'M1',
       candles: m1,
       idx: 100,
-      utcOffset: 0,
+      displayZone: SERVER_ZONE_ID,
       forming: null,
       countdown: null,
     });

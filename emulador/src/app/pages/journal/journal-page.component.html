@@ -1,0 +1,70 @@
+<div class="journal-page">
+  @switch (state()) {
+    @case ('loading') {
+      <div class="skeleton-header" aria-hidden="true"></div>
+      <div class="skeleton-sections" aria-hidden="true">
+        @for (i of [1, 2, 3, 4, 5, 6]; track i) {
+          <div class="skeleton-section"></div>
+        }
+      </div>
+      <p class="sr-only" role="status">Cargando Journal…</p>
+    }
+    @case ('error') {
+      <div class="page-state">
+        <h1 #errorHeading tabindex="-1">Journal</h1>
+        <p>No se encontró la sesión. Puede haber sido eliminada.</p>
+        <a appButton variant="primary" routerLink="/sesiones">← Sesiones</a>
+      </div>
+    }
+    @case ('ready') {
+      @if (model(); as m) {
+        <app-journal-header
+          [sessionName]="m.name"
+          [symbol]="m.symbol"
+          [dateFrom]="dateRange()?.from ?? null"
+          [dateTo]="dateRange()?.to ?? null"
+        />
+
+        @if (sessionWithoutTrades()) {
+          <div class="page-state">
+            <p>
+              Esta sesión no tiene trades cerrados. Los patrones aparecen aquí cuando cierras
+              trades.
+            </p>
+            <a appButton variant="primary" routerLink="/sesiones">← Sesiones</a>
+          </div>
+        } @else {
+          <div class="sections">
+            <app-performance-grid [stats]="statsView()!" />
+
+            <app-execution-section
+              [points]="scatterPoints()"
+              (tradeSelected)="onTradeSelected($event)"
+            />
+
+            <app-behavior-section
+              [bubbles]="bubbles()"
+              [cells]="heatmapCells()"
+              [facts]="behaviorFacts()"
+              (tradeSelected)="onTradeSelected($event)"
+            />
+
+            <app-rule-performance-table
+              [rows]="ruleRows()"
+              (ruleFilterToggled)="onRuleFilterToggled($event)"
+            />
+
+            <app-time-of-day-table [rows]="timeOfDayRows()" />
+
+            <app-trades-table
+              [rows]="tradeRows()"
+              [ruleFilter]="ruleFilter()"
+              [selectedTradeId]="selectedTradeId()"
+              (tradeSelected)="onTradeSelected($event)"
+            />
+          </div>
+        }
+      }
+    }
+  }
+</div>

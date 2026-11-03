@@ -1,0 +1,39 @@
+:host {
+  display: block;
+  margin-bottom: var(--space-4);
+}
+
+.breadcrumb {
+  display: inline-block;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-1);
+}
+.breadcrumb:hover {
+  color: var(--text);
+}
+.breadcrumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+}
+h1:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Programmatic focus target (tabindex="-1"): no visible ring on a
+   non-keyboard focus, but :focus-visible still covers Tab-in from the
+   breadcrumb — see DESIGN_SYSTEM §5.3. */
+
+.meta {
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}

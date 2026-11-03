@@ -1,4 +1,10 @@
-import { Capability } from '../capability';
+import {
+  Capability,
+  PlacementLineSpec,
+  PlacementSlot,
+  TradeLineHit,
+  TradingCapabilityApi,
+} from '../capability';
 import {
   IChartApi,
   ISeriesApi,
@@ -10,10 +16,21 @@ import {
   createSeriesMarkers,
 } from 'lightweight-charts';
 import { ChartEventBus } from '../chart-event-bus';
+import { toDisplayTime } from '../display-time';
 import { ChartColors, PendingOrder, Position, RenderModel, TradeMarker } from '../render-model';
 import { TradeBoxesPrimitive } from './trade-boxes-primitive';
 import { TradeButtonsPrimitive, TradeButton } from './trade-buttons-primitive';
 const CHART_ACCENT = '#2962FF';
+
+function ruleTagSuffix(
+  declaredRuleId: string | null | undefined,
+  ruleSlotMap: Record<string, number | null> | undefined,
+): string {
+  if (!declaredRuleId || !ruleSlotMap) return '';
+  if (!(declaredRuleId in ruleSlotMap)) return '';
+  const slot = ruleSlotMap[declaredRuleId];
+  return slot !== null ? ` [R${slot}]` : ' [R]';
+}
 
 export interface TradeLine {
   id: string;
@@ -24,8 +41,36 @@ export interface TradeLine {
   line: IPriceLine;
 }
 
+/**
+ * What a hit-test hands BACK to a caller: the same identity fields as `TradeLine` minus the
+ * `IPriceLine` handle. RFC-004/RFC-005: `hitTestTradeLine` used to return the whole
+ * `TradeLine`, so an Angular caller received a live library handle it had no business
+ * holding. No consumer ever read `.line` (verified across app code and specs), so dropping
+ * it from the public result closes that leak at zero behavioural cost.
+ */
+/**
+ * Per-slot line style for the placement preview. These are the exact constants
+ * `ChartComponent` used inline before the preview moved in here: entry = `LargeDashed`,
+ * SL/TP = `Dashed`. Deriving the style from the slot is what lets `LineStyle` (and
+ * `IPriceLine`) leave the Angular layer entirely.
+ */
+const PLACEMENT_LINE_STYLE: Record<PlacementSlot, LineStyle> = {
+  entry: LineStyle.LargeDashed,
+  sl: LineStyle.Dashed,
+  tp: LineStyle.Dashed,
+};
+
 export class TradingCapability implements Capability {
   public readonly id = 'trading';
+  public readonly publicApi: TradingCapabilityApi = {
+    hitTestBox: (x, y) => this.hitTestBox(x, y),
+    hitTestEdge: (x, y) => this.hitTestEdge(x, y),
+    hitTestDelete: (x, y) => this.hitTestDelete(x, y),
+    addPlacementLine: (slot, spec) => this.addPlacementLine(slot, spec),
+    movePlacementLine: (slot, price, title) => this.movePlacementLine(slot, price, title),
+    clearPlacementLines: () => this.clearPlacementLines(),
+    hitTestTradeLine: (x, y) => this.hitTestTradeLine(x, y),
+  };
   private chart: IChartApi | null = null;
   private bus: ChartEventBus | null = null;
 
@@ -33,6 +78,14 @@ export class TradingCapability implements Capability {
   private tradeButtonsPrimitive = new TradeButtonsPrimitive();
   private seriesMarkers?: ISeriesMarkersPluginApi<Time>;
   private tradeLines: TradeLine[] = [];
+  /**
+   * Preview lines of the in-progress interactive order placement (entry fixed, SL then TP
+   * follow the mouse). Deliberately SEPARATE from `tradeLines`: those are derived from the
+   * render model and rebuilt wholesale whenever it changes, whereas these are transient
+   * interaction state that must survive those rebuilds. Previously held as `IPriceLine`s by
+   * `ChartComponent` itself (RFC-004/RFC-005 bridge).
+   */
+  private placementLines: Partial<Record<PlacementSlot, IPriceLine>> = {};
   private destroyed = false;
 
   // Memoization references to avoid 60fps price-line recreations
@@ -60,7 +113,6 @@ export class TradingCapability implements Capability {
     // 1. Update Trade Boxes
     this.tradeBoxesPrimitive.setSource({
       items: t.boxes,
-      shift: t.shift,
       times: t.times,
       barSpacing: t.barSpacing,
       tpColor: t.colors.tpZone,
@@ -127,7 +179,7 @@ export class TradingCapability implements Capability {
 
       for (const p of t.positions) {
         const sideColor = p.side === 'buy' ? t.colors.upColor : t.colors.downColor;
-        const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}`;
+        const label = `${p.side === 'buy' ? 'C' : 'V'} ${p.lots}${ruleTagSuffix(p.declaredRuleId, t.ruleSlotMap)}`;
         addPriceLine(
           p.id,
           'position',
@@ -162,7 +214,7 @@ export class TradingCapability implements Capability {
         }
       }
       for (const o of t.pendingOrders) {
-        const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}`;
+        const label = `${o.side === 'buy' ? 'C' : 'V'} ${o.type} ${o.lots}${ruleTagSuffix(o.declaredRuleId, t.ruleSlotMap)}`;
         addPriceLine(
           o.id,
           'order',
@@ -182,7 +234,7 @@ export class TradingCapability implements Capability {
       // 4. Update Markers
       this.seriesMarkers?.setMarkers(
         t.markers.map((m) => ({
-          time: (m.time + t.shift) as UTCTimestamp,
+          time: toDisplayTime(m.time, t.zone) as UTCTimestamp,
           position: m.position,
           shape: m.shape,
           color: m.color === 'up' ? t.colors.upColor : t.colors.downColor,
@@ -207,7 +259,54 @@ export class TradingCapability implements Capability {
     return this.tradeButtonsPrimitive.hitTestDelete(x, y);
   }
 
-  public hitTestTradeLine(y: number): TradeLine | null {
+  /**
+   * Creates (or replaces) the preview line of one placement slot. Style comes from the slot
+   * (see `PLACEMENT_LINE_STYLE`); `lineWidth: 1` and `axisLabelVisible: true` match every
+   * previous inline call. Replacing an existing slot removes the old line first, so the
+   * method cannot leak a handle even if a caller double-arms a slot.
+   */
+  public addPlacementLine(slot: PlacementSlot, spec: PlacementLineSpec): void {
+    if (this.destroyed) return;
+    const existing = this.placementLines[slot];
+    if (existing) this.series.removePriceLine(existing);
+    this.placementLines[slot] = this.series.createPriceLine({
+      price: spec.price,
+      color: spec.color,
+      lineWidth: 1,
+      lineStyle: PLACEMENT_LINE_STYLE[slot],
+      axisLabelVisible: true,
+      title: spec.title,
+    });
+  }
+
+  /**
+   * Moves/relabels an existing preview line. A slot with no line is a NO-OP — that mirrors
+   * the `line?.applyOptions(...)` the component used to do, and it is load-bearing: the TP
+   * slot has no line yet while the SL is still being placed. Colour is deliberately NOT
+   * touched here, because the previous `applyOptions` calls only ever set `price` and
+   * `title`.
+   */
+  public movePlacementLine(slot: PlacementSlot, price: number, title: string): void {
+    this.placementLines[slot]?.applyOptions({ price, title });
+  }
+
+  /** Removes every placement preview line. Idempotent. */
+  public clearPlacementLines(): void {
+    for (const slot of Object.keys(this.placementLines) as PlacementSlot[]) {
+      const line = this.placementLines[slot];
+      if (line) this.series.removePriceLine(line);
+    }
+    this.placementLines = {};
+  }
+
+  public hitTestTradeLine(x: number, y: number): TradeLineHit | null {
+    // D19.J: reject clicks beyond the pane's right edge — belt-and-suspenders
+    // behind the DOM-level guard (D19.A, `ChartComponent.inPane`), which is the
+    // enforcing guard for the general axis-chrome case. This capability HAS a
+    // chart handle (`this.chart`, set in `init()`), so the check is real, not
+    // accepted-but-unused: same width source as the DOM guard and the existing
+    // trade-boxes/trade-buttons primitives (`chart.timeScale().width()`).
+    if (this.chart && x >= this.chart.timeScale().width()) return null;
     const grabPx = 4;
     let best: TradeLine | null = null;
     let bestDist = grabPx + 1;
@@ -221,7 +320,16 @@ export class TradingCapability implements Capability {
         bestDist = dist;
       }
     }
-    return best;
+    // Narrowed COPY, not `best` itself: returning the stored `TradeLine` would hand the
+    // caller a live `IPriceLine` at runtime even though the declared type hides it.
+    if (!best) return null;
+    return {
+      id: best.id,
+      target: best.target,
+      field: best.field,
+      price: best.price,
+      draggable: best.draggable,
+    };
   }
 
   public destroy(): void {
@@ -240,6 +348,12 @@ export class TradingCapability implements Capability {
       this.series.removePriceLine(tl.line);
     }
     this.tradeLines = [];
+    // Symmetry with `tradeLines`: an in-progress placement preview is torn down too.
+    // `clearPlacementLines` intentionally has no `destroyed` guard so it still runs here.
+    // Adds ZERO calls when nothing is being placed, which is why the pre-existing
+    // `removePriceLine` call-count assertions in trading-capability.spec.ts are unaffected.
+    // Previously these lines were only reclaimed indirectly by the engine's `chart.remove()`.
+    this.clearPlacementLines();
     this.chart = null;
     this.bus = null;
   }

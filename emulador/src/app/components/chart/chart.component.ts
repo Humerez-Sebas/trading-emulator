@@ -7,29 +7,37 @@ import {
   OnDestroy,
   ViewChild,
   computed,
+  effect,
   inject,
   output,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Store } from '@ngrx/store';
-import {
-  IChartApi,
-  IPriceLine,
-  ISeriesApi,
-  LineStyle,
-  LogicalRange,
-  MouseEventParams,
-  Time,
-  UTCTimestamp,
-} from 'lightweight-charts';
+// RFC-004/RFC-005: only PAYLOAD types remain — the branded time/range scalars and the
+// mouse-event param shape that the RFC-002 event bus carries. Every HANDLE type
+// (`IChartApi`, `ISeriesApi`, `IPriceLine`, `ISeriesMarkersPluginApi`) is gone: this
+// component no longer touches a lightweight-charts object. Their imports (plus namespace
+// imports) are blocked outside domain/chart by `engine-boundary/no-chart-handles`.
+import { LogicalRange, UTCTimestamp } from 'lightweight-charts';
 import { Candle, derivePointSize } from '../../models';
 import {
+  type DisplayZone,
+  fromDisplayTime,
+  resolveDisplayZone,
+  toDisplayTime,
+} from '../../domain/chart/display-time';
+import { DEFAULT_DISPLAY_ZONE_ID } from '../../state/settings/settings.models';
+import {
   selectActiveTfShortfall,
+  selectCurrentAsset,
   selectDataRange,
+  selectPlacementTime,
   selectTradePanelView,
 } from '../../state/selectors';
-import { ChartModelMapper } from './chart-model-mapper.service';
+import { effectivePanelSymbol, panelMayExecute } from '../../state/layout/layout.models';
+import { selectRuleSlotMap } from '../../state/playbook/playbook.selectors';
+import { ChartModelMapper, PanelDrawingsView } from './chart-model-mapper.service';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import {
   ChartColors,
@@ -41,17 +49,22 @@ import {
 import { DialogService } from '../ui/dialog.service';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
-import { Drawing, DrawingPoint, DrawingType } from '../../state/drawings/drawings.models';
-import { DrawingsCapability } from '../../domain/chart/capabilities/drawings-capability';
-import { CountdownCapability } from '../../domain/chart/capabilities/countdown-capability';
-import { SessionCapability } from '../../domain/chart/capabilities/session-capability';
-import { TradingCapability } from '../../domain/chart/capabilities/trading-capability';
+import {
+  ClipboardEntry,
+  Drawing,
+  DrawingPoint,
+  DrawingType,
+} from '../../state/drawings/drawings.models';
+import { resolveDrawingTarget } from '../../state/drawings/drawing-ownership';
+import { linkGroupsFeature } from '../../state/link-groups/link-groups.reducer';
+import { layoutFeature } from '../../state/layout/layout.reducer';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { lotsForRisk, OrderSide, PendingType } from '../../state/trading/trading.models';
 import { ChartEngine } from '../../domain/chart/chart-engine';
-import { ChartEventBus } from '../../domain/chart/chart-event-bus';
+import { ChartEventSource, ChartPointerEvent } from '../../domain/chart/chart-event-bus';
 import {
   ChartConfig,
+  Drawing as DomainDrawing,
   TradeBoxItem as DomainTradeBoxItem,
   TradeMarker as DomainTradeMarker,
   Position as DomainPosition,
@@ -323,16 +336,30 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private dialogs = inject(DialogService);
   private mapper = inject(ChartModelMapper);
 
-  private chart?: IChartApi;
-  private series?: ISeriesApi<'Candlestick'>;
+  /**
+   * RFC-004/RFC-005: the engine is the ONLY chart handle this component holds. The
+   * `chart: IChartApi` / `series: ISeriesApi` fields that used to sit beside it came from
+   * the migration bridge (`engine.chartApi` / `engine.seriesApi`) and are gone; every guard
+   * that read them now reads `engine`, which `ngAfterViewInit` sets in the same statement
+   * they used to be set in, so the guard conditions are equivalent.
+   */
   private engine?: ChartEngine;
   /** RFC-002: unsubscribe fns for the engine event-bus listeners. */
   private busUnsubs: (() => void)[] = [];
   /** Guards post-destroy access from global handlers (mouseup, keydown). */
   private destroyed = false;
   private lastConfig?: ChartConfig;
-  private get drawingsCap(): DrawingsCapability {
-    return this.engine!.getCapability('drawings') as DrawingsCapability;
+  private get drawingsCap() {
+    return this.engine!.getCapability('drawings')!;
+  }
+  /**
+   * RFC-004/RFC-005: the trading capability now owns the interactive-placement preview
+   * lines (it owns the series), so this component asks it instead of holding `IPriceLine`s.
+   * Optional on purpose — the same `engine?.getCapability(...)` shape the hit-test call
+   * sites already used, so a component whose `ngAfterViewInit` was stubbed out still no-ops.
+   */
+  private get tradingCap() {
+    return this.engine?.getCapability('trading');
   }
 
   // --- trade overlay state ---
@@ -356,7 +383,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * ChartPanelComponent can forward crosshair/range events to the ChartSyncBus.
    * Additive only — the audited render path is unchanged.
    */
-  readonly chartReady = output<ChartEventBus>();
+  readonly chartReady = output<ChartEventSource>();
 
   /**
    * RFC-010: a second, additive output — a handle the wrapping ChartPanelComponent
@@ -369,8 +396,46 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   readonly chartFocused = output<void>();
 
   // --- right-click menu + interactive order placement ---
+  /**
+   * RFC-018 (T-3, domain): may a trading verb originate from THIS pane? A pane whose
+   * symbol is not the book's is view-only w.r.t. trades. Deliberately symbol-only —
+   * never consults `hideTrades` (that composition happens below, in `tradeVerbsEnabled`).
+   * `descriptor() == null` (mapper never configured) refuses: a command is even less
+   * forgiving than a render (R18-2).
+   */
+  private readonly mayExecute = computed(() => {
+    const d = this.mapper.descriptor();
+    return d != null && panelMayExecute(d, this.currentAsset());
+  });
+  /**
+   * RFC-018 §8 (UI rule, binding): a pane the trader asked to keep clean (`hideTrades`)
+   * is not an order-entry surface either. A presentation preference, NOT a domain
+   * invariant — composed over `mayExecute`, never folded into it (RFC-018 §4.2: an
+   * invariant and a preference compose, they do not fuse).
+   */
+  private readonly hideTrades = computed(() => this.mapper.descriptor()?.hideTrades ?? false);
+  /**
+   * The condition every pane-originated trading verb (menu offer AND command dispatch)
+   * is guarded by. Both the offer and the act must read this SAME composed signal —
+   * guarding the menu with it and a dispatch with the bare `mayExecute` is the specific
+   * failure this invariant exists to prevent.
+   */
+  private readonly tradeVerbsEnabled = computed(() => this.mayExecute() && !this.hideTrades());
+  /**
+   * R18-9: a panel can acquire `hideTrades: true` WHILE a placement is already in
+   * progress (the trader flips the toggle mid-placement). The `finishPlacing` guard
+   * catches the eventual commit, but without this the preview SL/TP price lines would
+   * stay painted on a pane that no longer trades.
+   */
+  private readonly cancelPlacingOnGuardLoss = effect(() => {
+    if (!this.tradeVerbsEnabled()) this.cancelPlacing();
+  });
+
   /** Current price/risk context for placing orders from the chart. */
   private tradeCtx = this.store.selectSignal(selectTradePanelView);
+  /** D14.B: pending-order placement stamps createdAt at the reveal horizon, not the raw cursor. */
+  private placementTime = this.store.selectSignal(selectPlacementTime);
+  private ruleSlotMap = this.store.selectSignal(selectRuleSlotMap);
   menu = signal<{
     x: number;
     y: number;
@@ -425,13 +490,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       : '';
     return `${detail}Click: fijar TP · Click derecho: sin TP · Esc: cancelar`;
   });
-  /** Preview price lines while placing (entry fixed, SL/TP follow clicks). */
-  private placingLines: { entry?: IPriceLine; sl?: IPriceLine; tp?: IPriceLine } = {};
 
   /** Up to which index (of the active TF) the chart is painted. */
   private renderedIdx = -1;
   private renderedTf: string | null = null;
-  private renderedOffset = 0;
+  private renderedZone: DisplayZone | null = null;
   /** Full active-TF series kept for lazy prepend; the window is a tail of it. */
   private renderedCandles: Candle[] = [];
   /** First index of the rendered window into `renderedCandles` (0 = all loaded). */
@@ -449,9 +512,21 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // --- drawing state ---
   private activeTool = this.store.selectSignal(drawingsFeature.selectActiveTool);
-  private drawings = this.store.selectSignal(drawingsFeature.selectItems);
-  private selectedId = this.store.selectSignal(drawingsFeature.selectSelectedId);
-  private shiftSecs = 0; // time zone offset applied to the chart
+  /** This panel's composed drawing layer: local ∪ shared group, symbol-filtered, z-ordered. */
+  private panelDrawings: PanelDrawingsView = { items: [], selectedId: null };
+  private linkGroups = this.store.selectSignal(linkGroupsFeature.selectGroups);
+  /** Gates window-level keyboard shortcuts (Delete, undo/redo) to the ONE focused panel — every
+   * chart instance shares the same window keydown listener, so N panels would otherwise all react. */
+  private focusedPanelId = this.store.selectSignal(layoutFeature.selectFocusedPanelId);
+  /** Resolves a panel's `''` sentinel symbol to the active asset before a new drawing is stamped. */
+  private currentAsset = this.store.selectSignal(selectCurrentAsset);
+  /** The one-slot session clipboard: geometry and kind only, runtime-only, never persisted. */
+  private clipboard = this.store.selectSignal(drawingsFeature.selectClipboard);
+  // Clock the chart is painted in. Resolved from the settings zone id; the
+  // stored candle clock is broker SERVER time, so turning it into what the user
+  // reads is `toDisplayTime` — not a constant offset, because a fixed UTC zone
+  // has to undo the server's own DST. See domain/chart/display-time.ts.
+  private displayZone: DisplayZone = resolveDisplayZone(DEFAULT_DISPLAY_ZONE_ID);
   private accent = CHART_ACCENT;
   private up = DARK_CHART_COLORS.upColor;
   private down = DARK_CHART_COLORS.downColor;
@@ -460,7 +535,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   private boxFillAlpha = DARK_TRADE_BOX_OPACITY.fill;
   private boxBorderAlpha = DARK_TRADE_BOX_OPACITY.border;
   private draftP1: DrawingPoint | null = null;
-  private draft: Drawing | null = null;
+  /** Render-only preview (quick ruler / in-progress draft): never a store entity. */
+  private draft: DomainDrawing | null = null;
   /** Anchor of the ephemeral middle-click measurement (not persisted). */
   private quickRuler: DrawingPoint | null = null;
   private shiftKey = false;
@@ -476,13 +552,48 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     y2: number;
   } | null = null;
 
+  /** True while the user is typing into a field; the browser's own text-undo must win there. */
+  private isTypingTarget(e: KeyboardEvent): boolean {
+    const el = e.target as HTMLElement | null;
+    return !!el && (el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName));
+  }
+
   // DOM listeners kept by reference so they can be removed
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.destroyed) return;
     if (e.key === 'Shift') this.shiftKey = true;
-    if (e.key === 'Delete' && this.selectedId()) {
-      this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected()));
+
+    // Delete/undo/redo are window-level (one listener per panel instance), so they must be
+    // gated to the ONE focused panel — otherwise a keypress fires in every panel at once.
+    const panelId = this.mapper.descriptor()?.id;
+    if (panelId && panelId === this.focusedPanelId() && !this.isTypingTarget(e)) {
+      if (e.key === 'Delete' && this.panelDrawings.selectedId) {
+        this.zone.run(() => this.store.dispatch(DrawingsActions.deleteSelected({ panelId })));
+      }
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          this.zone.run(() => this.store.dispatch(DrawingsActions.undo({ panelId })));
+        } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+          e.preventDefault();
+          this.zone.run(() => this.store.dispatch(DrawingsActions.redo({ panelId })));
+        } else if (key === 'c' && this.panelDrawings.selectedId) {
+          // a live text selection means the user is copying text, not a drawing —
+          // the browser's native copy must win (the isTypingTarget guard above only
+          // covers focused form fields, not a text selection elsewhere in the DOM).
+          const selection = window.getSelection();
+          if (!selection || selection.isCollapsed) {
+            e.preventDefault();
+            this.zone.run(() => this.store.dispatch(DrawingsActions.copySelected({ panelId })));
+          }
+        } else if (key === 'v' && this.clipboard()) {
+          e.preventDefault();
+          this.zone.run(() => this.pasteClipboardAt(panelId));
+        }
+      }
     }
+
     if (e.key === 'Escape') {
       if (this.placing()) this.zone.run(() => this.cancelPlacing());
       if (this.menu()) this.zone.run(() => this.menu.set(null));
@@ -520,20 +631,13 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // hardcoded defaults). applyColors() (store-driven) takes over on the first
     // selectChartStyle emission for theme / user overrides.
     this.engine = new ChartEngine(this.container.nativeElement);
-    this.chart = this.engine.chartApi;
-    this.series = this.engine.seriesApi;
 
-    const drawingsCap = new DrawingsCapability(this.series!);
-    this.engine.registerCapability(drawingsCap);
-
-    const countdownCap = new CountdownCapability(this.series!);
-    this.engine.registerCapability(countdownCap);
-
-    const sessionCap = new SessionCapability(this.series!);
-    this.engine.registerCapability(sessionCap);
-
-    const tradingCap = new TradingCapability(this.series!);
-    this.engine.registerCapability(tradingCap);
+    // The engine's closed domain registry builds each capability with its own main series.
+    // Registration order is observable and remains drawings, countdown, session, trading.
+    this.engine.registerCapability('drawings');
+    this.engine.registerCapability('countdown');
+    this.engine.registerCapability('session');
+    this.engine.registerCapability('trading');
 
     // chart colors + grid controls (theme / user customization)
     this.mapper.chartStyle$
@@ -545,8 +649,8 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // data + replay cursor + display time zone
     this.mapper.chartView$
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ tf, candles, idx, utcOffset, forming, countdown }) =>
-        this.render(tf, candles, idx, utcOffset, forming, countdown),
+      .subscribe(({ tf, candles, idx, displayZone, forming, countdown }) =>
+        this.render(tf, candles, idx, displayZone, forming, countdown),
       );
 
     // session end indicator
@@ -563,10 +667,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         this.coverageBanner.set(last === null ? null : this.formatShortfall(last)),
       );
 
-    // drawings: repaint when they change
-    this.mapper.drawingsState$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.pushDrawings());
+    // drawings: this panel's composed layer, repainted whenever it changes
+    this.mapper.panelDrawings$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((view) => {
+      this.panelDrawings = view;
+      this.pushDrawings();
+    });
 
     // trade overlay: entry/SL/TP price lines + entry/exit markers
     this.mapper.tradeChartView$
@@ -612,9 +717,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * Useful after big time jumps where the price level changed a lot.
    */
   private resetView(): void {
-    if (!this.chart || !this.series) return;
-    this.engine?.resetPriceScale();
-    this.chart.timeScale().scrollToRealTime();
+    if (!this.engine) return;
+    this.engine.resetPriceScale();
+    this.engine.scrollToRealTime();
   }
 
   // ============ candle rendering ============
@@ -644,14 +749,16 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     tf: string | null,
     candles: Candle[],
     idx: number,
-    utcOffset: number,
+    displayZone: string,
     forming: Candle | null,
     countdown: string | null,
   ): void {
-    if (!this.series) return;
-    const shift = utcOffset * 3600;
-    if (shift !== this.shiftSecs) {
-      this.shiftSecs = shift;
+    if (!this.engine) return;
+    // resolveDisplayZone returns the same object per id, so this is a cheap
+    // reference compare, exactly as the old numeric shift was.
+    const zone = resolveDisplayZone(displayZone);
+    if (zone !== this.displayZone) {
+      this.displayZone = zone;
       this.pushDrawings();
       this.pushTrading();
     }
@@ -671,18 +778,18 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (
       tf !== this.renderedTf ||
       idx < this.renderedIdx ||
-      shift !== this.renderedOffset ||
+      zone !== this.renderedZone ||
       forwardJump > 240
     ) {
       this.renderedCandles = candles;
-      this.renderWindow(idx, Math.max(0, idx + 1 - RENDER_WINDOW), shift);
+      this.renderWindow(idx, Math.max(0, idx + 1 - RENDER_WINDOW), zone);
       this.renderedTf = tf;
       this.renderedIdx = idx;
-      this.renderedOffset = shift;
-      if (this.renderedTimes.length) this.chart?.timeScale().scrollToRealTime();
+      this.renderedZone = zone;
+      if (this.renderedTimes.length) this.engine.scrollToRealTime();
       this.pushDrawings();
       this.pushTrading();
-      this.applyForming(forming, shift);
+      this.applyForming(forming, zone);
       this.updateCountdown(forming, candles, idx, countdown);
       this.pushSession();
       return;
@@ -692,7 +799,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     while (this.renderedIdx < idx) {
       this.renderedIdx++;
       const c = candles[this.renderedIdx];
-      this.series.update({ ...c, time: (c.time + shift) as UTCTimestamp });
+      this.engine.upsertCandle({ ...c, time: toDisplayTime(c.time, zone) });
       // Deduplicate by comparing with the last entry: in normal replay, times are
       // strictly increasing. Only the forming bucket can introduce a duplicate of
       // the most recent time. O(1) vs the previous O(n) renderedTimes.includes().
@@ -702,7 +809,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     }
     // live trade boxes grow with the last rendered candle
     this.pushTrading();
-    this.applyForming(forming, shift);
+    this.applyForming(forming, zone);
     this.updateCountdown(forming, candles, idx, countdown);
     this.pushSession();
   }
@@ -728,24 +835,24 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
 
   /** Paints/updates the live "forming" bar (resolution mode). */
-  private applyForming(forming: Candle | null, shift: number): void {
-    if (!this.series || !forming) {
+  private applyForming(forming: Candle | null, zone: DisplayZone): void {
+    if (!this.engine || !forming) {
       this.renderedFormingTime = null;
       return;
     }
-    this.series.update({ ...forming, time: (forming.time + shift) as UTCTimestamp });
+    this.engine.upsertCandle({ ...forming, time: toDisplayTime(forming.time, zone) });
     this.renderedFormingTime = forming.time;
     this.renderedTimes = [...this.renderedTimes.filter((t) => t !== forming.time), forming.time];
   }
 
   /** Paints the window [winStart, idx] of `renderedCandles` and records its
    * bar times (the anchor every overlay maps against). */
-  private renderWindow(idx: number, winStart: number, shift: number): void {
-    if (!this.series) return;
+  private renderWindow(idx: number, winStart: number, zone: DisplayZone): void {
+    if (!this.engine) return;
     const slice = idx >= 0 ? this.renderedCandles.slice(winStart, idx + 1) : [];
     this.winStart = winStart;
     this.renderedTimes = slice.map((c) => c.time);
-    const mapped = slice.map((c) => ({ ...c, time: (c.time + shift) as UTCTimestamp }));
+    const mapped = slice.map((c) => ({ ...c, time: toDisplayTime(c.time, zone) as UTCTimestamp }));
     if (this.engine) {
       this.engine.render({ candles: mapped });
     }
@@ -763,11 +870,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     const newStart = Math.max(0, this.winStart - LOAD_MORE_CHUNK);
     const added = this.winStart - newStart;
     if (added > 0) {
-      this.renderWindow(this.renderedIdx, newStart, this.shiftSecs);
-      this.chart?.timeScale().setVisibleLogicalRange({
-        from: (range.from as number) + added,
-        to: (range.to as number) + added,
-      } as unknown as LogicalRange);
+      this.renderWindow(this.renderedIdx, newStart, this.displayZone);
+      // Deliberately `shiftVisibleRange`, NOT `applyVisibleRange`: the latter suppresses the
+      // resulting VisibleRangeChanged echo, which synced panels rely on to follow a prepend.
+      this.engine?.shiftVisibleRange((range.from as number) + added, (range.to as number) + added);
       this.pushDrawings();
       this.pushTrading();
     }
@@ -776,7 +882,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** "Esta temporalidad solo tiene datos hasta 31 dic 14:30" for the banner. */
   private formatShortfall(lastUtc: number): string {
-    const when = new Date((lastUtc + this.shiftSecs) * 1000).toLocaleString('es', {
+    const when = new Date(toDisplayTime(lastUtc, this.displayZone) * 1000).toLocaleString('es', {
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
@@ -809,15 +915,21 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       else this.cancelPlacing();
       return;
     }
-    if (!this.series) return;
+    if (!this.engine) return;
     const rect = this.container.nativeElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const raw = this.series.coordinateToPrice(y);
+    // D19.A: right-click on the price-scale / time-axis chrome opens no menu —
+    // it is not a chart gesture (placement verbs, the only other right-click
+    // meaning, are already handled above).
+    if (!this.inPane(x, y)) return;
+    const raw = this.engine.priceForY(y);
     const current = this.tradeCtx().price;
 
     const options: MenuOrderOption[] = [];
-    if (raw !== null && current !== null) {
+    // RFC-018 (T-3 / §8): a pane that may not trade offers no order verbs — the menu
+    // still opens (Fit / date verbs / closed-box hide-delete are not trading verbs).
+    if (this.tradeVerbsEnabled() && raw !== null && current !== null) {
       const price = this.roundToPoint(raw);
       const label = this.formatPrice(price);
       if (price < current) {
@@ -833,8 +945,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       }
     }
     // closed trade box under the cursor: offer hide/delete of the record
-    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
-    const box = tradingCap?.hitTestBox(x, y);
+    const box = this.tradingCap?.hitTestBox(x, y);
     this.menu.set({ x, y, options, boxId: box?.id ?? null });
   }
 
@@ -862,16 +973,19 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   // ---- "Ir a fecha…" / "Programar fin…" ----
 
-  /** Epoch UTC seconds -> "yyyy-MM-ddTHH:mm" in the display time zone. */
+  /**
+   * Stored epoch (broker SERVER clock, not UTC) -> "yyyy-MM-ddTHH:mm" in the
+   * display time zone. See DISPLAY_SHIFTS in settings.models.ts.
+   */
   private toInputValue(epoch: number): string {
-    return new Date((epoch + this.shiftSecs) * 1000).toISOString().slice(0, 16);
+    return new Date(toDisplayTime(epoch, this.displayZone) * 1000).toISOString().slice(0, 16);
   }
 
-  /** "yyyy-MM-ddTHH:mm" in the display time zone -> epoch UTC seconds. */
+  /** "yyyy-MM-ddTHH:mm" in the display time zone -> stored epoch (server clock). */
   private fromInputValue(value: string): number | null {
     const ms = Date.parse(`${value}:00Z`);
     if (Number.isNaN(ms)) return null;
-    return Math.floor(ms / 1000) - this.shiftSecs;
+    return fromDisplayTime(Math.floor(ms / 1000), this.displayZone);
   }
 
   menuGoToDate(): void {
@@ -912,7 +1026,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   /** Starts the interactive placement: SL follows the mouse, click to fix. */
   menuPlace(opt: MenuOrderOption): void {
     this.menu.set(null);
-    if (!this.series) return;
+    if (!this.engine) return;
     this.placing.set({
       side: opt.side,
       orderType: opt.orderType,
@@ -920,22 +1034,13 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       sl: null,
       stage: 'sl',
     });
-    this.placingLines.entry = this.series.createPriceLine({
+    const trading = this.tradingCap;
+    trading?.addPlacementLine('entry', {
       price: opt.price,
       color: this.accent,
-      lineWidth: 1,
-      lineStyle: LineStyle.LargeDashed,
-      axisLabelVisible: true,
       title: `${opt.side === 'buy' ? 'Buy' : 'Sell'} ${opt.orderType}`,
     });
-    this.placingLines.sl = this.series.createPriceLine({
-      price: opt.price,
-      color: this.down,
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      axisLabelVisible: true,
-      title: 'SL?',
-    });
+    trading?.addPlacementLine('sl', { price: opt.price, color: this.down, title: 'SL?' });
     this.container.nativeElement.style.cursor = 'crosshair';
   }
 
@@ -943,10 +1048,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * Mouse follow: moves the SL/TP preview line while placing and refreshes
    * the ruler-style readout (points, sized lots, R multiple).
    */
-  private updatePlacingHover(param: MouseEventParams<Time>): void {
+  private updatePlacingHover(param: ChartPointerEvent): void {
     const placing = this.placing();
-    if (!placing || !param.point || !this.series) return;
-    const raw = this.series.coordinateToPrice(param.point.y);
+    if (!placing || !param.point || !this.engine) return;
+    const raw = this.engine.priceForY(param.point.y);
     if (raw === null) return;
     const price = this.roundToPoint(raw);
     const points = Math.round(Math.abs(price - placing.entryPrice) / this.pointSize);
@@ -968,19 +1073,19 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       r = slDist > 0 ? Math.abs(price - placing.entryPrice) / slDist : null;
     }
 
-    const line = placing.stage === 'sl' ? this.placingLines.sl : this.placingLines.tp;
-    line?.applyOptions({
+    this.tradingCap?.movePlacementLine(
+      placing.stage,
       price,
-      title: `${placing.stage === 'sl' ? 'SL?' : 'TP?'} ${points}p`,
-    });
+      `${placing.stage === 'sl' ? 'SL?' : 'TP?'} ${points}p`,
+    );
     this.zone.run(() => this.placingInfo.set({ points, lots, r }));
   }
 
   /** Click while placing: fixes the SL first, then the TP (TP optional). */
-  private handlePlacingClick(param: MouseEventParams<Time>): void {
+  private handlePlacingClick(param: ChartPointerEvent): void {
     const placing = this.placing();
-    if (!placing || !param.point || !this.series) return;
-    const raw = this.series.coordinateToPrice(param.point.y);
+    if (!placing || !param.point || !this.engine) return;
+    const raw = this.engine.priceForY(param.point.y);
     if (raw === null) return;
     const price = this.roundToPoint(raw);
     const buy = placing.side === 'buy';
@@ -988,13 +1093,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (placing.stage === 'sl') {
       // the SL must be on the losing side of the entry
       if (buy ? price >= placing.entryPrice : price <= placing.entryPrice) return;
-      this.placingLines.sl?.applyOptions({ price, title: 'SL' });
-      this.placingLines.tp = this.series.createPriceLine({
+      const trading = this.tradingCap;
+      trading?.movePlacementLine('sl', price, 'SL');
+      trading?.addPlacementLine('tp', {
         price: placing.entryPrice,
         color: this.up,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
         title: 'TP?',
       });
       this.placing.set({ ...placing, sl: price, stage: 'tp' });
@@ -1014,6 +1117,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       this.cancelPlacing();
       return;
     }
+    // RFC-018 (T-3 / §8): the pane lost (or never had) the right to trade this book —
+    // drop the preview instead of committing a wrong-instrument / wrong-price order.
+    if (!this.tradeVerbsEnabled()) {
+      this.clearPlacing();
+      return;
+    }
     this.store.dispatch(
       TradingActions.placeOrder({
         side: placing.side,
@@ -1022,7 +1131,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
         sl: placing.sl,
         tp,
         riskPct: ctx.riskPct,
-        time: ctx.time,
+        time: this.placementTime(), // D14.B: reveal horizon, not the raw cursor
         contractSize: ctx.contractSize,
       }),
     );
@@ -1034,12 +1143,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   }
 
   private clearPlacing(): void {
-    if (this.series) {
-      for (const line of Object.values(this.placingLines)) {
-        if (line) this.series.removePriceLine(line);
-      }
-    }
-    this.placingLines = {};
+    this.tradingCap?.clearPlacementLines();
     this.placing.set(null);
     this.placingInfo.set(null);
     this.container.nativeElement.style.cursor = '';
@@ -1055,11 +1159,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
           this.lastTradeView.orders,
           this.tradeBoxes,
           this.tradeMarkers,
-          this.shiftSecs,
+          this.displayZone,
           this.renderedTimes,
           this.barSpacing,
           this.lastConfig?.colors ?? DARK_CHART_COLORS,
           { fill: this.boxFillAlpha, border: this.boxBorderAlpha },
+          this.ruleSlotMap(),
         ),
       });
     }
@@ -1070,8 +1175,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * (price line or live box edge) and refreshes the points readout banner.
    */
   private dragTradeLine(y: number): void {
-    if (!this.lineDrag || !this.series) return;
-    const raw = this.series.coordinateToPrice(y);
+    if (!this.lineDrag || !this.engine) return;
+    // RFC-018 (T-3 / §8): dragging a trade level modifies the book — the same guard
+    // as the menu offer and finishPlacing, or the drag path leaves a bypass open.
+    if (!this.tradeVerbsEnabled()) return;
+    const raw = this.engine.priceForY(y);
     if (raw === null) return;
     const price = this.roundToPoint(raw);
     const { id, target, field } = this.lineDrag;
@@ -1133,15 +1241,15 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   // ============ drawing ============
 
   /** Data point (real UTC) under the cursor; extrapolates into the future. */
-  private pointAt(param: MouseEventParams<Time>): DrawingPoint | null {
-    if (!param.point || !this.series || !this.chart) return null;
+  private pointAt(param: ChartPointerEvent): DrawingPoint | null {
+    if (!param.point || !this.engine) return null;
     const time = this.drawingsCap.timeForX(param.point.x);
-    const price = this.series.coordinateToPrice(param.point.y);
+    const price = this.engine.priceForY(param.point.y);
     if (time === null || price === null) return null;
     return { time, price };
   }
 
-  private handleClick(param: MouseEventParams<Time>): void {
+  private handleClick(param: ChartPointerEvent): void {
     this.chartFocused.emit();
     // an active quick ruler: the next left click dismisses the measurement
     if (this.quickRuler) {
@@ -1159,8 +1267,10 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (tool === 'none') {
       // selection by click
       if (!param.point) return;
+      const panelId = this.mapper.descriptor()?.id;
+      if (!panelId) return;
       const hit = this.drawingsCap.hitTestDrawing(param.point.x, param.point.y);
-      this.store.dispatch(DrawingsActions.selectDrawing({ id: hit }));
+      this.store.dispatch(DrawingsActions.selectDrawing({ panelId, id: hit }));
       return;
     }
 
@@ -1173,19 +1283,59 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     // second click: complete the drawing (ignore the exact same point,
     // e.g. the click+dblclick pair of an accidental double click)
     if (pt.time === this.draftP1.time && pt.price === this.draftP1.price) return;
-    const p2 = this.applySnap(this.draftP1, pt, tool as DrawingType);
-    const drawing: Drawing = {
-      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-      kind: tool as DrawingType,
-      p1: this.draftP1,
-      p2,
-    };
+    const p1 = this.draftP1;
+    const p2 = this.applySnap(p1, pt, tool as DrawingType);
     this.draftP1 = null;
     this.draft = null;
-    this.store.dispatch(DrawingsActions.addDrawing({ drawing }));
+    const descriptor = this.mapper.descriptor();
+    // defensive: no panel configured yet means nothing can own the drawing
+    if (!descriptor) return;
+    const symbol = effectivePanelSymbol(descriptor, this.currentAsset());
+    // defensive: no descriptor symbol AND no active asset means nothing to stamp
+    if (!symbol) return;
+    const drawing: Drawing = {
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      symbol,
+      owner: resolveDrawingTarget(descriptor, this.linkGroups()),
+      kind: tool as DrawingType,
+      p1,
+      p2,
+      zIndex: 0, // placeholder — the reducer owns real z-order assignment
+      locked: false,
+      visible: true,
+    };
+    this.store.dispatch(DrawingsActions.addDrawing({ panelId: descriptor.id, drawing }));
   }
 
-  private handleCrosshair(param: MouseEventParams<Time>): void {
+  /**
+   * Builds the new `Drawing` from the clipboard's captured geometry and
+   * dispatches the paste — component-side, so ids are minted here and never
+   * in the reducer (purity). Owner resolution reuses `resolveDrawingTarget`,
+   * the exact same rule hand-drawn creation uses, so a paste always lands
+   * where this panel would draw by hand. A clipboard entry is required to
+   * build a drawing at all; an empty clipboard is simply nothing to paste.
+   */
+  private pasteClipboardAt(panelId: string): void {
+    const clip: ClipboardEntry | null = this.clipboard();
+    const descriptor = this.mapper.descriptor();
+    if (!clip || !descriptor) return;
+    const symbol = effectivePanelSymbol(descriptor, this.currentAsset());
+    if (!symbol) return;
+    const drawing: Drawing = {
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      symbol,
+      owner: resolveDrawingTarget(descriptor, this.linkGroups()),
+      kind: clip.kind,
+      p1: clip.p1,
+      p2: clip.p2,
+      zIndex: 0, // placeholder — the reducer owns real z-order assignment
+      locked: false,
+      visible: true,
+    };
+    this.store.dispatch(DrawingsActions.pasteClipboard({ panelId, drawing }));
+  }
+
+  private handleCrosshair(param: ChartPointerEvent): void {
     if (this.placing()) {
       this.updatePlacingHover(param);
       return;
@@ -1215,12 +1365,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** Shift on the line tool = exact straight line (horizontal or vertical). */
   private applySnap(p1: DrawingPoint, p2: DrawingPoint, kind: DrawingType): DrawingPoint {
-    if (kind !== 'line' || !this.shiftKey || !this.chart || !this.series) return p2;
-    const ts = this.chart.timeScale();
-    const x1 = ts.timeToCoordinate((p1.time + this.shiftSecs) as UTCTimestamp);
-    const x2 = ts.timeToCoordinate((p2.time + this.shiftSecs) as UTCTimestamp);
-    const y1 = this.series.priceToCoordinate(p1.price);
-    const y2 = this.series.priceToCoordinate(p2.price);
+    if (kind !== 'line' || !this.shiftKey || !this.engine) return p2;
+    const x1 = this.engine.xForDisplayTime(toDisplayTime(p1.time, this.displayZone));
+    const x2 = this.engine.xForDisplayTime(toDisplayTime(p2.time, this.displayZone));
+    const y1 = this.engine.yForPrice(p1.price);
+    const y2 = this.engine.yForPrice(p2.price);
     if (x1 === null || x2 === null || y1 === null || y2 === null) return p2;
     // snap to the dominant axis of the movement
     if (Math.abs(x2 - x1) >= Math.abs(y2 - y1)) {
@@ -1238,17 +1387,52 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
   // disabled for the duration of the drag so the chart does not pan under
   // the object being dragged.
 
+  /**
+   * D19.A: true when (x, y) — container-relative DOM coordinates, exactly what
+   * every handler below computes via `getBoundingClientRect()` — falls inside
+   * the plot pane. `container.nativeElement` wraps the pane PLUS the right
+   * price scale PLUS the bottom time axis, but every hit-test downstream
+   * (drawings, trade lines/edges/delete buttons) interprets its `x`/`y` as PANE
+   * space. Without this, every pixel of the axis chrome is silently accepted as
+   * valid pane space.
+   *
+   * `this.engine?.paneRect?.()` deliberately distinguishes "no engine / no
+   * geometry API available" (`undefined` — fails OPEN, i.e. does not guard) from
+   * "engine says destroyed" (`null` — fails CLOSED). The open case is
+   * unreachable in production (the three DOM listeners below are only ever
+   * attached in `ngAfterViewInit`, AFTER `this.engine` is constructed), but
+   * `chart.component.trade-guard.spec.ts` is a pre-existing spec (STOP rule)
+   * that calls these handlers directly against a component whose
+   * `ngAfterViewInit` is stubbed out — `this.engine` is `undefined` there, and
+   * some of its `handleMouseDown` stubs set `engine` to a plain object without a
+   * `paneRect` method. Failing open in that unreachable-in-prod case keeps this
+   * guard from changing that spec's pre-existing behavior.
+   */
+  private inPane(x: number, y: number): boolean {
+    const rect = this.engine?.paneRect?.();
+    if (rect === undefined) return true;
+    if (rect === null) return false;
+    return x >= 0 && x < rect.width && y >= 0 && y < rect.height;
+  }
+
   private handleMouseDown(e: MouseEvent): void {
     this.chartFocused.emit();
     // any interaction with the chart dismisses the context menu
     if (this.menu()) this.zone.run(() => this.menu.set(null));
+    // D19.A: reject the gesture before any hit-test runs when it lands on the
+    // price-scale / time-axis chrome — every hit-test below interprets x/y as
+    // PANE space, but `container` wraps the pane plus both scale strips. Must
+    // NOT claim the event here (no preventDefault, no setInteractivity(false)),
+    // so dragging the price scale itself keeps working.
+    const guardRect = this.container.nativeElement.getBoundingClientRect();
+    if (!this.inPane(e.clientX - guardRect.left, e.clientY - guardRect.top)) return;
     // middle button: start the ephemeral quick-ruler measurement
     if (e.button === 1) {
       e.preventDefault(); // blocks the browser's middle-click autoscroll
-      if (this.placing() || this.draftP1 || this.activeTool() !== 'none' || !this.series) return;
+      if (this.placing() || this.draftP1 || this.activeTool() !== 'none' || !this.engine) return;
       const rect = this.container.nativeElement.getBoundingClientRect();
       const time = this.drawingsCap.timeForX(e.clientX - rect.left);
-      const price = this.series.coordinateToPrice(e.clientY - rect.top);
+      const price = this.engine.priceForY(e.clientY - rect.top);
       if (time !== null && price !== null) this.quickRuler = { time, price };
       return;
     }
@@ -1256,16 +1440,23 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     if (this.quickRuler) return;
     // while placing an order, clicks are handled by handlePlacingClick
     if (this.placing()) return;
-    if (this.activeTool() !== 'none' || !this.chart || !this.series) return;
+    if (this.activeTool() !== 'none' || !this.engine) return;
     const rect = this.container.nativeElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+    const tradingCap = this.tradingCap;
 
     // ×-button on an entry line: cancel the order / close the position
     const del = tradingCap?.hitTestDelete(x, y);
     if (del) {
+      // RFC-018 (T-3 / §8): cancel/close originate from this pane and modify the
+      // book — same guard as the menu offer, finishPlacing, and dragTradeLine. The
+      // click is still consumed (no fallthrough into the drawing hit-tests below).
+      if (!this.tradeVerbsEnabled()) {
+        e.preventDefault();
+        return;
+      }
       const ctx = this.tradeCtx();
       this.zone.run(() => {
         if (del.target === 'order') {
@@ -1287,12 +1478,12 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
     // resize handle of the selected drawing takes priority over moving
     const handle = this.drawingsCap.hitTestHandle(x, y);
-    let id: string | null = handle ? this.selectedId() : null;
+    let id: string | null = handle ? this.panelDrawings.selectedId : null;
     let mode: 'move' | 'p1' | 'p2' = handle ?? 'move';
     if (!id) {
       // trade lines (SL/TP/pending entry) go before drawing bodies: they are
       // thin and would be unreachable under a large rect/fib otherwise
-      const tradeLine = tradingCap?.hitTestTradeLine(y);
+      const tradeLine = tradingCap?.hitTestTradeLine(x, y);
       if (tradeLine) {
         this.lineDrag = { id: tradeLine.id, target: tradeLine.target, field: tradeLine.field };
         window.addEventListener('mousemove', this.onMouseMoveDom);
@@ -1317,16 +1508,21 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       mode = 'move';
     }
     if (!id) return;
-    const d = this.drawings().find((it) => it.id === id);
+    const d = this.panelDrawings.items.find((it) => it.id === id);
     if (!d) return;
 
     const x1 = this.drawingsCap.xForTime(d.p1.time);
     const x2 = this.drawingsCap.xForTime(d.p2.time);
-    const y1 = this.series.priceToCoordinate(d.p1.price);
-    const y2 = this.series.priceToCoordinate(d.p2.price);
+    const y1 = this.engine.yForPrice(d.p1.price);
+    const y2 = this.engine.yForPrice(d.p2.price);
     if (x1 === null || x2 === null || y1 === null || y2 === null) return;
 
-    this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ id })));
+    const panelId = this.mapper.descriptor()?.id;
+    if (panelId) {
+      this.zone.run(() => this.store.dispatch(DrawingsActions.selectDrawing({ panelId, id })));
+    }
+    // a locked drawing may still be selected, but never dragged/resized — cursor stays default
+    if (d.locked) return;
     this.drag = { id, mode, startX: x, startY: y, x1, y1, x2, y2 };
     // Capture mousemove globally so drags work even outside the chart area
     window.addEventListener('mousemove', this.onMouseMoveDom);
@@ -1340,17 +1536,23 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * the cursor style based on the element under the pointer.
    */
   private handleHoverFeedback(e: MouseEvent): void {
-    if (this.destroyed || !this.chart || !this.series) return;
+    if (this.destroyed || !this.engine) return;
     if (this.drag || this.lineDrag) return; // drag handler runs on window
     if (this.activeTool() !== 'none') return;
     const rect = this.container.nativeElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const tradingCap = this.engine?.getCapability<TradingCapability>('trading');
+    // D19.A: the axis must not show a chart cursor (e.g. ns-resize on a trade
+    // line whose y happens to line up with a price on the axis strip).
+    if (!this.inPane(x, y)) {
+      this.container.nativeElement.style.cursor = '';
+      return;
+    }
+    const tradingCap = this.tradingCap;
     if (tradingCap?.hitTestDelete(x, y)) {
       this.container.nativeElement.style.cursor = 'pointer';
     } else {
-      const over = tradingCap?.hitTestTradeLine(y) ?? tradingCap?.hitTestEdge(x, y);
+      const over = tradingCap?.hitTestTradeLine(x, y) ?? tradingCap?.hitTestEdge(x, y);
       this.container.nativeElement.style.cursor = over ? 'ns-resize' : '';
     }
   }
@@ -1360,7 +1562,7 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
    * processes drawing drags and trade-line drags.
    */
   private handleDragMove(e: MouseEvent): void {
-    if (this.destroyed || !this.chart || !this.series) return;
+    if (this.destroyed || !this.engine) return;
     const rect = this.container.nativeElement.getBoundingClientRect();
     if (this.lineDrag) {
       this.dragTradeLine(e.clientY - rect.top);
@@ -1372,11 +1574,11 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
     const pointFor = (sx: number, sy: number): DrawingPoint | null => {
       const time = this.drawingsCap.timeForX(sx + dx);
-      const price = this.series!.coordinateToPrice(sy + dy);
+      const price = this.engine!.priceForY(sy + dy);
       return time !== null && price !== null ? { time, price } : null;
     };
 
-    const d = this.drawings().find((it) => it.id === this.drag!.id);
+    const d = this.panelDrawings.items.find((it) => it.id === this.drag!.id);
     if (!d) return;
     let p1 = d.p1;
     let p2 = d.p2;
@@ -1396,7 +1598,9 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
       p2 = n;
     }
     const id = this.drag.id;
-    this.zone.run(() => this.store.dispatch(DrawingsActions.moveDrawing({ id, p1, p2 })));
+    const panelId = this.mapper.descriptor()?.id;
+    if (!panelId) return;
+    this.zone.run(() => this.store.dispatch(DrawingsActions.moveDrawing({ panelId, id, p1, p2 })));
   }
 
   private endDrag(): void {
@@ -1419,13 +1623,18 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
 
   /** Syncs the current state to the primitive and forces a repaint. */
   private pushDrawings(): void {
+    const items = this.panelDrawings.items.map((d) => ({
+      id: d.id,
+      kind: d.kind,
+      p1: d.p1,
+      p2: d.p2,
+    }));
     this.engine!.render({
       drawings: this.mapper.buildDrawingsModel(
-        this.drawings(),
+        items,
         this.activeTool(),
-        this.selectedId(),
+        this.panelDrawings.selectedId,
         this.draft,
-        this.shiftSecs,
         this.renderedTimes,
         this.barSpacing,
         this.pointSize,
@@ -1438,7 +1647,6 @@ export class ChartComponent implements AfterViewInit, OnDestroy {
     this.engine!.render({
       session: this.mapper.buildSessionModel(
         this.mapper.sessionEnd(),
-        this.shiftSecs,
         this.renderedTimes,
         this.barSpacing,
       ),

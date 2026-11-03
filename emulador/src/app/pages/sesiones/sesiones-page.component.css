@@ -469,11 +469,17 @@ h1 {
 }
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 96px 64px 110px 32px;
+  grid-template-columns: minmax(0, 1fr) auto 96px 64px 110px auto;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-sm);
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-content: flex-end;
 }
 .row + .row {
   border-top: 1px solid var(--border);
@@ -534,6 +540,13 @@ h1 {
   flex-wrap: wrap;
 }
 
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 @media (max-width: 760px) {
   .page {
     padding: var(--space-5) var(--space-4) var(--space-8);
@@ -553,7 +566,7 @@ h1 {
     flex: 0 0 auto;
   }
   .row {
-    grid-template-columns: minmax(0, 1fr) auto 80px 32px;
+    grid-template-columns: minmax(0, 1fr) auto 80px auto;
   }
   .row .row-trades,
   .row-head span:nth-child(4),

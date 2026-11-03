@@ -38,6 +38,13 @@ describe('ReplayEffects', () => {
   });
 
   afterEach(() => {
+    // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+    // this file forces NINE core replay selectors (selectActiveCandles,
+    // selectCurrentTime, selectFillContext, selectMsPerCandle, selectPlaying,
+    // selectReplayIndex, selectReplaySeries, selectVisibleIndex, selectJumpSize)
+    // onto the module-level memoized selector objects. Left pinned, replay and
+    // fill-engine tests in OTHER spec files silently read a frozen cursor.
+    store.resetSelectors();
     vi.useRealTimers();
   });
 

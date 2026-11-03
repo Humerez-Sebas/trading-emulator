@@ -31,7 +31,6 @@ export class SessionCapability implements Capability {
       } else {
         this.primitive.setSource({
           sessionEnd: s.sessionEnd,
-          shift: s.shift,
           times: s.times,
           barSpacing: s.barSpacing,
           color: s.color,

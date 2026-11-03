@@ -1,0 +1,36 @@
+<section class="section" data-zone="temporal" aria-labelledby="time-of-day-heading">
+  <header class="section-header">
+    <h2 id="time-of-day-heading">Time of Day</h2>
+    <span class="sublabel">hora UTC del mercado</span>
+  </header>
+
+  @if (rows().length) {
+    <table>
+      <caption class="sr-only">
+        Rendimiento por franja horaria (UTC) en esta sesión
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Franja (UTC)</th>
+          <th scope="col" class="num">Trades</th>
+          <th scope="col" class="num">Win rate</th>
+          <th scope="col" class="num">R acumulado</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.hourUtc) {
+          <tr>
+            <td>{{ hourLabel(row.hourUtc) }}</td>
+            <td class="num">{{ row.trades }}</td>
+            <td class="num">{{ row.winRate | percent: '1.0-0' }}</td>
+            <td class="num" [class.up]="row.totalR >= 0" [class.down]="row.totalR < 0">
+              {{ row.totalR >= 0 ? '+' : '' }}{{ row.totalR | number: '1.2-2' }}R
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  } @else {
+    <p class="empty">Sin franjas horarias con trades.</p>
+  }
+</section>

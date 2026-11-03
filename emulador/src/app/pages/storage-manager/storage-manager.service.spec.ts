@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
+import { fixedOwnerIdentity } from '../../services/owner-identity.service';
 import { bulkInsertCandles } from '../../workers/candles-writer';
 import type { CandleRecord, DatasetRecord } from '../../services/market-data-db';
 import type { ManifestService } from '../../services/market-data/manifest.service';
@@ -15,7 +16,9 @@ async function freshDb(): Promise<WorkspaceDbService> {
     req.onerror = () => res();
     req.onblocked = () => res();
   });
-  return new WorkspaceDbService();
+  // Session Sovereignty V2: the service is per-owner. This suite only touches
+  // the SHARED market-data stores (datasets/candles), so any fixed owner does.
+  return new WorkspaceDbService(fixedOwnerIdentity('owner-test'));
 }
 
 function dataset(p: Partial<DatasetRecord> = {}): DatasetRecord {

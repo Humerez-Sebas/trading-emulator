@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { SERVER_ZONE_ID } from '../../domain/chart/display-time';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper } from './chart-model-mapper.service';
@@ -29,7 +30,7 @@ const view = (idx: number) => ({
   tf: 'M1',
   candles: [],
   idx,
-  utcOffset: 0,
+  displayZone: SERVER_ZONE_ID,
   forming: null,
   countdown: null,
 });

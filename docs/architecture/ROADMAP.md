@@ -9,10 +9,10 @@ Para asegurar que el proyecto mantenga fluidez, rendimiento y facilidad de mante
 > progressive amendment of the trader's Playbook, supported by conserved physical
 > evidence. The system observes and conserves; the trader interprets. The
 > foundational model is
-> [TRADER_KNOWLEDGE_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRADER_KNOWLEDGE_MODEL.md);
-> the development sequence that realizes it is the **Mastery Block** at the end of
-> this document, which supersedes the RFC-014/015/016 numbering previously sketched
-> in `strategic_audit.md` Part 8.
+> [TRADER_KNOWLEDGE_MODEL.md](./TRADER_KNOWLEDGE_MODEL.md);
+> the development sequence that realized it is the **Mastery Block** at the end of
+> this document (delivered 2026-07), which supersedes the RFC-014/015/016 numbering
+> previously sketched in `strategic_audit.md` Part 8.
 
 ## Principios Arquitectónicos
 1. **Framework Independence:** `ChartEngine` (Vanilla TS) nunca dependerá de Angular.
@@ -52,23 +52,54 @@ Cualquier agente inteligente puede (y debe) ejecutar cada plan de manera secuenc
 
 ---
 
-## Mastery Block: Phases 0-3 (the next development sequence)
+## Post-Infrastructure Refinements (RFC-017..019)
 
-The completed block above delivered the multi-chart replay platform. This block
-reorients development around knowledge conservation
-([TRADER_KNOWLEDGE_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRADER_KNOWLEDGE_MODEL.md)):
-the emulator is a neutral flight recorder during practice and a reflection
-instrument afterwards; the deliverable of training is the amended Playbook.
+Between the infrastructure block above and the Mastery Block below sits a short sequence of
+corrective work: defects and rough edges that only became visible once the multi-chart platform
+was actually used for backtesting. They are grouped here rather than as Mastery Block phases
+because they are a different *kind* of work — repairs to what RFC-001..013 delivered, not steps
+in the knowledge-conservation sequence.
 (Section in English per the architecture-corpus language directive of 2026-07.)
 
-| Phase | Artifact / RFC | Purpose |
+| Block | RFCs | Purpose |
 |---|---|---|
-| **0** (current) | [TRADER_KNOWLEDGE_MODEL.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/TRADER_KNOWLEDGE_MODEL.md) | Foundational definition of knowledge: the ontology (Trade Record, Session, Reflective Scene, Permanent Lesson), the black-box telemetry register, the Reflection Cabin, the permanent knowledge schema, and the excluded-metrics doctrine. |
-| **1** | RFC-014: High-Fidelity Simulation & Behavioral Telemetry Engine | Base-resolution (M1) execution with bid/ask, spread and real costs, PLUS invisible physical telemetry (seeks, elapsed-time-before-order, intrabar MAE/MFE, dynamic mark-to-market). Merges the previously separate RFC-014 and RFC-015 drafts: execution physics and the black box are one clean mathematical refactor of the same engine loop. |
-| **2** | RFC-015: Playbook & Rule Adherence Domain | The Playbook (the rules the trader decides to train) as a first-class permanent domain; optional single-keystroke declaration of the rule being executed when opening a trade. The system records the declaration as a fact; it never scores adherence. |
-| **3** | RFC-016: The Playbook Amendment Journal | The training journal: reconstructs Reflective Scenes (Entry, Exit, Maximum Tension) from telemetry, presents uninterpreted physical facts, and lets the trader author cold self-critique and permanent Playbook amendments, offline-first. |
+| **Post-Infrastructure Refinements** | [RFC-017](./rfcs/017-compositional-panel-sync.md) / [RFC-018](./rfcs/018-trade-visibility-refinement.md) / [RFC-019](./rfcs/019-pane-guard-cross-tf-forming.md) | Panel sync, trade visibility, pane-guard + cross-TF forming — bug fixes and UX refinement after the multi-panel infrastructure block. |
 
-Drafts for the three RFCs:
-[RFC-014_AND_BEYOND.md](file:///C:/Users/78701/Desktop/trading-emulator/docs/architecture/RFC-014_AND_BEYOND.md).
+---
+
+## Mastery Block: Phases 0-3 — DELIVERED (RFC-014..016)
+
+The RFC-001..013 block delivered the multi-chart replay platform. This block reoriented
+development around knowledge conservation
+([TRADER_KNOWLEDGE_MODEL.md](./TRADER_KNOWLEDGE_MODEL.md)): the emulator is a neutral
+flight recorder during practice and a reflection instrument afterwards; the deliverable of
+training is the amended Playbook.
+(Section in English per the architecture-corpus language directive of 2026-07.)
+
+**All three phases have shipped.** Their code lives in `emulador/src/app/state/{telemetry,
+playbook,lessons,journal}/` and `emulador/src/app/pages/{reflection,journal}/`. This
+section is now a record of what was delivered, not a plan of what is next.
+
+| Phase | Artifact / RFC | Status | Purpose |
+|---|---|---|---|
+| **0** | [TRADER_KNOWLEDGE_MODEL.md](./TRADER_KNOWLEDGE_MODEL.md) | CURRENT (binding) | Foundational definition of knowledge: the ontology (Trade Record, Session, Reflective Scene, Permanent Lesson), the black-box telemetry register, the Reflection Cabin, the permanent knowledge schema, and the excluded-metrics doctrine. |
+| **1** | [RFC-014](./rfcs/014-simulacion-alta-fidelidad-telemetria.md): High-Fidelity Simulation & Behavioral Telemetry Engine | Delivered 2026-07-12 (`e700ecb`) | Base-resolution (M1) execution with bid/ask, spread and real costs, PLUS invisible physical telemetry (seeks, elapsed-time-before-order, intrabar MAE/MFE, dynamic mark-to-market). Merges the previously separate RFC-014 and RFC-015 drafts: execution physics and the black box are one clean mathematical refactor of the same engine loop. |
+| **2** | [RFC-015](./rfcs/015-playbook-adherencia-reglas.md): Playbook & Rule Adherence Domain | Delivered 2026-07-15 (PR #40, `ab3a8e5`) | The Playbook (the rules the trader decides to train) as a first-class permanent domain; optional single-keystroke declaration of the rule being executed when opening a trade. The system records the declaration as a fact; it never scores adherence. |
+| **3** | [RFC-016](./rfcs/016-diario-enmiendas-playbook.md): The Playbook Amendment Journal | Delivered 2026-07-18 (PR #41, `1db11b6`) | The training journal: reconstructs Reflective Scenes (Entry, Exit, Maximum Tension) from telemetry, presents uninterpreted physical facts, and lets the trader author cold self-critique and permanent Playbook amendments, offline-first. |
+
+Historical drafts for the three RFCs: [RFC-014_AND_BEYOND.md](./RFC-014_AND_BEYOND.md).
+That file is a **HISTORICAL** abstract draft superseded by the accepted RFCs above; read
+the RFCs in `docs/architecture/rfcs/` for what was actually built.
 Each RFC graduates to `docs/architecture/rfcs/` on acceptance and follows the
 `feature/rfc-XXX-*` -> `develop` workflow.
+
+---
+
+## Product Track (outside the Mastery Block sequence)
+
+Product-track work branches off `origin/main` and PRs back to `main` (see
+`docs/engineering/git-workflow.md`); it does not occupy a Mastery Block phase.
+
+| RFC | Status | Purpose |
+|---|---|---|
+| [RFC-020](./rfcs/020-lotaje-position-sizer.md): Lotaje — Position Sizer | Delivered 2026-08-05 (PR #54, `b8d220f`; refined by PR #55, `ad69d7d`) | Risk-based position sizing with an asset catalogue and a framework-free view behind a thin Angular host, shipped as the `/calculadora` page plus a 320×340 floating companion window. Replaces Calculadora v1 (PR #53). |

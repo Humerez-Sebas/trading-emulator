@@ -6,6 +6,10 @@ dist/
 coverage/
 .agents/
 .impeccable/
+# Sibling git worktrees checked out INSIDE the repo. Each is a full second copy of the
+# tree, so agent searches otherwise return shadow copies of CLAUDE.md / ROADMAP.md and of
+# long-deleted code (e.g. the retired FastAPI `backend/`) as if they were current.
+.claude/worktrees/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/

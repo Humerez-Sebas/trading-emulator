@@ -235,7 +235,7 @@
 
 <button
   class="tool danger"
-  [disabled]="!selectedId()"
+  [disabled]="!hasSelection()"
   (click)="deleteSelected()"
   appTooltip="Eliminar selección"
   tooltipShortcut="Supr"
@@ -259,7 +259,7 @@
 
 <button
   class="tool danger"
-  [disabled]="!items().length"
+  [disabled]="!hasDrawings()"
   (click)="clearAll()"
   appTooltip="Borrar todo"
   [tooltipPosition]="vertical() ? 'right' : 'top'"

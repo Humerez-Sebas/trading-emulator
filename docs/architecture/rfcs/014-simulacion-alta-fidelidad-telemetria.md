@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | :--- | :--- |
-| Estado | Propuesto (pendiente de aprobación del owner) |
+| Estado | Implementado (2026-07-11) |
 | Fecha | 2026-07-10 |
 | Bloque | Mastery Block — Fase 1 ([ROADMAP.md](../ROADMAP.md)) |
 | Rama de implementación | `feature/rfc-014-alta-fidelidad-telemetria` → PR a `develop` |
@@ -314,6 +314,20 @@ puras en un módulo nombrado):
 5. Documentación actualizada: DOMAIN_MODEL (I-7 sin caveat, I-14/I-15 con
    detector, §8 limitaciones saldadas), UBIQUITOUS_LANGUAGE (entradas afectadas),
    walkthrough de cierre.
+
+## Desviaciones registradas (cierre, 2026-07-11)
+
+El aterrizaje siguió el plan incremental de la sección anterior sin reabrir pasos ya
+cerrados (STOP rule). Cinco desviaciones puntuales quedaron registradas durante la
+implementación, ninguna oculta:
+
+| Id | Desviación | Racional |
+| :--- | :--- | :--- |
+| D14.B | `PendingOrder.createdAt` se sella en el **horizonte de revelado** (`selectPlacementTime`: última vela base ya mostrada en el bucket de resolución del cursor), no en el tiempo crudo del cursor como dice literalmente §1.3. | FORZADO por la propia propiedad de no-hindsight de §1.3 una vez que la ejecución corre a grano base: con resolución de reproducción más gruesa que el grano base, sellar el cursor crudo permitiría llenar en velas base aún no reveladas dentro del mismo intervalo visual. A grano base ambos tiempos coinciden — sin cambio observable en ese modo. |
+| — | La caja negra usa una base de datos IndexedDB DEDICADA (`emulador-telemetry`), no el store `emulador-workspaces` que nombra literalmente §4. | Unir el store al `emulador-workspaces` compartido rompía una aserción STOP-protegida de conteo exacto de object stores en `workspace-db.service.spec.ts`; una base dedicada deja ese spec intacto. |
+| D14.E | 2 specs de reducer preexistentes (fixtures con geometría SL/TP ahora inválida bajo I-14) se editaron puntualmente, bajo autorización explícita del owner — excepción acotada a la regla STOP. | Las fixtures usaban geometría límite (SL/TP igual al precio de entrada) que I-14 rechaza correctamente; la intención de cada spec se preservó, solo la geometría de fixture cambió. |
+| D14.F | Los hechos reificados (`OrderFilled`/`PositionClosed`) NO se surfacean en `TradingState`; el observador de telemetría los deriva independientemente diffando `positions[]`/`history[]` entre snapshots consecutivos. | `createFeature` de NgRx rechaza propiedades opcionales en el feature state, y un campo obligatorio rompería los literales de payload protegidos de las acciones existentes — surfacing es TYPE-IMPOSSIBLE sin tocar código STOP-protegido. `ProcessResult.facts` queda como punto de extensión reservado (cero lectores en producción) para las Fases 2-3. |
+| — | El teletransporte "ir a fecha" (y las cargas programáticas de restauración de sesión/CSV-start) despachan `goToTime` directamente, sin pasar por `seekTo` ni por el armado de `jumpForward`/`jumpBack`/`advanceDisplay` — no se capturan como `ReplaySeek` ni como `ReplayJump`. | Gap de captura conocido, no corregido en este cierre: esos call sites nunca pasan por el efecto que arma la captura de jump ni por `seekTo`. Queda registrado como trabajo futuro de telemetría, no como comportamiento oculto. |
 
 ## Referencias
 

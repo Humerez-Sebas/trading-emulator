@@ -1,6 +1,22 @@
 # RFC-011 Workspace Layout Persistence Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> ## STATUS: HISTORICAL — executed and shipped; do NOT re-run
+>
+> **Delivered 2026-07-04**, merged to `develop` in PR #30 (`cce9e80`); released to `main`
+> inside the multi-chart block release PR #36 (`dbaaae1`). `SessionPayloadV2` and the pure
+> `migrateV1ToV2`/`parseSessionPayload` functions this plan introduces are live in
+> `emulador/src/app/services/session-migration.ts` (`df7a49b`, *RFC-011 Task 1*), including
+> the post-audit fixes `3c323c3` (keep vitest out of the production bundle) and `60ac114`
+> (guard against structurally malformed layout state), plus the cloud-open gap fix `75e6a1f`.
+>
+> This file is the **record of how layout persistence was built**, not a task list. Its
+> checkboxes describe finished work. Two invariants asserted here are still current law and
+> are stated authoritatively elsewhere — sessions stay **candle-free** (`CLAUDE.md` invariant
+> 4) and no `*.spec-util.ts` may be imported from app code (`CLAUDE.md` invariant 7). Read
+> [RFC-011](../../architecture/rfcs/011-workspace-layout-persistence.md) and
+> `docs/engineering/domain/session-sync.md` for the binding version.
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. *(Overridden by the STATUS banner above — this instruction no longer applies to this file.)*
 
 **Goal:** Extend the existing, audited `SessionPayloadV1` (Supabase JSONB + IndexedDB cache + LWW, `emulador/src/app/services/session-sync.models.ts` / `session-sync.mapping.ts` / `session-sync.service.ts`) to a versioned `SessionPayloadV2` that additionally carries `layout: WorkspaceLayout`, `panels: Record<string, PanelDescriptor>`, `linkGroups: LinkGroup[]`, and `drawings: Record<string, DrawingCollection>` (replacing V1's flat `Drawing[]`) — so that RFC-008/009/010's in-memory-only `layoutFeature`/`linkGroupsFeature`/`drawingsFeature` state survives an app close or device change. A pure, versioned `migrateV1ToV2` function upgrades any payload with `schemaVersion` absent or `1` at read time (lazy migration, no batch script), defaulting the migrated layout to a single tab/single cell/single panel of the session's one active symbol+timeframe, `linkGroups: []`, and reassigning every V1 drawing under that same symbol. Both the Supabase mapping (`toPayload`/`fromPayload`/`buildRow`/`reconstructWorkspaces`) and the restore dispatch path (currently `WorkspacesEffects.doSwitch`'s `thenRestore` → `TradingActions.restoreSession` + `DrawingsActions.restoreDrawings`) are extended in place to also carry/hydrate `layout`/`linkGroups`/`panels` — there is no second payload, no second LWW timestamp, no second sync cycle (D9). `layoutFeature`/`linkGroupsFeature`/`drawingsFeature` are currently NOT read by ANY persistence code (`session-sync.*`, `workspaces.effects.ts`, `workspace-db.service.ts`) — this RFC is the first wiring between RFC-008..010's runtime state and the persistence layer that has existed, unaltered, since before RFC-008.
 

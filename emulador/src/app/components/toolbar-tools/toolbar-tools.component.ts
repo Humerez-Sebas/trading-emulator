@@ -1,16 +1,26 @@
-import { Component, ElementRef, HostListener, inject, input, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  ElementRef,
+  HostListener,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { Store } from '@ngrx/store';
 import { DrawingsActions } from '../../state/drawings/drawings.actions';
 import { drawingsFeature } from '../../state/drawings/drawings.reducer';
 import { DrawingTool } from '../../state/drawings/drawings.models';
+import { layoutFeature } from '../../state/layout/layout.reducer';
 import { SettingsActions } from '../../state/settings/settings.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import {
   selectClosedTradeBoxes,
   selectTradeBoxesVisible,
-  selectUtcOffset,
+  selectDisplayZone,
 } from '../../state/selectors';
 import { TooltipDirective } from '../ui';
+import { resolveDisplayZone, toDisplayTime } from '../../domain/chart/display-time';
 
 /**
  * The single source of truth for the drawing/trade tool buttons, shared by
@@ -35,13 +45,23 @@ export class ToolbarToolsComponent {
   vertical = input(false);
 
   activeTool = this.store.selectSignal(drawingsFeature.selectActiveTool);
-  selectedId = this.store.selectSignal(drawingsFeature.selectSelectedId);
-  items = this.store.selectSignal(drawingsFeature.selectItems);
+  private selection = this.store.selectSignal(drawingsFeature.selectSelection);
+  private entities = this.store.selectSignal(drawingsFeature.selectEntities);
+  private focusedPanelId = this.store.selectSignal(layoutFeature.selectFocusedPanelId);
   boxesVisible = this.store.selectSignal(selectTradeBoxesVisible);
   closedTrades = this.store.selectSignal(selectClosedTradeBoxes);
-  private utcOffset = this.store.selectSignal(selectUtcOffset);
+  private displayZone = this.store.selectSignal(selectDisplayZone);
 
   menuOpen = signal(false);
+
+  /** The toolbar is not panel-scoped: "delete selected" acts on the focused panel's own selection. */
+  hasSelection = computed(() => {
+    const panelId = this.focusedPanelId();
+    return panelId != null && this.selection()[panelId] != null;
+  });
+
+  /** Whether the session holds any drawing at all, across every panel and symbol. */
+  hasDrawings = computed(() => Object.keys(this.entities()).length > 0);
 
   pick(tool: DrawingTool): void {
     // pressing the active tool again deactivates it
@@ -50,11 +70,13 @@ export class ToolbarToolsComponent {
   }
 
   deleteSelected(): void {
-    this.store.dispatch(DrawingsActions.deleteSelected());
+    const panelId = this.focusedPanelId();
+    if (!panelId) return;
+    this.store.dispatch(DrawingsActions.deleteSelected({ panelId }));
   }
 
   clearAll(): void {
-    this.store.dispatch(DrawingsActions.clearDrawings());
+    this.store.dispatch(DrawingsActions.restoreDrawings({ drawings: [] }));
   }
 
   toggleBoxes(): void {
@@ -86,9 +108,12 @@ export class ToolbarToolsComponent {
     return this.closedTrades().slice().reverse();
   }
 
-  /** dd/MM HH:mm in the user's display time zone (data stays UTC). */
-  formatTime(utcSeconds: number): string {
-    const d = new Date((utcSeconds + this.utcOffset() * 3600) * 1000);
+  /**
+   * dd/MM HH:mm in the user's display time zone. The stored clock is broker
+   * SERVER time (New York + 7 h), not UTC — see domain/chart/display-time.ts.
+   */
+  formatTime(serverSeconds: number): string {
+    const d = new Date(toDisplayTime(serverSeconds, resolveDisplayZone(this.displayZone())) * 1000);
     const p = (n: number) => String(n).padStart(2, '0');
     return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
   }

@@ -1,0 +1,5 @@
+# Run working artifacts (briefs, reports, diffs) are local only —
+# `docs/engineering/sdd-orchestration.md` §Artifacts. Only the ledger is tracked.
+*
+!.gitignore
+!dev-log.md

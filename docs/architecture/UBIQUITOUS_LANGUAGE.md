@@ -175,8 +175,22 @@ The finest-grained series available for a symbol, used for execution truth. M1 i
 pipeline ground truth; H1/D1 are pipeline conveniences; all other TFs derive client-side.
 *Technical implication:* **the realism invariant** — fills, SL, and TP always evaluate at
 base resolution, never at the displayed timeframe, because an intra-candle spike must
-not be averaged away. Enforced today by `processCandle(book, candle, subCandles, …)`
-walking `subCandles`; strengthened by RFC-014 (see `RFC-014_AND_BEYOND.md`).
+not be averaged away. Implemented by RFC-014 as the **Execution Series** below;
+`processCandle(book, candle, subCandles, …)`'s `subCandles` walk survives only as the
+legacy fallback (no execution series loaded) and for STOP-protected pre-existing specs.
+
+**Execution Series** (RFC-014 D14.A).
+The finest LOADED series for the session's `primarySymbol` — the runtime instance of
+Base Resolution. Always fed to the fill engine, independent of the displayed
+timeframe and the chosen Replay Resolution; session creation already guarantees the
+anchor datasets (`requiredDatasets`) are present locally, so resolving it is a plain
+IndexedDB read, never a network one.
+*Technical implication:* `selectExecutionSeries` (`state/selectors.ts`).
+`foldForwardFills`/`processFills$` dispatch exactly one `Process Candle` per base
+candle strictly crossed, in chronological order, with `subCandles: null`, when it's
+loaded; Last Processed Time (Section 4) advances base-granular as a result. Falls
+back to the legacy per-resolution-candle path only when unloaded (mock-only sessions
+in practice).
 
 **Sub-candle.**
 A candle of a lower timeframe contained within the interval of a displayed (parent)
@@ -241,7 +255,9 @@ candle, sub-candle series, and book.
 
 **Last Processed Time.**
 High-water mark of candle time already evaluated by the fill engine; the idempotence
-anchor that makes stepping back and forth safe.
+anchor that makes stepping back and forth safe. BASE-GRANULAR since RFC-014 (see
+Execution Series, Section 3): it advances one base candle at a time, independent of
+the displayed TF or Replay Resolution.
 *Technical implication:* `TradingData.lastProcessedTime`; together with
 placement-candle exclusion (`c.time <= o.createdAt`) and open-time guards
 (`candle.time < p.openTime` skips), re-processing a candle never time-travels fills or
@@ -272,19 +288,75 @@ type that created it) and `openTime`.
 
 **Fill.**
 The event of a pending order converting into a position because the revealed candle's
-range touches its entry under the order-type rule (buy limit: `low <= entry`; stop:
-cross in the breakout direction). Fills are *clean*: execution exactly at entry, no
-slippage or spread (a known fidelity gap; see the RFC-014 draft in
-`RFC-014_AND_BEYOND.md`).
-*Technical implication:* `orderFills(o, c)` in `fill-engine.ts`.
+range touches its entry under the order-type rule, SIDED per RFC-014 §2: buy
+limit/stop compare against the derived Ask, sell limit/stop stay Bid (see Ask
+Derivation, below). Limit fills are clean (execution exactly at the recorded entry
+level); stop fills additionally slip against the trader (deterministic, RFC-014 §2).
+With `ExecutionCosts` absent or `{0,0,0,1}` every fill degenerates bit-for-bit to the
+pre-RFC-014 clean-fill behavior (V-1).
+*Technical implication:* `orderFills(o, c, costs)` in `fill-engine.ts`; stop-entry
+slippage applied via `slip()`.
 
 **Placement-Candle Exclusion.**
 Rule: an order can only fill on candles strictly after its placement candle
 (`c.time <= o.createdAt` returns false). Rationale: idempotent reprocessing and
 prevention of hindsight fills on the candle the trader was looking at.
-*Technical implication:* known fidelity trade-off — same-candle retrace-and-fill
-dynamics are deferred to the next interval. Revisited by RFC-014; until then this is
-the defined semantics, not a bug.
+*Technical implication:* `o.createdAt` is no longer the raw replay cursor time — see
+**Reveal Horizon** below (RFC-014 D14.B). At base-grain stepping the two coincide, so
+the pre-RFC-014 semantics hold unchanged in that mode; RFC-014 resolves the
+same-candle-latency fidelity gap this entry used to disclose.
+
+**Reveal Horizon** (placement horizon).
+The time of the LAST base candle actually revealed to the trader within the cursor's
+current replay-resolution bucket `[cursorTime, cursorTime + tfSeconds)` — the point
+at which `PendingOrder.createdAt` is stamped (RFC-014 D14.B), instead of the raw
+replay cursor. FORCED by the no-hindsight half of the Placement-Candle Exclusion once
+execution runs at Base Resolution: stamping the raw cursor would let an order fill on
+base candles inside the SAME still-forming display candle the trader has not yet
+seen. Coincides with the cursor time exactly at base-grain stepping (resolution ===
+base), reducing to pre-RFC-014 semantics unchanged in that mode.
+*Technical implication:* `selectPlacementTime` (`state/selectors.ts`), composed from
+`selectExecutionSeries`/`selectCurrentTime`/`selectReplayTfSeconds`; falls back to
+the raw cursor time when no execution series is loaded or it has not reached the
+current bucket yet.
+
+**Execution Costs.**
+The per-trade cost model applied by the engine: Bid/Ask spread (in points), a flat
+per-lot round-turn commission, and deterministic adverse slippage on stop-type
+executions (RFC-014 §2). A value object, threaded explicitly into
+`processCandle`/`closeTrade` — the engine never reads config (I-10).
+*Technical implication:* `ExecutionCosts` (`state/trading/execution-costs.ts`):
+`{spreadPoints, commissionPerLot, slippagePoints, pointSize}`. `ZERO_COSTS`
+(`{0,0,0,1}`) degenerates every sided predicate/price to the pre-RFC-014 behavior
+bit-for-bit (V-1 anchor). `COST_PRESETS` gives starting defaults per asset class
+(Forex/Índices/Metales/Cripto — STARTING DEFAULTS, not a live broker feed);
+`costPresetFor(symbol)` resolves one (unclassifiable symbols get `ZERO_COSTS`, never
+a guess), `effectiveCosts(preset, override)` merges the new-session dialog's
+per-field override (`pointSize` is never user-editable — always symbol-resolved).
+`TradingData.executionCosts: ExecutionCosts | null` persists the session's effective
+costs (`null` = legacy zero-cost session; NgRx `createFeature` rejects optional
+feature-state props, so this is required-but-nullable, the same idiom as
+`sessionEnd`/`sessionName`/`folderId`).
+
+**Ask Derivation.**
+Series are stored Bid (MT5 bar convention). The Ask side is derived, never stored:
+`Ask(t) = Bid(t) + spreadPoints·pointSize`. Buys execute at the derived Ask; sells
+execute at Bid (spread-invariant).
+*Technical implication:* `toAsk(bid, costs)` (`state/trading/fill-engine.ts`) is the
+SINGLE conversion point every sided predicate/price in the engine goes through
+(fills, SL/TP exits, MAE/MFE excursions, Floating Equity's mark-to-market). Costs
+absent or zero spread returns `bid` unchanged.
+
+**SimulationDomain.**
+The order-lifecycle law as a pure named module (RFC-014 Task 4a): I-14 Order
+Geometry Coherence and I-15 SL Non-Widening, extracted so the reducers invoke a
+named, independently testable function instead of embedding the check inline — no
+new framework concepts, a named home for logic that used to live inline.
+*Technical implication:* `state/trading/simulation-domain.ts`
+(`validateOrderGeometry`, `validateSlModification`); wired into
+`openMarket`/`placeOrder`/`modifyOrder` (I-14, the RESULTING geometry) and
+`modifyPosition` (I-15) in `trading.reducer.ts`. An invalid action returns
+reference-identity state (no mutation, no throw, no modal) — S2 minimal feedback.
 
 **Exit Decision.**
 The resolution of whether and how an open position leaves the market within a candle:
@@ -354,9 +426,20 @@ The derived performance summary of a session: totals, win rate over *decided* tr
 net profit, total R, profit factor, max drawdown (absolute and fractional), realized
 equity curve, ambiguous count.
 *Technical implication:* `computeSessionStats(history, initialBalance)`
-(`fill-engine.ts`). Note: `balance` and the equity curve are **realized-only**; the
-emulator does not maintain per-candle mark-to-market equity. Documents must not use
-"equity" as if floating P/L were included.
+(`fill-engine.ts`). Note: `balance` and the equity curve remain **realized-only** —
+`computeSessionStats` never reads floating P/L. RFC-014 §3 adds a SEPARATE,
+explicitly-named **Floating Equity** read model (below) alongside these; unqualified
+"equity" in documents still means the realized figures here, never floating P/L
+(Section 11).
+
+**Floating Equity.**
+`balance + Σ floatingPnL` of currently open positions, valued SIDED at the current
+Base Resolution candle (long: Bid close; short: derived Ask close, Ask Derivation
+above) — mark-to-market, unlike the realized-only `balance`/equity curve above. A
+read model only: never persisted, never fed back into `balance`.
+*Technical implication:* `selectFloatingEquity` (`state/selectors.ts`); no factory
+selector (D8). Prices off the Execution Series' current base candle when loaded,
+falling back to `selectCurrentReplayCandle` otherwise.
 
 ---
 
@@ -447,6 +530,32 @@ An explicit, user-created synchronization group carrying `syncCrosshair` and
 *Technical implication:* `ChartSyncRouter` fans out group-scoped with origin exclusion
 and value-keyed idempotent application — the structural defense against echo loops.
 
+**Trade Layer Gating** (RFC-018, D18.A–D).
+Where the Trade domain may speak on a panel — never a Link Group concern: the trade
+layer has no panel or group affinity, deriving independently and identically from
+the singleton `TradingBook` (D1) in every symbol-matching panel. Two clauses of
+different natures, deliberately not fused: **T-1** — a panel renders the trade
+layer only if its effective symbol is the book's `primarySymbol`; a correctness
+invariant, never user-togglable (painting one instrument's levels on another's
+price axis is a false statement about the market, not a visibility preference).
+**T-2** — whether a T-1-eligible panel actually paints the layer is a panel-local
+preference, `PanelDescriptor.hideTrades` (mirrors `hideSharedDrawings`'s D17.H
+idiom: absent = false, never persisted as an explicit `false`). **T-3** — a
+trading verb (context-menu order options, `finishPlacing`, drag SL/TP,
+cancel/close) may originate only from a panel satisfying T-1; `panelMayExecute`
+is symbol-only and deliberately ignores `hideTrades`. A presentation-layer UI
+rule composes over T-3 in `ChartComponent`
+(`tradeVerbsEnabled = panelMayExecute(...) && !hideTrades`, RFC-018 §8, binding)
+so a panel with a hidden trade layer also offers no order verbs — composition,
+not a change to the domain predicate, is how the two concerns stay separate.
+Retires the `LinkGroup.syncTrades` channel entirely (D18.A): it never composed
+anything (one `TradingBook` singleton, no group namespace to resolve), so it
+could only ever subtract from an already-identical layer.
+*Technical implication:* `panelRendersTrades`/`panelMayExecute`
+(`state/layout/layout.models.ts`), exported alongside `effectivePanelSymbol`;
+gated inside the per-panel `ChartModelMapper` instance (D8) — never a store or
+engine concern.
+
 **Drawing.**
 A session-scoped geometric annotation, stored per symbol under the Session aggregate.
 Drawings are the material form of Zones of Interest and other analysis; the domain never
@@ -456,6 +565,89 @@ interprets them.
 The only three things that cross the engine boundary: immutable view data in, events
 out, behavior added as registered extensions. The engine imports no Angular and no NgRx,
 ever.
+
+### 7.1 TEDS Vocabulary (on-pane trade language)
+
+Source of truth: `TEDS_GRAMMAR.md` (normative grammar), `TEDS_INTERACTION.md`
+(interaction, Phase 3), `TEDS_MOTION.md` (motion, Phase 4/5), and
+`EXPERIENCE_DOMAINS.md` (domain boundaries). Registered 2026-07-19 (TEDS-D11);
+interaction + motion vocabulary added 2026-07-22 (TEDS-D14–D29).
+
+**Trade Object.**
+The single on-pane body of a trade: not a container with content, but a mark built
+exclusively from the six TEDS primitives that conjugates with interaction (idle →
+hover → selected). Replaces the legacy "trade box" rendering.
+*Technical implication:* `TEDS_GRAMMAR.md` §6. In code, the Trade Object is exactly
+what the **trade visualization layer** draws: the chart engine's trade `Capability`
+(`TradingCapability`, RFC-004) fed by the `model.trading` DTO and gated per panel
+by RFC-017 §5.1 — no other code path may paint trade marks on a pane.
+
+**Stem / Node / Tick / Filament / Veil / Chip (TEDS primitives).**
+The six-and-only-six marks of the trade grammar: Stem (1px trade body at the entry
+bar, SL→TP), Node (price-time event; MAE/MFE notches are Nodes in a triangular
+glyph), Tick (trade-owned price level, never full-width), Filament (the position's
+journey through time — the sole owner of trade time), Veil (conversational ≤8% alpha
+price zone; never a container, never at idle), Chip (the only text container on the
+pane; max 2 visible per trade).
+*Disambiguation:* the TEDS **Chip** is canvas ink; the DOM UI primitive "Badge /
+Chip" (`.ui-badge`, `DESIGN_SYSTEM.md` §3.1) is a different thing and keeps its
+name in DOM contexts.
+
+**Conversation (Experience Domain).**
+The ephemeral middle tier between Trade facts and Knowledge: hover, selection,
+veils, DG reveals, drag previews, and reconstructed scenes. Derived on demand,
+never persisted (invariant X-1; TEDS INV-12). The Reflective Scene (Section 9) is
+its cold-review species.
+*Technical implication:* `EXPERIENCE_DOMAINS.md` §3–§4.
+
+**Dock (TEDS projection surface).**
+The side surface that projects Conversation-tier aspatial judgments while a trade
+is selected; it never stores knowledge and empties when the conversation ends
+(decision TEDS-D12).
+*Disambiguation:* distinct from the **workspaces dock** (panel container hosting
+e.g. the Playbook Panel, `TRADER_KNOWLEDGE_MODEL.md` §5.1). Documents must qualify
+which dock they mean.
+
+**Ghost Rails.**
+The TEDS E9 drag conversation: a time-bounded candidate rail with R-ladder
+magnetism and an R:R chip while dragging TP/SL. *Term reassigned 2026-07-19:* the
+RFC-017 visual spec's "Concept A — Ghost Rails" is cited historically as
+"span-scoped geometry (2026-07-16 exploration)".
+
+**Modo enfoque.**
+A workspace-level session toggle that hides a trade's exact P/L digits (currency
+**and** R) — the P/L Rider degrades to a numberless meter travelling the SL→TP span;
+digits return only at close (decision TEDS-D7). A render modifier, not a matrix state,
+and orthogonal to `prefers-reduced-motion`.
+
+**Reveal ladder / Staggering.**
+The progressive-disclosure mechanism of a selected Trade Object (TEDS-D14): *Ask for
+depth* (tiers advance only on an explicit step verb, in INV-03 order) + *Walk for
+breadth* (chip seat B travels along the events) within the fixed 2-chip budget. Dwell
+(time-as-input) is rejected. Normative in `TEDS_INTERACTION.md` §4.
+
+**Witness panel.**
+A non-gesture panel showing the globally-selected trade: it renders a luminance halo
+only — no world-dimming, no chips — while the gesture ("origin") panel carries the full
+subtract + embody (TEDS-D18). Keeps INV-11 (one selection per workspace) honest across
+panels.
+
+**Motion tiers (0–3) & the Motion Budget.**
+The attention hierarchy of `TEDS_MOTION.md`: Tier 0 Reality (canvas geometry-truth,
+exempt), Tier 1 Critical trading state, Tier 2 Workspace, Tier 3 Cosmetic. The
+**One-Animation Rule** allows at most one intentional UI animation at a time; a
+higher tier cancels lower-tier motion to its end state (`activeMotionTier` guard,
+ephemeral Conversation state — never persisted).
+
+**Motion moves (the eight).**
+The closed motion vocabulary (TEDS-D21), mirroring the six primitives: Dissolve · Lift ·
+Quiet · Emerge · Travel · Seal · Swap · Snap. Opacity is the only CSS medium; Travel/Seal/
+Snap are canvas geometry on `--ease-linear`. Any choreography not expressible as these
+is rejected by the anti-decoration gate.
+
+**Selection Cardinality.**
+Exactly zero or one Trade Object selected per workspace (TEDS INV-11). Multi-trade
+comparison is a distinct future verb requiring its own RFC.
 
 ---
 
@@ -543,6 +735,39 @@ The trader's explicit set of rules under training. Trader-authored and opaque to
 the system (never parsed, validated, or scored); permanent knowledge tier
 (RFC-015 domain).
 
+**PlaybookRule.**
+One trader-authored rule inside the Playbook aggregate: `{id, title, statement,
+createdAt, status, shortcutSlot, sortOrder, amendments}`. `statement` is opaque
+free text (P-2: the system never parses or evaluates it); `amendments` is a
+reserved extension point for RFC-016 (P-7: zero read sites).
+*Technical implication:* `PlaybookRule` (`state/playbook/playbook.models.ts`);
+persisted in the dedicated `emulador-playbook` IndexedDB database and synced to
+Supabase `playbook_rules` (RLS per user, LWW per row).
+
+**declaredRuleId / declaración.**
+An optional opaque stamp (`string | null`) on `PendingOrder`, `Position`, and
+`ClosedTrade` linking a trade to the Playbook rule the trader was training at
+placement time. Travels the identity chain (P-4); set post-placement via shortcut
+slot, sealed onto `ClosedTrade` at close. The system records the fact; adherence
+is never scored (S1).
+*Technical implication:* `declaredRuleId?: string | null` on all three trading
+entities (`state/trading/trading.models.ts`).
+
+**slot de atajo** (shortcut slot).
+An integer `1..9` assigned to a `PlaybookRule` (`shortcutSlot`), binding a
+keyboard digit to that rule for post-placement trade tagging (G2, D15.D). Unique
+among active rules; pressing the digit tags the most recent active order/position
+(D15.A). The digit namespace is reserved and verified free of other bindings.
+*Technical implication:* `PlaybookRule.shortcutSlot`; listener in
+`playbook-hotkeys.directive.ts`.
+
+**`emulador-playbook`.**
+The dedicated IndexedDB database for Playbook persistence (D15.B). Isolated from
+`emulador-workspaces` and `emulador-telemetry` so its version and lifecycle are
+independent; survives deletion of both (P-3/N-4).
+*Technical implication:* `PlaybookDbService` (`services/playbook-db.service.ts`);
+single object store `rules`, keyPath `id`, candle-free by construction.
+
 **Rule Declaration.**
 Optional single-keystroke tagging of an opaque `declaredRuleId` onto the ACTIVE
 order or position — post-placement, while the trade lives (Grill decision G2,
@@ -554,26 +779,89 @@ adherence is never scored by the system.
 **Black Box** (Raw Telemetry Register).
 The append-only, session-scoped, local-only log of neutral physical events captured
 passively during practice; outside `SessionPayloadV2` (D9 untouched), candle-free.
+Per-session capped (drop-newest on overflow); writes are batched off the hot path
+(N-2 passivity).
+*Technical implication:* a DEDICATED IndexedDB database, `emulador-telemetry`
+(`services/telemetry-db.service.ts`). **Deviation from the RFC-014 §4 text**, which
+names the conceptual store `emulador-workspaces`: joining the shared database was
+tried first and reverted, because `workspace-db.service.spec.ts` (pre-existing,
+STOP-protected) hard-asserts the exact object-store count of that database. Keyed
+`[sessionId, seq]`, append-only. Captured by `dispatch: false` NgRx effects
+(`state/telemetry/telemetry.effects.ts`) — the audited sync-effect pattern, adding
+zero domain behavior or write paths to trading state. Candle-Free Payload's
+`assertNoCandles` (Section 8) is reused over the new store (V-9). V-8 (16 ms/frame
+budget, N-2) measured 8.1–13.0 ms for a 69-event jump-50 burst in the test harness —
+comfortably under budget (the jsdom test environment is itself a slower ~50 ms
+bound).
 
-**ReplaySeek** (telemetry fact).
-`{fromTime, toTime, direction}` — the objective record of a scrubber teleport. The
-register stores geometry, never labels (no `isBacktrack`, no honesty fields).
+**Telemetry Envelope.**
+The uniform wrapper every captured fact is stored as:
+`TelemetryEvent := { seq, wallClockMs, marketTime, kind, payload }`. `kind`/
+`payload` are loosely typed at the storage boundary (`kind: string`, `payload:
+object`) so the store's schema stays closed to modification — a new event kind is a
+wider discriminated union at the call site, never a storage-layer change.
+*Technical implication:* `TelemetryEvent`/`TelemetryEventV1`
+(`state/telemetry/telemetry.models.ts`). The v1 kinds are `ReplaySeek`, `ReplayJump`,
+`PlaybackToggled`, `SpeedChanged`, `TimeElapsedBeforeOrder`, `DrawingSnapshot`
+(RFC-014 §4 table) plus `OrderFilled`/`PositionClosed` (the Reified Domain Facts,
+below — the v1 set's natural completion, same envelope, no schema change).
+
+**Reified Domain Fact.**
+A fill or close event turned into a first-class, serializable record instead of
+staying implicit in the resulting book/history diff — `OrderFilled` and
+`PositionClosed` (RFC-014 Task 4b), closing EVENT_STORMING §8's points 1-2.
+*Technical implication:* `DomainFact` union (`state/trading/domain-facts.ts`), built
+by the engine during the walk as `ProcessResult.facts` (`state/trading/
+fill-engine.ts`) — pure, additive (I-10), no new engine state. **D14.F
+(binding):** `ProcessResult.facts` has NO state surfacing (`TradingState` carries no
+facts field — NgRx `createFeature` rejects optional feature-state properties, and a
+required field would break protected action-payload literals); it is a RESERVED
+extension point (zero production read sites) for Fases 2-3. The telemetry observer
+independently derives the same fact shapes by pairwise-diffing consecutive
+`positions[]`/`history[]` snapshots (`diffDomainFacts`,
+`state/telemetry/telemetry-facts.ts`), not by reading `ProcessResult.facts`.
 
 **TimeElapsedBeforeOrder.**
 `{anchorKind, pausedMs, playingMs, candlesRevealed}` — the physical timing context
-of an order placement, anchored at the most recent of session start, last seek, or
+of an order placement, anchored at the most recent of session start, last jump, or
 last order event.
 
 **MAE / MFE.**
-Maximum Adverse / Favorable Excursion of a position over base-resolution candles,
-with timestamps `tMAE`/`tMFE` and R-normalized forms (`MAE_R = MAE / |entry - sl|`).
-Physical efficiency diagnostics for stop and target slack; interpretation belongs
-to the trader.
+Maximum Adverse / Favorable Excursion of a position, accumulated over every Base
+Resolution candle it is open for — long: adverse = `entry - low`, favorable =
+`high - entry` (Bid extremes); short: sided via Ask Derivation — with first-reach
+timestamps `tMae`/`tMfe` (strict `>`: a later candle merely equaling the running
+max does not move the timestamp) and R-normalized forms `MAE_R = MAE / d`,
+`MFE_R = MFE / d`. **Divisor property:** `d` is the trade's FINAL `sl` distance AT
+CLOSE (`|entry - sl|`, the RFC-014 §3 formula) — since Asymmetric Trade Management
+(I-15) lets SL tighten after placement, `d` can diverge from the entry-time 1R (the
+Risk Invariant's `riskUsd` distance, Section 5) once the SL has moved. MAE_R/MFE_R
+are therefore a DISTINCT normalization from `rMultiple`, not interchangeable with
+it. Physical efficiency diagnostics for stop and target slack; interpretation
+belongs to the trader (S1).
+*Technical implication:* `Position.{mae,mfe,tMae,tMfe}` (optional, accumulated via
+`updateExcursion` in `fill-engine.ts`); sealed into `ClosedTrade` on every close
+path — a position never walked by a candle (e.g. a market order closed manually
+before any replay advance) seals `mae=0, mfe=0, tMae=tMfe=openTime` rather than
+staying undefined. Rendered as `MAE_R`/`MFE_R` columns in the trade history
+(display-time derivation; "—" for legacy trades missing the fields) plus
+mean/max aggregates in the session summary (G4).
 
-**Reflection Cabin** (The Mirror).
+**Reflection Cabin / Cabina de Reflexión.**
 The end-of-session / on-demand reconstruction surface: Reflective Scenes plus
 uninterpreted fact panels. It presents and asks nothing; lesson authoring is always
-trader-initiated.
+trader-initiated. The interactive surface where the trader visualizes trade waypoints.
+*Technical implication:* `ReflectionCabinPageComponent` (`pages/reflection/reflection-cabin-page.component.ts`).
+
+**Waypoint.**
+Un instante físico significativo en la vida de un trade (Entry, Management, MAE, MFE, Exit) que sirve como ancla para la reconstrucción de escenas reflectivas.
+
+**Diario de Enmiendas (Amendment Journal).**
+El almacén consolidado y la bitácora de lecciones persistidas que vincula la evidencia de los trades con la evolución de las reglas del Playbook.
+
+**`emulador-lessons`.**
+La base de datos local IndexedDB dedicada exclusivamente a la persistencia a largo plazo de las lecciones (Permanent Lessons), garantizando que sobrevivan a la purga de sesiones y telemetría (J-4).
+*Technical implication:* `LessonsDbService` (`services/lessons-db.service.ts`), object store `lessons`.
 
 Note: "Session" keeps its Section 7 definition; the knowledge model adds its tier
 classification — a transitory container whose deletion must never destroy Lessons.
@@ -614,7 +902,7 @@ anti-pattern itself):
 | Bullish/Bearish bias | Directional Hypothesis | Strategy-neutral; admits trend, mean-reversion, volume, oscillator framings |
 | Lot size as user input | Derived lot size (Risk Invariant) | Lot size is a computed dependent variable of SL geometry; a free input violates the risk invariant |
 | Tick data / tick simulation | Sub-candle at Base Resolution | No tick data exists in the system; claiming tick fidelity misstates the simulation's resolution |
-| Equity (implying floating P/L) | Realized balance / realized equity curve | The engine tracks realized results only; unqualified "equity" overstates the model |
+| Equity, unqualified | Realized balance / realized equity curve (session totals, Section 5's Session Statistics); Floating Equity (RFC-014 §3 mark-to-market read model, Section 5) when floating P/L is meant | Two distinct concepts now exist since RFC-014; unqualified "equity" is ambiguous — documents must say which one, never let bare "equity" imply floating P/L is folded into the realized figures |
 | Backend / server (for the app runtime) | Cloud persistence (Supabase) + object storage (R2) | There is deliberately no application server; the term smuggles in architecture that does not exist |
 | Guest mode / offline mode (as login state) | (none — removed) | Login is required; guest/offline mode was deliberately removed in Supabase Phase 3 |
 | Factory selector (per-panel views) | Local per-instance `ChartModelMapper` | Banned implementation pattern (D8): single-slot memoization thrashes at N panels |
@@ -635,11 +923,17 @@ anti-pattern itself):
 - Decisions worth keeping receive an identity (D-numbers, R-numbers) and a written
   rationale; this glossary cites them (D1 mono-symbol, D8 local mapper, D9 atomic
   payload, R4 single cache) rather than restating their arguments.
+- Design-grammar decisions use the **`TEDS-D#` namespace** (`TEDS_GRAMMAR.md` §9),
+  created 2026-07-19 to resolve the collision between the TEDS design documents'
+  bare D-numbers (their phase gate used D6–D10) and the repository decision
+  registry above.
 
 ---
 
 ## 13. References
 
+- `docs/architecture/TEDS_GRAMMAR.md` — normative on-pane trade grammar (Section 7.1 terms).
+- `docs/architecture/EXPERIENCE_DOMAINS.md` — Market/Trade/Conversation/Knowledge boundaries.
 - `docs/architecture/TRAINING_WORKFLOW.md` — training domain source of truth.
 - `docs/architecture/strategic_audit.md` — bounded contexts, fidelity diagnosis, RFC-014+ direction.
 - `docs/engineering/domain/replay-trading.md` — replay clock, fills, trading state.

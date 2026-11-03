@@ -17,6 +17,7 @@ const group = (id: string, overrides: Partial<LinkGroup> = {}): LinkGroup => ({
   color: '#fff',
   syncCrosshair: true,
   syncTimeRange: true,
+  syncDrawings: true,
   ...overrides,
 });
 const handle = (): PanelChartHandle & {

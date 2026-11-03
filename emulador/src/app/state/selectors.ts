@@ -1,4 +1,4 @@
-import { createSelector } from '@ngrx/store';
+import { createSelector, MemoizedSelector } from '@ngrx/store';
 import { marketFeature } from './market/market.reducer';
 import { replayFeature } from './replay/replay.reducer';
 import { settingsFeature } from './settings/settings.reducer';
@@ -21,12 +21,10 @@ import {
   Position,
   SavedSession,
   TradingData,
+  TradingState,
 } from './trading/trading.models';
-import {
-  computeSessionStats,
-  firstIndexAtOrAfter,
-  lastIndexAtOrBefore,
-} from './trading/fill-engine';
+import { computeSessionStats, lastIndexAtOrBefore, toAsk } from './trading/fill-engine';
+import { aggregateFormingCandle } from './market/forming-candle';
 
 export const selectActiveTf = marketFeature.selectActiveTf;
 export const selectSeries = marketFeature.selectSeries;
@@ -37,7 +35,7 @@ export const selectPlaying = replayFeature.selectPlaying;
 export const selectMsPerCandle = replayFeature.selectMsPerCandle;
 export const selectTheme = settingsFeature.selectTheme;
 export const selectChartColors = settingsFeature.selectChartColors;
-export const selectUtcOffset = settingsFeature.selectUtcOffset;
+export const selectDisplayZone = settingsFeature.selectDisplayZone;
 export const selectGridVisible = settingsFeature.selectGridVisible;
 export const selectGridOpacity = settingsFeature.selectGridOpacity;
 export const selectFloatingToolbar = settingsFeature.selectFloatingToolbar;
@@ -69,6 +67,28 @@ export const selectTradingData = createSelector(tradingFeature.selectTradingStat
 
 export const selectSavedSessions = tradingFeature.selectSavedSessions;
 
+/** Flat view of every drawing in the session, every symbol and owner — memoized on the `entities` reference. */
+export const selectAllDrawings = createSelector(drawingsFeature.selectEntities, (entities) =>
+  Object.values(entities),
+);
+
+/**
+ * The active asset's visible drawings — the fact content a telemetry
+ * `DrawingSnapshot` captures. A panel showing a DIFFERENT symbol (a
+ * secondary observation panel) is excluded, as is any drawing toggled
+ * invisible. NOT literally "what was painted on screen" for a composed
+ * panel, though — a drawing in an inactive tab, behind a grid-cell sibling,
+ * or in a group with `syncDrawings` off still counts here without having
+ * been rendered. Exact composed-panel fidelity is an open design question,
+ * not an implementation gap.
+ */
+export const selectActiveAssetVisibleDrawings = createSelector(
+  drawingsFeature.selectEntities,
+  selectCurrentAsset,
+  (entities, activeAsset) =>
+    Object.values(entities).filter((d) => d.visible && d.symbol === activeAsset),
+);
+
 export interface WorkspaceSnapshot {
   series: Partial<Record<Timeframe, Candle[]>>;
   files: Partial<Record<Timeframe, string>>;
@@ -85,7 +105,7 @@ export const selectWorkspaceSnapshot = createSelector(
   marketFeature.selectFiles,
   marketFeature.selectActiveTf,
   replayFeature.selectCurrentTime,
-  drawingsFeature.selectItems,
+  selectAllDrawings,
   selectTradingData,
   selectSavedSessions,
   (series, files, activeTf, currentTime, drawings, trading, sessions): WorkspaceSnapshot => ({
@@ -107,8 +127,11 @@ export const selectWorkspaceMetaSnapshot = createSelector(
   marketFeature.selectFiles,
   marketFeature.selectActiveTf,
   marketFeature.selectSelectedTfs,
+  marketFeature.selectCustomTf,
   replayFeature.selectCurrentTime,
-  drawingsFeature.selectItems,
+  replayFeature.selectMsPerCandle,
+  replayFeature.selectResolutionMinutes,
+  selectAllDrawings,
   selectTradingData,
   selectSavedSessions,
   tradingFeature.selectActiveSessionId,
@@ -119,7 +142,10 @@ export const selectWorkspaceMetaSnapshot = createSelector(
     files,
     activeTf,
     selectedTfs,
+    customTfMinutes,
     currentTime,
+    playbackSpeed,
+    replayResolution,
     drawings,
     trading,
     sessions,
@@ -131,7 +157,10 @@ export const selectWorkspaceMetaSnapshot = createSelector(
     files,
     activeTf,
     selectedTfs: selectedTfs ?? undefined,
+    customTfMinutes,
     currentTime,
+    playbackSpeed,
+    replayResolution,
     drawings,
     trading,
     sessions,
@@ -263,8 +292,14 @@ export interface TradeMarker {
   text: string;
 }
 
-/** Time of the last candle whose open is <= t (markers must sit on a bar). */
-function snapToCandle(candles: Candle[], t: number): number {
+/**
+ * Time of the last candle whose open is <= t (markers must sit on a bar). Exported
+ * (RFC-018 F3): the per-panel trade-marker derivation in `chart-model-mapper.service.ts`
+ * reuses this exact snapping logic against a PANEL's own candles instead of the global
+ * active series — the pre-existing defect this fixes (a panel on H4 was snapped to the
+ * global TF's grid, typically M1). Pure — no store awareness, stays that way.
+ */
+export function snapToCandle(candles: Candle[], t: number): number {
   let lo = 0,
     hi = candles.length - 1,
     ans = candles[0]?.time ?? t;
@@ -278,7 +313,14 @@ function snapToCandle(candles: Candle[], t: number): number {
   return ans;
 }
 
-const selectTradeMarkers = createSelector(
+/**
+ * Exported (RFC-018 F3): `chart-model-mapper.service.ts` calls `.projector` directly with
+ * THIS panel's own candles (never the global `selectActiveCandles` below) so markers snap
+ * to the panel's own grid. Kept alive with its store wiring below per R18-14 — no
+ * production consumer feeds the pane render from it anymore (see `selectTradeChartView`'s
+ * doc comment), but `selectTradeChartView` and its `selectors.spec.ts` coverage still do.
+ */
+export const selectTradeMarkers = createSelector(
   selectActiveCandles,
   tradingFeature.selectPositions,
   tradingFeature.selectHistory,
@@ -329,6 +371,11 @@ export interface TradeBoxItem {
   hidden: boolean;
 }
 
+/**
+ * No candle snapping needed (raw open/close times). RFC-018 F3: `chart-model-mapper.service.ts`
+ * calls `.projector` directly with the panel's raw trading slices so boxes and markers
+ * share one provenance in the per-panel path.
+ */
 export const selectTradeBoxes = createSelector(
   tradingFeature.selectPositions,
   tradingFeature.selectOrders,
@@ -378,7 +425,14 @@ export const selectTradeBoxes = createSelector(
   ],
 );
 
-/** Single consistent view for the chart's trade overlay (lines + markers). */
+/**
+ * Single consistent view for the chart's trade overlay (lines + markers), keyed off the
+ * GLOBAL active timeframe. RFC-018 F3 moved the pane render off this path (a panel on a
+ * different timeframe must snap against its OWN candles, not this selector's global one —
+ * see `chart-model-mapper.service.ts`'s `tradeChartView$`). Kept alive per R18-14: it may
+ * have no production consumer left after F3, but dismantling it is TEDS Phase 4 Task 6's
+ * declared job, not this task's.
+ */
 export const selectTradeChartView = createSelector(
   tradingFeature.selectPositions,
   tradingFeature.selectOrders,
@@ -477,24 +531,7 @@ export const selectFormingCandle = createSelector(
   (resSeries, activeSeconds, cursor, minutes): Candle | null => {
     if (minutes == null || !resSeries || activeSeconds <= 0 || cursor <= 0) return null;
     const bucketStart = Math.floor(cursor / activeSeconds) * activeSeconds;
-    // Aggregate the bucket's revealed candles [bucketStart, cursor] directly over
-    // their indices — no intermediate slice array (avoids GC churn at fast autoplay).
-    const lo = firstIndexAtOrAfter(resSeries, bucketStart);
-    const hi = lastIndexAtOrBefore(resSeries, cursor);
-    if (hi < lo) return null;
-    let high = resSeries[lo].high;
-    let low = resSeries[lo].low;
-    for (let i = lo + 1; i <= hi; i++) {
-      if (resSeries[i].high > high) high = resSeries[i].high;
-      if (resSeries[i].low < low) low = resSeries[i].low;
-    }
-    return {
-      time: bucketStart,
-      open: resSeries[lo].open,
-      high,
-      low,
-      close: resSeries[hi].close,
-    };
+    return aggregateFormingCandle(resSeries, bucketStart, cursor);
   },
 );
 
@@ -533,17 +570,17 @@ export const selectChartView = createSelector(
   selectActiveTfLabel,
   selectActiveCandles,
   selectVisibleIndex,
-  selectUtcOffset,
+  selectDisplayZone,
   selectResolutionMinutes,
   selectFormingCandle,
   selectCandleCountdown,
-  (tf, candles, idx, utcOffset, minutes, forming, countdown) => {
+  (tf, candles, idx, displayZone, minutes, forming, countdown) => {
     // Resolution mode: hide the (future-complete) bucket candle and paint the
     // forming bar instead; complete candles run up to bucketIdx-1.
     if (minutes != null && forming != null && idx >= 0) {
-      return { tf, candles, idx: idx - 1, utcOffset, forming, countdown };
+      return { tf, candles, idx: idx - 1, displayZone, forming, countdown };
     }
-    return { tf, candles, idx, utcOffset, forming: null, countdown };
+    return { tf, candles, idx, displayZone, forming: null, countdown };
   },
 );
 
@@ -582,12 +619,92 @@ export const selectReplayLowerSeries = createSelector(
   (series, seconds): Candle[] | null => lowerSeriesForSeconds(series, seconds),
 );
 
+/** Finest loaded series across ALL timeframes, no threshold (see `lowerSeriesForSeconds`). */
+function finestLoadedSeries(series: Partial<Record<Timeframe, Candle[]>>): Candle[] | null {
+  for (const tf of TIMEFRAME_ORDER) {
+    const candles = series[tf];
+    if (candles?.length) return candles;
+  }
+  return null;
+}
+
+/**
+ * The execution series (RFC-014 §1, D14.A): the finest loaded series for the
+ * session's symbol (M1 ground truth when loaded). The fill engine always
+ * walks this series, independent of the displayed TF and the Replay
+ * Resolution — session creation already guarantees the anchor datasets are
+ * present locally, so this is a plain IndexedDB-backed read, never a network one.
+ */
+export const selectExecutionSeries = createSelector(selectSeries, (series): Candle[] | null =>
+  finestLoadedSeries(series),
+);
+
+/**
+ * Placement reveal horizon (D14.B): the time of the LAST REVEALED base candle
+ * at the cursor's replay-resolution bucket `[cursorTime, cursorTime + tfSeconds)`
+ * — the whole bucket is already displayed fully formed, so `PendingOrder.createdAt`
+ * is stamped here instead of the raw cursor time (this is what makes the
+ * engine's `c.time > o.createdAt` exclusion, refined to base grain, still hold
+ * without hindsight — see RFC-014 §1.3). Falls back to the cursor time when no
+ * base series is loaded, or when the base series does not reach this bucket yet.
+ * At base-grain stepping (resolution === base) this equals the cursor time
+ * exactly, matching today's semantics unchanged.
+ */
+export const selectPlacementTime = createSelector(
+  selectExecutionSeries,
+  selectCurrentTime,
+  selectReplayTfSeconds,
+  (base, cursorTime, tfSeconds): number => {
+    if (!base || !base.length || tfSeconds <= 0) return cursorTime;
+    const idx = lastIndexAtOrBefore(base, cursorTime + tfSeconds - 1);
+    return idx >= 0 ? base[idx].time : cursorTime;
+  },
+);
+
+/**
+ * Shape of {@link selectFillContext}. `base` is declared OPTIONAL (not just
+ * nullable) on purpose: pre-existing effect specs mock this context by hand
+ * without a `base` key at all (the STOP rule bars editing them), and that
+ * omission must typecheck as the legacy path, not just behave like one.
+ */
+export interface FillContext {
+  candles: Candle[];
+  idx: number;
+  tfSeconds: number;
+  lower: Candle[] | null;
+  contractSize: number;
+  trading: TradingState;
+  base?: Candle[] | null;
+}
+
+/** Backward-compatible shape of {@link selectFillContext}'s `.projector` (see below). */
+type FillContextProjector = (
+  candles: Candle[],
+  idx: number,
+  tfSeconds: number,
+  lower: Candle[] | null,
+  contractSize: number,
+  trading: TradingState,
+  base?: Candle[] | null,
+) => FillContext;
+
 /**
  * Context the fill effect needs to evaluate a freshly revealed candle. Exposes
  * the active candle DURATION and the finer "lower" series directly (instead of
  * a Timeframe string), so fills work for custom timeframes too. Derived from
  * the replay-aware selectors so fills evaluate over the resolution series when
- * active (identical to the display series in full-candle mode).
+ * active (identical to the display series in full-candle mode). `base` (D14.A)
+ * is the execution series: when non-empty, effects take the base-grain path;
+ * otherwise (pre-existing specs, which never mock this input) they fall back
+ * to the legacy per-resolution-candle behavior, byte-identical to today.
+ *
+ * The `as MemoizedSelector<...>` re-types `.projector` with `base` OPTIONAL:
+ * NgRx's `createSelector` overloads always expose `.projector` with exactly N
+ * required params for N selector inputs, regardless of an optional TS
+ * annotation on the projector function itself (verified empirically) — so
+ * without this cast, the pre-existing `selectors.spec.ts` 6-arg `.projector`
+ * call (STOP rule: that file is never edited) would fail to typecheck even
+ * though it is behaviorally exactly the legacy path.
  */
 export const selectFillContext = createSelector(
   selectReplaySeries,
@@ -596,15 +713,17 @@ export const selectFillContext = createSelector(
   selectReplayLowerSeries,
   selectContractSize,
   tradingFeature.selectTradingState,
-  (candles, idx, tfSeconds, lower, contractSize, trading) => ({
+  selectExecutionSeries,
+  (candles, idx, tfSeconds, lower, contractSize, trading, base): FillContext => ({
     candles,
     idx,
     tfSeconds,
     lower,
     contractSize,
     trading,
+    base,
   }),
-);
+) as MemoizedSelector<object, FillContext, FillContextProjector>;
 
 /** Finest loaded series whose candle duration is strictly below `activeSeconds`. */
 export function lowerSeriesForSeconds(
@@ -681,5 +800,63 @@ export const selectFloatingPnl = createSelector(
   (positions, candle, contractSize): number | null => {
     if (!positions.length || !candle) return null;
     return positions.reduce((sum, p) => sum + floatingPnl(p, candle.close, contractSize), 0);
+  },
+);
+
+/**
+ * Base-grain "current candle" for mark-to-market (RFC-014 §3), mirroring
+ * `selectPlacementTime`'s reveal-horizon math (D14.B): the last BASE candle
+ * revealed within the cursor's replay-resolution bucket
+ * `[cursorTime, cursorTime + tfSeconds)`. Null with no base series loaded, or
+ * before it reaches this bucket — the caller falls back to
+ * {@link selectCurrentReplayCandle} in that case.
+ */
+function currentBaseCandle(
+  base: Candle[] | null | undefined,
+  cursorTime: number,
+  tfSeconds: number,
+): Candle | null {
+  if (!base || !base.length || tfSeconds <= 0) return null;
+  const idx = lastIndexAtOrBefore(base, cursorTime + tfSeconds - 1);
+  return idx >= 0 ? base[idx] : null;
+}
+
+/**
+ * Floating equity (RFC-014 §3): `balance + Σ floatingPnL` of open positions,
+ * valuing longs at the current base candle's Bid close and shorts at its
+ * derived Ask close (`close + s`, D14.D via {@link toAsk}) — unlike
+ * {@link selectFloatingPnl} (untouched, single uniform price for both sides),
+ * this is sided. Prices off the execution series' current base candle when
+ * loaded, falling back to {@link selectCurrentReplayCandle} otherwise. NOT
+ * persisted (read model only); no factory selector (D8).
+ */
+export const selectFloatingEquity = createSelector(
+  tradingFeature.selectBalance,
+  tradingFeature.selectPositions,
+  tradingFeature.selectExecutionCosts,
+  selectExecutionSeries,
+  selectCurrentTime,
+  selectReplayTfSeconds,
+  selectCurrentReplayCandle,
+  selectContractSize,
+  (
+    balance,
+    positions,
+    executionCosts,
+    base,
+    cursorTime,
+    tfSeconds,
+    fallbackCandle,
+    contractSize,
+  ): number => {
+    if (!positions.length) return balance;
+    const candle = currentBaseCandle(base, cursorTime, tfSeconds) ?? fallbackCandle;
+    if (!candle) return balance;
+    const costs = executionCosts ?? undefined;
+    const floating = positions.reduce((sum, p) => {
+      const val = p.side === 'buy' ? candle.close : toAsk(candle.close, costs);
+      return sum + floatingPnl(p, val, contractSize);
+    }, 0);
+    return balance + floating;
   },
 );
