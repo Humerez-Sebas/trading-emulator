@@ -26,7 +26,7 @@ jobs:
     steps:
       # the public URL + anon key already ship in the frontend bundle; reading
       # them from the env file keeps a single source of truth across rotations
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: emulador/src/environments
       - name: Read public Supabase config
