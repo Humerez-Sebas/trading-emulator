@@ -756,8 +756,8 @@ entities (`state/trading/trading.models.ts`).
 **slot de atajo** (shortcut slot).
 An integer `1..9` assigned to a `PlaybookRule` (`shortcutSlot`), binding a
 keyboard digit to that rule for post-placement trade tagging (G2, D15.D). Unique
-among active rules; pressing the digit tags the most recent active order/position
-(D15.A). The digit namespace is reserved and verified free of other bindings.
+among active rules; pressing Alt+digit (physical key, `ev.code`) tags the most recent active
+order/position (D15.A). Bare digits are not free: they belong to the interval dialog.
 *Technical implication:* `PlaybookRule.shortcutSlot`; listener in
 `playbook-hotkeys.directive.ts`.
 
