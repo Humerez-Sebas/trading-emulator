@@ -11,7 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { Store } from '@ngrx/store';
+import { createSelector, createFeatureSelector, Store } from '@ngrx/store';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { JournalDataService } from '../../services/journal-data.service';
 import type { JournalSessionModel } from '../../state/journal/journal-read.models';
@@ -24,7 +24,8 @@ import {
 import { buildSceneSpec } from '../../domain/reflection/build-scene-spec';
 import { MAX_EVIDENCE_SCENES, type SceneSpec } from '../../domain/reflection/scene-spec';
 import { LessonsActions } from '../../state/lessons/lessons.actions';
-import type { Lesson } from '../../state/lessons/lessons.models';
+import { lessonsFeature } from '../../state/lessons/lessons.reducer';
+import type { Lesson, LessonsState } from '../../state/lessons/lessons.models';
 import { PlaybookActions } from '../../state/playbook/playbook.actions';
 import { selectActiveRules } from '../../state/playbook/playbook.selectors';
 import type { ClosedTrade } from '../../state/trading/trading.models';
@@ -34,6 +35,15 @@ import { WaypointTimelineComponent } from './waypoint-timeline.component';
 import { FrozenSceneHostComponent } from './frozen-scene-host.component';
 import { WaypointFactsComponent } from './waypoint-facts.component';
 import { LessonFormComponent, type LessonDraft } from './lesson-form.component';
+
+/**
+ * Page-local LIVE lessons read (selectLessonByTradeRef / selectLessonsLoaded
+ * semantics), null-safe on the feature slice: the Cabin's existing specs run on
+ * a MockStore with no `lessons` slice. In the app the slice always exists.
+ */
+const selectLessonsSlice = createFeatureSelector<LessonsState | undefined>(lessonsFeature.name);
+const selectLiveLessons = createSelector(selectLessonsSlice, (s) => s?.lessons ?? []);
+const selectLiveLessonsLoaded = createSelector(selectLessonsSlice, (s) => s?.loaded ?? true);
 
 type PageState = 'loading' | 'no-trades' | 'error' | 'ready';
 
@@ -92,6 +102,12 @@ export class ReflectionCabinPageComponent {
 
   activeRules = this.store.selectSignal(selectActiveRules);
 
+  /** LIVE lessons keyed by trade id. The cached read model snapshots lessons at
+   * load time, so a lesson that reaches the store afterwards (hydrate finishing
+   * late, a pull, a prior save) is only visible here. */
+  private liveLessons = this.store.selectSignal(selectLiveLessons);
+  private lessonsLoaded = this.store.selectSignal(selectLiveLessonsLoaded);
+
   /** Same view rows the Journal's Trades table renders (incl. `hasReflection`) —
    * `CabinTradeRow` is a structural subset of `TradeRowView`, so no re-mapping. */
   tradeRows = computed(() => (this.model() ? buildTradeRows(this.model()!) : []));
@@ -147,7 +163,9 @@ export class ReflectionCabinPageComponent {
     const id = this.resolvedTradeId();
     const m = this.model();
     if (!id || !m) return null;
-    return m.lessonByTradeRef[id] ?? null;
+    // Same last-wins rule as `selectLessonByTradeRef`.
+    const live = [...this.liveLessons()].reverse().find((l) => l.tradeRefs.includes(id));
+    return live ?? m.lessonByTradeRef[id] ?? null;
   });
 
   constructor() {
@@ -222,6 +240,13 @@ export class ReflectionCabinPageComponent {
     const trade = this.activeTrade();
     const m = this.model();
     if (!trade || !m) return;
+
+    // Lessons not hydrated yet: an existing lesson for this trade may still be
+    // on its way, and creating now would write a second one. Ask to retry.
+    if (!this.lessonsLoaded()) {
+      this.toastMessage.set('Cargando reflexiones… intenta de nuevo en un momento');
+      return;
+    }
 
     this.saving.set(true);
     const now = Date.now();
