@@ -85,6 +85,36 @@ Measured: 400k M1 1.2–1.4 s, 1.2M M1 3.7–4.1 s per switch; a bounded key ran
   `target.tagName`, which would throw for a synthetic event dispatched on `document`. Real key events
   target an element.
 
+### Group B: T3 + T4 + T5 (`sdd-implementer`) — DONE
+
+| Task | Closes | Commit |
+| :--- | :--- | :--- |
+| T3 | MEDIUM-5 | `2aa6d0b` |
+| T4 | MEDIUM-3 | `0a56e07` |
+| T5 | MEDIUM-4 | `c7a6584` |
+
+- **Evidence (implementer's run at `c7a6584`):** tsc app 0, tsc spec 0, `ng test` 196 files / 2651 tests
+  (190 / 2621 before: +30), lint 0, format 0. Red before green reported for all three tasks.
+- **Orchestrator diff-scan:** deleted spec lines exist only in `frozen-scene-host.component.spec.ts`
+  (19+/8−) and `reflection-cabin-page.component.spec.ts` (4+/1−), and both are repository-stub swaps.
+  No `package.json` or lockfile change. `domain/reflection/` has no Angular or NgRx import.
+- **Deviations:**
+  - *Inert:* the plan's T3 STOP exception named the frozen-scene stub. The Cabin's spec needed the same
+    stub line, because the Cabin mounts the frozen host. No assertion changed.
+  - *Inert:* the T5 STOP exception was not used; no pre-existing spec pinned the wrong geometry.
+  - *Inert:* `sl` is a required number in the model, so "no SL at entry" is handled as `sl <= 0`,
+    non-finite, or zero risk distance, giving null risk and "—". `riskDistancePrice` and `riskDistanceR`
+    can now be null.
+  - *Inert:* T4 uses null-safe local selectors in the Cabin rather than `selectLessonsLoaded`, because
+    the Cabin's existing specs run on `provideMockStore()` with no `lessons` slice.
+  - *Requires attention:* the plan says the initial SL is the `from` of the earliest `sl` management
+    event. The implementer uses `PositionModified` only, because `OrderModified` edits a pending order
+    before its fill and the position opens with that edit applied. This matches the fill semantics and
+    RFC-016's exclusion of pre-fill modifications from Management; orchestrator accepts it.
+- **Follow-up, not in this run:** `components/session-summary/excursion-stats.ts:56-58` and
+  `session-summary.component.ts:166-171` (the end-of-session summary, not the Journal) still compute
+  MAE/MFE in R against the final SL. Same defect class, different surface, and outside RFC-015/016.
+
 ## FINAL-AUDIT ATTENTION flags
 
 - T5 (MEDIUM-4): largest logic change; the geometry must be right for trades with no management
@@ -95,3 +125,11 @@ Measured: 400k M1 1.2–1.4 s, 1.2M M1 3.7–4.1 s per switch; a bounded key ran
   and chart date dialogs are gated by `@if`, but did not trace the hosts of `prompt-dialog`,
   `confirm-dialog` and `delete-session-dialog`. Confirm none stays mounted on the emulador page.
 - T2: "Editar" is also offered on retired rules; the plan only restricted the slot select.
+- T4: `journal-data.service.ts` router subscription and its URL test; the local selectors and `onSave`
+  guard in `reflection-cabin-page.component.ts`.
+- T5: `trade-geometry.ts` replays moves by `seq`, inclusive at `time`, and Entry deliberately uses the
+  initial value rather than a replay at `openTime`. `journal-read.models.ts` passes
+  `computeExcursionAggregates` trades whose `sl` is replaced by the initial SL (or by `entryPrice` when
+  there is none, so they are skipped); a dedicated aggregate may be cleaner.
+- T5: `journal-page` still shows lesson marks from the model snapshot, which only matters if lessons
+  hydrate while the Journal is open.
