@@ -115,6 +115,36 @@ Measured: 400k M1 1.2–1.4 s, 1.2M M1 3.7–4.1 s per switch; a bounded key ran
   `session-summary.component.ts:166-171` (the end-of-session summary, not the Journal) still compute
   MAE/MFE in R against the final SL. Same defect class, different surface, and outside RFC-015/016.
 
+### Group C: T6 + T7 + T8 (`sdd-implementer`) — DONE
+
+| Task | Closes | Commit |
+| :--- | :--- | :--- |
+| T6 | MEDIUM-1 | `32bbaee` |
+| T7 | Low 2 | `a0ad222` |
+| T8 | Low 4 | `097f458` |
+
+- **Evidence (implementer's run at `097f458`):** tsc app 0, tsc spec 0, `ng test` 196 files / 2662 tests
+  (196 / 2651 before: +2 T6, +2 T7, +7 T8), lint 0, format 0. Red before green reported for all three.
+- **Orchestrator diff-scan:** spec files have additions only (0 deleted lines). No `package.json` or
+  lockfile change.
+- **Deviations:**
+  - *Requires attention (T7), orchestrator accepts:* the plan says free text is not scanned. A
+    pre-existing spec ("rejects lesson with rasterized content (J-1 guard)") puts
+    `data:image/png;base64,ABC123` in `whatHappened` and expects a rejection, and the STOP rule protects
+    it. So free text is still refused when it holds a complete image data URI; plain mentions of
+    "base64", "blob:" or "data:image" now persist.
+  - *Requires attention (T8), orchestrator accepts:* `playbook.effects.ts` and its spec were not in the
+    plan's file list. `unamendRule` has to be in the `persist$` and `pushDirty$` lists or the removal is
+    neither saved nor synced. RFC-016 §2 says saving adds the id but never declares amendments
+    append-only, and no J-6 or P-7 detector blocks the dispatch.
+  - *Inert (T6):* `services/download-json.ts` is the shared helper the plan allowed. The Journal resolves
+    `Store` lazily through `Injector.get`, because `journal-page.component.spec.ts` provides no store and
+    is STOP-protected. It only selects, so J-6 holds, and its class comment was updated.
+- **Process deviation:** the implementer loaded the context7 tools but never queried them, which the
+  kernel requires before Angular changes. The orchestrator checked afterwards: `/websites/angular_dev/v21`
+  documents capturing `inject(Injector)` and calling `injector.get()` for deferred retrieval, while also
+  advising class-level capture when possible. T6 uses no other new Angular API.
+
 ## FINAL-AUDIT ATTENTION flags
 
 - T5 (MEDIUM-4): largest logic change; the geometry must be right for trades with no management
@@ -133,3 +163,13 @@ Measured: 400k M1 1.2–1.4 s, 1.2M M1 3.7–4.1 s per switch; a bounded key ran
   there is none, so they are skipped); a dedicated aggregate may be cleaner.
 - T5: `journal-page` still shows lesson marks from the model snapshot, which only matters if lessons
   hydrate while the Journal is open.
+- T6: the lazy `Injector.get(Store)` in `exportLessons()`. Judge it against an injected `Store` plus a
+  `provideMockStore` in a spec the STOP rule protects.
+- T7: `assertNoRasterizedContent` is the one place that departs from the plan. Also check the remaining
+  edge: a lesson created locally with a pasted image data URI stays in the store, and `persist$` writes
+  the whole store as one batch and swallows the error, so later local saves fail silently while it is
+  there. T7 only keeps such a lesson out of the store when it arrives through a pull.
+- T7: `upsertSkippingUnwritable` drops skipped lessons from `hydrated`, and its batch-then-fallback order
+  keeps the pull spec's single `upsertMany` assertion passing.
+- T8: the un-link loop in `onSave` runs against `existing.linkedRuleIds`, from the live store when
+  available, else the read model.
