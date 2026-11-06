@@ -54,7 +54,7 @@ type PageState = 'loading' | 'no-trades' | 'error' | 'ready';
  * loader, two surfaces" — never re-derives stats), runs the scene pipeline
  * (`computeWaypoints` → `buildSceneSpec`), owns the page-level keyboard map,
  * and is the ONLY place in `pages/reflection/**` that dispatches to the
- * Store — `LessonsActions.*` + `PlaybookActions.amendRule` ONLY (J-6).
+ * Store — `LessonsActions.*` + `PlaybookActions.amendRule`/`unamendRule` ONLY (J-6).
  *
  * Route params: `:sessionId` (required) + optional `:tradeId` — absent or
  * unresolvable (stale link) both fall back to the first trade (RFC §6),
@@ -233,7 +233,7 @@ export class ReflectionCabinPageComponent {
    * Save flow (design spec §2.5): mints `id`/`authoredAt`/`clientUpdatedAt`
    * HERE (purity — reducers stay clock-free), freezes evidence via deep copy
    * (J-3), dispatches `createLesson`/`updateLesson` + ONE `amendRule` PER
-   * linked rule (J-6: the only dispatches this whole surface makes), then
+   * linked rule and ONE `unamendRule` per rule dropped from an existing lesson (J-6: the only dispatches this whole surface makes), then
    * toasts + redirects to the Journal.
    */
   onSave(draft: LessonDraft): void {
@@ -292,6 +292,14 @@ export class ReflectionCabinPageComponent {
     for (const ruleId of draft.linkedRuleIds) {
       this.store.dispatch(
         PlaybookActions.amendRule({ ruleId, lessonId: lesson.id, clientUpdatedAt: now }),
+      );
+    }
+
+    // Rules dropped from an existing lesson no longer carry its amendment.
+    for (const ruleId of existing?.linkedRuleIds ?? []) {
+      if (draft.linkedRuleIds.includes(ruleId)) continue;
+      this.store.dispatch(
+        PlaybookActions.unamendRule({ ruleId, lessonId: lesson.id, clientUpdatedAt: now }),
       );
     }
 

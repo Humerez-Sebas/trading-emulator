@@ -37,5 +37,11 @@ export const PlaybookActions = createActionGroup({
      * The amendment must dirty the rule so it syncs to the cloud.
      */
     'Amend Rule': props<{ ruleId: string; lessonId: string; clientUpdatedAt: number }>(),
+    /**
+     * Inverse of `Amend Rule`: saving a lesson with fewer linked rules removes
+     * the lesson id from each un-linked rule's `amendments`. Stamps
+     * `clientUpdatedAt` exactly like `Amend Rule` so the row syncs (D15.F).
+     */
+    'Unamend Rule': props<{ ruleId: string; lessonId: string; clientUpdatedAt: number }>(),
   },
 });
