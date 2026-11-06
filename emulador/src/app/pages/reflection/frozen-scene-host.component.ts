@@ -322,8 +322,8 @@ export class FrozenSceneHostComponent implements AfterViewInit, OnDestroy {
   }
 
   /** Resolves the scene's timeframe from its own window (see
-   * `timeframeOfScene`), checks local availability, then reads + slices
-   * candles to `[window.t0, window.t1]` — candles NEVER enter the SceneSpec
+   * `timeframeOfScene`), checks local availability, then reads the
+   * candles in `[window.t0, window.t1]` — candles NEVER enter the SceneSpec
    * itself (N-5); the host resolves refs → candles at render time. Any
    * failure (repository not initialized, no candles in range, timeframe
    * undeterminable) degrades gracefully to "dataset-missing", never a
@@ -332,8 +332,13 @@ export class FrozenSceneHostComponent implements AfterViewInit, OnDestroy {
     const tf = timeframeOfScene(scene);
     if (!tf || !sceneDatasetAvailable(scene, tf)) return { candles: [], missing: true };
     try {
-      const all = await this.repo.getCandles(scene.symbol, tf);
-      const windowed = all.filter((c) => c.time >= scene.window.t0 && c.time <= scene.window.t1);
+      // Bounded index range read — never the whole series (MEDIUM-5).
+      const windowed = await this.repo.getCandlesInRange(
+        scene.symbol,
+        tf,
+        scene.window.t0,
+        scene.window.t1,
+      );
       return { candles: windowed, missing: windowed.length === 0 };
     } catch {
       return { candles: [], missing: true };

@@ -5,6 +5,7 @@ import { PlaybookRule } from '../../state/playbook/playbook.models';
 import { selectPlaybookRules } from '../../state/playbook/playbook.selectors';
 import { EmptyStateComponent } from '../ui/empty-state.component';
 import { ButtonDirective } from '../ui/button.directive';
+import { downloadJson } from '../../services/download-json';
 
 @Component({
   selector: 'app-playbook-panel',
@@ -20,6 +21,10 @@ export class PlaybookPanelComponent {
 
   newTitle = signal('');
   newStatement = signal('');
+
+  editingId = signal<string | null>(null);
+  editTitle = signal('');
+  editStatement = signal('');
 
   readonly slotOptions: { value: number | null; label: string }[] = [
     { value: null, label: '—' },
@@ -39,6 +44,41 @@ export class PlaybookPanelComponent {
     );
     this.newTitle.set('');
     this.newStatement.set('');
+  }
+
+  startEdit(rule: PlaybookRule): void {
+    this.editingId.set(rule.id);
+    this.editTitle.set(rule.title);
+    this.editStatement.set(rule.statement);
+  }
+
+  cancelEdit(): void {
+    this.editingId.set(null);
+  }
+
+  saveEdit(rule: PlaybookRule): void {
+    const title = this.editTitle().trim();
+    if (!title) return;
+    const statement = this.editStatement().trim();
+    if (title !== rule.title || statement !== rule.statement) {
+      this.store.dispatch(
+        PlaybookActions.updateRule({
+          id: rule.id,
+          title,
+          statement,
+          clientUpdatedAt: Date.now(),
+        }),
+      );
+    }
+    this.editingId.set(null);
+  }
+
+  onEditTitleInput(event: Event): void {
+    this.editTitle.set((event.target as HTMLInputElement).value);
+  }
+
+  onEditStatementInput(event: Event): void {
+    this.editStatement.set((event.target as HTMLTextAreaElement).value);
   }
 
   toggleStatus(rule: PlaybookRule): void {
@@ -90,12 +130,6 @@ export class PlaybookPanelComponent {
   }
 
   downloadJson(filename: string, payload: unknown): void {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadJson(filename, payload);
   }
 }

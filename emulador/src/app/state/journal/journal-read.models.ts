@@ -2,10 +2,8 @@ import type { SessionStats } from '../trading/fill-engine';
 import type { ClosedTrade } from '../trading/trading.models';
 import type { TelemetryEvent } from '../telemetry/telemetry.models';
 import type { Lesson } from '../lessons/lessons.models';
-import {
-  computeExcursionAggregates,
-  excursionR,
-} from '../../components/session-summary/excursion-stats';
+import { computeExcursionAggregates } from '../../components/session-summary/excursion-stats';
+import { excursionInInitialR, initialStopLoss } from '../../domain/reflection/trade-geometry';
 
 /**
  * PURE read-model builders for the Journal (RFC-016 D16.E, component
@@ -222,11 +220,22 @@ function countManagementEvents(trade: ClosedTrade, telemetry: readonly Telemetry
   return count;
 }
 
+/** The trade with `sl` replaced by its initial SL (see {@link buildSessionStatsView}). */
+function withInitialSl(trade: ClosedTrade, telemetry: readonly TelemetryEvent[]): ClosedTrade {
+  const sl = initialStopLoss(trade, telemetry);
+  return { ...trade, sl: Number.isFinite(sl) && sl > 0 ? sl : trade.entryPrice };
+}
+
 // ---- builders ----
 
 /** Performance grid (design spec §1.2): 10 numeric facts, formatted by the leaf. */
 export function buildSessionStatsView(model: JournalSessionModel): SessionStatsView {
-  const excursions = computeExcursionAggregates(model.trades);
+  // Excursions in R of the INITIAL risk (RFC-016 MEDIUM-4): the aggregate helper
+  // reads `sl`, so hand it each trade with its initial SL. A trade with no usable
+  // initial SL gets `sl = entryPrice` (zero risk distance → null → skipped).
+  const excursions = computeExcursionAggregates(
+    model.trades.map((t) => withInitialSl(t, model.telemetry)),
+  );
   const costsTotal = model.trades.reduce((sum, t) => sum + (t.commission ?? 0), 0);
   return {
     profitFactor: model.stats.profitFactor,
@@ -254,8 +263,8 @@ export function buildScatterPoints(model: JournalSessionModel): ScatterPointView
   const colorOf = buildRuleColorMap(model.rules);
   const out: ScatterPointView[] = [];
   for (const { trade, seq } of sortedTradesWithSeq(model.trades)) {
-    const maeR = excursionR(trade.mae, trade.entryPrice, trade.sl);
-    const mfeR = excursionR(trade.mfe, trade.entryPrice, trade.sl);
+    const maeR = excursionInInitialR(trade, model.telemetry, trade.mae);
+    const mfeR = excursionInInitialR(trade, model.telemetry, trade.mfe);
     if (maeR === null || mfeR === null) continue;
     out.push({
       tradeId: trade.id,
@@ -399,8 +408,8 @@ export function buildTradeRows(model: JournalSessionModel): TradeRowView[] {
       side: trade.side === 'buy' ? 'C' : 'V',
       profit: trade.profit,
       rMultiple: trade.rMultiple,
-      maeR: excursionR(trade.mae, trade.entryPrice, trade.sl),
-      mfeR: excursionR(trade.mfe, trade.entryPrice, trade.sl),
+      maeR: excursionInInitialR(trade, model.telemetry, trade.mae),
+      mfeR: excursionInInitialR(trade, model.telemetry, trade.mfe),
       ruleId: trade.declaredRuleId ?? null,
       ruleBadge: ruleBadgeFor(trade.declaredRuleId, rule),
       colorToken: colorFor(trade.declaredRuleId, colorOf),

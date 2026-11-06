@@ -43,7 +43,7 @@ dominio, el bucle de enmienda (Fase 3, RFC-016) no tiene sobre qué enmendar.
 | D15.A | **Objetivo del atajo = el trade activo más reciente.** Con varias órdenes/posiciones activas, el atajo etiqueta la de colocación más reciente (mayor `createdAt`/`openTime`); re-pulsar otro atajo re-etiqueta (sobrescribe); el mismo atajo dos veces des-etiqueta (toggle). | Regla determinista y predecible sin UI de selección (S2); la corrección fina pertenece a la revisión fría. |
 | D15.B | **DB IndexedDB dedicada `emulador-playbook`.** No se toca el upgrade path de `emulador-workspaces`. | Lección pagada del RFC-014: unirse a la DB compartida rompe specs STOP-protegidos que fijan su conteo de stores; una DB dedicada aísla versionado y ciclo de vida. |
 | D15.C | **Tabla Supabase `playbook_rules` con RLS por usuario y LWW por fila** (patrón `folders`, ya auditado: trigger `lww_guard` + aislamiento por `user_id`). | Reutilizar maquinaria auditada (PHILOSOPHY §2.5); la capa DB es la única que puede garantizar LWW (§4.3). |
-| D15.D | **Atajos como slots del Playbook, no keybindings genéricos.** Cada regla puede ocupar un slot `1`–`9` (campo `shortcutSlot`, editable en el panel del Dock); el listener vive sobre el gráfico de velas y solo actúa con foco fuera de inputs. Verificado: los dígitos `1`–`9` no tienen hoy ningún binding en la app (namespace libre). | Resuelve el riesgo de colisiones del borrador con un namespace reservado; la asignación junto al gráfico evita un modal de settings (TKM §5.1). |
+| D15.D | **Atajos como slots del Playbook, no keybindings genéricos.** Cada regla puede ocupar un slot `1`–`9` (campo `shortcutSlot`, editable en el panel del Dock); el listener vive sobre el gráfico de velas y solo actúa con foco fuera de inputs. Verificado: los dígitos `1`–`9` no tienen hoy ningún binding en la app (namespace libre). *(Falso; ver Desviaciones registradas.)* | Resuelve el riesgo de colisiones del borrador con un namespace reservado; la asignación junto al gráfico evita un modal de settings (TKM §5.1). |
 | D15.E | **El tag en el gráfico se compone en el mapper.** `[R{slot}]` se añade al texto del label existente de la orden/posición en `ChartModelMapper`; ninguna capability nueva, el motor no cambia. | Invariante 2 del kernel (núcleo cerrado); los labels ya cruzan la frontera como datos del `RenderModel`. |
 
 ## Especificación
@@ -82,7 +82,7 @@ PlaybookRule := { id, title, statement,                    // texto del trader, 
 ### 3. Etiquetado por atajo (flujo G2 + D15.A)
 
 1. Listener de teclado sobre el gráfico de velas (página del emulador): dígitos
-   `1`–`9`, sin modificadores, ignorado si el foco está en un input/textarea o si
+   `1`–`9`, sin modificadores *(ver Desviaciones registradas: es Alt+dígito)*, ignorado si el foco está en un input/textarea o si
    hay un diálogo abierto.
 2. El dígito resuelve la regla activa con ese `shortcutSlot`; si no existe, no-op.
 3. Si hay órdenes/posiciones activas: etiqueta la más reciente (D15.A); toggle si
@@ -196,9 +196,31 @@ PlaybookRule := { id, title, statement,                    // texto del trader, 
 
 ## Desviaciones registradas
 
-Sin desviaciones del spec original. Los seis pasos del plan de aterrizaje se
-implementaron conforme a la especificación; P-1..P-7 tienen detectores ejecutables
-o greps documentados en el informe de cierre (`.superpowers/sdd/task-7-report.md`).
+Lo que se implementó y difiere del texto original de este RFC (el texto de las
+decisiones se conserva tal cual; esta sección es la corrección):
+
+1. **El atajo es Alt+dígito, no dígito suelto (D-F1).** La afirmación de D15.D
+   ("los dígitos `1`–`9` no tienen hoy ningún binding") era falsa:
+   `components/interval-dialog/interval-dialog.component.ts` abre el diálogo de
+   intervalo con cualquier dígito suelto desde `e4f12c2` (2026-06-18), en la misma
+   página. El slot se toma ahora de `ev.code` (`Digit1`–`Digit9`), porque
+   Option+dígito en macOS reporta otro carácter en `ev.key`; el diálogo de intervalo
+   ignora Alt, Ctrl y Cmd. Alt se envió originalmente sin documentar en `2da7d87` y
+   nunca disparaba en macOS; la corrección es `93f1120`.
+2. **La política UPDATE de `playbook_rules` lleva `with check (auth.uid() = user_id)`**
+   en `supabase/playbook_rules.sql`, endurecimiento sobre el SQL del spec que hasta
+   ahora solo constaba en el propio SQL.
+3. **La acción `rulesSynced` lleva solo `syncedAt`** por regla (`stamps: { id, syncedAt }[]`
+   en `state/playbook/playbook.actions.ts`), sin más campos.
+4. **`[R{slot}]` se compone en `domain/chart/capabilities/trading-capability.ts`**, no
+   en `ChartModelMapper` como decidía D15.E. Funciona y el motor sigue libre de
+   Angular, pero es una desviación de lo decidido.
+5. **La UI de edición de reglas de §5 llegó tarde** (`894add4`); el mismo cambio hace
+   que las reglas retiradas dejen de ofrecer el selector de slot.
+
+Los seis pasos del plan de aterrizaje se implementaron; P-1..P-7 tienen detectores
+ejecutables o greps documentados en el informe de cierre
+(`.superpowers/sdd/task-7-report.md`).
 
 ## Referencias
 

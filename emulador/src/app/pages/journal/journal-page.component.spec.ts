@@ -1,11 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
+import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JournalPageComponent } from './journal-page.component';
 import { JournalDataService } from '../../services/journal-data.service';
 import type { JournalSessionModel } from '../../state/journal/journal-read.models';
 import { closed } from '../../testing/fixtures';
 import { computeSessionStats } from '../../state/trading/fill-engine';
+import { selectLessons } from '../../state/lessons/lessons.selectors';
+import type { Lesson } from '../../state/lessons/lessons.models';
 
 function model(p: Partial<JournalSessionModel> = {}): JournalSessionModel {
   const trades = p.trades ?? [];
@@ -202,5 +205,89 @@ describe('JournalPageComponent', () => {
     );
     fixture.componentInstance.onTradeSelected('t1');
     expect(navigateSpy).toHaveBeenCalledWith(['/journal', 's-42', 'reflect', 't1']);
+  });
+});
+
+describe('JournalPageComponent lessons export (RFC-016 §3)', () => {
+  let store: MockStore;
+
+  afterEach(() => {
+    store.resetSelectors();
+    TestBed.resetTestingModule();
+    vi.restoreAllMocks();
+  });
+
+  function lesson(id: string, sessionRef: string): Lesson {
+    return {
+      id,
+      authoredAt: 1,
+      whatHappened: 'texto',
+      repeat: '',
+      avoid: '',
+      linkedRuleIds: [],
+      evidence: [],
+      tradeRefs: ['t1'],
+      sessionRef,
+      clientUpdatedAt: 2,
+    };
+  }
+
+  async function create(lessons: Lesson[]) {
+    TestBed.configureTestingModule({
+      imports: [JournalPageComponent],
+      providers: [
+        provideRouter([]),
+        provideMockStore(),
+        {
+          provide: JournalDataService,
+          useValue: {
+            loadSessionReadModel: vi
+              .fn()
+              .mockResolvedValue(model({ trades: [closed({ id: 't1' })] })),
+          },
+        },
+      ],
+    });
+    store = TestBed.inject(MockStore);
+    store.overrideSelector(selectLessons, lessons);
+    const fixture = TestBed.createComponent(JournalPageComponent);
+    fixture.componentRef.setInput('sessionId', 's1');
+    fixture.detectChanges();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('the export action downloads every lesson in the store, across sessions', async () => {
+    const fixture = await create([lesson('l1', 's1'), lesson('l2', 's-other')]);
+    const spy = vi
+      .spyOn(fixture.componentInstance, 'downloadJson')
+      .mockImplementation(() => undefined);
+
+    const btn: HTMLButtonElement = fixture.nativeElement.querySelector('.export-lessons');
+    expect(btn.textContent).toContain('Exportar reflexiones');
+    btn.click();
+
+    expect(spy).toHaveBeenCalledOnce();
+    const [filename, payload] = spy.mock.calls[0];
+    expect(filename).toMatch(/^lessons-\d{4}-\d{2}-\d{2}\.lessons\.json$/);
+    const body = payload as { version: number; exportedAt: number; lessons: Lesson[] };
+    expect(body.version).toBe(1);
+    expect(typeof body.exportedAt).toBe('number');
+    expect(body.lessons.map((l) => l.id)).toEqual(['l1', 'l2']);
+  });
+
+  it('refuses a candle-bearing payload (assertNoCandles) and downloads nothing', async () => {
+    const poisoned = { ...lesson('l1', 's1'), candles: [{ t: 1 }] } as unknown as Lesson;
+    const fixture = await create([poisoned]);
+    const spy = vi
+      .spyOn(fixture.componentInstance, 'downloadJson')
+      .mockImplementation(() => undefined);
+
+    (fixture.nativeElement.querySelector('.export-lessons') as HTMLButtonElement).click();
+
+    expect(spy).not.toHaveBeenCalled();
   });
 });

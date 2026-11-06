@@ -199,12 +199,12 @@ describe('deriveFrozenRenderModel / baseTfSecondsOfScene / timeframeOfScene / sc
 });
 
 describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interface)', () => {
-  let repo: { getCandles: ReturnType<typeof vi.fn>; getCoverage: ReturnType<typeof vi.fn> };
+  let repo: { getCandlesInRange: ReturnType<typeof vi.fn>; getCoverage: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     resetFakeEngines();
     repo = {
-      getCandles: vi.fn().mockResolvedValue([]),
+      getCandlesInRange: vi.fn().mockResolvedValue([]),
       getCoverage: vi.fn().mockResolvedValue(null),
     };
   });
@@ -255,7 +255,7 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
 
   it('scene-loading while candles are in flight; renders into the INACTIVE layer and swaps active on resolution', async () => {
     let resolveCandles!: (c: Candle[]) => void;
-    repo.getCandles.mockReturnValue(new Promise((r) => (resolveCandles = r)));
+    repo.getCandlesInRange.mockReturnValue(new Promise((r) => (resolveCandles = r)));
 
     const fixture = await mount();
     fixture.componentRef.setInput('scene', scene());
@@ -287,7 +287,7 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
     fixture.detectChanges();
 
     expect(fixture.componentInstance.state()).toBe('dataset-missing');
-    expect(repo.getCandles).not.toHaveBeenCalled(); // never even attempted — ref absent
+    expect(repo.getCandlesInRange).not.toHaveBeenCalled(); // never even attempted — ref absent
     const rendered = FakeChartEngine.instances.find((e) => e.renderCalls.length > 0);
     expect(rendered?.renderCalls[0].candles).toEqual([]);
     expect((rendered?.renderCalls[0].trading?.positions[0] as Position).entryPrice).toBe(
@@ -296,7 +296,7 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
   });
 
   it('dataset-missing when the repository read throws (never a blocking error, TKM §5.2)', async () => {
-    repo.getCandles.mockRejectedValue(new Error('IndexedDB not initialized'));
+    repo.getCandlesInRange.mockRejectedValue(new Error('IndexedDB not initialized'));
     const fixture = await mount();
     fixture.componentRef.setInput('scene', scene());
     fixture.detectChanges();
@@ -310,7 +310,7 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
 
   it('ready when candles resolve within the window', async () => {
     const s = scene();
-    repo.getCandles.mockResolvedValue(candlesInWindow(s));
+    repo.getCandlesInRange.mockResolvedValue(candlesInWindow(s));
     const fixture = await mount();
     fixture.componentRef.setInput('scene', s);
     fixture.detectChanges();
@@ -322,10 +322,21 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
     expect(fixture.componentInstance.state()).toBe('ready');
   });
 
+  it('reads only the scene window via the bounded range read, never the whole series', async () => {
+    const s = scene();
+    repo.getCandlesInRange.mockResolvedValue(candlesInWindow(s));
+    const fixture = await mount();
+    fixture.componentRef.setInput('scene', s);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    expect(repo.getCandlesInRange).toHaveBeenCalledWith(s.symbol, 'M1', s.window.t0, s.window.t1);
+  });
+
   it('a stale in-flight load is discarded when a newer scene supersedes it (race guard)', async () => {
     let resolveFirst!: (c: Candle[]) => void;
     const first = new Promise<Candle[]>((r) => (resolveFirst = r));
-    repo.getCandles.mockReturnValueOnce(first);
+    repo.getCandlesInRange.mockReturnValueOnce(first);
 
     const fixture = await mount();
     const sceneA = scene({
@@ -340,7 +351,7 @@ describe('FrozenSceneHostComponent (lifecycle, engine faked at its narrow interf
       cursorTime: 200_000,
       window: { t0: 200_000 - 3600, t1: 200_000 + 3600 },
     });
-    repo.getCandles.mockResolvedValue(candlesInWindow(sceneB));
+    repo.getCandlesInRange.mockResolvedValue(candlesInWindow(sceneB));
     fixture.componentRef.setInput('scene', sceneB);
     fixture.detectChanges();
     await Promise.resolve();

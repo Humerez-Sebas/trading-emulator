@@ -115,15 +115,19 @@ export class WaypointFactsComponent {
   private entryRows(wp: Waypoint): FactRow[] {
     const f = wp.facts as {
       entryPrice: number;
-      riskDistancePrice: number;
-      riskDistanceR: number;
+      riskDistancePrice: number | null;
+      riskDistanceR: number | null;
       elapsedBeforeOrder?: TimeElapsedBeforeOrderPayload;
     };
     const rows: FactRow[] = [
       { label: 'Precio de entrada', value: fmtPrice(f.entryPrice) },
       {
         label: 'Riesgo inicial',
-        value: `${fmtPrice(f.riskDistancePrice)} (${f.riskDistanceR.toFixed(2)}R)`,
+        // `null` = no usable SL at entry: "—", never 0 and never a fabricated 1R.
+        value:
+          f.riskDistancePrice === null || f.riskDistanceR === null
+            ? '—'
+            : `${fmtPrice(f.riskDistancePrice)} (${f.riskDistanceR.toFixed(2)}R)`,
       },
       { label: 'Hora', value: fmtHHmm(wp.time) },
     ];

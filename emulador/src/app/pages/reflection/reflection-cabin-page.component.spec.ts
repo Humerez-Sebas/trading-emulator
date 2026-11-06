@@ -95,7 +95,10 @@ describe('ReflectionCabinPageComponent', () => {
         provideRouter([]),
         provideMockStore(),
         { provide: JournalDataService, useValue: journalDataSpy },
-        { provide: MarketDataRepository, useValue: { getCandles: vi.fn().mockResolvedValue([]) } },
+        {
+          provide: MarketDataRepository,
+          useValue: { getCandlesInRange: vi.fn().mockResolvedValue([]) },
+        },
         { provide: ChartEngineFactory, useValue: { create: () => new FakeChartEngine() } },
       ],
     });
@@ -322,6 +325,59 @@ describe('ReflectionCabinPageComponent', () => {
           lessonId: existingLesson.id,
         }),
       );
+    });
+  });
+
+  describe('Un-linking a rule on save (audit Low 4)', () => {
+    it('dispatches unamendRule only for the rules dropped from an existing lesson', async () => {
+      const existingLesson: Lesson = {
+        id: 'lesson_existing_id',
+        authoredAt: 100,
+        whatHappened: 'a',
+        repeat: 'b',
+        avoid: 'c',
+        linkedRuleIds: ['rule_1', 'rule_2'],
+        evidence: [],
+        tradeRefs: ['t1'],
+        sessionRef: 'sess_1',
+        clientUpdatedAt: 100,
+      };
+      journalDataSpy.loadSessionReadModel.mockResolvedValue({
+        ...dummySession,
+        lessonByTradeRef: { t1: existingLesson },
+      });
+      const fixture = await createComponent('sess_1', 't1');
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+
+      fixture.componentInstance.onSave({
+        whatHappened: 'a',
+        repeat: 'b',
+        avoid: 'c',
+        linkedRuleIds: ['rule_1'],
+      });
+
+      const unamends = dispatchSpy.mock.calls
+        .map((c) => c[0] as unknown as { type: string; ruleId?: string; lessonId?: string })
+        .filter((a) => a.type === PlaybookActions.unamendRule.type);
+      expect(unamends).toHaveLength(1);
+      expect(unamends[0]).toMatchObject({ ruleId: 'rule_2', lessonId: 'lesson_existing_id' });
+      expect(typeof (unamends[0] as { clientUpdatedAt?: number }).clientUpdatedAt).toBe('number');
+    });
+
+    it('dispatches no unamendRule when saving a new lesson', async () => {
+      const fixture = await createComponent('sess_1', 't1');
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      fixture.componentInstance.onSave({
+        whatHappened: '',
+        repeat: '',
+        avoid: '',
+        linkedRuleIds: ['rule_1'],
+      });
+      expect(
+        dispatchSpy.mock.calls.some(
+          (c) => (c[0] as unknown as { type: string }).type === PlaybookActions.unamendRule.type,
+        ),
+      ).toBe(false);
     });
   });
 

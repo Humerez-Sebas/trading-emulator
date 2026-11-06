@@ -365,6 +365,36 @@ describe('LessonsEffects — cloud sync (RFC-016 Task 3)', () => {
       );
     });
 
+    it('one unwritable lesson is skipped and logged; the rest are written, hydrated and pushed', async () => {
+      const bad = lesson('bad', { clientUpdatedAt: 5000, syncedAt: 5000 });
+      const good = lesson('good', { clientUpdatedAt: 6000, syncedAt: 6000 });
+      const dirtyLocal = lesson('dirty-local', { clientUpdatedAt: 3000, syncedAt: 1000 });
+      dbService.loadAll.mockResolvedValue([dirtyLocal]);
+      syncService.pullLessons.mockResolvedValue([bad, good]);
+      dbService.upsertMany.mockImplementation(async (ls: Lesson[]) => {
+        if (ls.some((l) => l.id === 'bad')) throw new Error('J-1 raster guard');
+      });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+
+      const sub = effects.pullOnAuth$.subscribe();
+      actions$.next(AuthActions.sessionResolved({ user: { id: 'owner-a', email: 'a@b.com' } }));
+      await settleEffects();
+      await settleEffects();
+      sub.unsubscribe();
+
+      expect(dbService.upsertMany).toHaveBeenCalledWith([good], 'owner-a');
+      expect(warn).toHaveBeenCalled();
+      expect(String(warn.mock.calls[0].join(' '))).toContain('bad');
+      const hydratedCall = dispatchSpy.mock.calls.find(
+        (c) => dispatchedAction(c).type === LessonsActions.hydrated.type,
+      );
+      expect(dispatchedAction(hydratedCall!)).toEqual(
+        LessonsActions.hydrated({ lessons: [dirtyLocal, good] }),
+      );
+      expect(syncService.pushLessons).toHaveBeenCalledWith([dirtyLocal]);
+    });
+
     it('a null user (anonymous) does not pull', async () => {
       const sub = effects.pullOnAuth$.subscribe();
 

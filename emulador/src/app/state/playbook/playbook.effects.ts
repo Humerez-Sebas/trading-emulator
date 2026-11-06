@@ -72,6 +72,7 @@ export class PlaybookEffects {
           PlaybookActions.assignSlot,
           PlaybookActions.reorderRule,
           PlaybookActions.amendRule,
+          PlaybookActions.unamendRule,
           PlaybookActions.rulesSynced,
         ),
         withLatestFrom(this.store.select(selectPlaybookRules)),
@@ -105,6 +106,7 @@ export class PlaybookEffects {
           PlaybookActions.assignSlot,
           PlaybookActions.reorderRule,
           PlaybookActions.amendRule,
+          PlaybookActions.unamendRule,
         ),
         auditTime(2000),
         withLatestFrom(

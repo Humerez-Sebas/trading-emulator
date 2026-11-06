@@ -1,4 +1,5 @@
-import { inject, Injectable } from '@angular/core';
+import { DestroyRef, inject, Injectable } from '@angular/core';
+import { NavigationEnd, Router } from '@angular/router';
 import { Store } from '@ngrx/store';
 import { TIMEFRAME_SECONDS, type Timeframe } from '../models';
 import { computeSessionStats } from '../state/trading/fill-engine';
@@ -67,6 +68,12 @@ function resolveBaseTfSeconds(
   return FALLBACK_BASE_TIMEFRAME_SECONDS;
 }
 
+/** Whether `url` is inside the Journal area (`/journal/...`, Journal or Cabin). */
+function isJournalArea(url: string): boolean {
+  const path = url.split(/[?#]/)[0];
+  return path === '/journal' || path.startsWith('/journal/');
+}
+
 /** Thrown by {@link JournalDataService.loadSessionReadModel} when `sessionId`
  * resolves to no local session (deleted, never existed, or cloud-only —
  * see the service's class doc comment for the cloud-only decision). */
@@ -120,6 +127,7 @@ export class JournalDataService {
   private store = inject(Store);
   private db = inject(WorkspaceDbService);
   private telemetryDb = inject(TelemetryDbService);
+  private router = inject(Router);
 
   private currentAsset = this.store.selectSignal(selectCurrentAsset);
   private liveTrading = this.store.selectSignal(selectTradingData);
@@ -129,14 +137,22 @@ export class JournalDataService {
   private lessonByTradeRef = this.store.selectSignal(selectLessonByTradeRef);
 
   /** sessionId → in-flight/resolved load. Simple Map (component-architecture
-   * §3.1): entries persist for the service's lifetime (`providedIn: 'root'`,
-   * app lifetime) so the Journal and the Cabin reuse the SAME read for a
-   * session they're both looking at, without a second IndexedDB/telemetry
-   * round trip. No automatic eviction on a different id — {@link clear} is
-   * the explicit opt-in for a caller (or a test) that wants a fresh read. A
+   * §3 item 1): the Journal and the Cabin reuse the SAME read for a session
+   * they're both looking at, without a second IndexedDB/telemetry round trip.
+   * Invalidated on navigation AWAY from the `/journal/` area (see the router
+   * subscription in the constructor): Journal ↔ Cabin keeps it, leaving it
+   * clears it, so trades closed in the practice workspace in between show up
+   * on the next visit. {@link clear} is also the explicit opt-in. A
    * failed load is evicted immediately (see {@link loadSessionReadModel}) so
    * a transient failure never poisons the cache permanently. */
   private cache = new Map<string, Promise<JournalSessionModel>>();
+
+  constructor() {
+    const sub = this.router.events.subscribe((e) => {
+      if (e instanceof NavigationEnd && !isJournalArea(e.urlAfterRedirects)) this.clear();
+    });
+    inject(DestroyRef).onDestroy(() => sub.unsubscribe());
+  }
 
   /** Resolves the session read-model, from cache when already loaded/loading. */
   async loadSessionReadModel(sessionId: string): Promise<JournalSessionModel> {

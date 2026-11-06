@@ -171,14 +171,49 @@ export class LessonsEffects {
     await this.sync.assertExpectedOwner(expectedOwnerId);
     const local = await this.db.loadAll(expectedOwnerId);
     await this.sync.assertExpectedOwner(expectedOwnerId);
-    const { lessons, toUpsertLocally } = mergeLessonsPull(local, remote);
-    if (toUpsertLocally.length) {
+    const merged = mergeLessonsPull(local, remote);
+    let lessons = merged.lessons;
+    if (merged.toUpsertLocally.length) {
       await this.sync.assertExpectedOwner(expectedOwnerId);
-      await this.db.upsertMany(toUpsertLocally, expectedOwnerId);
+      const unwritable = await this.upsertSkippingUnwritable(
+        merged.toUpsertLocally,
+        expectedOwnerId,
+      );
+      // A lesson local storage refuses must stay out of the store too: `persist$`
+      // writes the whole store in one batch, so it would poison every later save.
+      if (unwritable.size) lessons = lessons.filter((l) => !unwritable.has(l.id));
     }
     await this.sync.assertExpectedOwner(expectedOwnerId);
     this.store.dispatch(LessonsActions.hydrated({ lessons }));
     await this.pushDirtyLessons(lessons, expectedOwnerId);
+  }
+
+  /**
+   * Writes the batch in one transaction; if the batch is refused (a guard throws for
+   * the whole call), retries lesson by lesson so ONE unwritable lesson cannot abort
+   * the whole pull. Returns the ids that were skipped, each logged.
+   */
+  private async upsertSkippingUnwritable(
+    batch: Lesson[],
+    expectedOwnerId: string,
+  ): Promise<Set<string>> {
+    try {
+      await this.db.upsertMany(batch, expectedOwnerId);
+      return new Set();
+    } catch {
+      const skipped = new Set<string>();
+      for (const lesson of batch) {
+        try {
+          await this.sync.assertExpectedOwner(expectedOwnerId);
+          await this.db.upsertMany([lesson], expectedOwnerId);
+        } catch (err) {
+          await this.sync.assertExpectedOwner(expectedOwnerId); // owner drift still aborts
+          skipped.add(lesson.id);
+          console.warn(`[lessons] pull: skipping unwritable lesson ${lesson.id}`, err);
+        }
+      }
+      return skipped;
+    }
   }
 
   private async loadLessons() {
