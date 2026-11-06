@@ -21,6 +21,10 @@ export class PlaybookPanelComponent {
   newTitle = signal('');
   newStatement = signal('');
 
+  editingId = signal<string | null>(null);
+  editTitle = signal('');
+  editStatement = signal('');
+
   readonly slotOptions: { value: number | null; label: string }[] = [
     { value: null, label: '—' },
     ...Array.from({ length: 9 }, (_, i) => ({ value: i + 1, label: String(i + 1) })),
@@ -39,6 +43,41 @@ export class PlaybookPanelComponent {
     );
     this.newTitle.set('');
     this.newStatement.set('');
+  }
+
+  startEdit(rule: PlaybookRule): void {
+    this.editingId.set(rule.id);
+    this.editTitle.set(rule.title);
+    this.editStatement.set(rule.statement);
+  }
+
+  cancelEdit(): void {
+    this.editingId.set(null);
+  }
+
+  saveEdit(rule: PlaybookRule): void {
+    const title = this.editTitle().trim();
+    if (!title) return;
+    const statement = this.editStatement().trim();
+    if (title !== rule.title || statement !== rule.statement) {
+      this.store.dispatch(
+        PlaybookActions.updateRule({
+          id: rule.id,
+          title,
+          statement,
+          clientUpdatedAt: Date.now(),
+        }),
+      );
+    }
+    this.editingId.set(null);
+  }
+
+  onEditTitleInput(event: Event): void {
+    this.editTitle.set((event.target as HTMLInputElement).value);
+  }
+
+  onEditStatementInput(event: Event): void {
+    this.editStatement.set((event.target as HTMLTextAreaElement).value);
   }
 
   toggleStatus(rule: PlaybookRule): void {
