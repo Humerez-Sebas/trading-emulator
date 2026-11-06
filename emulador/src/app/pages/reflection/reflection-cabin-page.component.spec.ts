@@ -95,7 +95,10 @@ describe('ReflectionCabinPageComponent', () => {
         provideRouter([]),
         provideMockStore(),
         { provide: JournalDataService, useValue: journalDataSpy },
-        { provide: MarketDataRepository, useValue: { getCandles: vi.fn().mockResolvedValue([]) } },
+        {
+          provide: MarketDataRepository,
+          useValue: { getCandlesInRange: vi.fn().mockResolvedValue([]) },
+        },
         { provide: ChartEngineFactory, useValue: { create: () => new FakeChartEngine() } },
       ],
     });
