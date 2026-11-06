@@ -74,6 +74,35 @@ describe('LessonsDbService', () => {
     await expect(svc.upsert(withDataUrl as never)).rejects.toThrow(/raster guard/);
   });
 
+  it('persists a lesson whose free text merely mentions base64, blob: or data:image (no data URI)', async () => {
+    await svc.upsert(
+      lesson('prose', {
+        whatHappened: 'Decodifiqué un base64 en mis notas',
+        repeat: 'revisar blob: y el campo data:image',
+        avoid: 'BASE64 a mano',
+      }),
+    );
+    const all = await svc.loadAll();
+    expect(all.map((l) => l.id)).toEqual(['prose']);
+    expect(all[0].whatHappened).toContain('base64');
+  });
+
+  it('still rejects a raster smuggled into evidence (J-1 guard)', async () => {
+    const scene = {
+      symbol: 'EURUSD',
+      datasetRefs: [],
+      window: { t0: 1, t1: 2 },
+      cursorTime: 1,
+      orderGeometry: { side: 'buy', entryPrice: 1, sl: 1, tp: null, lots: 1 },
+      drawingSet: [],
+      telemetryMarkers: {},
+      snapshot: 'data:image/png;base64,ABC123',
+    };
+    await expect(svc.upsert(lesson('ev', { evidence: [scene as never] }))).rejects.toThrow(
+      /raster guard/,
+    );
+  });
+
   it('rejects lesson with evidence > MAX_EVIDENCE_SCENES (J-2 evidence cap)', async () => {
     const tooManyScenes = lesson('overcap', {
       evidence: Array(MAX_EVIDENCE_SCENES + 1)
