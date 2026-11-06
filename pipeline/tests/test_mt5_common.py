@@ -279,3 +279,43 @@ def test_ventana_troceo_no_desborda(mt5_falso):
     mt5_falso.maxbars = 10**9
     ventana = mt5_common._ventana_troceo("H2", _dt("2024-01-01 00:00"), _dt("2026-01-01 00:00"))
     assert ventana <= timedelta(days=731)
+
+
+class TestConectar:
+    """conectar() solo pasa la ruta de la terminal si MT5_TERMINAL_PATH la indica.
+
+    Bajo Wine la libreria no descubre la terminal sola (-10003, "MetaTrader 5 x64 not
+    found"); en Windows si, y ahi la llamada debe seguir siendo exactamente la de siempre.
+    """
+
+    @pytest.fixture
+    def llamadas(self, mt5_falso, monkeypatch):
+        registro = []
+
+        def _initialize(*args, **kwargs):
+            registro.append((args, kwargs))
+            return True
+
+        monkeypatch.setattr(mt5_falso, "initialize", _initialize)
+        return registro
+
+    def test_sin_la_variable_llama_igual_que_siempre(self, llamadas, monkeypatch):
+        monkeypatch.delenv("MT5_TERMINAL_PATH", raising=False)
+        assert mt5_common.conectar() is True
+        assert llamadas == [((), {})]
+
+    def test_la_variable_vacia_cuenta_como_no_definida(self, llamadas, monkeypatch):
+        monkeypatch.setenv("MT5_TERMINAL_PATH", "")
+        assert mt5_common.conectar() is True
+        assert llamadas == [((), {})]
+
+    def test_con_la_variable_pasa_la_ruta_como_primer_argumento(self, llamadas, monkeypatch):
+        ruta = r"C:\Program Files\MetaTrader 5\terminal64.exe"
+        monkeypatch.setenv("MT5_TERMINAL_PATH", ruta)
+        assert mt5_common.conectar() is True
+        assert llamadas == [((ruta,), {})]
+
+    def test_propaga_el_fallo_de_la_libreria(self, mt5_falso, monkeypatch):
+        monkeypatch.setenv("MT5_TERMINAL_PATH", r"C:\no\existe.exe")
+        monkeypatch.setattr(mt5_falso, "initialize", lambda *a, **k: False)
+        assert mt5_common.conectar() is False

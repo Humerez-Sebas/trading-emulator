@@ -43,6 +43,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import MetaTrader5 as mt5
 
+from mt5_common import conectar
+
 RUTA_SALIDA_DEFECTO = os.path.normpath(
     os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -237,7 +239,7 @@ def main() -> None:
     if not symbols:
         raise SystemExit("Ningun simbolo que exportar (revisa --symbols/HARVEST_SYMBOLS)")
 
-    if not mt5.initialize():
+    if not conectar():
         raise RuntimeError(f"mt5.initialize() fallo: {mt5.last_error()}")
     try:
         registros = fetch_asset_records(symbols)
