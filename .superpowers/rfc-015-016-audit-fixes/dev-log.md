@@ -145,6 +145,38 @@ Measured: 400k M1 1.2–1.4 s, 1.2M M1 3.7–4.1 s per switch; a bounded key ran
   documents capturing `inject(Injector)` and calling `injector.get()` for deferred retrieval, while also
   advising class-level capture when possible. T6 uses no other new Angular API.
 
+### Group D: T9 (`sdd-implementer`) — DONE
+
+| Task | Closes | Commit |
+| :--- | :--- | :--- |
+| T9 | Low 3, Low 6, Low 7 (record), D-F1 (record) | `62191fb` |
+
+- **Scope:** three files under `docs/architecture/`, nothing else.
+- **Orchestrator checks of what the implementer took from the brief:** `e4f12c2` is dated 2026-06-18;
+  `.agents/skills/architecture-diagrams`, `emulador/validate-ci.ps1` and the RFC-017 doc are all in the
+  #41 range; `countManagementEvents` windows on `[openTime, closeTime]`, which is what excludes pre-fill
+  edits; `lesson-form.component.ts` holds the rule links (`toggleRule`).
+- **Correction to the brief:** `rulesSynced` carries `stamps: { id, syncedAt }[]`, not `syncedAt` alone.
+  The RFC-015 entry states the real shape.
+
+### Orchestrator gates at `62191fb` (fresh, raw, Node 24.16)
+
+| Gate | Result |
+| :--- | :--- |
+| `npx tsc -p tsconfig.app.json --noEmit` | exit 0 |
+| `npx tsc -p tsconfig.spec.json --noEmit` | exit 0 |
+| `npx ng test --watch=false` | exit 0, **196 files / 2662 tests** |
+| `npm run lint` | exit 0, all files pass |
+| `npm run format:check` | exit 0 |
+| `npm run build` | exit 0, initial **675.13 kB** (baseline 673.94: +1.19 kB), 44 files, no vitest in the bundle |
+| `npm audit` | 31 moderate, 0 high or critical |
+
+- **Test progression:** 2607 → 2621 (A) → 2651 (B) → 2662 (C). Files 189 → 190 → 196 → 196.
+- **Invariant greps against `origin/develop`:** no factory selector added; no Angular or NgRx under
+  `domain/chart/` or `domain/reflection/`; no `spec-util` or vitest import in changed app code; no
+  `package.json` or lockfile change; no new `syncPriceScale` line; no change under `CLAUDE.md`,
+  `.github/`, `pipeline/` or `supabase/`.
+
 ## FINAL-AUDIT ATTENTION flags
 
 - T5 (MEDIUM-4): largest logic change; the geometry must be right for trades with no management
