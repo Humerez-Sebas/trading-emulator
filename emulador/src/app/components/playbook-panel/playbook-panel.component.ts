@@ -5,6 +5,7 @@ import { PlaybookRule } from '../../state/playbook/playbook.models';
 import { selectPlaybookRules } from '../../state/playbook/playbook.selectors';
 import { EmptyStateComponent } from '../ui/empty-state.component';
 import { ButtonDirective } from '../ui/button.directive';
+import { downloadJson } from '../../services/download-json';
 
 @Component({
   selector: 'app-playbook-panel',
@@ -129,12 +130,6 @@ export class PlaybookPanelComponent {
   }
 
   downloadJson(filename: string, payload: unknown): void {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadJson(filename, payload);
   }
 }

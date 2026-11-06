@@ -25,6 +25,15 @@
           [dateTo]="dateRange()?.to ?? null"
         />
 
+        <div class="page-actions">
+          <button appButton variant="subtle" class="export-lessons" (click)="exportLessons()">
+            Exportar reflexiones
+          </button>
+          @if (exportError(); as err) {
+            <p class="export-error" role="alert">{{ err }}</p>
+          }
+        </div>
+
         @if (sessionWithoutTrades()) {
           <div class="page-state">
             <p>
