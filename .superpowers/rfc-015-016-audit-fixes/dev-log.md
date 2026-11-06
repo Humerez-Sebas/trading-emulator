@@ -68,8 +68,30 @@ Measured: 400k M1 1.2–1.4 s, 1.2M M1 3.7–4.1 s per switch; a bounded key ran
 
 (Entries added by the orchestrator as each dispatch is verified.)
 
+### Group A: T1 + T2 (`sdd-implementer`) — DONE
+
+| Task | Closes | Commit |
+| :--- | :--- | :--- |
+| T1 | HIGH-1, Low 1 | `93f1120` |
+| T2 | MEDIUM-2, Low 5 | `894add4` |
+
+- **Evidence (implementer's run at `894add4`):** tsc app 0, tsc spec 0, `ng test` 190 files / 2621 tests
+  (baseline 189 / 2607: +8 T1, +6 T2), lint 0, format 0. Red before green: 6 failures for T1, 5 for T2.
+- **Orchestrator diff-scan:** spec files have additions only (0 deleted lines), no pre-existing spec
+  assertion changed. No `package.json` or lockfile change. Scope matches the plan's file list.
+- **Deviations (inert):** `interval-dialog.component.spec.ts` is new, because none existed. A
+  module-level `slotFromEvent` helper was added to the directive.
+- **Noted, not fixed (out of scope):** `interval-dialog.component.ts` `isTextEntryTarget` reads
+  `target.tagName`, which would throw for a synthetic event dispatched on `document`. Real key events
+  target an element.
+
 ## FINAL-AUDIT ATTENTION flags
 
 - T5 (MEDIUM-4): largest logic change; the geometry must be right for trades with no management
   events, with several SL moves, and with no SL at entry.
-- T1 (HIGH-1): this intentionally deviates from RFC-015's wording. Judge it against D-F1.
+- T1 (HIGH-1): this intentionally deviates from RFC-015's wording. Judge it against D-F1. Read
+  `slotFromEvent`: the `ev.code` / `ev.key` fallback order is subtle.
+- T1: the `[role="dialog"]` guard is page-wide. The implementer checked that the `modal`, `date-picker`
+  and chart date dialogs are gated by `@if`, but did not trace the hosts of `prompt-dialog`,
+  `confirm-dialog` and `delete-session-dialog`. Confirm none stays mounted on the emulador page.
+- T2: "Editar" is also offered on retired rules; the plan only restricted the slot select.
