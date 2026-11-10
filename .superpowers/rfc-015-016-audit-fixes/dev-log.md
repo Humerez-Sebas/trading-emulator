@@ -419,3 +419,23 @@ mode, as decided for the wave.
   `existing`; when both change in one pass it re-seeds once, from the new `existing`.
 
 Test progression for the run: 2607 → 2662 (A–D) → 2669 (E1) → 2689 (E2) → 2690 (E3) → 2692 (E4).
+
+## Narrow re-check of E4 at `3f63bc4` (`branch-auditor`, 2026-11-10) — **PASS ("Ship it"), no findings**
+
+- **Closed:** New Low 1 (typing on t1, then moving to t2 with no lesson, empties the form; t3 shows its
+  lesson; back to t2 is empty again), New Low 2 (the refusal renders in `--danger` at 12px in a real
+  Chromium production render and is gone after a trade switch), New Low 3 (comments match the code).
+- **L-1 still holds:** a sync ack and an unchanged pull cause zero re-seeds; a newer version re-seeds
+  once; a successful save re-seeds once with the text the trader typed.
+- **Effect:** one re-seed per change, also when `tradeId` and `existing` change in the same pass (from
+  the new `existing`).
+- **Gates (fresh):** tsc 0 / 0, `ng test` 202 files / 2692 tests, lint 0, format 0, build initial
+  675.92 kB (unchanged), 45 files, no vitest. 0 deleted spec lines. Invariant greps clean.
+- **Process note for the owner:** context7 was skipped twice in this run (T6 and E4), both inert. Worth
+  naming as a pattern.
+- **Could not verify:** a real Mac keyboard (Option+digit) and the logged-in app, Safari and Firefox,
+  real Supabase.
+
+### Run status
+All findings from the retroactive audit, the re-audit and the fix-wave re-audit are closed. PR #62 is
+cleared for `develop`. Test progression: 2607 → 2662 → 2669 → 2689 → 2690 → 2692.
