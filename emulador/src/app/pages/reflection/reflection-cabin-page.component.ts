@@ -8,6 +8,7 @@ import {
   inject,
   input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
@@ -44,6 +45,14 @@ import { LessonFormComponent, type LessonDraft } from './lesson-form.component';
 const selectLessonsSlice = createFeatureSelector<LessonsState | undefined>(lessonsFeature.name);
 const selectLiveLessons = createSelector(selectLessonsSlice, (s) => s?.lessons ?? []);
 const selectLiveLessonsLoaded = createSelector(selectLessonsSlice, (s) => s?.loaded ?? true);
+
+/** Shown when a save is attempted before the lessons store has hydrated. */
+const LESSONS_LOADING_MESSAGE = 'Cargando reflexiones… intenta de nuevo en un momento';
+
+/** Same lesson for the form's purposes: a sync ack (`syncedAt`) or a pull that
+ * rebuilds identical objects must not re-seed what the trader is typing. */
+const sameLessonVersion = (a: Lesson | null, b: Lesson | null): boolean =>
+  a === b || (!!a && !!b && a.id === b.id && a.clientUpdatedAt === b.clientUpdatedAt);
 
 type PageState = 'loading' | 'no-trades' | 'error' | 'ready';
 
@@ -159,14 +168,17 @@ export class ReflectionCabinPageComponent {
     );
   });
 
-  existingLesson = computed<Lesson | null>(() => {
-    const id = this.resolvedTradeId();
-    const m = this.model();
-    if (!id || !m) return null;
-    // Same last-wins rule as `selectLessonByTradeRef`.
-    const live = [...this.liveLessons()].reverse().find((l) => l.tradeRefs.includes(id));
-    return live ?? m.lessonByTradeRef[id] ?? null;
-  });
+  existingLesson = computed<Lesson | null>(
+    () => {
+      const id = this.resolvedTradeId();
+      const m = this.model();
+      if (!id || !m) return null;
+      // Same last-wins rule as `selectLessonByTradeRef`.
+      const live = [...this.liveLessons()].reverse().find((l) => l.tradeRefs.includes(id));
+      return live ?? m.lessonByTradeRef[id] ?? null;
+    },
+    { equal: sameLessonVersion },
+  );
 
   constructor() {
     effect(() => {
@@ -180,6 +192,14 @@ export class ReflectionCabinPageComponent {
       this.resolvedTradeId();
       this.activeWaypointIndex.set(0);
       this.managementExpandedSignal.set(false);
+    });
+
+    // The "lessons still loading" notice is moot once they are loaded.
+    effect(() => {
+      if (!this.lessonsLoaded()) return;
+      untracked(() => {
+        if (this.toastMessage() === LESSONS_LOADING_MESSAGE) this.toastMessage.set(null);
+      });
     });
 
     // DESIGN_SYSTEM §5.3: page navigation sets focus to the main heading.
@@ -244,7 +264,7 @@ export class ReflectionCabinPageComponent {
     // Lessons not hydrated yet: an existing lesson for this trade may still be
     // on its way, and creating now would write a second one. Ask to retry.
     if (!this.lessonsLoaded()) {
-      this.toastMessage.set('Cargando reflexiones… intenta de nuevo en un momento');
+      this.toastMessage.set(LESSONS_LOADING_MESSAGE);
       return;
     }
 
