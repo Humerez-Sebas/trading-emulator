@@ -102,13 +102,21 @@
             <div class="rule-actions">
               @if (rule.status === 'active') {
                 <label class="slot-select">
-                  Atajo
-                  <select [value]="rule.shortcutSlot ?? ''" (change)="onSlotChange(rule, $event)">
-                    <option value="">—</option>
-                    @for (opt of slotOptions; track opt.value) {
-                      @if (opt.value !== null) {
-                        <option [value]="opt.value">{{ opt.label }}</option>
-                      }
+                  Atajo (Alt/⌥ + dígito)
+                  <select
+                    title="Alt + dígito (⌥ Option en Mac)"
+                    [attr.aria-keyshortcuts]="
+                      rule.shortcutSlot !== null ? 'Alt+' + rule.shortcutSlot : null
+                    "
+                    (change)="onSlotChange(rule, $event)"
+                  >
+                    @for (opt of slotOptions; track opt.label) {
+                      <option
+                        [value]="opt.value ?? ''"
+                        [selected]="opt.value === rule.shortcutSlot"
+                      >
+                        {{ opt.label }}
+                      </option>
                     }
                   </select>
                 </label>

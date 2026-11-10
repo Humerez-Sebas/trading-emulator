@@ -56,6 +56,20 @@ describe('PlaybookHotkeysDirective', () => {
     document.dispatchEvent(ev);
   }
 
+  it('Alt+Shift+digit does not tag', () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    fire(
+      new KeyboardEvent('keydown', {
+        code: 'Digit3',
+        key: '#',
+        altKey: true,
+        shiftKey: true,
+        bubbles: true,
+      }),
+    );
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it('Alt+3 with rule in slot 3 dispatches tagTrade', () => {
     const spy = vi.spyOn(store, 'dispatch');
     fire(new KeyboardEvent('keydown', { key: '3', altKey: true, bubbles: true }));

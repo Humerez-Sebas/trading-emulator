@@ -227,4 +227,55 @@ describe('PlaybookPanelComponent', () => {
     create([makeRule({ id: 'r1' })]);
     expect(fixture.nativeElement.querySelector('.slot-select')).not.toBeNull();
   });
+  describe('slot select reflects the assigned slot', () => {
+    const select = (): HTMLSelectElement =>
+      fixture.nativeElement.querySelector('.slot-select select');
+
+    it('shows the assigned slot on first render', () => {
+      create([makeRule({ shortcutSlot: 3 })]);
+      expect(select().value).toBe('3');
+    });
+
+    it('shows the empty option when the rule has no slot', () => {
+      create([makeRule({ shortcutSlot: null })]);
+      expect(select().value).toBe('');
+    });
+
+    it('keeps the assigned slot after an Editar -> Cancelar round trip', () => {
+      create([makeRule({ shortcutSlot: 3 })]);
+      fixture.nativeElement.querySelector('.edit-btn').click();
+      fixture.detectChanges();
+      const cancel = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('button'),
+      ).find((b) => b.textContent?.trim() === 'Cancelar');
+      cancel?.click();
+      fixture.detectChanges();
+      expect(select().value).toBe('3');
+    });
+
+    it('dispatches assignSlot with null when choosing the empty option on a slotted rule', () => {
+      create([makeRule({ id: 'r1', shortcutSlot: 3 })]);
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      select().value = '';
+      select().dispatchEvent(new Event('change'));
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: PlaybookActions.assignSlot.type, id: 'r1', slot: null }),
+      );
+    });
+
+    it('exposes aria-keyshortcuts Alt+N for a slotted rule and none otherwise', () => {
+      create([makeRule({ shortcutSlot: 3 })]);
+      expect(select().getAttribute('aria-keyshortcuts')).toBe('Alt+3');
+      fixture.destroy();
+      create([makeRule({ shortcutSlot: null })]);
+      expect(select().hasAttribute('aria-keyshortcuts')).toBe(false);
+    });
+
+    it('tells the trader the shortcut is Alt/Option + digit', () => {
+      create([makeRule()]);
+      const label: HTMLElement = fixture.nativeElement.querySelector('.slot-select');
+      expect(label.textContent).toContain('Atajo (Alt/⌥ + dígito)');
+      expect(select().getAttribute('title')).toBe('Alt + dígito (⌥ Option en Mac)');
+    });
+  });
 });

@@ -37,7 +37,7 @@ export class PlaybookHotkeysDirective {
 
   @HostListener('document:keydown', ['$event'])
   onKeydown(ev: KeyboardEvent): void {
-    if (!this.loaded || ev.repeat || ev.ctrlKey || ev.metaKey || !ev.altKey) return;
+    if (!this.loaded || ev.repeat || ev.ctrlKey || ev.metaKey || ev.shiftKey || !ev.altKey) return;
     const slot = slotFromEvent(ev);
     if (slot === null) return;
     const t = ev.target;
