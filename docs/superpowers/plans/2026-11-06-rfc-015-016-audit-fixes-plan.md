@@ -132,3 +132,28 @@ their specs.
 2. All gates plus `npm run build` green at the branch tip, with no vitest in the bundle.
 3. Whole-branch `branch-auditor` PASS (zero Critical/High/Medium), recorded in the ledger.
 4. PR to `develop` carries the evidence. Only then is it merged, by the owner.
+
+## Fix wave (Group E, from the 2026-11-10 re-audit)
+
+The re-audit at `e0e7127` returned NOT PASS: M-1 and L-1 to L-7, recorded in the ledger. Same rules
+as above. Run mode: decided by the owner (§8 says full, because T12 touches persistence).
+
+- **T10 (M-1, L-4, L-5), `components/playbook-panel/*`, `state/playbook/playbook-hotkeys.directive.ts`:**
+  the slot `<select>` shows the assigned slot on first render and after Editar → Cancelar, and
+  choosing "—" frees it (bind `[selected]` per option). The panel tells the trader the shortcut is
+  Alt+digit (Option on a Mac), following the drawing tools' `tooltipShortcut` + `aria-keyshortcuts`.
+  Alt+Shift+digit does not tag.
+- **T11 (L-1, L-6), `pages/reflection/*`:** a sync ack or an unchanged pull never overwrites the
+  trader's draft, while a genuinely newer version of the lesson still re-seeds it (`equal` on `id` +
+  `clientUpdatedAt`). The hydration-guard message clears once lessons load, and says what to do.
+- **T12 (L-2, L-3), `pages/reflection/reflection-cabin-page.component.ts`, `state/lessons/*`,
+  `services/lessons-db.service.ts`, `services/session-sync.service.ts`:** `onSave` refuses a lesson
+  the J-1 guard would refuse, before any dispatch, with a Spanish inline error and the draft kept.
+  `persist$` writes lesson by lesson, so one unwritable lesson cannot block the rest. `pushLessons`
+  applies the J-1 guard. A pull drops only rows a guard refuses, never rows that failed for I/O.
+- **T13 (L-7), docs and comments:** the stale "amendments reserved" statements, RFC-015 R1,
+  RFC-016's absolute duplicate claim plus the TKM §5.1/§5.2 citation for T8, the
+  `lessons-db.service.ts` error text, and the two ledger corrections.
+
+Done when: each task has red-before-green specs and fresh gates, and a narrow re-audit over the
+wave returns PASS.

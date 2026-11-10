@@ -205,3 +205,80 @@ Measured: 400k M1 1.2–1.4 s, 1.2M M1 3.7–4.1 s per switch; a bounded key ran
   keeps the pull spec's single `upsertMany` assertion passing.
 - T8: the un-link loop in `onSave` runs against `existing.linkedRuleIds`, from the live store when
   available, else the read model.
+
+---
+
+## Whole-branch re-audit at `e0e7127` (`branch-auditor`, 2026-11-10) — **NOT PASS** (1 Medium)
+
+A `/tmp` wipe interrupted the run. The auditor resumed from its transcript, ran `npm ci` in a recreated
+worktree on the same commit, and re-ran every gate fresh.
+
+- **Gates:** tsc app 0, tsc spec 0, `ng test` 196 files / 2662 tests, lint 0, format 0, build initial
+  675.13 kB (base `d5dbda3` rebuilt by the auditor: 673.94 kB, +1.19 kB), no vitest in the bundle,
+  chunk names identical to the base. `npm audit` 28 moderate (advisory drift, same lockfile).
+- **Arithmetic, real suite at each commit:** 2607 → 2615 (T1) → 2621 (T2) → 2625 (T3) → 2630 (T4) →
+  2651 (T5) → 2653 (T6) → 2656 (T7) → 2662 (T8) → 2662 (T9). Corrections to this ledger: Group C is
+  **+3 T7 / +6 T8**, not +2 / +7; and Group B's "No assertion changed" is inexact, because
+  `frozen-scene-host.component.spec.ts` retargets one `not.toHaveBeenCalled()` from `getCandles` to
+  `getCandlesInRange` (same meaning, forced by the stub swap).
+- **Prior findings:** HIGH-1, MEDIUM-1 to MEDIUM-5 and Lows 1 to 7 are all closed in code, each
+  probed through real reducers, effects, IndexedDB or a real Chromium build.
+
+### New findings (file:line at `e0e7127`)
+- **M-1 (Medium; from #40 `88485cf`, made to recur by T2 `894add4`):** `playbook-panel.component.html:106`
+  sets `<select [value]>` before the `@for` creates its options, so the browser selects "—" for a
+  rule that holds a slot; choosing "—" then fires no `change`, so a slot cannot be freed directly.
+  Reproduced in Playwright Chromium on the production build. Direction: `[selected]` per option, spec
+  for first render and the edit round trip.
+- **L-1 (Low, regression from T4 `0a56e07`):** `reflection-cabin-page.component.ts:162-168` returns the
+  live store object and `lesson-form.component.ts:155-161` re-seeds the draft on every reference
+  change, so a `lessonsSynced` ack or an unchanged `hydrated` overwrites what the trader is typing.
+  Direction: `equal` keyed on `id` + `clientUpdatedAt`.
+- **L-2 (Low, T7 residual):** a pasted image data URI blocks local persistence (`persist$` writes the
+  whole store as one batch and swallows the error) while the UI says it saved; the push skips J-1.
+  Direction: refuse at authoring time in `onSave` (Spanish inline error, keep the draft, no dispatch);
+  defense in depth: per-lesson `persist$` and the J-1 guard in `pushLessons`.
+- **L-3 (Low, T7):** `lessons.effects.ts:184` treats a transient IndexedDB failure (for example
+  `QuotaExceededError`) as a guard refusal and drops those rows from the store.
+- **L-4 (Low, D-F1 incomplete):** the panel never says the shortcut is Alt/Option+digit; follow the
+  drawing tools' `tooltipShortcut` + `aria-keyshortcuts` precedent.
+- **L-5 (Low, T1 `93f1120`):** Alt+Shift+digit also tags (`playbook-hotkeys.directive.ts:40`).
+- **L-6 (Low, T4):** the hydration-guard toast never clears and its copy misleads.
+- **L-7 (Low, docs/ledger):** stale "amendments reserved, zero read sites" in
+  `UBIQUITOUS_LANGUAGE.md:741-742`, `DOMAIN_MODEL.md:426`, `playbook.models.ts:13`; RFC-015:170 R1
+  not annotated like D15.D; RFC-016:268 "ya no crea una segunda lección" too absolute; the
+  `lessons-db.service.ts:139` error text; the RFC-016 T8 note should cite TKM §5.1/§5.2; the two
+  ledger corrections above.
+
+### No-fix rulings (auditor, decision-frameworks §6 — do not re-litigate)
+1. Low 7 (prettier on 29 pre-existing specs): fixing it would violate STOP; format-only, re-verified.
+2. T6's lazy `Injector.get(Store)`: the alternative edits a STOP-protected spec; select-only, J-6 holds.
+3. The Cabin's null-safe local selectors: same reason; `?? true` is unreachable in production.
+4. The stub swap's retargeted assertion: test-only, same meaning.
+5. T5's `withInitialSl` shim into `computeExcursionAggregates`: reuses audited machinery; numbers probed.
+6. T5's O(trades × events) cost: 137 / 110 / 55 ms at the 50k-event cap, once per model load.
+7. T5 falling back to the final SL without telemetry: specified, documented, accepted (TKM §2.2).
+8. Journal marks and rule titles from the load snapshot: explicit T4 scope; saves read the live store.
+
+Not ruled no-fix (production paths): M-1 and L-1 to L-6. L-7 goes in the same wave.
+
+### Outside this branch
+- **Session summary on the final SL** (`excursion-stats.ts:56-58`): acceptable to release; pre-existing
+  since RFC-014, display-only. Track separately.
+- **Owner's empty-chart report:** a session created **without the M1 anchor** always renders empty:
+  `layout.reducer.ts:299` builds the fallback panel on `workspace.activeTf ?? 'M1'` (null on a new
+  workspace), nothing re-targets it, and M1 cannot be generated from H1/D1. Same code on `main`.
+- **Could not verify:** OS-level Option+digit on a real Mac keyboard, other keyboards and browsers,
+  RFC-016 DoD 5 in a logged-in browser, real Supabase sync/RLS.
+
+## Run-mode correction (orchestrator, 2026-11-10)
+
+The plan set **batched** mode. `decision-frameworks.md` §8 requires **full** mode (per-task audits) when
+a run touches persistence, and T4, T7 and T8 do, so Groups A–D ran against §8 without a recorded
+reason. What mitigates it: the re-audit above probed T4, T7 and T8 one by one through the real
+reducers, effects and IndexedDB layer, and its findings feed the fix wave. Also recorded: task briefs
+were sent inline in the dispatch prompts instead of `.superpowers/sdd/task-N-brief.md`, and PR #62
+was opened as a draft before the audit, not after a PASS (`/sdd-run` step 6); both inert.
+
+Fix wave (Group E, plan §"Fix wave"): mode pending the owner's decision. §8 calls for full mode,
+because T12 touches persistence.
