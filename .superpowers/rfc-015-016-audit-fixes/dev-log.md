@@ -394,3 +394,28 @@ with identical numbers.
 ### Could not verify
 Mouse selection of "—" in the native popup, Safari and Firefox, a real Mac keyboard (Option+digit
 tagging), the alert's real look, and real Supabase.
+
+### Follow-up dispatch E4: New Lows 1–3 (`sdd-implementer`, brief `.superpowers/sdd/task-E4-brief.md`) — DONE
+
+The owner asked for the three open Lows to be fixed before #62 is marked ready (2026-11-10). Batched
+mode, as decided for the wave.
+
+| Task | Closes | Commit |
+| :--- | :--- | :--- |
+| E4 | New Low 1, New Low 2 | `f05c900` |
+| E4 | New Low 3 | `c8578b5` |
+
+- **Change:** `LessonForm` gains a `tradeId` input that its seeding effect also reads, so switching
+  between two trades with no lesson re-seeds the draft; the L-1 equality is untouched. The save error
+  gets a `.save-error` rule modelled on `.export-error` (`--danger`) and is cleared when the trade
+  changes. `lessons.effects.ts`: comments only.
+- **Evidence (implementer's run at `c8578b5`):** tsc 0 / 0, `ng test` 202 files / 2692 tests (2690 + 2:
+  one new spec file with two cases, both red before the fix), lint 0, format 0.
+- **Orchestrator diff-scan:** 6 files, all in the brief's scope; 0 deleted spec lines; no `package.json`
+  or lockfile change.
+- **Process deviation (inert):** the implementer did not consult context7, which the brief required;
+  the change only reads one more `input()` inside an existing `effect()`, as the file already does.
+- **FINAL-AUDIT ATTENTION:** the `lesson-form.component.ts` effect now re-runs on `tradeId` or
+  `existing`; when both change in one pass it re-seeds once, from the new `existing`.
+
+Test progression for the run: 2607 → 2662 (A–D) → 2669 (E1) → 2689 (E2) → 2690 (E3) → 2692 (E4).
