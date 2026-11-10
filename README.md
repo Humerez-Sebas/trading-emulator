@@ -9,8 +9,8 @@ Postgres/RLS para sincronizar sesiones entre dispositivos) · **Cloudflare R2**
 (datos de mercado en Parquet, consumidos en el navegador vía `parquet-wasm` →
 IndexedDB) · desplegado de forma estática en **Vercel**.
 
-> Los datos de mercado se publican en R2 con el pipeline `pipeline/` (corre en
-> una PC Windows con MetaTrader 5) y la SPA los descarga directo desde el
+> Los datos de mercado se publican en R2 con el pipeline `pipeline/` (corre junto
+> a MetaTrader 5, en una PC Windows o en un Mac bajo Wine) y la SPA los descarga directo desde el
 > navegador a IndexedDB. No hay servidor intermedio: la app habla con Supabase
 > (auth + sync) y con R2 (datos) directamente desde el cliente.
 
@@ -49,7 +49,8 @@ IndexedDB) · desplegado de forma estática en **Vercel**.
 
 Orquestador end-to-end MT5 → Parquet → R2, pensado para correr en una PC
 Windows con la terminal MetaTrader 5 abierta (la librería `MetaTrader5` habla
-con ella):
+con ella). En un Mac corre bajo el Wine de la terminal: ver
+[`data-pipeline.md`](docs/engineering/domain/data-pipeline.md).
 
 ```bash
 py pipeline/fill_r2.py --symbols US30,NAS100,XAUUSD --desde 2024-01-01 --env C:/ruta/al/.env

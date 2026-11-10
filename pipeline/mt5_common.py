@@ -1,7 +1,9 @@
 """
 Logica MT5 compartida usada por el pipeline (`pipeline/parquet_builder.py` y
-`pipeline/update_r2.py`). Solo funciona en Windows con la terminal MetaTrader 5
-instalada y abierta (la libreria habla con el proceso de la terminal).
+`pipeline/update_r2.py`). Solo funciona con un Python de Windows y la terminal
+MetaTrader 5 instalada y abierta (la libreria habla con el proceso de la terminal):
+en una PC Windows o, en macOS, bajo el Wine de la terminal (ver
+docs/engineering/domain/data-pipeline.md).
 
 NOTA SOBRE LA HORA: las velas que devuelve MT5 vienen con la marca de tiempo del
 SERVIDOR del broker, no en UTC real (en FivePercentOnline el servidor va +2 h en
@@ -11,6 +13,7 @@ convencion con la que ya esta escrito todo lo que hay en R2.
 """
 
 import logging
+import os
 import time as _time
 from datetime import UTC, datetime, timedelta
 
@@ -96,8 +99,14 @@ TIMEFRAMES = {
 
 
 def conectar() -> bool:
-    """Inicializa MT5 (idempotente)."""
-    return mt5.initialize()
+    """Inicializa MT5 (idempotente).
+
+    `MT5_TERMINAL_PATH` indica la terminal cuando la libreria no puede descubrirla sola:
+    bajo Wine falla con (-10003, "MetaTrader 5 x64 not found") aunque este abierta. Sin la
+    variable la llamada es la de siempre, que en Windows si la encuentra.
+    """
+    ruta = os.environ.get("MT5_TERMINAL_PATH")
+    return mt5.initialize(ruta) if ruta else mt5.initialize()
 
 
 def categoria_de(path: str) -> str:

@@ -209,3 +209,40 @@ class TestRenderTs:
         assert len(lineas_con_provenance) == 2
         # Ninguna otra linea contiene un patron HH:MM:SS.
         assert not any(re.search(r"\d{2}:\d{2}:\d{2}", line) for line in otras_lineas)
+
+
+class TestMainConexion:
+    """main() se conecta igual que el resto del pipeline (mt5_common.conectar)."""
+
+    def _ejecutar(self, tmp_path, monkeypatch):
+        salida = tmp_path / "asset-registry.generated.ts"
+        monkeypatch.setattr(
+            sys, "argv", ["export_symbols.py", "--symbols", "US30", "--out", str(salida)]
+        )
+        export_symbols.main()
+        return salida
+
+    def test_usa_la_ruta_de_la_terminal(self, mt5_con_catalogo, monkeypatch, tmp_path):
+        ruta = r"C:\Program Files\MetaTrader 5\terminal64.exe"
+        monkeypatch.setenv("MT5_TERMINAL_PATH", ruta)
+        llamadas = []
+        monkeypatch.setattr(
+            mt5_con_catalogo, "initialize", lambda *a, **k: llamadas.append(a) or True
+        )
+        assert self._ejecutar(tmp_path, monkeypatch).exists()
+        assert llamadas == [(ruta,)]
+
+    def test_sin_la_variable_llama_igual_que_siempre(self, mt5_con_catalogo, monkeypatch, tmp_path):
+        monkeypatch.delenv("MT5_TERMINAL_PATH", raising=False)
+        llamadas = []
+        monkeypatch.setattr(
+            mt5_con_catalogo, "initialize", lambda *a, **k: llamadas.append(a) or True
+        )
+        assert self._ejecutar(tmp_path, monkeypatch).exists()
+        assert llamadas == [()]
+
+    def test_lanza_si_no_puede_conectar(self, mt5_con_catalogo, monkeypatch, tmp_path):
+        monkeypatch.delenv("MT5_TERMINAL_PATH", raising=False)
+        monkeypatch.setattr(mt5_con_catalogo, "initialize", lambda *a, **k: False)
+        with pytest.raises(RuntimeError, match="initialize"):
+            self._ejecutar(tmp_path, monkeypatch)

@@ -5,7 +5,7 @@ Why the data path has no server, and the operational knowledge for each hop.
 ## Shape and rationale
 
 ```
-MT5 terminal (Windows PC) → pipeline/fill_r2.py → Parquet (M1 by year + H1/D1)
+MT5 terminal (Windows PC, or a Mac under Wine) → pipeline/fill_r2.py → Parquet (M1 by year + H1/D1)
   → R2 bucket (+ manifest.json) → browser fetch → parquet-wasm decode → IndexedDB
 ```
 
@@ -24,7 +24,8 @@ servers to operate.
 
 ## Running the pipeline
 
-Requires the MT5 terminal open on the Windows PC (the `MetaTrader5` lib talks to it):
+Requires the MT5 terminal open on the same machine (the `MetaTrader5` lib talks to it). On
+the Windows PC (on a Mac, see "Running on macOS" below):
 
 ```
 py pipeline/fill_r2.py --symbols US30,NAS100,XAUUSD --desde 2024-01-01 --env C:/ruta/.env
@@ -39,6 +40,76 @@ timestamp from R2, harvests only the missing tail, recomputes H1/D1 for the affe
 window, and uploads only the touched files, **patching** `manifest.json` so untouched
 partitions keep their size/etag/updatedAt. `fill_r2.py` stays the tool for the initial
 load of a symbol. Both are safe to re-run: they resume from what is already in R2.
+
+## Running on macOS (MT5 under Wine)
+
+`MetaTrader 5.app` runs the terminal through its bundled Wine 10.0 (an x86_64 build, so it
+also depends on Rosetta), and the `MetaTrader5` package only ships Windows wheels. So the
+pipeline runs with a **Windows Python inside the terminal's own Wine prefix**, where it reaches
+the open terminal through the same wineserver. The pipeline itself only needs
+`MT5_TERMINAL_PATH`. Verified by following this section from scratch on 2026-11-06 (terminal
+build 6230), so re-check it if the app ships a newer Wine.
+
+Setup, once. Everything lives in its own folder, so deleting `drive_c/py312` undoes it:
+
+```bash
+export WINEPREFIX="$HOME/Library/Application Support/net.metaquotes.wine.metatrader5"
+PY="$WINEPREFIX/drive_c/py312"
+TMP="$(mktemp -d)"
+mkdir -p "$PY/Lib/site-packages"
+curl -fsSL -o "$TMP/python.zip" https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip
+unzip -q "$TMP/python.zip" -d "$PY"
+printf 'python312.zip\r\n.\r\nLib\\site-packages\r\nimport site\r\n' > "$PY/python312._pth"
+python3 -m pip download -q --only-binary=:all: --platform win_amd64 --python-version 3.12 \
+  --implementation cp --abi cp312 --abi none -d "$TMP/wheels" \
+  MetaTrader5 pandas pyarrow boto3 tzdata 'numpy==2.0.2'
+for w in "$TMP"/wheels/*.whl; do unzip -q -o "$w" -d "$PY/Lib/site-packages"; done
+```
+
+Run, with the terminal open, from a scratch directory (`--out-dir` is relative to it). Always
+`--skip-upload` first, read its summary, then repeat without the flag. Read the output rather
+than the exit status: `update_r2.py` prints a failed symbol but still exits 0, even when all fail.
+
+```bash
+export WINEPREFIX="$HOME/Library/Application Support/net.metaquotes.wine.metatrader5"
+export WINEDEBUG=-all ARROW_DEFAULT_MEMORY_POOL=system
+export MT5_TERMINAL_PATH='C:\Program Files\MetaTrader 5\terminal64.exe'
+WINE="/Applications/MetaTrader 5.app/Contents/SharedSupport/wine/bin/wine64"
+REPO='Z:\Users\<you>\dev\trading-emulator'  # the repo as Wine sees it (Z: is /)
+perl -e 'alarm 900; exec @ARGV' "$WINE" 'C:\py312\python.exe' "$REPO\pipeline\update_r2.py" \
+  --env "$REPO\.env" --out-dir parquet_update --skip-upload
+```
+
+Why each piece is there (each one was a real failure):
+
+- **`MT5_TERMINAL_PATH`:** the package's auto-discovery fails under Wine with
+  `(-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')`, even with the terminal open.
+  Unset, `mt5_common.conectar` behaves exactly as on Windows.
+- **`numpy==2.0.2`:** wheels from 2.1.3 on reference `ucrtbase.dll.crealf`, which this Wine does
+  not implement, so importing numpy aborts. It is also the minimum pandas 3.1.1 accepts. A newer
+  Wine in the app may lift this.
+- **`ARROW_DEFAULT_MEMORY_POOL=system`:** without it pyarrow raises
+  `ArrowMemoryError: malloc of size 256 failed`.
+- **`tzdata` named explicitly:** pip evaluates dependency markers on the Mac, so the
+  Windows-only dependency of pandas would otherwise be left out.
+- **Wheels downloaded on the Mac, unzipped by hand:** nothing has to install under Wine.
+- **`python312._pth`:** it enables `site-packages`, and it also takes the script's own folder off
+  `sys.path`. The entry points insert theirs; an ad-hoc script has to do the same.
+- **`perl ... alarm`:** a native crash opens `winedbg` and hangs instead of exiting. If one hangs,
+  find its pids with `ps` and kill only that `python.exe` and `winedbg`, never `terminal64.exe`.
+
+The pipeline only makes read calls to the terminal and has no way to send orders, but
+`symbol_select` does leave the cold symbols visible in Market Watch (see below).
+
+The unit tests need none of this, because `tests/conftest.py` replaces `MetaTrader5` with a test
+double. Note that `/verify-gates` says `py`, which is Windows-only; on a Mac use a Python 3.12
+venv (CI's version):
+
+```bash
+cd pipeline && uv venv --python 3.12 .venv && . .venv/bin/activate
+uv pip install -r requirements-dev.txt
+python -m pytest -q && ruff check . && ruff format --check .
+```
 
 ## Timestamps are BROKER SERVER time, not UTC
 
