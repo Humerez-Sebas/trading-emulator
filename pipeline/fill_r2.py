@@ -6,8 +6,9 @@ Une los dos pasos de la Milestone 1 (que tienen CLIs separadas):
      M1/H1/D1 y escribe los Parquet locales (M1 particionado por anio).
   2. r2_uploader: sube el arbol local a R2 y publica manifest.json.
 
-CORRE EN EL HOST WINDOWS con la terminal MT5 abierta (la libreria MetaTrader5
-habla con ella). Las credenciales R2 se leen del entorno; con --env se carga
+CORRE CON LA TERMINAL MT5 ABIERTA, en Windows o en macOS bajo Wine (ver
+docs/engineering/domain/data-pipeline.md): la libreria MetaTrader5 habla con
+ella. Las credenciales R2 se leen del entorno; con --env se carga
 un archivo .env primero (utiL cuando se ejecuta desde un git worktree, donde el
 .env de la raiz del repo no esta presente).
 

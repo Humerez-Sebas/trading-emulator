@@ -18,7 +18,8 @@ Parquet completos), este script:
 
 Para la carga INICIAL de un simbolo sigue usandose `fill_r2.py`.
 
-CORRE EN EL HOST WINDOWS con la terminal MT5 abierta.
+CORRE CON LA TERMINAL MT5 ABIERTA, en Windows o en macOS bajo Wine (ver
+docs/engineering/domain/data-pipeline.md).
 
 Uso::
     py pipeline/update_r2.py --env C:/ruta/al/.env --skip-upload   # valida

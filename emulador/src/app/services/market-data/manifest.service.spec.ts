@@ -54,7 +54,9 @@ describe('ManifestService.fetchManifest', () => {
     const svc = new ManifestService('https://cdn.example.com/market-data');
     const manifest = await svc.fetchManifest();
 
-    expect(fetchMock).toHaveBeenCalledWith('https://cdn.example.com/market-data/manifest.json');
+    expect(fetchMock).toHaveBeenCalledWith('https://cdn.example.com/market-data/manifest.json', {
+      cache: 'no-cache',
+    });
     expect(manifest).toEqual(SAMPLE);
   });
 
@@ -69,7 +71,9 @@ describe('ManifestService.fetchManifest', () => {
     const svc = new ManifestService('https://cdn.example.com/market-data/');
     await svc.fetchManifest();
 
-    expect(fetchMock).toHaveBeenCalledWith('https://cdn.example.com/market-data/manifest.json');
+    expect(fetchMock).toHaveBeenCalledWith('https://cdn.example.com/market-data/manifest.json', {
+      cache: 'no-cache',
+    });
   });
 
   it('throws when the response is not ok', async () => {

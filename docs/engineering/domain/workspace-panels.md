@@ -183,6 +183,14 @@ focused panel's TF (handled in `layout.reducer`). A panel's own `<select>`
 TF. `applyGridTemplate` re-focuses a rendered panel whenever the focused one is
 parked, so the global controls never target an off-screen panel.
 
+A fresh session must open on a TF it can paint. `layout.reducer`'s fallback panel
+(`workspace.activeTf ?? 'M1'`) is a guess made before any candles land, while
+`market.reducer` activates the first loaded TF, so the two can disagree. The panel
+mapper never falls back: a session created without the M1 anchor painted an empty
+M1 panel. The wizard flow (`doSwitch` with `thenNewSession` + `selectedTfs`)
+therefore lands the new session with `MarketActions.changeTimeframe` to a selected
+TF, which writes both sides of the binding (`wizard-session-timeframe.e2e.spec.ts`).
+
 ## Persistence
 
 Layout + linkGroups + owner-tagged drawings travel inside the single
