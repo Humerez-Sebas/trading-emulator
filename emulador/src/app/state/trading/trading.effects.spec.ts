@@ -3,7 +3,7 @@ import { provideMockActions } from '@ngrx/effects/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { Subject } from 'rxjs';
 import { firstValueFrom, take, toArray } from 'rxjs';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { TradingEffects } from './trading.effects';
 import { TradingActions } from './trading.actions';
@@ -50,6 +50,12 @@ describe('TradingEffects', () => {
     store = TestBed.inject(MockStore);
     effects = TestBed.inject(TradingEffects);
   });
+
+  // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+  // forced selector results live on the module-level memoized selector, which
+  // TestBed.resetTestingModule() does not undo — they must be released here or
+  // they poison every later spec file in the same vitest worker.
+  afterEach(() => store.resetSelectors());
 
   describe('processFills$', () => {
     it('emits processCandle when cursor lands exactly on the candle time with open orders', async () => {
