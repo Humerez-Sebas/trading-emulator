@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Component, input, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -481,6 +481,12 @@ describe('WorkspaceViewportComponent lifecycle: create/hide/show/close (RFC-009,
     return fixture;
   }
 
+  // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+  // forced selector results live on the module-level memoized selector, which
+  // TestBed.resetTestingModule() does not undo — they must be released here or
+  // they poison every later spec file in the same vitest worker.
+  afterEach(() => store.resetSelectors());
+
   it('registry tracks exactly the live panels across arbitrary close order', () => {
     const fixture = create();
     const registry = fixture.debugElement.injector.get(ChartRegistry);
@@ -578,6 +584,12 @@ describe('ChartSyncRouter wiring end-to-end (RFC-010 Task 5)', () => {
     fixture.detectChanges();
     return fixture;
   }
+
+  // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+  // forced selector results live on the module-level memoized selector, which
+  // TestBed.resetTestingModule() does not undo — they must be released here or
+  // they poison every later spec file in the same vitest worker.
+  afterEach(() => store.resetSelectors());
 
   it('one user interaction on p1 produces exactly one applyCrosshair call on EACH of p2 and p3, zero on p1 itself, and no cascade on re-emission of the same value', () => {
     const fixture = create();

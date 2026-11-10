@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
-import { describe, beforeEach, it, expect, vi } from 'vitest';
+import { describe, beforeEach, afterEach, it, expect, vi } from 'vitest';
 import { PlaybackControllerComponent } from './playback-controller.component';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { replayFeature } from '../../state/replay/replay.reducer';
@@ -42,6 +42,12 @@ describe('PlaybackControllerComponent', () => {
     fixture = TestBed.createComponent(PlaybackControllerComponent);
     fixture.detectChanges();
   });
+
+  // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+  // forced selector results live on the module-level memoized selector, which
+  // TestBed.resetTestingModule() does not undo — they must be released here or
+  // they poison every later spec file in the same vitest worker.
+  afterEach(() => store.resetSelectors());
 
   it('setJump despacha setJumpSize con el valor elegido del grid', () => {
     const spy = vi.spyOn(store, 'dispatch');

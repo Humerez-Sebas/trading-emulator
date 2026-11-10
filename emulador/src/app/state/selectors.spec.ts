@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { firstValueFrom } from 'rxjs';
@@ -481,6 +481,18 @@ describe('selectTradePanelView', () => {
 
 // ---- selectFloatingPnl ----
 describe('selectFloatingPnl', () => {
+  // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+  // the sub-TF pricing test below forces four selectors on the module-level NgRx
+  // singleton, which TestBed.resetTestingModule() does not undo. This file is the
+  // one the documented `selectFloatingPnl` leak incident (120.5 instead of 50)
+  // VICTIMISED, and it was also leaking selectors of its own. Additive hook only:
+  // no assertion in this file is modified.
+  let mockStore: MockStore | null = null;
+  afterEach(() => {
+    mockStore?.resetSelectors();
+    mockStore = null;
+  });
+
   it('returns null when there are no positions', () => {
     expect(selectFloatingPnl.projector([], candle(0, 100, 101, 99, 100), 100)).toBeNull();
   });
@@ -510,6 +522,7 @@ describe('selectFloatingPnl', () => {
   it('prices off the replay-series candle (live sub-TF), not the display candle', async () => {
     TestBed.configureTestingModule({ providers: [provideMockStore()] });
     const store = TestBed.inject(MockStore);
+    mockStore = store; // hand the afterEach above a handle to release the overrides
     store.overrideSelector(selectReplaySeries, [candle(0, 100, 105, 99, 105)]); // sub-TF close = 105
     store.overrideSelector(selectReplayIndex, 0);
     store.overrideSelector(tradingFeature.selectPositions, [

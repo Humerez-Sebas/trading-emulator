@@ -38,6 +38,11 @@ describe('AuthPageComponent', () => {
   }
 
   afterEach(() => {
+    // isolate:false discipline (docs/engineering/testing.md §"isolate:false discipline" #1):
+    // resetTestingModule() replaces the injector but does NOT undo overrideSelector,
+    // which writes to the module-level memoized selector shared by every spec file
+    // in this vitest worker. Release the forced results explicitly.
+    store.resetSelectors();
     TestBed.resetTestingModule();
   });
 
