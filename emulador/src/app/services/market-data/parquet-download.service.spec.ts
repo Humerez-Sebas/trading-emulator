@@ -32,6 +32,7 @@ describe('ParquetDownloadService.downloadParquet', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://cdn.example.com/market-data/market-data/v1/XAUUSD/m1/2024.parquet',
+      { cache: 'no-cache' },
     );
     expect(new Uint8Array(result)).toEqual(new Uint8Array([1, 2, 3, 4]));
   });
@@ -49,6 +50,7 @@ describe('ParquetDownloadService.downloadParquet', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://cdn.example.com/market-data/market-data/v1/EURUSD/h1/all.parquet',
+      { cache: 'no-cache' },
     );
   });
 
@@ -82,6 +84,9 @@ describe('ParquetDownloadService.downloadParquet', () => {
     const svc = new ParquetDownloadService('https://r2.example');
     const controller = new AbortController();
     await svc.downloadParquet('US30', 'd1', 'all.parquet', controller.signal);
-    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), { signal: controller.signal });
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), {
+      cache: 'no-cache',
+      signal: controller.signal,
+    });
   });
 });

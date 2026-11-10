@@ -10,7 +10,7 @@ import {
   switchMap,
   withLatestFrom,
 } from 'rxjs/operators';
-import { Timeframe } from '../../models';
+import { Timeframe, TIMEFRAME_ORDER } from '../../models';
 import { WorkspaceDbService } from '../../services/workspace-db.service';
 import { MarketActions } from '../market/market.actions';
 import { loadedTfForMinutes } from '../market/custom-timeframe';
@@ -224,6 +224,20 @@ const CURRENT_KEY = 'emulador.currentAsset';
 type MetaSnapshot = Omit<WorkspaceMeta, 'symbol' | 'lastModified' | 'linkGroups'> & {
   linkGroups: Record<string, LinkGroup>;
 };
+
+/**
+ * The timeframe a fresh wizard session opens on: the restored workspace's own
+ * TF while the session still selects it, else the finest selected TF. null
+ * when the switch declares no selection.
+ */
+function openingTimeframe(
+  current: Timeframe | null,
+  selected: Timeframe[] | undefined,
+): Timeframe | null {
+  if (!selected?.length) return null;
+  if (current && selected.includes(current)) return current;
+  return TIMEFRAME_ORDER.find((tf) => selected.includes(tf)) ?? null;
+}
 
 @Injectable()
 export class WorkspacesEffects {
@@ -531,6 +545,13 @@ export class WorkspacesEffects {
       if (thenNewSession.name) {
         actions.push(TradingActions.setSessionName({ name: thenNewSession.name }));
       }
+      // …opened on a TF it selected. Otherwise a workspace with no activeTf gets
+      // layout.reducer's 'M1' fallback panel while the market activates the first
+      // loaded TF, so an H1/D1-only session painted an empty M1 chart.
+      // changeTimeframe writes the market AND the focused panel (the global-TF
+      // proxy): the same step the `.session.json` restore (3r) lands its TF with.
+      const openTf = openingTimeframe(restored.activeTf, action.selectedTfs);
+      if (openTf) actions.push(MarketActions.changeTimeframe({ tf: openTf }));
     }
     // 6) sessions page: reopen an archived session of the target workspace
     if (thenOpenSession) {

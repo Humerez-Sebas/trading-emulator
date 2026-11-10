@@ -65,7 +65,10 @@ export class ManifestService {
         'ManifestService: marketDataBaseUrl no configurado (define environment.marketDataBaseUrl para la fuente R2).',
       );
     }
-    const res = await fetch(`${this.baseUrl}/manifest.json`);
+    // R2 sends no Cache-Control, so the browser would reuse this file heuristically (about 10%
+    // of its age, i.e. days) and hide a fresh upload. `no-cache` always revalidates: a 304
+    // costs almost nothing and any change arrives at once.
+    const res = await fetch(`${this.baseUrl}/manifest.json`, { cache: 'no-cache' });
     if (!res.ok) {
       throw new Error(`ManifestService: no se pudo descargar manifest.json (HTTP ${res.status}).`);
     }

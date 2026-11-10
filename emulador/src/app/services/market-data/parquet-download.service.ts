@@ -45,8 +45,9 @@ export class ParquetDownloadService {
       );
     }
     const url = `${this.baseUrl}/${MARKET_DATA_PREFIX}/${symbol}/${tf}/${file}`;
-    // Conditional arity: omit the 4th arg when there's no signal so strict-arity test mocks (toHaveBeenCalledWith 3 args) still match; fetch(url, {signal: undefined}) is otherwise equivalent.
-    const res = signal ? await fetch(url, { signal }) : await fetch(url);
+    // Same reason as `fetchManifest`: without `no-cache` a partition updated in R2 could come
+    // from the HTTP cache and be stored under the manifest's NEW etag, silently stale for good.
+    const res = await fetch(url, { cache: 'no-cache', signal });
     if (!res.ok) {
       throw new Error(
         `ParquetDownloadService: no se pudo descargar el parquet ${symbol}/${tf}/${file} (HTTP ${res.status}).`,
