@@ -358,3 +358,39 @@ tsc 0 / 0, `ng test` 201 files / 2689 tests, lint 0, format 0, build initial 675
 `e0e7127`), 45 dist files (44 at `e0e7127`), no vitest in the bundle.
 
 Test progression for the run: 2607 → 2662 (Groups A–D) → 2669 (E1) → 2689 (E2) → 2690 (E3).
+
+---
+
+## Narrow re-audit of the fix wave at `9433882` (`branch-auditor`, 2026-11-10) — **PASS ("Ship it")**
+
+Interrupted once by a usage limit and resumed; every gate ran twice, before and after the cutoff,
+with identical numbers.
+
+- **Gates:** tsc 0 / 0, `ng test` 201 files / 2690 tests, lint 0, format 0, build initial 675.92 kB
+  (+0.79 kB over `e0e7127`), 45 files, no vitest. The 45th file is `chunk-HUELR7MS.js` (246 bytes), an
+  ordinary code-split chunk whose only input is `domain/reflection/lesson-raster-guard.ts`; not a new
+  chunk type.
+- **Arithmetic, real suite per commit:** 2669 (T10) → 2675 (T11) → 2689 (T12) → 2689 (T13) → 2690 (E3),
+  matching this ledger. The whole wave deleted exactly one pre-existing spec line, the
+  owner-authorized one.
+- **Closed:** M-1 (verified in Chromium production builds driven by trusted keyboard input: slot 3 on
+  load, the Editar → Cancelar round trip, and "—" now fires `change` and frees the slot), L-1 to L-7.
+- **Invariants:** zero diff on forbidden/config files and `domain/chart`; no new selectors,
+  dependencies, spec-util or vitest; engine purity, J-6, J-2 and candle-free all hold.
+- **Rulings added:** batched mode for the wave stands as the owner's recorded decision; E3's
+  assertion change is owner-authorized; the per-lesson fallback's cost under exhausted quota is
+  accepted. Rulings 1–8 of the previous report stand.
+
+### Open Lows (none ruled no-fix; they do not block PASS)
+- **New Low 1 (pre-existing since RFC-016 T7 `e4d5bb4`, first ships via #61):** a reflection draft
+  follows the trader between two trades that both have no lesson (`lesson-form.component.ts:155-161`
+  re-seeds only when `existing` changes, and null equals null), so a lesson written about T1 can be
+  saved on T2 with T2's evidence frozen into it. Direction: re-seed on trade change; spec it.
+- **New Low 2 (T12 `df659e9`):** the inline save error has no CSS (`reflection-cabin-page.component.html:68`,
+  unlike `.export-error`) and survives a trade switch (`saveError` is cleared only in `onSave`).
+- **New Low 3 (T12):** stale comments in `lessons.effects.ts:200-201` (persist no longer writes one
+  batch) and on `isStorageError` (any exception other than a plain guard `Error` is kept).
+
+### Could not verify
+Mouse selection of "—" in the native popup, Safari and Firefox, a real Mac keyboard (Option+digit
+tagging), the alert's real look, and real Supabase.
