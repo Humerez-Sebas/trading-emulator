@@ -1,6 +1,7 @@
 /* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
 import { inject, Injectable } from '@angular/core';
 import { MAX_EVIDENCE_SCENES } from '../domain/reflection/scene-spec';
+import { findRasterViolation } from '../domain/reflection/lesson-raster-guard';
 import { assertNoCandles } from './session-sync.mapping';
 import { Lesson } from '../state/lessons/lessons.models';
 import { NO_OWNER_MESSAGE, ownerLessonsDbName } from './owner-scope';
@@ -121,22 +122,17 @@ export class LessonsDbService {
   /**
    * J-1 Raster guard: reject any lesson that smuggles rasterized content. The
    * system NEVER stores pixels; scenes are recomputed on demand from SceneSpec
-   * (TKM §2.1, RFC-016 §4). Rejects, never strips (strict guard).
-   *
-   * Scope: `evidence` is scanned for any raster pattern (`data:image`, `base64`,
-   * `blob:`). The trader's free text (`whatHappened`/`repeat`/`avoid`) is opaque
-   * (D16.G, J-2) and is NOT scanned for those words — a lesson that merely
-   * mentions "base64" is valid prose — but a complete pasted image data URI
-   * (`data:image/…;base64,`) is still refused there, since that would be pixels.
+   * (TKM §2.1, RFC-016 §4). Rejects, never strips (strict guard). The predicate
+   * (and its scope: evidence vs. free text) lives in `findRasterViolation`, shared
+   * with the Cabin and the cloud push.
    */
   private assertNoRasterizedContent(lessons: Lesson[]): void {
-    const evidencePattern = /data:image|base64|blob:/i;
-    const dataUriPattern = /data:image\/[a-z0-9.+-]+;base64,/i;
     for (const lesson of lessons) {
-      const text = JSON.stringify([lesson.whatHappened, lesson.repeat, lesson.avoid]);
-      if (evidencePattern.test(JSON.stringify(lesson.evidence)) || dataUriPattern.test(text)) {
+      const part = findRasterViolation(lesson);
+      if (part) {
+        const where = part === 'evidence' ? 'evidence' : 'free text';
         throw new Error(
-          `J-1 raster guard: lesson ${lesson.id} smuggles rasterized content (data:image/base64/blob patterns forbidden in evidence)`,
+          `J-1 raster guard: lesson ${lesson.id} smuggles rasterized content in its ${where} (data:image/base64/blob patterns forbidden in evidence; image data URIs forbidden in free text)`,
         );
       }
     }

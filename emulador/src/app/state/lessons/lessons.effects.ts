@@ -24,7 +24,20 @@ import {
 } from '../../services/session-sync.service';
 import { AuthActions } from '../auth/auth.actions';
 import { authFeature } from '../auth/auth.reducer';
+import { findRasterViolation } from '../../domain/reflection/lesson-raster-guard';
 import { OwnerIdentityService } from '../../services/owner-identity.service';
+
+/**
+ * A failure of the storage layer itself (`QuotaExceededError`, `AbortError`, …:
+ * IndexedDB reports these as `DOMException`s with a specific name) as opposed to
+ * a guard refusal, which is a plain `Error` thrown synchronously by
+ * `LessonsDbService` before any I/O.
+ */
+function isStorageError(err: unknown): boolean {
+  if (typeof DOMException !== 'undefined' && err instanceof DOMException) return true;
+  const name = (err as { name?: unknown } | null)?.name;
+  return typeof name === 'string' && name !== 'Error';
+}
 
 @Injectable()
 export class LessonsEffects {
@@ -121,7 +134,12 @@ export class LessonsEffects {
    * (mid-flight-edit safety, same idiom as playbook.effects.spec.ts).
    */
   private async pushDirtyLessons(lessons: Lesson[], expectedOwnerId?: string): Promise<void> {
-    const dirty = lessons.filter(isLessonDirty);
+    // A lesson the J-1 guard refuses is never pushed (and so never stamped synced).
+    const dirty = lessons.filter(isLessonDirty).filter((l) => {
+      const part = findRasterViolation(l);
+      if (part) console.warn(`[lessons] push: skipping lesson ${l.id} (J-1 raster guard, ${part})`);
+      return !part;
+    });
     if (!dirty.length) return;
     expectedOwnerId ??= await this.sync.captureOwner();
     await this.sync.assertExpectedOwner(expectedOwnerId);
@@ -189,30 +207,41 @@ export class LessonsEffects {
   }
 
   /**
-   * Writes the batch in one transaction; if the batch is refused (a guard throws for
-   * the whole call), retries lesson by lesson so ONE unwritable lesson cannot abort
-   * the whole pull. Returns the ids that were skipped, each logged.
+   * Writes the batch in one transaction; if the batch is refused, retries lesson by
+   * lesson so ONE unwritable lesson cannot abort the whole write. Returns the ids
+   * the synchronous guards REFUSED (callers drop those from the store); a lesson
+   * that failed for storage reasons (`QuotaExceededError` and kin) is only logged,
+   * because the lesson itself is fine and must not vanish from the store. Owner
+   * drift still aborts. Every skipped lesson is logged.
    */
   private async upsertSkippingUnwritable(
     batch: Lesson[],
     expectedOwnerId: string,
+    context: 'pull' | 'persist' = 'pull',
   ): Promise<Set<string>> {
     try {
       await this.db.upsertMany(batch, expectedOwnerId);
       return new Set();
     } catch {
-      const skipped = new Set<string>();
+      const refused = new Set<string>();
       for (const lesson of batch) {
         try {
           await this.sync.assertExpectedOwner(expectedOwnerId);
           await this.db.upsertMany([lesson], expectedOwnerId);
         } catch (err) {
           await this.sync.assertExpectedOwner(expectedOwnerId); // owner drift still aborts
-          skipped.add(lesson.id);
-          console.warn(`[lessons] pull: skipping unwritable lesson ${lesson.id}`, err);
+          if (isStorageError(err)) {
+            console.warn(
+              `[lessons] ${context}: could not write lesson ${lesson.id} (storage error), keeping it`,
+              err,
+            );
+          } else {
+            refused.add(lesson.id);
+            console.warn(`[lessons] ${context}: skipping unwritable lesson ${lesson.id}`, err);
+          }
         }
       }
-      return skipped;
+      return refused;
     }
   }
 
@@ -231,6 +260,8 @@ export class LessonsEffects {
   private async persistLessons(lessons: Lesson[]): Promise<void> {
     const expectedOwnerId = await this.owner.ownerId();
     if (!expectedOwnerId) return;
-    await this.db.upsertMany(lessons, expectedOwnerId);
+    // Lesson by lesson if the batch is refused: one unwritable lesson must not
+    // block every later local save.
+    await this.upsertSkippingUnwritable(lessons, expectedOwnerId, 'persist');
   }
 }

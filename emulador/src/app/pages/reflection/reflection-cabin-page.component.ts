@@ -24,6 +24,7 @@ import {
 } from '../../domain/reflection/waypoints';
 import { buildSceneSpec } from '../../domain/reflection/build-scene-spec';
 import { MAX_EVIDENCE_SCENES, type SceneSpec } from '../../domain/reflection/scene-spec';
+import { findRasterViolation } from '../../domain/reflection/lesson-raster-guard';
 import { LessonsActions } from '../../state/lessons/lessons.actions';
 import { lessonsFeature } from '../../state/lessons/lessons.reducer';
 import type { Lesson, LessonsState } from '../../state/lessons/lessons.models';
@@ -105,6 +106,8 @@ export class ReflectionCabinPageComponent {
   managementExpandedSignal = signal(false);
   saving = signal(false);
   toastMessage = signal<string | null>(null);
+  /** Inline reason the last save was refused (draft is kept); null when none. */
+  saveError = signal<string | null>(null);
 
   private timeline = viewChild(WaypointTimelineComponent);
   private heading = viewChild<ElementRef<HTMLHeadingElement>>('pageHeading');
@@ -268,7 +271,7 @@ export class ReflectionCabinPageComponent {
       return;
     }
 
-    this.saving.set(true);
+    this.saveError.set(null);
     const now = Date.now();
     const existing = this.existingLesson();
 
@@ -293,6 +296,21 @@ export class ReflectionCabinPageComponent {
           sessionRef: this.sessionId(),
           clientUpdatedAt: now,
         };
+
+    // J-1: refuse BEFORE any dispatch — the store, the amendments and the cloud
+    // must never see a lesson local storage will not write (same predicate as
+    // `LessonsDbService` and the push).
+    const violation = findRasterViolation(lesson);
+    if (violation) {
+      this.saveError.set(
+        violation === 'free-text'
+          ? 'No se puede guardar: el texto contiene una imagen pegada (data:image). Quítala y vuelve a guardar; tu borrador sigue aquí.'
+          : 'No se puede guardar: la evidencia de esta reflexión contiene datos de imagen, que no se almacenan.',
+      );
+      return;
+    }
+
+    this.saving.set(true);
 
     if (existing) {
       this.store.dispatch(

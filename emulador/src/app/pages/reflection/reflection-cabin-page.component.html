@@ -64,6 +64,9 @@
               [saving]="saving()"
               (save)="onSave($event)"
             />
+            @if (saveError(); as err) {
+              <p class="save-error" role="alert">{{ err }}</p>
+            }
           </section>
         </div>
       </div>

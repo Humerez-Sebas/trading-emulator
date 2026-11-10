@@ -226,4 +226,56 @@ describe('ReflectionCabinPageComponent draft stability (L-1) and hydration messa
       expect(fixture.componentInstance.toastMessage()).toBe('Otro aviso');
     });
   });
+
+  describe('pasted image data URI (audit L-2)', () => {
+    const pixels = {
+      whatHappened: 'mira esto data:image/png;base64,AAAA',
+      repeat: '',
+      avoid: '',
+      linkedRuleIds: ['r1'],
+    };
+
+    it('refuses to save: nothing dispatched, no success toast, inline Spanish error, draft kept', async () => {
+      setup({ lessons: [], loaded: true });
+      const fixture = await mount();
+      type(fixture, pixels.whatHappened);
+      const dispatch = vi.spyOn(store, 'dispatch');
+
+      fixture.componentInstance.onSave(pixels);
+      fixture.detectChanges();
+
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.toastMessage()).not.toBe('Reflexión guardada');
+      expect(fixture.componentInstance.saving()).toBe(false);
+      const err = fixture.nativeElement.querySelector('[role="alert"]') as HTMLElement;
+      expect(err.textContent).toMatch(/imagen/i);
+      expect(firstTextarea(fixture).value).toBe(pixels.whatHappened);
+    });
+
+    it('also refuses on an existing lesson (no updateLesson, no unamendRule)', async () => {
+      setup({
+        lessons: [{ ...mkLesson('L1', 't1', 'guardado', 50), linkedRuleIds: ['r0'] }],
+        loaded: true,
+      });
+      const fixture = await mount();
+      const dispatch = vi.spyOn(store, 'dispatch');
+
+      fixture.componentInstance.onSave({ ...pixels, linkedRuleIds: [] });
+
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    it('clears the error on the next valid save attempt', async () => {
+      setup({ lessons: [], loaded: true });
+      const fixture = await mount();
+      fixture.componentInstance.onSave(pixels);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[role="alert"]')).not.toBeNull();
+
+      fixture.componentInstance.onSave({ ...pixels, whatHappened: 'texto normal' });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+    });
+  });
 });
