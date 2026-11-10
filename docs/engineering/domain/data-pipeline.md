@@ -90,6 +90,12 @@ taken; the real (deferred) lever is a per-row index cost rework.
 
 ## Frontend data services worth knowing
 
+- **R2 responses carry no `Cache-Control`** (only `ETag` and `Last-Modified`), so a browser
+  reuses them heuristically for a share of their age (about 10%, i.e. days for a months-old
+  file). A plain `fetch` therefore hid a fresh upload, and could store an old partition under
+  the manifest's new etag. `ManifestService` and `ParquetDownloadService` fetch with
+  `cache: 'no-cache'`, which always revalidates (a cheap 304 when nothing changed). Observed
+  2026-11-06: after an R2 update the app still read the July manifest.
 - `MarketDataRepository.getCoverage` (cursor first/last) + `intersectBounds` exist so
   symbol pickers answer availability **instantly** (24 ms) without loading candles —
   heavy `getCandles` loads are deferred until session creation. Preserve this pattern:
