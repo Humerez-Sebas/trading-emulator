@@ -338,3 +338,23 @@ branch that folder is not gitignored, so they stay untracked and are never commi
   context in `upsertSkippingUnwritable`; `existingLesson`'s equality keeps the stale object when only
   `syncedAt` differs (the save path spreads it); a draft can carry across two trades that both have no
   lesson (null → null, pre-existing); a refused dirty lesson logs its skip on every push cycle.
+
+### Group E, dispatch E3: L-6 copy (`sdd-implementer`, brief `.superpowers/sdd/task-E3-brief.md`) — DONE
+
+| Task | Closes | Commit |
+| :--- | :--- | :--- |
+| E3 | L-6 (rest) | `dbd2460` |
+
+- **Owner-authorized STOP exception (2026-11-10):** the owner authorized changing the single assertion
+  at `reflection-cabin-page.lesson-freshness.spec.ts:163` (added by T4 in this run), which pinned the
+  old copy. It is the only pre-existing spec line changed (orchestrator diff-scan: one deleted line).
+- **New copy:** "Aún se están cargando tus reflexiones. Espera unos segundos y vuelve a guardar; si
+  persiste, recarga la página."
+- **Evidence:** red 2 failed / 10 passed on the two specs with the old constant; green 12 passed. Gates
+  at `dbd2460`: tsc 0 / 0, `ng test` 201 files / 2690 tests (2689 + 1), lint 0, format 0.
+
+### Orchestrator gates on the fix wave at `992d4d5` (before E3; fresh, raw, Node 24.16)
+tsc 0 / 0, `ng test` 201 files / 2689 tests, lint 0, format 0, build initial 675.92 kB (+0.79 kB over
+`e0e7127`), 45 dist files (44 at `e0e7127`), no vitest in the bundle.
+
+Test progression for the run: 2607 → 2662 (Groups A–D) → 2669 (E1) → 2689 (E2) → 2690 (E3).
