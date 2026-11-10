@@ -10,7 +10,7 @@ export interface PlaybookRule {
   /** Hotkey slot 1..9; null = none. Unique among ACTIVE rules. */
   shortcutSlot: number | null;
   sortOrder: number;
-  /** RESERVED for RFC-016 (P-7): persisted empty, zero read sites. */
+  /** Lesson ids amending this rule (P-7): written by `amendRule`/`unamendRule` (RFC-016); no production reader yet. */
   amendments: string[];
   clientUpdatedAt?: number;
   syncedAt?: number;

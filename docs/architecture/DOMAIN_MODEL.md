@@ -423,7 +423,7 @@ opacity and survival of trader-authored rules:
 | P-4 | Identity chain: `declaredRuleId` travels order → position → closed trade | Round-trip through engine + payload mapping (`playbook-invariants.spec.ts`) |
 | P-5 | N-1 on new schemas: zero interpretive vocabulary | Grep of forbidden terms over `state/playbook/**` and SQL |
 | P-6 | N-5: new store is candle-free | `assertNoCandles` on every DB write (`playbook-db.service.spec.ts`) |
-| P-7 | `amendments` reserved: zero read sites in production | Grep audit |
+| P-7 | `amendments` is written by `amendRule`/`unamendRule` (RFC-016) and has no production reader | Grep audit |
 
 Additionally, `declaredRuleId?: string | null` is noted on the §3.1 identity chain
 (`PendingOrder → Position → ClosedTrade`) as an additive, opaque stamp.

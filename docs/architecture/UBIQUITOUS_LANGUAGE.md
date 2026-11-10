@@ -739,7 +739,10 @@ the system (never parsed, validated, or scored); permanent knowledge tier
 One trader-authored rule inside the Playbook aggregate: `{id, title, statement,
 createdAt, status, shortcutSlot, sortOrder, amendments}`. `statement` is opaque
 free text (P-2: the system never parses or evaluates it); `amendments` is a
-reserved extension point for RFC-016 (P-7: zero read sites).
+extension point filled by RFC-016: `amendRule` appends the id of the lesson that
+amends the rule and `unamendRule` removes it when the trader un-links the rule
+(P-7: no production reader yet; the reducer and the sync mapping only read it to
+write it).
 *Technical implication:* `PlaybookRule` (`state/playbook/playbook.models.ts`);
 persisted in the dedicated `emulador-playbook` IndexedDB database and synced to
 Supabase `playbook_rules` (RLS per user, LWW per row).

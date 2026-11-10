@@ -167,7 +167,7 @@ PlaybookRule := { id, title, statement,                    // texto del trader, 
 
 ## Riesgos y mitigaciones
 
-- **R1 — Colisión de atajos:** namespace `1`–`9` verificado libre hoy; el detector
+- **R1 — Colisión de atajos:** namespace `1`–`9` verificado libre hoy *(Falso; ver Desviaciones registradas.)*; el detector
   es un grep de bindings de dígitos en el plan y la exclusión por foco en inputs.
 - **R2 — Deriva hacia semántica de reglas** (plantillas, categorías, validación):
   rechazada estructuralmente por P-2; cualquier evolución exige RFC propio.
