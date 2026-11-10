@@ -307,3 +307,34 @@ branch that folder is not gitignored, so they stay untracked and are never commi
 - **FINAL-AUDIT ATTENTION:** confirm M-1 in a real Chromium production build (slot 3 on load, the
   Editar → Cancelar round trip, then "—" frees the slot); jsdom cannot show the "—" path red. The
   `@for` now tracks by `opt.label`, because "—" has a null value.
+
+### Group E, dispatch E2: T11 + T12 + T13 (`sdd-implementer`, brief `.superpowers/sdd/task-E2-brief.md`) — DONE, one item blocked
+
+| Task | Closes | Commit |
+| :--- | :--- | :--- |
+| T11 | L-1; L-6 partly (see below) | `f98d75e` |
+| T12 | L-2, L-3 | `df659e9` |
+| T13 | L-7 (docs and comment; the ledger corrections are recorded above) | `8c28ccb` |
+
+- **Evidence (implementer's run at `8c28ccb`):** tsc app 0, tsc spec 0, `ng test` 201 files / 2689 tests,
+  lint 0, format 0. Context7 consulted (`CreateComputedOptions.equal`, v21).
+- **Arithmetic (orchestrator, counting new `it(` per commit):** E1 +7, T11 +6, T12 +14, T13 0, so
+  2662 → 2669 → 2689. The implementer's "baseline 2670, +19" was off by one at both ends; the
+  final count agrees.
+- **Red before green:** T11's two draft-kept tests failed first. For T12, 8 behavioural tests failed
+  with the implementation stashed (3 Cabin refusals, persist isolation, quota keep, push stamp, the db
+  message, `pushLessons`); the rest pin existing behaviour or the pure predicate.
+- **Orchestrator diff-scan:** 16 files; spec files have additions only (5 new spec files, 0 deleted
+  lines); no `package.json` or lockfile change; `domain/reflection/lesson-raster-guard.ts` has no
+  Angular or NgRx import.
+- **Blocked (requires attention, owner decision):** L-6's copy. The message now clears once lessons
+  load, but its text cannot change: `reflection-cabin-page.lesson-freshness.spec.ts:163` (added by T4
+  in this run) pins the exact string, and the STOP rule protects it. Proposed copy: "Aún se están
+  cargando tus reflexiones. Espera unos segundos y vuelve a guardar; si persiste, recarga la página."
+- **Deviation (inert):** T12 also edited `reflection-cabin-page.component.html` for the inline error,
+  outside the brief's file list; the error is an unstyled `<p role="alert">` (no CSS added).
+- **FINAL-AUDIT ATTENTION:** `isStorageError` in `lessons.effects.ts` (a `DOMException`, or any error whose
+  `name` is not `'Error'`, counts as storage, so a `TypeError` would too) and the `'pull' | 'persist'`
+  context in `upsertSkippingUnwritable`; `existingLesson`'s equality keeps the stale object when only
+  `syncedAt` differs (the save path spreads it); a draft can carry across two trades that both have no
+  lesson (null → null, pre-existing); a refused dirty lesson logs its skip on every push cycle.
