@@ -48,7 +48,8 @@ const selectLiveLessons = createSelector(selectLessonsSlice, (s) => s?.lessons ?
 const selectLiveLessonsLoaded = createSelector(selectLessonsSlice, (s) => s?.loaded ?? true);
 
 /** Shown when a save is attempted before the lessons store has hydrated. */
-const LESSONS_LOADING_MESSAGE = 'Cargando reflexiones… intenta de nuevo en un momento';
+const LESSONS_LOADING_MESSAGE =
+  'Aún se están cargando tus reflexiones. Espera unos segundos y vuelve a guardar; si persiste, recarga la página.';
 
 /** Same lesson for the form's purposes: a sync ack (`syncedAt`) or a pull that
  * rebuilds identical objects must not re-seed what the trader is typing. */

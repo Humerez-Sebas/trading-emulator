@@ -200,6 +200,15 @@ describe('ReflectionCabinPageComponent draft stability (L-1) and hydration messa
   describe('hydration-guard message (L-6)', () => {
     const draft = { whatHappened: 'x', repeat: '', avoid: '', linkedRuleIds: [] };
 
+    it('tells the trader to reload if loading persists', async () => {
+      setup({ lessons: [], loaded: false });
+      const fixture = await mount();
+
+      fixture.componentInstance.onSave(draft);
+
+      expect(fixture.componentInstance.toastMessage()).toMatch(/recarga la página/i);
+    });
+
     it('clears the message once lessons are loaded', async () => {
       setup({ lessons: [], loaded: false });
       const fixture = await mount();

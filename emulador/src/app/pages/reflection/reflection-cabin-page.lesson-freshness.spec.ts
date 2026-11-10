@@ -160,7 +160,7 @@ describe('ReflectionCabinPageComponent lesson freshness (MEDIUM-3)', () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(fixture.componentInstance.saving()).toBe(false);
     expect(fixture.componentInstance.toastMessage()).toBe(
-      'Cargando reflexiones… intenta de nuevo en un momento',
+      'Aún se están cargando tus reflexiones. Espera unos segundos y vuelve a guardar; si persiste, recarga la página.',
     );
   });
 });
