@@ -280,5 +280,8 @@ reducers, effects and IndexedDB layer, and its findings feed the fix wave. Also 
 were sent inline in the dispatch prompts instead of `.superpowers/sdd/task-N-brief.md`, and PR #62
 was opened as a draft before the audit, not after a PASS (`/sdd-run` step 6); both inert.
 
-Fix wave (Group E, plan §"Fix wave"): mode pending the owner's decision. §8 calls for full mode,
-because T12 touches persistence.
+Fix wave (Group E, plan §"Fix wave"): **batched**, by the owner's explicit decision on 2026-11-10
+to save usage. §8 would call for full mode because T12 touches persistence; this is a recorded,
+resource-constrained degradation (PHILOSOPHY §5.2). The final narrow re-audit is not skipped. Task
+briefs for this wave are written to `.superpowers/sdd/task-E*-brief.md` as `/sdd-run` asks; on this
+branch that folder is not gitignored, so they stay untracked and are never committed.

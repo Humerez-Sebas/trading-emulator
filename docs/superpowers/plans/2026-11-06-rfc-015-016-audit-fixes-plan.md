@@ -136,7 +136,10 @@ their specs.
 ## Fix wave (Group E, from the 2026-11-10 re-audit)
 
 The re-audit at `e0e7127` returned NOT PASS: M-1 and L-1 to L-7, recorded in the ledger. Same rules
-as above. Run mode: decided by the owner (§8 says full, because T12 touches persistence).
+as above. Run mode: **batched**, by the owner's explicit decision on 2026-11-10 to save usage.
+§8 would call for full mode because T12 touches persistence, so this is a recorded,
+resource-constrained degradation (PHILOSOPHY §5.2), not a silent one. Dispatches: E1 = T10;
+E2 = T11, T12, T13 in that order. A narrow re-audit over the wave is still mandatory.
 
 - **T10 (M-1, L-4, L-5), `components/playbook-panel/*`, `state/playbook/playbook-hotkeys.directive.ts`:**
   the slot `<select>` shows the assigned slot on first render and after Editar → Cancelar, and
