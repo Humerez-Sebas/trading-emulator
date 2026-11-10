@@ -196,6 +196,8 @@ export class ReflectionCabinPageComponent {
       this.resolvedTradeId();
       this.activeWaypointIndex.set(0);
       this.managementExpandedSignal.set(false);
+      // A refusal belongs to the trade it happened on.
+      this.saveError.set(null);
     });
 
     // The "lessons still loading" notice is moot once they are loaded.

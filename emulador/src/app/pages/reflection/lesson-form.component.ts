@@ -130,6 +130,9 @@ export interface LessonDraft {
 })
 export class LessonFormComponent {
   existing = input<Lesson | null>(null);
+  /** The trade this form is about: a change re-seeds the draft even when
+   * `existing` stays null (two trades that both have no lesson yet). */
+  tradeId = input<string | null>(null);
   activeRules = input<PlaybookRule[]>([]);
   saving = input(false);
 
@@ -149,10 +152,11 @@ export class LessonFormComponent {
   );
 
   constructor() {
-    // Resets the draft whenever `existing` changes reference (switching trades,
+    // Resets the draft whenever `tradeId` or `existing` changes (switching trades,
     // or the active trade's lesson just got created/updated) — design spec
     // §2.5's "reflection-existing: pre-filled fields" prefill lives here.
     effect(() => {
+      this.tradeId();
       const ex = this.existing();
       this.whatHappened.set(ex?.whatHappened ?? '');
       this.repeat.set(ex?.repeat ?? '');
