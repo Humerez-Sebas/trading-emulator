@@ -285,3 +285,25 @@ to save usage. §8 would call for full mode because T12 touches persistence; thi
 resource-constrained degradation (PHILOSOPHY §5.2). The final narrow re-audit is not skipped. Task
 briefs for this wave are written to `.superpowers/sdd/task-E*-brief.md` as `/sdd-run` asks; on this
 branch that folder is not gitignored, so they stay untracked and are never committed.
+
+### Group E, dispatch E1: T10 (`sdd-implementer`, brief `.superpowers/sdd/task-E1-brief.md`) — DONE
+
+| Task | Closes | Commit |
+| :--- | :--- | :--- |
+| T10 | M-1, L-4, L-5 | `3639daa` |
+
+- **Evidence (implementer's run at `3639daa`):** tsc app 0, tsc spec 0, `ng test` 196 files / 2669 tests
+  (2662 + 7), lint 0, format 0. Context7 consulted (Angular v21.2.25) before the change.
+- **Red before green:** 5 of the 7 new tests failed for the right reason (first render `'' ≠ '3'`,
+  the Editar → Cancelar round trip, `aria-keyshortcuts`, the hint copy, Alt+Shift dispatching once).
+  Two passed beforehand: the no-slot case, and "choosing — frees the slot", because jsdom sets
+  `select.value` by hand; in a real browser no `change` fired. Inert.
+- **Orchestrator diff-scan:** 4 files, all in the brief's scope; spec files have additions only; no
+  `package.json` or lockfile change. The select drops `[value]`, renders "—" from `slotOptions`, and
+  binds `[selected]` per option; the directive adds `ev.shiftKey` to its early return.
+  `shortcutSlot` is typed `number | null`, so the `aria-keyshortcuts` null check is sound.
+- **Deviation (inert):** for L-4 the implementer used a visible label hint plus `title` and
+  `aria-keyshortcuts` instead of `appTooltip`, whose `tooltipShortcut` precedent is for icon buttons.
+- **FINAL-AUDIT ATTENTION:** confirm M-1 in a real Chromium production build (slot 3 on load, the
+  Editar → Cancelar round trip, then "—" frees the slot); jsdom cannot show the "—" path red. The
+  `@for` now tracks by `opt.label`, because "—" has a null value.
