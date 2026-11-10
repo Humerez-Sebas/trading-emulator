@@ -31,7 +31,9 @@ import { OwnerIdentityService } from '../../services/owner-identity.service';
  * A failure of the storage layer itself (`QuotaExceededError`, `AbortError`, …:
  * IndexedDB reports these as `DOMException`s with a specific name) as opposed to
  * a guard refusal, which is a plain `Error` thrown synchronously by
- * `LessonsDbService` before any I/O.
+ * `LessonsDbService` before any I/O. Any exception other than a plain guard
+ * `Error` counts as a storage error and is kept in the store, on purpose: it
+ * fails safe (the lesson is retried later, never dropped).
  */
 function isStorageError(err: unknown): boolean {
   if (typeof DOMException !== 'undefined' && err instanceof DOMException) return true;
@@ -198,7 +200,9 @@ export class LessonsEffects {
         expectedOwnerId,
       );
       // A lesson local storage refuses must stay out of the store too: `persist$`
-      // writes the whole store in one batch, so it would poison every later save.
+      // writes lesson by lesson when its batch is refused (so it no longer
+      // poisons later saves), but it would skip and log the refused lesson again
+      // on every save.
       if (unwritable.size) lessons = lessons.filter((l) => !unwritable.has(l.id));
     }
     await this.sync.assertExpectedOwner(expectedOwnerId);
