@@ -74,6 +74,13 @@ Pipeline changes (from `pipeline/`): `py -m pytest -q && ruff check . && ruff fo
 --check .` — **use `py`, not `python`**: on this machine `python` is the Microsoft Store
 stub, which prints an install ad and exits 49 without ever running your tests.
 
+`npm ci` / `npm install` in `emulador/` need `NPM_GITHUB_TOKEN` in the environment (a
+classic PAT with `read:packages` only): `@humerez-sebas/sizing-kernel` is a private GitHub
+Packages dependency (RFC-021). Without it the install fails with 401 on that one package.
+The sizing math and the asset registry live in that package's repo, not here — a sizing
+change is a kernel release plus a version bump, guarded by
+`state/trading/sizing-kernel.contract.spec.ts`.
+
 After ANY `npm install`: run `npm ci --dry-run` before committing the lockfile
 (npm 11.x silently prunes optional-dep entries; local stays green, CI fails EUSAGE —
 recovery in `docs/engineering/testing.md`).

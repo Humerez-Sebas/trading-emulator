@@ -1,7 +1,7 @@
 /**
  * Display copy for the supported instrument catalogue (RFC-020 / F21-3).
  *
- * The sizing kernel (`domain/sizing/asset-registry`) is deliberately math and
+ * The sizing kernel (`@humerez-sebas/sizing-kernel`) is deliberately math and
  * instrument data only — "no formatting, no user-facing copy, no view
  * helpers" (owner ruling Q1, `asset-registry.ts` module doc). The descriptive
  * name and the two-glyph monogram the asset selector shows are exactly that:
