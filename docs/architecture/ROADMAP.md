@@ -65,6 +65,8 @@ in the knowledge-conservation sequence.
 |---|---|---|
 | **Post-Infrastructure Refinements** | [RFC-017](./rfcs/017-compositional-panel-sync.md) / [RFC-018](./rfcs/018-trade-visibility-refinement.md) / [RFC-019](./rfcs/019-pane-guard-cross-tf-forming.md) | Panel sync, trade visibility, pane-guard + cross-TF forming — bug fixes and UX refinement after the multi-panel infrastructure block. |
 
+Released to `main` on 2026-11-10 with the RFC-014..019 + Wave 2 block (PR #61, `e192296`).
+
 ---
 
 ## Mastery Block: Phases 0-3 — DELIVERED (RFC-014..016)
@@ -76,16 +78,17 @@ flight recorder during practice and a reflection instrument afterwards; the deli
 training is the amended Playbook.
 (Section in English per the architecture-corpus language directive of 2026-07.)
 
-**All three phases have shipped.** Their code lives in `emulador/src/app/state/{telemetry,
+**All three phases have shipped,** and reached `main` on 2026-11-10 in the block release (PR #61,
+`e192296`). Their code lives in `emulador/src/app/state/{telemetry,
 playbook,lessons,journal}/` and `emulador/src/app/pages/{reflection,journal}/`. This
 section is now a record of what was delivered, not a plan of what is next.
 
 | Phase | Artifact / RFC | Status | Purpose |
 |---|---|---|---|
 | **0** | [TRADER_KNOWLEDGE_MODEL.md](./TRADER_KNOWLEDGE_MODEL.md) | CURRENT (binding) | Foundational definition of knowledge: the ontology (Trade Record, Session, Reflective Scene, Permanent Lesson), the black-box telemetry register, the Reflection Cabin, the permanent knowledge schema, and the excluded-metrics doctrine. |
-| **1** | [RFC-014](./rfcs/014-simulacion-alta-fidelidad-telemetria.md): High-Fidelity Simulation & Behavioral Telemetry Engine | Delivered 2026-07-12 (`e700ecb`) | Base-resolution (M1) execution with bid/ask, spread and real costs, PLUS invisible physical telemetry (seeks, elapsed-time-before-order, intrabar MAE/MFE, dynamic mark-to-market). Merges the previously separate RFC-014 and RFC-015 drafts: execution physics and the black box are one clean mathematical refactor of the same engine loop. |
-| **2** | [RFC-015](./rfcs/015-playbook-adherencia-reglas.md): Playbook & Rule Adherence Domain | Delivered 2026-07-15 (PR #40, `ab3a8e5`) | The Playbook (the rules the trader decides to train) as a first-class permanent domain; optional single-keystroke declaration of the rule being executed when opening a trade. The system records the declaration as a fact; it never scores adherence. |
-| **3** | [RFC-016](./rfcs/016-diario-enmiendas-playbook.md): The Playbook Amendment Journal | Delivered 2026-07-18 (PR #41, `1db11b6`) | The training journal: reconstructs Reflective Scenes (Entry, Exit, Maximum Tension) from telemetry, presents uninterpreted physical facts, and lets the trader author cold self-critique and permanent Playbook amendments, offline-first. |
+| **1** | [RFC-014](./rfcs/014-simulacion-alta-fidelidad-telemetria.md): High-Fidelity Simulation & Behavioral Telemetry Engine | Delivered 2026-07-12 (`e700ecb`); released 2026-11-10 (PR #61) | Base-resolution (M1) execution with bid/ask, spread and real costs, PLUS invisible physical telemetry (seeks, elapsed-time-before-order, intrabar MAE/MFE, dynamic mark-to-market). Merges the previously separate RFC-014 and RFC-015 drafts: execution physics and the black box are one clean mathematical refactor of the same engine loop. |
+| **2** | [RFC-015](./rfcs/015-playbook-adherencia-reglas.md): Playbook & Rule Adherence Domain | Delivered 2026-07-15 (PR #40, `ab3a8e5`); retroactive audit fixes PR #62 (`6887f67`); released 2026-11-10 (PR #61) | The Playbook (the rules the trader decides to train) as a first-class permanent domain; optional single-keystroke declaration of the rule being executed when opening a trade. The system records the declaration as a fact; it never scores adherence. |
+| **3** | [RFC-016](./rfcs/016-diario-enmiendas-playbook.md): The Playbook Amendment Journal | Delivered 2026-07-18 (PR #41, `1db11b6`); retroactive audit fixes PR #62 (`6887f67`); released 2026-11-10 (PR #61) | The training journal: reconstructs Reflective Scenes (Entry, Exit, Maximum Tension) from telemetry, presents uninterpreted physical facts, and lets the trader author cold self-critique and permanent Playbook amendments, offline-first. |
 
 Historical drafts for the three RFCs: [RFC-014_AND_BEYOND.md](./RFC-014_AND_BEYOND.md).
 That file is a **HISTORICAL** abstract draft superseded by the accepted RFCs above; read
