@@ -84,3 +84,37 @@ describe('playbook.amendRule', () => {
     expect(s2.rules[0].amendments).toHaveLength(1);
   });
 });
+
+describe('playbook.unamendRule', () => {
+  it('removes lessonId from the rule amendments and stamps clientUpdatedAt like amendRule', () => {
+    const s0 = reducer(
+      initial,
+      PlaybookActions.hydrated({ rules: [rule({ id: 'r1', amendments: ['l1', 'l2'] })] }),
+    );
+    const s = reducer(
+      s0,
+      PlaybookActions.unamendRule({ ruleId: 'r1', lessonId: 'l1', clientUpdatedAt: 300 }),
+    );
+    expect(s.rules[0].amendments).toEqual(['l2']);
+    expect(s.rules[0].clientUpdatedAt).toBe(300);
+  });
+
+  it('is a same-reference no-op when the lesson is not in amendments or the rule is unknown', () => {
+    const s0 = reducer(
+      initial,
+      PlaybookActions.hydrated({ rules: [rule({ id: 'r1', amendments: ['l2'] })] }),
+    );
+    expect(
+      reducer(
+        s0,
+        PlaybookActions.unamendRule({ ruleId: 'r1', lessonId: 'l1', clientUpdatedAt: 1 }),
+      ),
+    ).toBe(s0);
+    expect(
+      reducer(
+        s0,
+        PlaybookActions.unamendRule({ ruleId: 'nope', lessonId: 'l2', clientUpdatedAt: 1 }),
+      ),
+    ).toBe(s0);
+  });
+});

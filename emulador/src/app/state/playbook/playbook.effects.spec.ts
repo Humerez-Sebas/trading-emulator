@@ -213,6 +213,21 @@ describe('PlaybookEffects', () => {
       expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
     });
 
+    it('calls upsertMany with current rules on unamendRule', async () => {
+      const currentRules = [rule('a')];
+      store.overrideSelector(selectPlaybookRules, currentRules);
+      subscribeAll();
+
+      actions$.next(
+        PlaybookActions.unamendRule({ ruleId: 'a', lessonId: 'l', clientUpdatedAt: 100 }),
+      );
+
+      await Promise.resolve();
+
+      await settleEffects();
+      expect(dbService.upsertMany).toHaveBeenCalledWith(currentRules, 'owner-a');
+    });
+
     it('calls upsertMany with current rules on reorderRule', async () => {
       const currentRules = [rule('a', { sortOrder: 5 })];
       store.overrideSelector(selectPlaybookRules, currentRules);
@@ -341,6 +356,25 @@ describe('PlaybookEffects', () => {
       sub.unsubscribe();
 
       expect(syncService.pushPlaybookRules).toHaveBeenCalledTimes(1);
+      expect(syncService.pushPlaybookRules).toHaveBeenCalledWith([dirty]);
+    });
+
+    it('pushes a rule dirtied by unamendRule', async () => {
+      vi.useFakeTimers();
+      const dirty = rule('dirty', { clientUpdatedAt: 2000, syncedAt: 1000 });
+      setupAuthenticated([dirty]);
+
+      const sub = effects.pushDirty$.subscribe();
+      actions$.next(
+        PlaybookActions.unamendRule({ ruleId: 'dirty', lessonId: 'l', clientUpdatedAt: 2000 }),
+      );
+      vi.advanceTimersByTime(2000);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      sub.unsubscribe();
+
       expect(syncService.pushPlaybookRules).toHaveBeenCalledWith([dirty]);
     });
 

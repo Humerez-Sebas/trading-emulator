@@ -3,6 +3,7 @@ import {
   Component,
   ElementRef,
   HostListener,
+  Injector,
   computed,
   effect,
   inject,
@@ -11,6 +12,10 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { Store } from '@ngrx/store';
+import { assertNoCandles } from '../../services/session-sync.mapping';
+import { downloadJson } from '../../services/download-json';
+import { selectLessons } from '../../state/lessons/lessons.selectors';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { JournalDataService } from '../../services/journal-data.service';
 import type { JournalSessionModel } from '../../state/journal/journal-read.models';
@@ -41,7 +46,8 @@ type PageState = 'loading' | 'ready' | 'error';
  * selected trade row) and the page-level keyboard map (design spec §1.9).
  *
  * J-6: reads `JournalDataService` (itself dispatch-free) and dispatches
- * NOTHING of its own — no `Store` injected here at all.
+ * NOTHING of its own. The only Store access is a read-only `select` of the lessons
+ * slice, made lazily when the trader exports (`exportLessons`), never a dispatch.
  *
  * Section order is INVIOLABLE (D16.E): Performance → Execution → Behavior →
  * Rule Performance → Time of Day → Trades — the template below preserves it
@@ -68,6 +74,8 @@ type PageState = 'loading' | 'ready' | 'error';
 export class JournalPageComponent {
   private journalData = inject(JournalDataService);
   private router = inject(Router);
+  /** Resolves `Store` lazily at export time, so the page itself needs no store to render. */
+  private injector = inject(Injector);
 
   /** Bound from the `:sessionId` route param (`withComponentInputBinding`, app.routes.ts). */
   sessionId = input.required<string>();
@@ -81,6 +89,9 @@ export class JournalPageComponent {
   ruleFilter = signal<string | null>(null);
   /** Keyboard-selected trade row (↑↓); `null` = nothing selected yet. */
   selectedTradeId = signal<string | null>(null);
+
+  /** Spanish message shown when the lessons export is refused; `null` = none. */
+  exportError = signal<string | null>(null);
 
   private errorHeading = viewChild<ElementRef<HTMLHeadingElement>>('errorHeading');
 
@@ -146,6 +157,33 @@ export class JournalPageComponent {
     } catch {
       this.state.set('error');
     }
+  }
+
+  /**
+   * Exports EVERY lesson in the live store (not this session's read model) as
+   * `lessons-YYYY-MM-DD.lessons.json`, mirroring the `.playbook.json` export
+   * (RFC-016 §3). The payload is candle-free by `assertNoCandles` (N-5); import is
+   * out of scope.
+   */
+  exportLessons(): void {
+    const lessons = this.injector.get(Store).selectSignal(selectLessons)();
+    const payload = { version: 1, exportedAt: Date.now(), lessons };
+    try {
+      assertNoCandles(payload);
+    } catch {
+      this.exportError.set('No se pudo exportar: las reflexiones contienen datos no permitidos.');
+      return;
+    }
+    this.exportError.set(null);
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    this.downloadJson(`lessons-${yyyy}-${mm}-${dd}.lessons.json`, payload);
+  }
+
+  downloadJson(filename: string, payload: unknown): void {
+    downloadJson(filename, payload);
   }
 
   onRuleFilterToggled(ruleId: string | null): void {

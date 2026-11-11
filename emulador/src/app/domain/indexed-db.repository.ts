@@ -94,6 +94,35 @@ export class IndexedDbMarketDataRepository extends MarketDataRepository {
     });
   }
 
+  /**
+   * @inheritdoc
+   *
+   * Bounded key range on the compound index. IndexedDB returns index results
+   * in key order, i.e. ascending `time` within a fixed symbol+timeframe, so no
+   * sort is needed (and none is done).
+   */
+  async getCandlesInRange(
+    symbol: string,
+    timeframe: Timeframe,
+    t0: number,
+    t1: number,
+  ): Promise<Candle[]> {
+    const db = await this.open();
+    return new Promise<Candle[]>((resolve, reject) => {
+      const tx = db.transaction(CANDLES_STORE, 'readonly');
+      const index = tx.objectStore(CANDLES_STORE).index(CANDLES_BY_SYMBOL_TF_TIME);
+      const range = IDBKeyRange.bound([symbol, timeframe, t0], [symbol, timeframe, t1]);
+      const req = index.getAll(range);
+      req.onsuccess = () => {
+        const records: CandleRecord[] = req.result;
+        resolve(
+          records.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })),
+        );
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   /** @inheritdoc */
   async getCoverage(
     symbol: string,

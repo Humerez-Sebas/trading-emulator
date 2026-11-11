@@ -739,7 +739,10 @@ the system (never parsed, validated, or scored); permanent knowledge tier
 One trader-authored rule inside the Playbook aggregate: `{id, title, statement,
 createdAt, status, shortcutSlot, sortOrder, amendments}`. `statement` is opaque
 free text (P-2: the system never parses or evaluates it); `amendments` is a
-reserved extension point for RFC-016 (P-7: zero read sites).
+extension point filled by RFC-016: `amendRule` appends the id of the lesson that
+amends the rule and `unamendRule` removes it when the trader un-links the rule
+(P-7: no production reader yet; the reducer and the sync mapping only read it to
+write it).
 *Technical implication:* `PlaybookRule` (`state/playbook/playbook.models.ts`);
 persisted in the dedicated `emulador-playbook` IndexedDB database and synced to
 Supabase `playbook_rules` (RLS per user, LWW per row).
@@ -756,8 +759,8 @@ entities (`state/trading/trading.models.ts`).
 **slot de atajo** (shortcut slot).
 An integer `1..9` assigned to a `PlaybookRule` (`shortcutSlot`), binding a
 keyboard digit to that rule for post-placement trade tagging (G2, D15.D). Unique
-among active rules; pressing the digit tags the most recent active order/position
-(D15.A). The digit namespace is reserved and verified free of other bindings.
+among active rules; pressing Alt+digit (physical key, `ev.code`) tags the most recent active
+order/position (D15.A). Bare digits are not free: they belong to the interval dialog.
 *Technical implication:* `PlaybookRule.shortcutSlot`; listener in
 `playbook-hotkeys.directive.ts`.
 

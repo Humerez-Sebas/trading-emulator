@@ -15,6 +15,18 @@ export abstract class MarketDataRepository {
   abstract getCandles(symbol: string, timeframe: Timeframe): Promise<Candle[]>;
 
   /**
+   * Candles with `t0 <= time <= t1` (unix seconds UTC, inclusive) for the
+   * symbol+tf, ascending by `time`. Bounded: reads only the key range, never
+   * the whole series.
+   */
+  abstract getCandlesInRange(
+    symbol: string,
+    timeframe: Timeframe,
+    t0: number,
+    t1: number,
+  ): Promise<Candle[]>;
+
+  /**
    * Earliest and latest candle `time` (unix seconds UTC) for the symbol+tf, or
    * `null` when there are none. Cheap: reads only the two edge rows.
    */

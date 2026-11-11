@@ -27,6 +27,7 @@ import { defaultTradingData } from '../state/trading/trading.models';
 import type { PlaybookRule, PlaybookRuleStatus } from '../state/playbook/playbook.models';
 import type { Lesson } from '../state/lessons/lessons.models';
 import type { SceneSpec } from '../domain/reflection/scene-spec';
+import { findRasterViolation } from '../domain/reflection/lesson-raster-guard';
 
 class OwnerAgreementError extends Error {
   constructor() {
@@ -295,8 +296,16 @@ export class SessionSyncService {
   async pushLessons(lessons: Lesson[]): Promise<void> {
     if (!lessons.length) return;
     assertNoCandles(lessons);
+    // J-1 (defense in depth): a lesson local storage refuses must not reach the
+    // cloud either. Skip and log it, push the rest; the caller never stamps it.
+    const pushable = lessons.filter((l) => {
+      const part = findRasterViolation(l);
+      if (part) console.warn(`[lessons] push: skipping lesson ${l.id} (J-1 raster guard, ${part})`);
+      return !part;
+    });
+    if (!pushable.length) return;
     const userId = await this.currentUserId();
-    for (const lesson of lessons) {
+    for (const lesson of pushable) {
       const dbRow = lessonToDbRow(lesson, userId);
       const { error } = await this.client.from('lessons').upsert(dbRow, { onConflict: 'id' });
       await this.assertExpectedOwner(userId);

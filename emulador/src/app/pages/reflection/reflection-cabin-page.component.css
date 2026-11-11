@@ -99,6 +99,13 @@
   clip: rect(0 0 0 0);
 }
 
+/* inline save refusal — same idiom as `.export-error` in the Journal page. */
+.save-error {
+  margin: var(--space-2) 0 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
 /* toast (design spec §2.5: "toast breve 'Reflexión guardada'") — no existing
    toast/notice idiom in the codebase (grepped, none found); a page-local
    fixed-position notice, not a new global ui-primitive (§6.2 governs

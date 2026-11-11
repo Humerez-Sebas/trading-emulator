@@ -121,5 +121,21 @@ export const playbookFeature = createFeature({
         ),
       };
     }),
+    on(
+      PlaybookActions.unamendRule,
+      (state, { ruleId, lessonId, clientUpdatedAt }): PlaybookState => {
+        const target = state.rules.find((r) => r.id === ruleId);
+        // No-op (same reference) when the rule is unknown or never carried this lesson.
+        if (!target || !target.amendments.includes(lessonId)) return state;
+        return {
+          ...state,
+          rules: state.rules.map((r) =>
+            r.id === ruleId
+              ? { ...r, amendments: r.amendments.filter((id) => id !== lessonId), clientUpdatedAt }
+              : r,
+          ),
+        };
+      },
+    ),
   ),
 });

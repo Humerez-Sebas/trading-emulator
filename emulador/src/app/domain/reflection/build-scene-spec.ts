@@ -3,6 +3,7 @@ import type { TelemetryEvent } from '../../state/telemetry/telemetry.models';
 import type { DrawingSnapshotEntry } from '../../state/telemetry/telemetry.models';
 import { SceneSpec, SCENE_WINDOW_CANDLES } from './scene-spec';
 import type { Waypoint } from './waypoints';
+import { initialStopLoss, initialTakeProfit, stopLossAt, takeProfitAt } from './trade-geometry';
 
 /**
  * Metadata passed by the caller (Task 7's page component) to resolve
@@ -57,17 +58,24 @@ export function buildSceneSpec(
     t1: waypoint.time + windowSeconds,
   };
 
-  // Order geometry from the trade
+  const allEvents = events || [];
+
+  // Order geometry AT THAT MOMENT (RFC-016 MEDIUM-4): `trade.sl/tp` are the
+  // values at close. Entry is the geometry the trade opened with (moves made at
+  // the same replay instant happen after the fill); every other waypoint
+  // replays the SL/TP moves up to its time.
+  const isEntry = waypoint.slot === 1;
   const orderGeometry = {
     side: trade.side,
     entryPrice: trade.entryPrice,
-    sl: trade.sl,
-    tp: trade.tp,
+    sl: isEntry ? initialStopLoss(trade, allEvents) : stopLossAt(trade, allEvents, waypoint.time),
+    tp: isEntry
+      ? initialTakeProfit(trade, allEvents)
+      : takeProfitAt(trade, allEvents, waypoint.time),
     lots: trade.lots,
   };
 
   // Extract DrawingSnapshot events for this trade
-  const allEvents = events || [];
   const drawingSet = extractDrawingSet(trade.id, allEvents);
 
   // Build telemetry markers (opaque, management events + tMae/tMfe in window)

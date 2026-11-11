@@ -52,35 +52,89 @@
     <section class="rules-list">
       @for (rule of rules(); track rule.id) {
         <div class="rule-card" [class.retired]="rule.status === 'retired'">
-          <div class="rule-header">
-            <span class="rule-title">{{ rule.title }}</span>
-            @if (rule.shortcutSlot !== null) {
-              <span class="slot-badge">R{{ rule.shortcutSlot }}</span>
+          @if (editingId() === rule.id) {
+            <div class="edit-form">
+              <label>
+                Título
+                <input
+                  type="text"
+                  class="edit-title"
+                  [value]="editTitle()"
+                  (input)="onEditTitleInput($event)"
+                  (keydown.enter)="saveEdit(rule)"
+                  (keydown.escape)="cancelEdit()"
+                />
+              </label>
+              <label>
+                Regla
+                <textarea
+                  rows="3"
+                  class="edit-statement"
+                  [value]="editStatement()"
+                  (input)="onEditStatementInput($event)"
+                  (keydown.escape)="cancelEdit()"
+                ></textarea>
+              </label>
+              <div class="rule-actions">
+                <button appButton variant="ghost" class="edit-cancel" (click)="cancelEdit()">
+                  Cancelar
+                </button>
+                <button
+                  appButton
+                  class="edit-save"
+                  [disabled]="!editTitle().trim()"
+                  (click)="saveEdit(rule)"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+          } @else {
+            <div class="rule-header">
+              <span class="rule-title">{{ rule.title }}</span>
+              @if (rule.shortcutSlot !== null) {
+                <span class="slot-badge">R{{ rule.shortcutSlot }}</span>
+              }
+            </div>
+            @if (rule.statement) {
+              <p class="rule-statement">{{ rule.statement }}</p>
             }
-          </div>
-          @if (rule.statement) {
-            <p class="rule-statement">{{ rule.statement }}</p>
+            <div class="rule-actions">
+              @if (rule.status === 'active') {
+                <label class="slot-select">
+                  Atajo (Alt/⌥ + dígito)
+                  <select
+                    title="Alt + dígito (⌥ Option en Mac)"
+                    [attr.aria-keyshortcuts]="
+                      rule.shortcutSlot !== null ? 'Alt+' + rule.shortcutSlot : null
+                    "
+                    (change)="onSlotChange(rule, $event)"
+                  >
+                    @for (opt of slotOptions; track opt.label) {
+                      <option
+                        [value]="opt.value ?? ''"
+                        [selected]="opt.value === rule.shortcutSlot"
+                      >
+                        {{ opt.label }}
+                      </option>
+                    }
+                  </select>
+                </label>
+              }
+              <span class="rule-buttons">
+                <button appButton variant="subtle" class="edit-btn" (click)="startEdit(rule)">
+                  Editar
+                </button>
+                <button
+                  appButton
+                  [variant]="rule.status === 'active' ? 'danger' : 'subtle'"
+                  (click)="toggleStatus(rule)"
+                >
+                  {{ rule.status === 'active' ? 'Retirar' : 'Reactivar' }}
+                </button>
+              </span>
+            </div>
           }
-          <div class="rule-actions">
-            <label class="slot-select">
-              Atajo
-              <select [value]="rule.shortcutSlot ?? ''" (change)="onSlotChange(rule, $event)">
-                <option value="">—</option>
-                @for (opt of slotOptions; track opt.value) {
-                  @if (opt.value !== null) {
-                    <option [value]="opt.value">{{ opt.label }}</option>
-                  }
-                }
-              </select>
-            </label>
-            <button
-              appButton
-              [variant]="rule.status === 'active' ? 'danger' : 'subtle'"
-              (click)="toggleStatus(rule)"
-            >
-              {{ rule.status === 'active' ? 'Retirar' : 'Reactivar' }}
-            </button>
-          </div>
         </div>
       }
     </section>

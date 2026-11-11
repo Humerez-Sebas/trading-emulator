@@ -1,4 +1,5 @@
 import type { ClosedTrade } from '../../state/trading/trading.models';
+import { excursionInInitialR, initialRiskDistance } from './trade-geometry';
 import type {
   TelemetryEvent,
   TimeElapsedBeforeOrderPayload,
@@ -76,7 +77,7 @@ export function computeWaypoints(
     if (shouldMerge) {
       maeMerged = true;
     } else {
-      waypoints.push(createMaeWaypoint(trade));
+      waypoints.push(createMaeWaypoint(trade, events));
     }
   }
 
@@ -87,18 +88,20 @@ export function computeWaypoints(
     if (shouldMerge) {
       mfeMerged = true;
     } else {
-      waypoints.push(createMfeWaypoint(trade));
+      waypoints.push(createMfeWaypoint(trade, events));
     }
   }
 
   // Exit (slot 5): always present, with merged MAE/MFE facts if applicable
-  waypoints.push(createExitWaypoint(trade, maeMerged, mfeMerged));
+  waypoints.push(createExitWaypoint(trade, events, maeMerged, mfeMerged));
 
   return waypoints;
 }
 
 function createEntryWaypoint(trade: ClosedTrade, events: readonly TelemetryEvent[]): Waypoint {
-  const riskDistance = Math.abs(trade.entryPrice - trade.sl);
+  // INITIAL risk (RFC-016 MEDIUM-4): `trade.sl` is the SL at close and may have
+  // been managed (breakeven → 0). `null` = no usable SL at entry, shown as "—".
+  const riskDistance = initialRiskDistance(trade, events);
 
   // Look for TimeElapsedBeforeOrder event for this trade
   const elapsedEvent = events.find(
@@ -110,7 +113,8 @@ function createEntryWaypoint(trade: ClosedTrade, events: readonly TelemetryEvent
   const facts: Record<string, unknown> = {
     entryPrice: trade.entryPrice,
     riskDistancePrice: riskDistance,
-    riskDistanceR: 1, // By definition, the initial risk distance is 1R
+    // By definition the initial risk distance is 1R, when there is one.
+    riskDistanceR: riskDistance === null ? null : 1,
   };
 
   if (elapsedEvent) {
@@ -145,8 +149,8 @@ function createManagementWaypoint(events: TelemetryEvent[]): Waypoint {
   };
 }
 
-function createMaeWaypoint(trade: ClosedTrade): Waypoint {
-  const excursionR = computeExcursionR(trade.mae!, trade.entryPrice, trade.sl);
+function createMaeWaypoint(trade: ClosedTrade, events: readonly TelemetryEvent[]): Waypoint {
+  const excursionR = excursionInInitialR(trade, events, trade.mae);
 
   return {
     slot: 3,
@@ -158,8 +162,8 @@ function createMaeWaypoint(trade: ClosedTrade): Waypoint {
   };
 }
 
-function createMfeWaypoint(trade: ClosedTrade): Waypoint {
-  const excursionR = computeExcursionR(trade.mfe!, trade.entryPrice, trade.sl);
+function createMfeWaypoint(trade: ClosedTrade, events: readonly TelemetryEvent[]): Waypoint {
+  const excursionR = excursionInInitialR(trade, events, trade.mfe);
 
   return {
     slot: 4,
@@ -171,7 +175,12 @@ function createMfeWaypoint(trade: ClosedTrade): Waypoint {
   };
 }
 
-function createExitWaypoint(trade: ClosedTrade, maeMerged: boolean, mfeMerged: boolean): Waypoint {
+function createExitWaypoint(
+  trade: ClosedTrade,
+  events: readonly TelemetryEvent[],
+  maeMerged: boolean,
+  mfeMerged: boolean,
+): Waypoint {
   const facts: Record<string, unknown> = {
     profit: trade.profit,
     rMultiple: trade.rMultiple,
@@ -181,7 +190,7 @@ function createExitWaypoint(trade: ClosedTrade, maeMerged: boolean, mfeMerged: b
 
   // Add merged MAE facts if applicable
   if (maeMerged && trade.mae !== undefined && trade.mae > 0) {
-    const excursionR = computeExcursionR(trade.mae, trade.entryPrice, trade.sl);
+    const excursionR = excursionInInitialR(trade, events, trade.mae);
     facts['mergedMae'] = {
       excursion: trade.mae,
       excursionR,
@@ -191,7 +200,7 @@ function createExitWaypoint(trade: ClosedTrade, maeMerged: boolean, mfeMerged: b
 
   // Add merged MFE facts if applicable
   if (mfeMerged && trade.mfe !== undefined && trade.mfe > 0) {
-    const excursionR = computeExcursionR(trade.mfe, trade.entryPrice, trade.sl);
+    const excursionR = excursionInInitialR(trade, events, trade.mfe);
     facts['mergedMfe'] = {
       excursion: trade.mfe,
       excursionR,
@@ -204,15 +213,4 @@ function createExitWaypoint(trade: ClosedTrade, maeMerged: boolean, mfeMerged: b
     time: trade.closeTime,
     facts,
   };
-}
-
-/**
- * Compute excursion in R units (RFC-014 G4). Returns null when risk distance
- * is zero (degenerate SL == entry), matching excursion-stats.ts idiom.
- * A zero excursion is legitimate and is NOT treated as absent.
- */
-function computeExcursionR(excursion: number, entryPrice: number, sl: number): number | null {
-  const riskDistance = Math.abs(entryPrice - sl);
-  if (riskDistance === 0) return null;
-  return excursion / riskDistance;
 }

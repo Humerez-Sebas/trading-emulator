@@ -60,10 +60,14 @@
           <section class="reflection-panel" [class.has-reflection]="!!existingLesson()">
             <app-lesson-form
               [existing]="existingLesson()"
+              [tradeId]="resolvedTradeId()"
               [activeRules]="activeRules()"
               [saving]="saving()"
               (save)="onSave($event)"
             />
+            @if (saveError(); as err) {
+              <p class="save-error" role="alert">{{ err }}</p>
+            }
           </section>
         </div>
       </div>

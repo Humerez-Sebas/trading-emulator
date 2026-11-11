@@ -1,6 +1,7 @@
 /* eslint-disable @angular-eslint/prefer-inject -- constructor inject()-defaults keep this service unit-testable via direct construction (new Service(deps)) without TestBed; see services design note. */
 import { inject, Injectable } from '@angular/core';
 import { MAX_EVIDENCE_SCENES } from '../domain/reflection/scene-spec';
+import { findRasterViolation } from '../domain/reflection/lesson-raster-guard';
 import { assertNoCandles } from './session-sync.mapping';
 import { Lesson } from '../state/lessons/lessons.models';
 import { NO_OWNER_MESSAGE, ownerLessonsDbName } from './owner-scope';
@@ -119,18 +120,19 @@ export class LessonsDbService {
   }
 
   /**
-   * J-1 Raster guard: reject any lesson whose serialized form smuggles
-   * rasterized content (data:image patterns). The system NEVER stores pixels;
-   * scenes are recomputed on demand from SceneSpec (TKM §2.1, RFC-016 §4).
-   * Rejects, never strips (strict guard).
+   * J-1 Raster guard: reject any lesson that smuggles rasterized content. The
+   * system NEVER stores pixels; scenes are recomputed on demand from SceneSpec
+   * (TKM §2.1, RFC-016 §4). Rejects, never strips (strict guard). The predicate
+   * (and its scope: evidence vs. free text) lives in `findRasterViolation`, shared
+   * with the Cabin and the cloud push.
    */
   private assertNoRasterizedContent(lessons: Lesson[]): void {
-    const rasterPattern = /data:image|base64|blob:/i;
     for (const lesson of lessons) {
-      const serialized = JSON.stringify(lesson);
-      if (rasterPattern.test(serialized)) {
+      const part = findRasterViolation(lesson);
+      if (part) {
+        const where = part === 'evidence' ? 'evidence' : 'free text';
         throw new Error(
-          `J-1 raster guard: lesson ${lesson.id} smuggles rasterized content (data:image/base64/blob patterns forbidden)`,
+          `J-1 raster guard: lesson ${lesson.id} smuggles rasterized content in its ${where} (data:image/base64/blob patterns forbidden in evidence; image data URIs forbidden in free text)`,
         );
       }
     }

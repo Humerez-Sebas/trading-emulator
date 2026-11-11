@@ -188,6 +188,51 @@ describe('IndexedDbMarketDataRepository.getCandles', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 2a. IndexedDbMarketDataRepository.getCandlesInRange (RFC-016 MEDIUM-5)
+// ---------------------------------------------------------------------------
+
+describe('IndexedDbMarketDataRepository.getCandlesInRange', () => {
+  let db: IDBDatabase;
+
+  // Unique symbol: shares the fake-indexeddb instance with the other describes.
+  beforeAll(async () => {
+    db = await seedCandlesDb([
+      // unordered insertion on purpose: order must come from the index, not a sort
+      { symbol: 'RNGUSD', timeframe: 'M1', time: 4000, open: 4, high: 5, low: 3, close: 4.5 },
+      { symbol: 'RNGUSD', timeframe: 'M1', time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 },
+      { symbol: 'RNGUSD', timeframe: 'M1', time: 3000, open: 3, high: 4, low: 2, close: 3.5 },
+      { symbol: 'RNGUSD', timeframe: 'M1', time: 2000, open: 2, high: 3, low: 1, close: 2.5 },
+      { symbol: 'RNGUSD', timeframe: 'M15', time: 2500, open: 9, high: 9, low: 9, close: 9 },
+      { symbol: 'OTHUSD', timeframe: 'M1', time: 2500, open: 9, high: 9, low: 9, close: 9 },
+    ]);
+  });
+
+  afterAll(() => {
+    db?.close();
+  });
+
+  it('returns only candles inside [t0, t1] inclusive, ascending, for the symbol+tf', async () => {
+    const repo = new IndexedDbMarketDataRepository();
+    const candles = await repo.getCandlesInRange('RNGUSD', 'M1', 2000, 3000);
+
+    expect(candles.map((c) => c.time)).toEqual([2000, 3000]);
+    expect(Object.keys(candles[0]).sort()).toEqual(['close', 'high', 'low', 'open', 'time']);
+  });
+
+  it('returns [] for an empty range or an unknown symbol', async () => {
+    const repo = new IndexedDbMarketDataRepository();
+    expect(await repo.getCandlesInRange('RNGUSD', 'M1', 5000, 6000)).toEqual([]);
+    expect(await repo.getCandlesInRange('NOPE', 'M1', 0, 99999)).toEqual([]);
+  });
+
+  it('does not bleed into other timeframes or symbols', async () => {
+    const repo = new IndexedDbMarketDataRepository();
+    const times = (await repo.getCandlesInRange('RNGUSD', 'M1', 0, 99999)).map((c) => c.time);
+    expect(times).toEqual([1000, 2000, 3000, 4000]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 2b. IndexedDbMarketDataRepository.getCoverage
 // ---------------------------------------------------------------------------
 

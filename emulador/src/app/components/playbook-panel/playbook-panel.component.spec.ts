@@ -149,4 +149,133 @@ describe('PlaybookPanelComponent', () => {
     expect(typeof body.exportedAt).toBe('number');
     expect(body.rules).toHaveLength(2);
   });
+
+  describe('inline edit', () => {
+    function clickEdit(): void {
+      const btn: HTMLButtonElement = fixture.nativeElement.querySelector('.edit-btn');
+      btn.click();
+      fixture.detectChanges();
+    }
+    function setValue(sel: string, value: string): void {
+      const el: HTMLInputElement = fixture.nativeElement.querySelector(sel);
+      el.value = value;
+      el.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('dispatches updateRule with the edited title and statement', () => {
+      create([makeRule({ id: 'r1' })]);
+      const spy = vi.spyOn(store, 'dispatch');
+      clickEdit();
+      setValue('.edit-title', '  Nuevo título ');
+      setValue('.edit-statement', 'Nueva regla');
+      (fixture.nativeElement.querySelector('.edit-save') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: PlaybookActions.updateRule.type,
+          id: 'r1',
+          title: 'Nuevo título',
+          statement: 'Nueva regla',
+          clientUpdatedAt: expect.any(Number),
+        }),
+      );
+      expect(fixture.nativeElement.querySelector('.edit-title')).toBeNull();
+    });
+
+    it('rejects an empty title: save is disabled and nothing is dispatched', () => {
+      create([makeRule({ id: 'r1' })]);
+      const spy = vi.spyOn(store, 'dispatch');
+      clickEdit();
+      setValue('.edit-title', '   ');
+      const save: HTMLButtonElement = fixture.nativeElement.querySelector('.edit-save');
+      expect(save.disabled).toBe(true);
+      save.click();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('cancel discards the draft without dispatching', () => {
+      create([makeRule({ id: 'r1' })]);
+      const spy = vi.spyOn(store, 'dispatch');
+      clickEdit();
+      setValue('.edit-title', 'Otro');
+      (fixture.nativeElement.querySelector('.edit-cancel') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(spy).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('.edit-title')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.rule-title').textContent).toContain(
+        'Regla de prueba',
+      );
+    });
+
+    it('does not dispatch when nothing changed', () => {
+      create([makeRule({ id: 'r1' })]);
+      const spy = vi.spyOn(store, 'dispatch');
+      clickEdit();
+      (fixture.nativeElement.querySelector('.edit-save') as HTMLButtonElement).click();
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  it('does not offer the slot select on a retired rule', () => {
+    create([makeRule({ id: 'r1', status: 'retired' })]);
+    expect(fixture.nativeElement.querySelector('.slot-select')).toBeNull();
+  });
+
+  it('still offers the slot select on an active rule', () => {
+    create([makeRule({ id: 'r1' })]);
+    expect(fixture.nativeElement.querySelector('.slot-select')).not.toBeNull();
+  });
+  describe('slot select reflects the assigned slot', () => {
+    const select = (): HTMLSelectElement =>
+      fixture.nativeElement.querySelector('.slot-select select');
+
+    it('shows the assigned slot on first render', () => {
+      create([makeRule({ shortcutSlot: 3 })]);
+      expect(select().value).toBe('3');
+    });
+
+    it('shows the empty option when the rule has no slot', () => {
+      create([makeRule({ shortcutSlot: null })]);
+      expect(select().value).toBe('');
+    });
+
+    it('keeps the assigned slot after an Editar -> Cancelar round trip', () => {
+      create([makeRule({ shortcutSlot: 3 })]);
+      fixture.nativeElement.querySelector('.edit-btn').click();
+      fixture.detectChanges();
+      const cancel = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('button'),
+      ).find((b) => b.textContent?.trim() === 'Cancelar');
+      cancel?.click();
+      fixture.detectChanges();
+      expect(select().value).toBe('3');
+    });
+
+    it('dispatches assignSlot with null when choosing the empty option on a slotted rule', () => {
+      create([makeRule({ id: 'r1', shortcutSlot: 3 })]);
+      const dispatchSpy = vi.spyOn(store, 'dispatch');
+      select().value = '';
+      select().dispatchEvent(new Event('change'));
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: PlaybookActions.assignSlot.type, id: 'r1', slot: null }),
+      );
+    });
+
+    it('exposes aria-keyshortcuts Alt+N for a slotted rule and none otherwise', () => {
+      create([makeRule({ shortcutSlot: 3 })]);
+      expect(select().getAttribute('aria-keyshortcuts')).toBe('Alt+3');
+      fixture.destroy();
+      create([makeRule({ shortcutSlot: null })]);
+      expect(select().hasAttribute('aria-keyshortcuts')).toBe(false);
+    });
+
+    it('tells the trader the shortcut is Alt/Option + digit', () => {
+      create([makeRule()]);
+      const label: HTMLElement = fixture.nativeElement.querySelector('.slot-select');
+      expect(label.textContent).toContain('Atajo (Alt/⌥ + dígito)');
+      expect(select().getAttribute('title')).toBe('Alt + dígito (⌥ Option en Mac)');
+    });
+  });
 });

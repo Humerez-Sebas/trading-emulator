@@ -56,6 +56,20 @@ describe('PlaybookHotkeysDirective', () => {
     document.dispatchEvent(ev);
   }
 
+  it('Alt+Shift+digit does not tag', () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    fire(
+      new KeyboardEvent('keydown', {
+        code: 'Digit3',
+        key: '#',
+        altKey: true,
+        shiftKey: true,
+        bubbles: true,
+      }),
+    );
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it('Alt+3 with rule in slot 3 dispatches tagTrade', () => {
     const spy = vi.spyOn(store, 'dispatch');
     fire(new KeyboardEvent('keydown', { key: '3', altKey: true, bubbles: true }));
@@ -119,5 +133,49 @@ describe('PlaybookHotkeysDirective', () => {
     const spy = vi.spyOn(store, 'dispatch');
     fire(new KeyboardEvent('keydown', { key: '3', altKey: false, bubbles: true }));
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('macOS-shaped Alt+1 (code Digit1, key "¡") dispatches tagTrade', () => {
+    store.overrideSelector(selectRuleBySlot, {
+      1: { ...rule3, id: 'r1', shortcutSlot: 1 },
+      3: rule3,
+    });
+    store.refreshState();
+    const spy = vi.spyOn(store, 'dispatch');
+    fire(new KeyboardEvent('keydown', { code: 'Digit1', key: '¡', altKey: true, bubbles: true }));
+    expect(spy).toHaveBeenCalledWith(TradingActions.tagTrade({ ruleId: 'r1' }));
+  });
+
+  it('Windows-shaped Alt+3 (code Digit3, key "3") dispatches tagTrade', () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    fire(new KeyboardEvent('keydown', { code: 'Digit3', key: '3', altKey: true, bubbles: true }));
+    expect(spy).toHaveBeenCalledWith(TradingActions.tagTrade({ ruleId: 'r3' }));
+  });
+
+  it('a non-digit code does NOT dispatch even when key is a digit', () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    fire(new KeyboardEvent('keydown', { code: 'KeyA', key: '3', altKey: true, bubbles: true }));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('an open role="dialog" element suppresses the hotkey', () => {
+    const dlg = document.createElement('div');
+    dlg.setAttribute('role', 'dialog');
+    document.body.appendChild(dlg);
+    try {
+      const spy = vi.spyOn(store, 'dispatch');
+      const host = document.querySelector('#host') as HTMLElement;
+      const ev = new KeyboardEvent('keydown', {
+        code: 'Digit3',
+        key: '3',
+        altKey: true,
+        bubbles: true,
+      });
+      Object.defineProperty(ev, 'target', { value: host });
+      fire(ev);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      dlg.remove();
+    }
   });
 });

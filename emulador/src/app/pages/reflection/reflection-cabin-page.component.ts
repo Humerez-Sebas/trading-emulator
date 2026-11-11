@@ -8,10 +8,11 @@ import {
   inject,
   input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { Store } from '@ngrx/store';
+import { createSelector, createFeatureSelector, Store } from '@ngrx/store';
 import { ButtonDirective } from '../../components/ui/button.directive';
 import { JournalDataService } from '../../services/journal-data.service';
 import type { JournalSessionModel } from '../../state/journal/journal-read.models';
@@ -23,8 +24,10 @@ import {
 } from '../../domain/reflection/waypoints';
 import { buildSceneSpec } from '../../domain/reflection/build-scene-spec';
 import { MAX_EVIDENCE_SCENES, type SceneSpec } from '../../domain/reflection/scene-spec';
+import { findRasterViolation } from '../../domain/reflection/lesson-raster-guard';
 import { LessonsActions } from '../../state/lessons/lessons.actions';
-import type { Lesson } from '../../state/lessons/lessons.models';
+import { lessonsFeature } from '../../state/lessons/lessons.reducer';
+import type { Lesson, LessonsState } from '../../state/lessons/lessons.models';
 import { PlaybookActions } from '../../state/playbook/playbook.actions';
 import { selectActiveRules } from '../../state/playbook/playbook.selectors';
 import type { ClosedTrade } from '../../state/trading/trading.models';
@@ -35,6 +38,24 @@ import { FrozenSceneHostComponent } from './frozen-scene-host.component';
 import { WaypointFactsComponent } from './waypoint-facts.component';
 import { LessonFormComponent, type LessonDraft } from './lesson-form.component';
 
+/**
+ * Page-local LIVE lessons read (selectLessonByTradeRef / selectLessonsLoaded
+ * semantics), null-safe on the feature slice: the Cabin's existing specs run on
+ * a MockStore with no `lessons` slice. In the app the slice always exists.
+ */
+const selectLessonsSlice = createFeatureSelector<LessonsState | undefined>(lessonsFeature.name);
+const selectLiveLessons = createSelector(selectLessonsSlice, (s) => s?.lessons ?? []);
+const selectLiveLessonsLoaded = createSelector(selectLessonsSlice, (s) => s?.loaded ?? true);
+
+/** Shown when a save is attempted before the lessons store has hydrated. */
+const LESSONS_LOADING_MESSAGE =
+  'Aún se están cargando tus reflexiones. Espera unos segundos y vuelve a guardar; si persiste, recarga la página.';
+
+/** Same lesson for the form's purposes: a sync ack (`syncedAt`) or a pull that
+ * rebuilds identical objects must not re-seed what the trader is typing. */
+const sameLessonVersion = (a: Lesson | null, b: Lesson | null): boolean =>
+  a === b || (!!a && !!b && a.id === b.id && a.clientUpdatedAt === b.clientUpdatedAt);
+
 type PageState = 'loading' | 'no-trades' | 'error' | 'ready';
 
 /**
@@ -44,7 +65,7 @@ type PageState = 'loading' | 'no-trades' | 'error' | 'ready';
  * loader, two surfaces" — never re-derives stats), runs the scene pipeline
  * (`computeWaypoints` → `buildSceneSpec`), owns the page-level keyboard map,
  * and is the ONLY place in `pages/reflection/**` that dispatches to the
- * Store — `LessonsActions.*` + `PlaybookActions.amendRule` ONLY (J-6).
+ * Store — `LessonsActions.*` + `PlaybookActions.amendRule`/`unamendRule` ONLY (J-6).
  *
  * Route params: `:sessionId` (required) + optional `:tradeId` — absent or
  * unresolvable (stale link) both fall back to the first trade (RFC §6),
@@ -86,11 +107,19 @@ export class ReflectionCabinPageComponent {
   managementExpandedSignal = signal(false);
   saving = signal(false);
   toastMessage = signal<string | null>(null);
+  /** Inline reason the last save was refused (draft is kept); null when none. */
+  saveError = signal<string | null>(null);
 
   private timeline = viewChild(WaypointTimelineComponent);
   private heading = viewChild<ElementRef<HTMLHeadingElement>>('pageHeading');
 
   activeRules = this.store.selectSignal(selectActiveRules);
+
+  /** LIVE lessons keyed by trade id. The cached read model snapshots lessons at
+   * load time, so a lesson that reaches the store afterwards (hydrate finishing
+   * late, a pull, a prior save) is only visible here. */
+  private liveLessons = this.store.selectSignal(selectLiveLessons);
+  private lessonsLoaded = this.store.selectSignal(selectLiveLessonsLoaded);
 
   /** Same view rows the Journal's Trades table renders (incl. `hasReflection`) —
    * `CabinTradeRow` is a structural subset of `TradeRowView`, so no re-mapping. */
@@ -143,12 +172,17 @@ export class ReflectionCabinPageComponent {
     );
   });
 
-  existingLesson = computed<Lesson | null>(() => {
-    const id = this.resolvedTradeId();
-    const m = this.model();
-    if (!id || !m) return null;
-    return m.lessonByTradeRef[id] ?? null;
-  });
+  existingLesson = computed<Lesson | null>(
+    () => {
+      const id = this.resolvedTradeId();
+      const m = this.model();
+      if (!id || !m) return null;
+      // Same last-wins rule as `selectLessonByTradeRef`.
+      const live = [...this.liveLessons()].reverse().find((l) => l.tradeRefs.includes(id));
+      return live ?? m.lessonByTradeRef[id] ?? null;
+    },
+    { equal: sameLessonVersion },
+  );
 
   constructor() {
     effect(() => {
@@ -162,6 +196,16 @@ export class ReflectionCabinPageComponent {
       this.resolvedTradeId();
       this.activeWaypointIndex.set(0);
       this.managementExpandedSignal.set(false);
+      // A refusal belongs to the trade it happened on.
+      this.saveError.set(null);
+    });
+
+    // The "lessons still loading" notice is moot once they are loaded.
+    effect(() => {
+      if (!this.lessonsLoaded()) return;
+      untracked(() => {
+        if (this.toastMessage() === LESSONS_LOADING_MESSAGE) this.toastMessage.set(null);
+      });
     });
 
     // DESIGN_SYSTEM §5.3: page navigation sets focus to the main heading.
@@ -215,7 +259,7 @@ export class ReflectionCabinPageComponent {
    * Save flow (design spec §2.5): mints `id`/`authoredAt`/`clientUpdatedAt`
    * HERE (purity — reducers stay clock-free), freezes evidence via deep copy
    * (J-3), dispatches `createLesson`/`updateLesson` + ONE `amendRule` PER
-   * linked rule (J-6: the only dispatches this whole surface makes), then
+   * linked rule and ONE `unamendRule` per rule dropped from an existing lesson (J-6: the only dispatches this whole surface makes), then
    * toasts + redirects to the Journal.
    */
   onSave(draft: LessonDraft): void {
@@ -223,7 +267,14 @@ export class ReflectionCabinPageComponent {
     const m = this.model();
     if (!trade || !m) return;
 
-    this.saving.set(true);
+    // Lessons not hydrated yet: an existing lesson for this trade may still be
+    // on its way, and creating now would write a second one. Ask to retry.
+    if (!this.lessonsLoaded()) {
+      this.toastMessage.set(LESSONS_LOADING_MESSAGE);
+      return;
+    }
+
+    this.saveError.set(null);
     const now = Date.now();
     const existing = this.existingLesson();
 
@@ -249,6 +300,21 @@ export class ReflectionCabinPageComponent {
           clientUpdatedAt: now,
         };
 
+    // J-1: refuse BEFORE any dispatch — the store, the amendments and the cloud
+    // must never see a lesson local storage will not write (same predicate as
+    // `LessonsDbService` and the push).
+    const violation = findRasterViolation(lesson);
+    if (violation) {
+      this.saveError.set(
+        violation === 'free-text'
+          ? 'No se puede guardar: el texto contiene una imagen pegada (data:image). Quítala y vuelve a guardar; tu borrador sigue aquí.'
+          : 'No se puede guardar: la evidencia de esta reflexión contiene datos de imagen, que no se almacenan.',
+      );
+      return;
+    }
+
+    this.saving.set(true);
+
     if (existing) {
       this.store.dispatch(
         LessonsActions.updateLesson({
@@ -267,6 +333,14 @@ export class ReflectionCabinPageComponent {
     for (const ruleId of draft.linkedRuleIds) {
       this.store.dispatch(
         PlaybookActions.amendRule({ ruleId, lessonId: lesson.id, clientUpdatedAt: now }),
+      );
+    }
+
+    // Rules dropped from an existing lesson no longer carry its amendment.
+    for (const ruleId of existing?.linkedRuleIds ?? []) {
+      if (draft.linkedRuleIds.includes(ruleId)) continue;
+      this.store.dispatch(
+        PlaybookActions.unamendRule({ ruleId, lessonId: lesson.id, clientUpdatedAt: now }),
       );
     }
 
