@@ -104,8 +104,9 @@ La SPA habla directo con Supabase y con el bucket R2 configurado en
 ## Tests y calidad
 
 ```bash
-# pipeline (Python)
-cd pipeline && python -m pytest -q
+# pipeline (Python) — usar `py`, no `python`: en Windows `python` resuelve al stub de
+# Microsoft Store, que imprime un anuncio de instalación y sale con 49 sin ejecutar nada.
+cd pipeline && py -m pytest -q
 cd pipeline && ruff check .
 cd pipeline && ruff format --check .
 

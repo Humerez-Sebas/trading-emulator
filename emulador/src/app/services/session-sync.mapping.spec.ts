@@ -13,13 +13,13 @@ import {
   mergeByLww,
 } from './session-sync.mapping';
 import {
-  SESSION_PAYLOAD_VERSION_2,
+  SESSION_PAYLOAD_VERSION_3,
   type PayloadInput,
-  type SessionPayloadV1,
+  type StoredSessionPayload,
   type FlattenInput,
   type FlattenSession,
   type CloudSessionRow,
-  type DrawingCollection,
+  type DrawingsV3,
 } from './session-sync.models';
 import { parseSessionPayload, singlePanelLayoutFor } from './session-migration';
 import type { LinkGroup } from '../state/link-groups/link-groups.models';
@@ -51,7 +51,7 @@ function sampleInput(): PayloadInput {
     activeTf: 'H1',
     customTfMinutes: null,
     playbackSpeed: 4,
-    drawings: {},
+    drawings: { version: 2, items: [] },
     notes: [],
     selectedTfs: ['M1', 'H1'],
     startRange: 1699000000,
@@ -65,11 +65,11 @@ function sampleInput(): PayloadInput {
 
 describe('toPayload / fromPayload', () => {
   it('stamps the schema version', () => {
-    // RFC-011 Task 3 (D9): toPayload now writes ONLY SessionPayloadV2 — this
-    // assertion's expected value changed from SESSION_PAYLOAD_VERSION (1) to
-    // SESSION_PAYLOAD_VERSION_2 because toPayload's return type itself changed
-    // (SessionPayloadV1 -> SessionPayloadV2), not a spontaneous edit.
-    expect(toPayload(sampleInput()).schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
+    // toPayload now writes ONLY SessionPayloadV3 (D9/D17.J) — this assertion's
+    // expected value changed from SESSION_PAYLOAD_VERSION_2 because
+    // toPayload's return type itself changed (SessionPayloadV2 ->
+    // SessionPayloadV3), not a spontaneous edit.
+    expect(toPayload(sampleInput()).schemaVersion).toBe(SESSION_PAYLOAD_VERSION_3);
   });
   it('round-trips losslessly (open positions, riskPct, sessionEnd, cursor, view)', () => {
     const input = sampleInput();
@@ -86,7 +86,7 @@ describe('toPayload / fromPayload', () => {
   });
   it('survives a JSON serialization round-trip (storage-faithful)', () => {
     const input = sampleInput();
-    const stored = JSON.parse(JSON.stringify(toPayload(input))) as SessionPayloadV1;
+    const stored = JSON.parse(JSON.stringify(toPayload(input))) as StoredSessionPayload;
     const back = fromPayload(stored, 'EURUSD');
     expect(back.trading).toEqual(input.trading);
     expect(back.cursor).toBe(input.currentTime);
@@ -208,16 +208,21 @@ function realActiveTrading(): TradingData {
   return t;
 }
 
-function activeDrawings(): Record<string, DrawingCollection> {
+function activeDrawings(): DrawingsV3 {
   const items: Drawing[] = [
     {
       id: 'd1',
+      symbol: 'EURUSD',
+      owner: { type: 'panel', id: 'panel-1' },
       kind: 'rect',
       p1: { time: 1699000000, price: 1.1 },
       p2: { time: 1699100000, price: 1.2 },
+      zIndex: 0,
+      locked: false,
+      visible: true,
     },
   ];
-  return { EURUSD: { version: 1, items } };
+  return { version: 2, items };
 }
 
 function realActiveSession(overrides: Partial<FlattenSession> = {}): FlattenSession {
@@ -324,11 +329,10 @@ describe('flattenWorkspace', () => {
     expect(rows.length).toBe(3);
     for (const row of rows) {
       expect(row.symbol).toBe('GBPUSD');
-      // RFC-011 Task 4 (folded audit fix): buildRow now stamps the row with
-      // the EMBEDDED payload's own schemaVersion (toPayload always emits V2,
-      // D9) rather than the hardcoded V1 constant, so the cloud
-      // `schema_version` column tracks reality.
-      expect(row.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
+      // buildRow stamps the row with the EMBEDDED payload's own schemaVersion
+      // (toPayload always emits V3, D9/D17.J) rather than a hardcoded
+      // constant, so the cloud `schema_version` column tracks reality.
+      expect(row.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_3);
       expect(() => assertNoCandles(row.payload)).not.toThrow();
     }
   });
@@ -520,7 +524,7 @@ function sampleV2Input(): PayloadInput {
   const { layout, panels } = singlePanelLayoutFor('EURUSD', 'H1');
   return {
     ...sampleInput(),
-    drawings: { EURUSD: { version: 1, items: [] } },
+    drawings: { version: 2, items: [] },
     layout,
     panels,
     linkGroups: [
@@ -529,11 +533,11 @@ function sampleV2Input(): PayloadInput {
   };
 }
 
-describe('toPayload / fromPayload — RFC-011 V2 fields', () => {
-  it('toPayload stamps schemaVersion 2 and carries layout/panels/linkGroups verbatim', () => {
+describe('toPayload / fromPayload — layout/panels/linkGroups fields (RFC-011, carried verbatim into V3)', () => {
+  it('toPayload stamps schemaVersion 3 and carries layout/panels/linkGroups verbatim', () => {
     const input = sampleV2Input();
     const payload = toPayload(input);
-    expect(payload.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
+    expect(payload.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_3);
     expect(payload.layout).toEqual(input.layout);
     expect(payload.panels).toEqual(input.panels);
     expect(payload.linkGroups).toEqual(input.linkGroups);
@@ -563,7 +567,7 @@ describe('toPayload / fromPayload — RFC-011 V2 fields', () => {
     expect(restored.trading).toEqual(input.trading);
   });
 
-  it('assertNoCandles still passes on a V2 payload (layout/panels/linkGroups contain no candle-shaped fields)', () => {
+  it('assertNoCandles still passes on a V3 payload (layout/panels/linkGroups contain no candle-shaped fields)', () => {
     expect(() => assertNoCandles(toPayload(sampleV2Input()))).not.toThrow();
   });
 });

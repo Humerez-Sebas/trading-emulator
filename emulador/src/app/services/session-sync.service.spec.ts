@@ -3,32 +3,84 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionSyncService } from './session-sync.service';
 import type { SupabaseService } from '../auth/supabase.service';
 import { PAYLOAD_MAX_BYTES, reconstructWorkspaces } from './session-sync.mapping';
-import { SESSION_PAYLOAD_VERSION_2 } from './session-sync.models';
+import { SESSION_PAYLOAD_VERSION_3 } from './session-sync.models';
 import type { CloudFolderRow, CloudSessionRow, SessionPayloadV1 } from './session-sync.models';
 import { WorkspaceDbService } from './workspace-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
+import { ownerWorkspaceDbName } from './owner-scope';
+import { DB_VERSION as MARKET_DB_VERSION } from './market-data-db';
 import { workspaceMeta, savedSession, position } from '../testing/fixtures';
 import { defaultTradingData } from '../state/trading/trading.models';
+import type { SessionFolder } from '../state/trading/trading.models';
+import type { WorkspaceMeta } from '../state/workspaces/workspaces.models';
 import { singlePanelLayoutFor } from './session-migration';
 import type { LinkGroup } from '../state/link-groups/link-groups.models';
+
+/** Owner every test in this file runs as (Session Sovereignty V2: user stores are per-owner). */
+const OWNER = 'owner-test';
+/** A DIFFERENT account signing in on the same browser profile. */
+const OTHER_OWNER = 'owner-intruder';
 
 function makeService(client: unknown, db?: WorkspaceDbService): SessionSyncService {
   return new SessionSyncService(
     { client } as unknown as SupabaseService,
-    db ?? new WorkspaceDbService(),
+    db ?? new WorkspaceDbService(fixedOwnerIdentity(OWNER)),
   );
 }
 
 const SYNC_DB_NAME = 'emulador-workspaces';
 
-/** Delete the workspaces DB and return a fresh, real (fake-indexeddb-backed) WorkspaceDbService. */
-async function freshDb(): Promise<WorkspaceDbService> {
-  await new Promise<void>((res, rej) => {
-    const req = indexedDB.deleteDatabase(SYNC_DB_NAME);
+function deleteDb(name: string): Promise<void> {
+  return new Promise<void>((res, rej) => {
+    const req = indexedDB.deleteDatabase(name);
     req.onsuccess = () => res();
     req.onerror = () => rej(req.error);
     req.onblocked = () => res();
   });
-  return new WorkspaceDbService();
+}
+
+/**
+ * Delete every database the service now spans — the shared market-data one
+ * (which also carries the legacy quarantine) and BOTH owners' user databases —
+ * and return a fresh, real (fake-indexeddb-backed) `WorkspaceDbService`.
+ */
+async function freshDb(ownerId: string = OWNER): Promise<WorkspaceDbService> {
+  await deleteDb(SYNC_DB_NAME);
+  await deleteDb(ownerWorkspaceDbName(OWNER));
+  await deleteDb(ownerWorkspaceDbName(OTHER_OWNER));
+  return new WorkspaceDbService(fixedOwnerIdentity(ownerId));
+}
+
+/** A `WorkspaceDbService` for another owner on the same origin (no DB deletion). */
+function dbFor(ownerId: string): WorkspaceDbService {
+  return new WorkspaceDbService(fixedOwnerIdentity(ownerId));
+}
+
+/**
+ * Writes records straight into the legacy, un-owned `meta`/`folders` stores of
+ * the SHARED database — the quarantine — the way a pre-split install left them.
+ * Bypasses the service deliberately: `WorkspaceDbService` exposes no write path
+ * into the quarantine, which is the whole point of the design.
+ */
+async function seedQuarantine(opts: {
+  metas?: WorkspaceMeta[];
+  folders?: SessionFolder[];
+}): Promise<void> {
+  // Open through the service first so the shared schema exists at DB_VERSION.
+  await dbFor(OWNER).listDatasets();
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(SYNC_DB_NAME, MARKET_DB_VERSION);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['meta', 'folders'], 'readwrite');
+    for (const m of opts.metas ?? []) tx.objectStore('meta').put(m);
+    for (const f of opts.folders ?? []) tx.objectStore('folders').put(f);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
 }
 
 // ---------------------------------------------------------------------------
@@ -40,10 +92,63 @@ async function freshDb(): Promise<WorkspaceDbService> {
 interface FakeResult {
   data: unknown;
   error: { message: string } | null;
+  /**
+   * Mirrors PostgREST's `count` (populated only when the caller passes
+   * `{ count: 'exact' }`). `undefined` models a client that never asked.
+   */
+  count?: number | null;
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+type PausedOwnerAssertion = Deferred<void> & { release: Deferred<void> };
+
+function pausedOwnerAssertion(db: WorkspaceDbService, occurrence: number): PausedOwnerAssertion {
+  const reached = deferred<void>();
+  const release = deferred<void>();
+  let calls = 0;
+  vi.spyOn(db, 'assertOwner').mockImplementation(async () => {
+    calls += 1;
+    if (calls === occurrence) {
+      reached.resolve();
+      await release.promise;
+    }
+  });
+  return Object.assign(reached, { release });
+}
+
+async function pullFoldersOnly(service: SessionSyncService): Promise<void> {
+  await (
+    service as unknown as { pullAndMergeFolders(expectedOwnerId: string): Promise<void> }
+  ).pullAndMergeFolders(OWNER);
+}
+
+async function pullSessionsOnly(service: SessionSyncService): Promise<void> {
+  await (
+    service as unknown as { pullAndMergeSessions(expectedOwnerId: string): Promise<void> }
+  ).pullAndMergeSessions(OWNER);
+}
+
+async function reconstructActiveOnly(service: SessionSyncService): Promise<void> {
+  await (
+    service as unknown as { reconstructActiveIds(expectedOwnerId: string): Promise<void> }
+  ).reconstructActiveIds(OWNER);
 }
 
 class FakeQueryBuilder implements PromiseLike<FakeResult> {
   selectCols: string | undefined;
+  selectOpts: { count?: string } | undefined;
   eqCol: string | undefined;
   eqVal: unknown;
   upsertRow: unknown;
@@ -55,8 +160,9 @@ class FakeQueryBuilder implements PromiseLike<FakeResult> {
     private readonly recorder: Recorder,
   ) {}
 
-  select(cols: string): this {
+  select(cols: string, opts?: { count?: string }): this {
     this.selectCols = cols;
+    this.selectOpts = opts;
     return this;
   }
 
@@ -113,10 +219,10 @@ interface Recorder {
   upsertCalls: { table: string; row: unknown; opts: unknown }[];
   deleteCalls: { table: string; eqCol: string | undefined; eqVal: unknown }[];
   callOrder: string[];
-  resolveSelect: (table: string, b: FakeQueryBuilder) => FakeResult;
-  resolveSingle: (table: string, b: FakeQueryBuilder) => FakeResult;
-  resolveUpsert: (table: string, b: FakeQueryBuilder) => FakeResult;
-  resolveDelete: (table: string, b: FakeQueryBuilder) => FakeResult;
+  resolveSelect: (table: string, b: FakeQueryBuilder) => FakeResult | Promise<FakeResult>;
+  resolveSingle: (table: string, b: FakeQueryBuilder) => FakeResult | Promise<FakeResult>;
+  resolveUpsert: (table: string, b: FakeQueryBuilder) => FakeResult | Promise<FakeResult>;
+  resolveDelete: (table: string, b: FakeQueryBuilder) => FakeResult | Promise<FakeResult>;
   /** Per-table one-shot "reject the next select" toggles (offline-resilience test). */
   rejectSelectOnce?: Record<string, () => boolean>;
 }
@@ -126,14 +232,33 @@ function makeFakeClient(opts: {
   payload?: unknown;
   folderRows?: unknown[];
   userId?: string | null;
+  /**
+   * Server-side EXACT row totals, as PostgREST would report them under
+   * `Prefer: count=exact`. Set one HIGHER than the corresponding `*Rows`
+   * length to model a response the server truncated at `db-max-rows`.
+   * Omitted ⇒ the totals equal what was returned (a complete answer).
+   */
+  summaryCount?: number | null;
+  folderCount?: number | null;
+  currentUserId?: () => string | null;
 }) {
+  /** PostgREST only populates `count` when the caller asked for it. */
+  const countFor = (b: FakeQueryBuilder, total: number | null | undefined, rows: unknown[]) =>
+    b.selectOpts?.count === 'exact' ? (total === undefined ? rows.length : total) : undefined;
+
   const recorder: Recorder = {
     upsertCalls: [],
     deleteCalls: [],
     callOrder: [],
-    resolveSelect: (table) => {
-      if (table === 'sessions') return { data: opts.summaryRows ?? [], error: null };
-      if (table === 'folders') return { data: opts.folderRows ?? [], error: null };
+    resolveSelect: (table, b) => {
+      if (table === 'sessions') {
+        const rows = opts.summaryRows ?? [];
+        return { data: rows, error: null, count: countFor(b, opts.summaryCount, rows) };
+      }
+      if (table === 'folders') {
+        const rows = opts.folderRows ?? [];
+        return { data: rows, error: null, count: countFor(b, opts.folderCount, rows) };
+      }
       return { data: [], error: null };
     },
     resolveSingle: () => ({ data: { payload: opts.payload }, error: null }),
@@ -143,9 +268,12 @@ function makeFakeClient(opts: {
 
   const client = {
     auth: {
-      getSession: async () => ({
-        data: { session: opts.userId === null ? null : { user: { id: opts.userId ?? 'user-1' } } },
-      }),
+      getSession: async () => {
+        const userId = opts.currentUserId?.() ?? opts.userId;
+        return {
+          data: { session: userId === null ? null : { user: { id: userId ?? OWNER } } },
+        };
+      },
     },
     from: (table: string) => new FakeQueryBuilder(table, recorder),
   };
@@ -287,9 +415,96 @@ describe('SessionSyncService.fetchPayload', () => {
   });
 });
 
+describe('SessionSyncService — in-flight owner agreement', () => {
+  it.each([
+    ['listSummaries', 'sessions'],
+    ['listFolders', 'folders'],
+  ] as const)(
+    '%s rejects cloud data when auth changes A to B during the request',
+    async (method, table) => {
+      let authOwner = OWNER;
+      const response = deferred<FakeResult>();
+      const started = deferred<void>();
+      const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
+      const original = recorder.resolveSelect;
+      recorder.resolveSelect = (selectedTable, builder) => {
+        if (selectedTable !== table) return original(selectedTable, builder);
+        started.resolve();
+        return response.promise;
+      };
+      const pending = makeService(client)[method]();
+      await started.promise;
+
+      authOwner = OTHER_OWNER;
+      response.resolve({ data: [], error: null, count: 0 });
+
+      await expect(pending).rejects.toThrow(/owner|propietario/i);
+    },
+  );
+
+  it('fetchPayload rejects a payload when auth changes A to B during the request', async () => {
+    let authOwner = OWNER;
+    const response = deferred<FakeResult>();
+    const started = deferred<void>();
+    const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
+    recorder.resolveSingle = () => {
+      started.resolve();
+      return response.promise;
+    };
+    const pending = makeService(client).fetchPayload('sess-1');
+    await started.promise;
+
+    authOwner = OTHER_OWNER;
+    response.resolve({ data: { payload: cleanPayload() }, error: null });
+
+    await expect(pending).rejects.toThrow(/owner|propietario/i);
+  });
+
+  it.each(['upsertSession', 'deleteSession', 'upsertFolder', 'deleteFolder'] as const)(
+    '%s does not report authoritative success when auth changes A to B in flight',
+    async (method) => {
+      let authOwner = OWNER;
+      const response = deferred<FakeResult>();
+      const started = deferred<void>();
+      const { client, recorder } = makeFakeClient({ currentUserId: () => authOwner });
+      if (method === 'upsertSession' || method === 'upsertFolder') {
+        recorder.resolveUpsert = () => {
+          started.resolve();
+          return response.promise;
+        };
+      } else {
+        recorder.resolveDelete = () => {
+          started.resolve();
+          return response.promise;
+        };
+      }
+      const service = makeService(client);
+      const pending = (() => {
+        if (method === 'upsertSession') return service.upsertSession(cleanRow());
+        if (method === 'deleteSession') return service.deleteSession('sess-1');
+        if (method === 'upsertFolder') {
+          return service.upsertFolder({
+            id: 'folder-1',
+            name: 'Plan',
+            sort: 0,
+            clientUpdatedAt: 1,
+          });
+        }
+        return service.deleteFolder('folder-1');
+      })();
+      await started.promise;
+
+      authOwner = OTHER_OWNER;
+      response.resolve({ data: null, error: null });
+
+      await expect(pending).rejects.toThrow(/owner|propietario/i);
+    },
+  );
+});
+
 describe('SessionSyncService.upsertSession', () => {
   it('upserts a dbRow with owner_id, snake_case keys, ISO client_updated_at, and payload', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const row = cleanRow();
 
@@ -300,7 +515,7 @@ describe('SessionSyncService.upsertSession', () => {
     expect(table).toBe('sessions');
     expect(opts).toEqual({ onConflict: 'id' });
     const r = dbRow as Record<string, unknown>;
-    expect(r['owner_id']).toBe('user-1');
+    expect(r['owner_id']).toBe(OWNER);
     expect(r['id']).toBe('sess-1');
     expect(r['symbol']).toBe('EURUSD');
     expect(r['folder_id']).toBeNull();
@@ -317,7 +532,7 @@ describe('SessionSyncService.upsertSession', () => {
   });
 
   it('converts a non-null lastOpenedAt (ms) to an ISO string', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const row = cleanRow({ lastOpenedAt: 1_700_060_000_000 });
 
@@ -328,7 +543,7 @@ describe('SessionSyncService.upsertSession', () => {
   });
 
   it('rejects an over-2MB payload WITHOUT calling upsert (size guard runs before network)', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const huge = {
       ...cleanPayload(),
@@ -341,7 +556,7 @@ describe('SessionSyncService.upsertSession', () => {
   });
 
   it('rejects a payload containing a forbidden candle field WITHOUT calling upsert', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const withCandles = {
       ...cleanPayload(),
@@ -395,7 +610,7 @@ describe('SessionSyncService.listFolders', () => {
 
 describe('SessionSyncService.upsertFolder', () => {
   it('upserts a folder dbRow with owner_id and ISO client_updated_at', async () => {
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client);
     const row: CloudFolderRow = {
       id: 'f1',
@@ -411,7 +626,7 @@ describe('SessionSyncService.upsertFolder', () => {
     expect(table).toBe('folders');
     expect(opts).toEqual({ onConflict: 'id' });
     const r = dbRow as Record<string, unknown>;
-    expect(r['owner_id']).toBe('user-1');
+    expect(r['owner_id']).toBe(OWNER);
     expect(r['id']).toBe('f1');
     expect(r['name']).toBe('My Folder');
     expect(r['sort']).toBe(0);
@@ -511,7 +726,7 @@ describe('SessionSyncService.flushDirty — folders', () => {
       clientUpdatedAt: 5000,
       syncedAt: 1000,
     });
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client, db);
 
     await service.flushDirty();
@@ -531,7 +746,7 @@ describe('SessionSyncService.flushDirty — folders', () => {
       clientUpdatedAt: 1000,
       syncedAt: 1000,
     });
-    const { client, recorder } = makeFakeClient({ userId: 'user-1' });
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
     const service = makeService(client, db);
 
     await service.flushDirty();
@@ -725,6 +940,266 @@ describe('SessionSyncService.pullAndMerge', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// TD-E5 red team: absence is DESTRUCTIVE (mergeByLww D1), so a pull that is
+// merely INCOMPLETE — a page PostgREST silently capped at `db-max-rows`, HTTP
+// 200, no error — would delete local entities that still exist in the cloud.
+// `assertCompletePull` compares the returned row count against the server's own
+// exact count and fails closed into the caller's existing offline catch.
+//
+// These specs pin the hazard, not just the fix: each one FAILS on the
+// pre-guard code (the omitted rows get deleted).
+// ---------------------------------------------------------------------------
+
+function summaryRow(id: string, clientUpdatedAt = '2024-01-01T00:00:00.000Z') {
+  return {
+    id,
+    name: id,
+    symbol: 'EURUSD',
+    folder_id: null,
+    client_updated_at: clientUpdatedAt,
+    last_opened_at: null,
+    required_datasets: [],
+    trades_count: 0,
+    initial_balance: 10000,
+    balance: 10000,
+    cursor: 1700050000,
+    schema_version: 3,
+    summary: null,
+  };
+}
+
+describe('SessionSyncService — truncated cloud pull must not delete local data (TD-E5)', () => {
+  let db: WorkspaceDbService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('listSummaries throws when the server reports more rows than it returned', async () => {
+    const { client } = makeFakeClient({
+      summaryRows: [summaryRow('a'), summaryRow('b')],
+      summaryCount: 3, // server holds 3; the page carried 2
+    });
+
+    await expect(makeService(client).listSummaries()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('listFolders throws when the server reports more rows than it returned', async () => {
+    const { client } = makeFakeClient({
+      folderRows: [{ id: 'f1', name: 'A', sort: 0, client_updated_at: '2024-01-01T00:00:00.000Z' }],
+      folderCount: 2,
+    });
+
+    await expect(makeService(client).listFolders()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('listSummaries rejects a null exact count because it proves no completeness', async () => {
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: null });
+    await expect(makeService(client).listSummaries()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('listFolders rejects a null exact count because it proves no completeness', async () => {
+    const { client } = makeFakeClient({ folderRows: [], folderCount: null });
+    await expect(makeService(client).listFolders()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('listSummaries rejects when the response contains more rows than the exact count', async () => {
+    const { client } = makeFakeClient({
+      summaryRows: [summaryRow('a'), summaryRow('b')],
+      summaryCount: 1,
+    });
+    await expect(makeService(client).listSummaries()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('listFolders rejects when the response contains more rows than the exact count', async () => {
+    const { client } = makeFakeClient({
+      folderRows: [
+        { id: 'f1', name: 'A', sort: 0, client_updated_at: '2024-01-01T00:00:00.000Z' },
+        { id: 'f2', name: 'B', sort: 1, client_updated_at: '2024-01-01T00:00:00.000Z' },
+      ],
+      folderCount: 1,
+    });
+    await expect(makeService(client).listFolders()).rejects.toThrow(/incompleta/i);
+  });
+
+  it('a synced local session OMITTED from a truncated page survives the pull', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [
+        savedSession({ id: 'sess-returned', clientUpdatedAt: 1000, syncedAt: 1000 }),
+        savedSession({ id: 'sess-omitted', clientUpdatedAt: 1000, syncedAt: 1000 }),
+      ],
+    });
+    await db.putMeta(meta);
+
+    // The cloud still holds BOTH rows (count: 2) but the page carried only one.
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [summaryRow('sess-returned')],
+      summaryCount: 2,
+      folderRows: [],
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    const ids = (updated?.sessions ?? []).map((s) => s.id);
+    expect(ids).toContain('sess-omitted');
+    expect(ids).toContain('sess-returned');
+    // Fail-closed means the whole merge is skipped — never a cloud delete.
+    expect(recorder.deleteCalls.filter((c) => c.table === 'sessions')).toEqual([]);
+  });
+
+  it('a null exact count cannot authorize D1 removal of a synced local session', async () => {
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: undefined,
+        sessions: [savedSession({ id: 'sess-unproven', clientUpdatedAt: 10, syncedAt: 10 })],
+      }),
+    );
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: null,
+      folderRows: [],
+      folderCount: 0,
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    expect((await db.getMeta('EURUSD'))?.sessions?.map((session) => session.id)).toEqual([
+      'sess-unproven',
+    ]);
+  });
+
+  it('a DIRTY (unpushed) local session omitted from a truncated page is preserved AND pushed', async () => {
+    // The unrecoverable case: syncedAt=1000 is what the cloud holds, but the
+    // user has edited since (clientUpdatedAt=2000) and that delta exists ONLY
+    // locally. `pullAndMerge` deletes at step 3 and flushes at step 5, so
+    // without the guard the delta is destroyed before the flush could save it.
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [savedSession({ id: 'sess-dirty', clientUpdatedAt: 2000, syncedAt: 1000 })],
+    });
+    await db.putMeta(meta);
+
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 7, // server has rows it did not return
+      folderRows: [],
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    const kept = (updated?.sessions ?? []).find((s) => s.id === 'sess-dirty');
+    expect(kept).toBeDefined();
+    // ...and the unpushed delta is now safely in the cloud rather than lost.
+    expect(
+      recorder.upsertCalls.find(
+        (c) => c.table === 'sessions' && (c.row as Record<string, unknown>)['id'] === 'sess-dirty',
+      ),
+    ).toBeDefined();
+  });
+
+  it('a synced-absent ACTIVE session keeps its trading data when the page was truncated', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'A',
+      activeClientUpdatedAt: 1000,
+      activeSyncedAt: 1000,
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta(meta);
+
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 4, folderRows: [] });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.activeSessionId).toBe('A');
+    expect(updated?.trading?.positions ?? []).toHaveLength(1);
+  });
+
+  it('a synced local folder omitted from a truncated page is not deleted', async () => {
+    await db.putFolder({
+      id: 'f-omitted',
+      name: 'Estrategias',
+      order: 0,
+      clientUpdatedAt: 1000,
+      syncedAt: 1000,
+    });
+
+    const { client } = makeFakeClient({ summaryRows: [], folderRows: [], folderCount: 3 });
+
+    await makeService(client, db).pullAndMerge();
+
+    expect((await db.listFolders()).map((f) => f.id)).toContain('f-omitted');
+  });
+
+  it('D1 is PRESERVED: a genuinely complete pull still removes a synced-absent local session', async () => {
+    // The guard must be narrow. An empty page whose exact count is also 0 is a
+    // complete answer — the cloud really has nothing — so D1 must still fire.
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [savedSession({ id: 'sess-gone', clientUpdatedAt: 1000, syncedAt: 1000 })],
+    });
+    await db.putMeta(meta);
+
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0, // complete: the server confirms zero rows
+      folderRows: [],
+      folderCount: 0,
+    });
+
+    await makeService(client, db).pullAndMerge();
+
+    const updated = await db.getMeta('EURUSD');
+    expect((updated?.sessions ?? []).some((s) => s.id === 'sess-gone')).toBe(false);
+  });
+
+  it('FIXED (was RESIDUAL HAZARD): a complete empty pull for a DIFFERENT owner cannot reach the first owner’s data', async () => {
+    // Session Sovereignty V2 inverts this spec. It previously PINNED the hazard
+    // as known-unfixed: IndexedDB was origin-scoped while RLS is owner-scoped, so
+    // a second account signing in on the same browser profile received a
+    // COMPLETE, correct, EMPTY pull (rows 0, count 0 — the completeness guard
+    // cannot help, the answer really is complete) and every session the first
+    // account had synced was deleted locally.
+    //
+    // The user-owned stores now live in a per-owner database, so the second
+    // account's pull reads and writes its OWN partition and the first account's
+    // records are unreachable — not merely un-deleted.
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [
+        savedSession({ id: 'first-owners-session', clientUpdatedAt: 1000, syncedAt: 1000 }),
+      ],
+    });
+    await db.putMeta(meta);
+
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+
+    // The intruder's own service instance — same origin, same fake client.
+    await makeService(client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    const survived = await db.getMeta('EURUSD');
+    expect((survived?.sessions ?? []).some((s) => s.id === 'first-owners-session')).toBe(true);
+    // …and the intruder sees nothing of it.
+    expect(await dbFor(OTHER_OWNER).getMeta('EURUSD')).toBeUndefined();
+  });
+});
+
 describe('SessionSyncService.flushDirty — active session push', () => {
   let db: WorkspaceDbService;
 
@@ -745,7 +1220,7 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     const { client, recorder } = makeFakeClient({
       summaryRows: [],
       folderRows: [],
-      userId: 'user-1',
+      userId: OWNER,
     });
     const service = makeService(client, db);
 
@@ -759,10 +1234,45 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     expect(updated?.activeSyncedAt).toBe(200);
   });
 
+  it('does not acknowledge or replace a newer active edit while its older upsert is delayed', async () => {
+    const meta = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'B',
+      activeClientUpdatedAt: 200,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'uploaded' })] },
+    });
+    await db.putMeta(meta);
+    const upsert = deferred<FakeResult>();
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
+    recorder.resolveUpsert = () => upsert.promise;
+
+    const pending = makeService(client, db).flushDirty();
+    await vi.waitFor(() => expect(recorder.upsertCalls).toHaveLength(1));
+    await db.putMeta({
+      ...meta,
+      activeClientUpdatedAt: 300,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'newer' })] },
+    });
+    upsert.resolve({ data: null, error: null });
+    await pending;
+
+    const updated = await db.getMeta('EURUSD');
+    expect(updated?.activeClientUpdatedAt).toBe(300);
+    expect(updated?.activeSyncedAt).toBe(100);
+    expect(updated?.trading?.positions[0]?.id).toBe('newer');
+  });
+
   it('flushDirtySessions pushes a row whose payload includes layout/panels/linkGroups sourced from the meta (RFC-011 Task 4)', async () => {
     const { layout, panels } = singlePanelLayoutFor('EURUSD', 'M1');
     const linkGroups: LinkGroup[] = [
-      { id: 'g1', color: '#0f0', syncCrosshair: true, syncTimeRange: false },
+      {
+        id: 'g1',
+        color: '#0f0',
+        syncCrosshair: true,
+        syncTimeRange: false,
+        syncDrawings: true,
+      },
     ];
     const meta = workspaceMeta({
       symbol: 'EURUSD',
@@ -776,7 +1286,7 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     const { client, recorder } = makeFakeClient({
       summaryRows: [],
       folderRows: [],
-      userId: 'user-1',
+      userId: OWNER,
     });
     const service = makeService(client, db);
 
@@ -793,7 +1303,236 @@ describe('SessionSyncService.flushDirty — active session push', () => {
     expect(pushed.layout).toEqual(layout);
     expect(pushed.panels).toEqual(panels);
     expect(pushed.linkGroups).toEqual(linkGroups);
-    expect(pushed.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_2);
+    expect(pushed.schemaVersion).toBe(SESSION_PAYLOAD_VERSION_3);
+  });
+});
+
+describe('SessionSyncService.flushDirty — folder push', () => {
+  it('does not acknowledge or replace a newer folder edit while its older upsert is delayed', async () => {
+    const db = await freshDb();
+    await db.putFolder({
+      id: 'f1',
+      name: 'Uploaded',
+      order: 0,
+      clientUpdatedAt: 200,
+      syncedAt: 100,
+    });
+    const upsert = deferred<FakeResult>();
+    const { client, recorder } = makeFakeClient({ userId: OWNER });
+    recorder.resolveUpsert = () => upsert.promise;
+
+    const pending = makeService(client, db).flushDirty();
+    await vi.waitFor(() => expect(recorder.upsertCalls).toHaveLength(1));
+    await db.putFolder({
+      id: 'f1',
+      name: 'Newer',
+      order: 7,
+      clientUpdatedAt: 300,
+      syncedAt: 100,
+    });
+    upsert.resolve({ data: null, error: null });
+    await pending;
+
+    expect(await db.listFolders()).toEqual([
+      {
+        id: 'f1',
+        name: 'Newer',
+        order: 7,
+        clientUpdatedAt: 300,
+        syncedAt: 100,
+      },
+    ]);
+  });
+});
+
+describe('SessionSyncService — pull consequences use current local revisions', () => {
+  it('does not replace a newer folder edit with an older cloud winner', async () => {
+    const db = await freshDb();
+    await db.putFolder({ id: 'f1', name: 'Local', order: 0, clientUpdatedAt: 100, syncedAt: 100 });
+    const { client } = makeFakeClient({
+      folderRows: [
+        { id: 'f1', name: 'Cloud', sort: 1, client_updated_at: new Date(200).toISOString() },
+      ],
+      folderCount: 1,
+      userId: OWNER,
+    });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullFoldersOnly(makeService(client, db));
+    await pause.promise;
+    await db.putFolder({ id: 'f1', name: 'Newer', order: 7, clientUpdatedAt: 300, syncedAt: 100 });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.listFolders())[0]).toEqual({
+      id: 'f1',
+      name: 'Newer',
+      order: 7,
+      clientUpdatedAt: 300,
+      syncedAt: 100,
+    });
+  });
+
+  it('does not delete a folder edited after the D1 snapshot', async () => {
+    const db = await freshDb();
+    await db.putFolder({ id: 'f1', name: 'Old', order: 0, clientUpdatedAt: 100, syncedAt: 100 });
+    const { client } = makeFakeClient({ folderRows: [], folderCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullFoldersOnly(makeService(client, db));
+    await pause.promise;
+    await db.putFolder({ id: 'f1', name: 'Newer', order: 2, clientUpdatedAt: 300, syncedAt: 100 });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.listFolders())[0]?.name).toBe('Newer');
+  });
+
+  it('does not delete an archived session edited after the D1 snapshot', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [
+        savedSession({ id: 'archived', name: 'Old', clientUpdatedAt: 100, syncedAt: 100 }),
+      ],
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({
+      ...original,
+      sessions: [
+        savedSession({ id: 'archived', name: 'Newer', clientUpdatedAt: 300, syncedAt: 100 }),
+      ],
+    });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.getMeta('EURUSD'))?.sessions?.[0]?.name).toBe('Newer');
+  });
+
+  it('does not clear active trading edited after the D1 snapshot', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'old' })] },
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({
+      ...original,
+      activeClientUpdatedAt: 300,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'newer' })] },
+    });
+    pause.release.resolve();
+    await pending;
+
+    const after = await db.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('active');
+    expect(after?.trading?.positions[0]?.id).toBe('newer');
+  });
+
+  it('does not clear changed active trading when persistence has not yet advanced its clock', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'old' })] },
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({
+      ...original,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'newer' })] },
+    });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.getMeta('EURUSD'))?.trading?.positions[0]?.id).toBe('newer');
+  });
+
+  it('does not clear a changed active cursor when persistence has not yet advanced its clock', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      currentTime: 10,
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({ ...original, currentTime: 20 });
+    pause.release.resolve();
+    await pending;
+
+    expect((await db.getMeta('EURUSD'))?.currentTime).toBe(20);
+  });
+
+  it('does not clear changed active files when persistence has not yet advanced its clock', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: 'active',
+      activeClientUpdatedAt: 100,
+      activeSyncedAt: 100,
+      files: { M1: 'old.csv' },
+      trading: { ...defaultTradingData(), positions: [position()] },
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ summaryRows: [], summaryCount: 0, userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 4);
+    const pending = pullSessionsOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({ ...original, files: { M1: 'newer.csv' } });
+    pause.release.resolve();
+    await pending;
+
+    const after = await db.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('active');
+    expect(after?.files).toEqual({ M1: 'newer.csv' });
+  });
+
+  it('reconstructs the active id without replacing concurrent persistence', async () => {
+    const db = await freshDb();
+    const original = workspaceMeta({
+      symbol: 'EURUSD',
+      activeSessionId: undefined,
+      sessions: [savedSession({ id: 'archived', clientUpdatedAt: 100, syncedAt: 100 })],
+    });
+    await db.putMeta(original);
+    const { client } = makeFakeClient({ userId: OWNER });
+    const pause = pausedOwnerAssertion(db, 1);
+    const pending = reconstructActiveOnly(makeService(client, db));
+    await pause.promise;
+    await db.putMeta({
+      ...original,
+      activeSessionId: 'concurrent',
+      activeClientUpdatedAt: 300,
+      trading: { ...defaultTradingData(), positions: [position({ id: 'newer' })] },
+    });
+    pause.release.resolve();
+    await pending;
+
+    const after = await db.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('concurrent');
+    expect(after?.trading?.positions[0]?.id).toBe('newer');
   });
 });
 
@@ -820,6 +1559,24 @@ describe('SessionSyncService.markActiveDirty', () => {
     const updated = await db.getMeta('EURUSD');
     expect(updated?.activeClientUpdatedAt).toBe(12345);
 
+    vi.restoreAllMocks();
+  });
+
+  it('advances beyond both prior clocks when wall time is equal or moves backward', async () => {
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'A',
+        activeClientUpdatedAt: 500,
+        activeSyncedAt: 700,
+        trading: { ...defaultTradingData(), positions: [position()] },
+      }),
+    );
+    vi.spyOn(Date, 'now').mockReturnValue(100);
+
+    await makeService({}, db).markActiveDirty('EURUSD');
+
+    expect((await db.getMeta('EURUSD'))?.activeClientUpdatedAt).toBe(701);
     vi.restoreAllMocks();
   });
 
@@ -859,5 +1616,546 @@ describe('reconstructWorkspaces — V1 cloud row migration (RFC-011 Task 4)', ()
     expect(ws!.active.layout).toEqual(layout);
     expect(ws!.active.panels).toEqual(panels);
     expect(ws!.active.linkGroups).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session Sovereignty V2 — owner isolation, quarantine, evidence-based adoption
+//
+// EVERY test below is a NEGATIVE PROBE: point `ownerWorkspaceDbName` at the
+// legacy constant (i.e. undo the partition) and these go red. They reconstruct
+// the whole user-visible path — two accounts, one browser profile, a real
+// fake-indexeddb database per owner — rather than comparing one field to another.
+// ---------------------------------------------------------------------------
+
+/** A PostgREST `sessions` summary row for the sovereignty probes (the file already
+ * has a `summaryRow` helper fixed to EURUSD; these probes need the symbol and a
+ * numeric epoch, so this is a sibling rather than a signature change to it). */
+function ownedSummaryRow(id: string, symbol = 'EURUSD', clientUpdatedAtMs = 10) {
+  return {
+    id,
+    name: 'Plan',
+    symbol,
+    folder_id: null,
+    client_updated_at: new Date(clientUpdatedAtMs).toISOString(),
+    last_opened_at: null,
+    required_datasets: [],
+    trades_count: 0,
+    initial_balance: 10000,
+    balance: 10000,
+    cursor: 0,
+    schema_version: 3,
+    summary: null,
+  };
+}
+
+describe('Session Sovereignty V2 — owner isolation across an account switch', () => {
+  beforeEach(async () => {
+    await freshDb(OWNER);
+  });
+
+  it('A then B: B empty pull does not delete, mutate, expose or upload A data', async () => {
+    const dbA = dbFor(OWNER);
+    await dbA.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'A-active',
+        activeClientUpdatedAt: 1000,
+        activeSyncedAt: 1000,
+        trading: { ...defaultTradingData(), positions: [position()] },
+        sessions: [savedSession({ id: 'A-archived', clientUpdatedAt: 900, syncedAt: 900 })],
+      }),
+    );
+    await dbA.putFolder({
+      id: 'A-folder',
+      name: 'Plan A',
+      order: 0,
+      clientUpdatedAt: 5,
+      syncedAt: 5,
+    });
+
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    await makeService(client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    // not deleted, not mutated
+    const after = await dbA.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('A-active');
+    expect(after?.trading?.positions).toHaveLength(1);
+    expect((after?.sessions ?? []).map((s) => s.id)).toEqual(['A-archived']);
+    expect((await dbA.listFolders()).map((f) => f.id)).toEqual(['A-folder']);
+
+    // not exposed
+    expect(await dbFor(OTHER_OWNER).listMetas()).toEqual([]);
+    expect(await dbFor(OTHER_OWNER).listFolders()).toEqual([]);
+
+    // not uploaded under B owner_id — the flushDirty half of the defect
+    expect(recorder.upsertCalls).toEqual([]);
+  });
+
+  it('an A pull whose sessions response resolves after auth becomes B leaves A local state untouched', async () => {
+    const dbA = dbFor(OWNER);
+    await dbA.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'A-active',
+        activeClientUpdatedAt: 10,
+        activeSyncedAt: 10,
+        trading: { ...defaultTradingData(), positions: [position()] },
+        sessions: [savedSession({ id: 'A-archived', clientUpdatedAt: 9, syncedAt: 9 })],
+      }),
+    );
+    let authOwner = OWNER;
+    const response = deferred<FakeResult>();
+    const started = deferred<void>();
+    const { client, recorder } = makeFakeClient({
+      currentUserId: () => authOwner,
+      folderRows: [],
+      folderCount: 0,
+    });
+    const original = recorder.resolveSelect;
+    recorder.resolveSelect = (table, builder) => {
+      if (table !== 'sessions') return original(table, builder);
+      started.resolve();
+      return response.promise;
+    };
+    const pending = makeService(client, dbA).pullAndMerge();
+    await started.promise;
+
+    authOwner = OTHER_OWNER;
+    response.resolve({ data: [], error: null, count: 0 });
+    await expect(pending).rejects.toThrow(/owner|propietario/i);
+
+    const after = await dbA.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('A-active');
+    expect(after?.trading?.positions).toHaveLength(1);
+    expect(after?.sessions?.map((session) => session.id)).toEqual(['A-archived']);
+    expect(await dbA.getLastPullAt()).toBeNull();
+    expect(recorder.upsertCalls).toEqual([]);
+  });
+
+  it('A then B then A: A local state is still available when A logs back in', async () => {
+    const dbA = dbFor(OWNER);
+    await dbA.putMeta(
+      workspaceMeta({
+        symbol: 'XAUUSD',
+        activeSessionId: undefined,
+        sessions: [savedSession({ id: 'A-archived', clientUpdatedAt: 9, syncedAt: 9 })],
+      }),
+    );
+
+    const b = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    await makeService(b.client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    // A signs back in; the cloud still holds A row, so nothing is synced-absent.
+    const a = makeFakeClient({
+      summaryRows: [ownedSummaryRow('A-archived', 'XAUUSD', 9)],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(a.client, dbFor(OWNER)).pullAndMerge();
+
+    const after = await dbFor(OWNER).getMeta('XAUUSD');
+    expect((after?.sessions ?? []).map((s) => s.id)).toEqual(['A-archived']);
+  });
+
+  it('B then A: a workspace B creates never appears in A partition', async () => {
+    await dbFor(OTHER_OWNER).putMeta(
+      workspaceMeta({ symbol: 'GBPUSD', activeSessionId: 'B-active' }),
+    );
+    expect(await dbFor(OWNER).getMeta('GBPUSD')).toBeUndefined();
+    expect(await dbFor(OWNER).listMetas()).toEqual([]);
+  });
+
+  it('a DIRTY local-only session is never uploaded under a second account owner_id', async () => {
+    // The second half of the defect: never-synced locals survived the delete
+    // branch and were then upserted with the SECOND account owner_id.
+    await dbFor(OWNER).putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'A-only',
+        activeClientUpdatedAt: 5000,
+        activeSyncedAt: undefined, // never pushed
+        trading: { ...defaultTradingData(), positions: [position()] },
+      }),
+    );
+
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    await makeService(client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    expect(recorder.upsertCalls.filter((c) => c.table === 'sessions')).toEqual([]);
+    // still local, still dirty, for its real owner
+    const mine = await dbFor(OWNER).getMeta('EURUSD');
+    expect(mine?.activeSyncedAt).toBeUndefined();
+    expect(mine?.trading?.positions).toHaveLength(1);
+  });
+
+  it('an A-bound DB fails closed for upsert, destructive pull, and delete under B auth', async () => {
+    const dbA = dbFor(OWNER);
+    await dbA.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: undefined,
+        sessions: [savedSession({ id: 'A-session', clientUpdatedAt: 10, syncedAt: 10 })],
+      }),
+    );
+    await dbA.addPendingDelete({ entity: 'session', id: 'A-delete' });
+    const { client, recorder } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    const service = makeService(client, dbA);
+
+    await expect(service.upsertSession(cleanRow({ id: 'A-upload' }))).rejects.toThrow(
+      /owner|propietario/i,
+    );
+    await expect(service.deleteSession('A-delete')).rejects.toThrow(/owner|propietario/i);
+    await expect(service.pullAndMerge()).rejects.toThrow(/owner|propietario/i);
+
+    expect(recorder.upsertCalls).toEqual([]);
+    expect(recorder.deleteCalls).toEqual([]);
+    expect((await dbA.getMeta('EURUSD'))?.sessions?.map((session) => session.id)).toEqual([
+      'A-session',
+    ]);
+    expect(await dbA.listPendingDeletes()).toEqual([{ entity: 'session', id: 'A-delete' }]);
+  });
+
+  it('D1 is PRESERVED within one owner: a complete empty pull still removes a synced-absent session', async () => {
+    // The fix must be narrow. Same-owner delete propagation is intended
+    // behaviour (multi-device) and owner scoping must not silently disable it.
+    const db = dbFor(OWNER);
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: undefined,
+        sessions: [savedSession({ id: 'deleted-elsewhere', clientUpdatedAt: 10, syncedAt: 10 })],
+      }),
+    );
+
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(client, db).pullAndMerge();
+
+    const after = await db.getMeta('EURUSD');
+    expect((after?.sessions ?? []).map((s) => s.id)).toEqual([]);
+  });
+
+  it('fails closed with no resolvable owner: no un-owned fallback store is read or written', async () => {
+    const noOwner = new WorkspaceDbService(fixedOwnerIdentity(null));
+    await expect(noOwner.listMetas()).rejects.toThrow(/Sin sesion|Sin sesión/);
+    await expect(noOwner.putMeta(workspaceMeta({ symbol: 'EURUSD' }))).rejects.toThrow(
+      /Sin sesion|Sin sesión/,
+    );
+    await expect(noOwner.listFolders()).rejects.toThrow(/Sin sesion|Sin sesión/);
+    await expect(noOwner.getLastPullAt()).rejects.toThrow(/Sin sesion|Sin sesión/);
+    // Market data is NOT user-owned and stays available (domain separation).
+    await expect(noOwner.listDatasets()).resolves.toEqual([]);
+  });
+});
+
+describe('Session Sovereignty V2 — legacy quarantine and evidence-based adoption (O-7)', () => {
+  beforeEach(async () => {
+    await freshDb(OWNER);
+  });
+
+  it('quarantined legacy data is NOT adopted merely because someone logged in', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'legacy-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+      folders: [{ id: 'legacy-folder', name: 'Vieja', order: 0, clientUpdatedAt: 1, syncedAt: 1 }],
+    });
+
+    // A pull that proves nothing: this owner owns no cloud rows at all.
+    const { client } = makeFakeClient({
+      summaryRows: [],
+      summaryCount: 0,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+    await makeService(client, db).pullAndMerge();
+
+    expect(await db.listMetas()).toEqual([]);
+    expect(await db.listFolders()).toEqual([]);
+    // still recoverable, byte for byte
+    expect((await db.listQuarantinedMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+    expect((await db.listQuarantinedFolders()).map((f) => f.id)).toEqual(['legacy-folder']);
+  });
+
+  it('adopts a quarantined record ONLY when the cloud proves this owner owns one of its ids', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+        workspaceMeta({
+          symbol: 'GBPUSD', // somebody else's; nothing proves it
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'stranger-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+      folders: [
+        { id: 'proven-folder', name: 'Mia', order: 0, clientUpdatedAt: 1, syncedAt: 1 },
+        { id: 'stranger-folder', name: 'Ajena', order: 1, clientUpdatedAt: 1, syncedAt: 1 },
+      ],
+    });
+
+    const { client } = makeFakeClient({
+      summaryRows: [ownedSummaryRow('proven-session')],
+      summaryCount: 1,
+      folderRows: [
+        { id: 'proven-folder', name: 'Mia', sort: 0, client_updated_at: new Date(1).toISOString() },
+      ],
+      folderCount: 1,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+    await makeService(client, db).pullAndMerge();
+
+    // proven -> adopted
+    expect((await db.listMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+    expect((await db.listFolders()).map((f) => f.id)).toEqual(['proven-folder']);
+    // unproven -> still quarantined, never claimed, never destroyed
+    expect(await db.getMeta('GBPUSD')).toBeUndefined();
+    expect((await db.listQuarantinedMetas()).map((m) => m.symbol).sort()).toEqual([
+      'EURUSD',
+      'GBPUSD',
+    ]);
+    expect((await db.listQuarantinedFolders()).map((f) => f.id).sort()).toEqual([
+      'proven-folder',
+      'stranger-folder',
+    ]);
+    // the claim is recorded in the OWNER partition, not in the quarantine
+    const marker = await db.getAdoptionMarker();
+    expect(marker.metaKeys).toEqual(['EURUSD']);
+    expect(marker.folderKeys).toEqual(['proven-folder']);
+  });
+
+  it('does not adopt a mixed-owner meta when only some of its meaningful ids are proven', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: 'A-session',
+          sessions: [savedSession({ id: 'B-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+    const { client } = makeFakeClient({
+      summaryRows: [ownedSummaryRow('A-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+
+    await makeService(client, db).pullAndMerge();
+
+    expect(await db.getMeta('EURUSD')).toBeUndefined();
+    expect((await db.getAdoptionMarker()).metaKeys).toEqual([]);
+    expect((await db.listQuarantinedMetas()).map((meta) => meta.symbol)).toEqual(['EURUSD']);
+  });
+
+  it('adoption never overwrites this owner live record for the same key', async () => {
+    const db = dbFor(OWNER);
+    await db.putMeta(
+      workspaceMeta({
+        symbol: 'EURUSD',
+        activeSessionId: 'mine-live',
+        activeClientUpdatedAt: 999,
+        activeSyncedAt: 999,
+      }),
+    );
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+
+    const { client } = makeFakeClient({
+      summaryRows: [ownedSummaryRow('proven-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(client, db).pullAndMerge();
+
+    const after = await db.getMeta('EURUSD');
+    expect(after?.activeSessionId).toBe('mine-live');
+    expect(after?.sessions ?? []).toEqual([]);
+  });
+
+  it('a second account cannot claim the legacy record the first account adopted', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'A-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+
+    const a = makeFakeClient({
+      summaryRows: [ownedSummaryRow('A-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(a.client, dbFor(OWNER)).pullAndMerge();
+    expect((await dbFor(OWNER).listMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+
+    // B logs in owning a DIFFERENT session id: nothing proves the legacy record
+    // is B's, so B must not get it even though it is still in quarantine.
+    const b = makeFakeClient({
+      summaryRows: [ownedSummaryRow('B-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OTHER_OWNER,
+    });
+    await makeService(b.client, dbFor(OTHER_OWNER)).pullAndMerge();
+
+    expect(await dbFor(OTHER_OWNER).getMeta('EURUSD')).toBeUndefined();
+    expect((await dbFor(OWNER).listMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+  });
+
+  it('an offline pull adopts nothing and loses nothing; adoption is retried on the next login', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+
+    // First login: the sessions select rejects (offline).
+    const offline = makeFakeClient({
+      summaryRows: [ownedSummaryRow('proven-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    let alreadyRejected = false;
+    offline.recorder.rejectSelectOnce = {
+      sessions: () => {
+        if (alreadyRejected) return false;
+        alreadyRejected = true;
+        return true;
+      },
+    };
+    const db = dbFor(OWNER);
+    await makeService(offline.client, db).pullAndMerge();
+
+    expect(await db.listMetas()).toEqual([]);
+    expect((await db.listQuarantinedMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+    expect((await db.getAdoptionMarker()).metaKeys).toEqual([]);
+
+    // Second login, online: the very same record is now adopted.
+    const online = makeFakeClient({
+      summaryRows: [ownedSummaryRow('proven-session')],
+      summaryCount: 1,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    await makeService(online.client, db).pullAndMerge();
+    expect((await db.listMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+  });
+
+  it('a truncated page can never prove ownership (adoption inherits the completeness guard)', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+    const { client } = makeFakeClient({
+      summaryRows: [ownedSummaryRow('proven-session')],
+      summaryCount: 99, // the server says it holds more rows than it sent
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+    await makeService(client, db).pullAndMerge();
+
+    // assertCompletePull throws before adoption runs: nothing claimed, nothing lost.
+    expect(await db.listMetas()).toEqual([]);
+    expect((await db.listQuarantinedMetas()).map((m) => m.symbol)).toEqual(['EURUSD']);
+  });
+
+  it('a null exact count can never prove ownership for adoption', async () => {
+    await seedQuarantine({
+      metas: [
+        workspaceMeta({
+          symbol: 'EURUSD',
+          activeSessionId: undefined,
+          sessions: [savedSession({ id: 'proven-session', clientUpdatedAt: 10, syncedAt: 10 })],
+        }),
+      ],
+    });
+    const { client } = makeFakeClient({
+      summaryRows: [ownedSummaryRow('proven-session')],
+      summaryCount: null,
+      folderRows: [],
+      folderCount: 0,
+      userId: OWNER,
+    });
+    const db = dbFor(OWNER);
+
+    await makeService(client, db).pullAndMerge();
+
+    expect(await db.getMeta('EURUSD')).toBeUndefined();
+    expect((await db.getAdoptionMarker()).metaKeys).toEqual([]);
+    expect((await db.listQuarantinedMetas()).map((meta) => meta.symbol)).toEqual(['EURUSD']);
   });
 });

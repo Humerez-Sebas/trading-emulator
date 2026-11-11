@@ -7,7 +7,7 @@ export const SettingsActions = createActionGroup({
     'Change Theme': props<{ theme: Theme }>(),
     'Change Chart Colors': props<{ colors: Partial<ChartColors> }>(),
     'Restore Colors': emptyProps(),
-    'Change Utc Offset': props<{ utcOffset: number }>(),
+    'Change Display Zone': props<{ displayZone: string }>(),
     'Change Grid': props<{ visible?: boolean; opacity?: number }>(),
     'Toggle Floating Toolbar': props<{ visible: boolean }>(),
     /** Toolbar eye: shows/hides ALL trade boxes at once. */

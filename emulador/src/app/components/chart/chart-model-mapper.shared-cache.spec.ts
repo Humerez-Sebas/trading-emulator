@@ -2,9 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideMockStore, MockStore } from '@ngrx/store/testing';
 import { ChartModelMapper, PanelChartView } from './chart-model-mapper.service';
-import { selectSeries, selectCurrentTime, selectUtcOffset } from '../../state/selectors';
+import { selectSeries, selectCurrentTime, selectDisplayZone } from '../../state/selectors';
 import { PanelDescriptor } from '../../state/layout/layout.models';
 import { Candle } from '../../models';
+import { SERVER_ZONE_ID } from '../../domain/chart/display-time';
 
 const candle = (time: number, close = 1): Candle => ({
   time,
@@ -30,7 +31,7 @@ describe('ChartModelMapper shared candle cache (RFC-012 pt 1 / R4: reference ide
     store = TestBed.inject(MockStore);
     store.overrideSelector(selectSeries, { M1: m1, M5: m5 });
     store.overrideSelector(selectCurrentTime, 200);
-    store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
   });
 
   afterEach(() => store.resetSelectors());
@@ -61,7 +62,7 @@ describe('ChartModelMapper shared candle cache (RFC-012 pt 1 / R4: reference ide
     mapperB.panelChartView$.subscribe((v) => (viewB = v));
 
     // Re-emit with the SAME m1/m5 array references (simulates a cursor-unrelated tick).
-    store.overrideSelector(selectUtcOffset, 0);
+    store.overrideSelector(selectDisplayZone, SERVER_ZONE_ID);
     store.refreshState();
 
     expect(viewA!.candles).toBe(m1);

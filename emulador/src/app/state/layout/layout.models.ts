@@ -25,6 +25,57 @@ export interface PanelDescriptor {
   timeframe: Timeframe;
   /** null = not linked; the layout reducer only transports it (sync = RFC-010). */
   linkGroupId: string | null;
+  /** Per-panel local toggle: drops the shared group layer from THIS panel's composition only. Absent = false; never persisted as an explicit `false`. */
+  hideSharedDrawings?: boolean;
+  /** Per-panel local toggle (T-2): drops the trade layer from THIS panel only. Absent = false; never persisted as an explicit `false`. */
+  hideTrades?: boolean;
+}
+
+/** '' on a descriptor means "whatever asset is active"; resolve it before use. */
+export function effectivePanelSymbol(
+  descriptor: PanelDescriptor,
+  activeSymbol: string | null,
+): string {
+  return descriptor.symbol || activeSymbol || '';
+}
+
+/**
+ * RFC-019 (D19.E, N19-3) — the T-1 clause on its own: does this panel display the
+ * PRIMARY symbol's series? Extracted from `panelRendersTrades`/`panelMayExecute` so
+ * candle fidelity can gate on the symbol invariant WITHOUT inheriting `hideTrades`,
+ * which is a trade-ink preference and must never govern which candles are honest.
+ */
+export function panelTracksPrimarySeries(
+  descriptor: PanelDescriptor,
+  primarySymbol: string | null,
+): boolean {
+  return primarySymbol != null && effectivePanelSymbol(descriptor, primarySymbol) === primarySymbol;
+}
+
+/**
+ * RFC-018 (T-1 ∧ T-2): where the Trade domain may speak. T-1 (the symbol clause) is a
+ * correctness invariant and is NOT user-togglable — painting one instrument's levels on
+ * another's price axis is a false statement about the market. T-2 (`hideTrades`) is a
+ * panel-local preference. Mirrors `composePanelDrawings`: symbol filter + local opt-out.
+ */
+export function panelRendersTrades(
+  descriptor: PanelDescriptor,
+  primarySymbol: string | null,
+): boolean {
+  return panelTracksPrimarySeries(descriptor, primarySymbol) && !descriptor.hideTrades;
+}
+
+/**
+ * RFC-018 (T-3): may a trading verb originate from this pane? Deliberately ignores
+ * `hideTrades` — hiding the layer is a visual preference, not a trading lockout. The
+ * UI rule that a hidden-layer panel also retires its order verbs lives in the component
+ * (RFC-018 §8), not in this predicate.
+ */
+export function panelMayExecute(
+  descriptor: PanelDescriptor,
+  primarySymbol: string | null,
+): boolean {
+  return panelTracksPrimarySeries(descriptor, primarySymbol);
 }
 
 /** A tab-group inside one grid cell: stacked panels, one visible at a time. */

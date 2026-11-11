@@ -9,6 +9,7 @@ import { DatePickerComponent } from '../../components/ui/date-picker.component';
 import { MarketDataRepository } from '../../domain/market-data.repository';
 import { StorageManagerService } from '../storage-manager/storage-manager.service';
 import { intersectBounds, isEndValid, isStartValid } from './r2-coverage.logic';
+import { costPresetFor, effectiveCosts, ExecutionCosts } from '../../state/trading/execution-costs';
 
 type Step = 1 | 2 | 3;
 
@@ -63,6 +64,24 @@ export class CrearSesionPageComponent {
   boundsByTf = signal<Partial<Record<Timeframe, { from: number; to: number }>>>({});
   r2Loading = signal(false);
   r2Error = signal('');
+
+  // ---- costs (RFC-014 G1 / T6b): resolved preset + optional override ----
+  /** null = use the resolved preset's value for that field (D14.D: pointSize is never user-editable). */
+  private spreadOverride = signal<number | null>(null);
+  private commissionOverride = signal<number | null>(null);
+  private slippageOverride = signal<number | null>(null);
+
+  /** Resolved default cost preset for the picked symbol's asset class; ZERO_COSTS before any pick. */
+  costPreset = computed<ExecutionCosts>(() => costPresetFor(this.r2Symbol() ?? ''));
+
+  /** The effective config persisted into the new session: preset merged with any valid override. */
+  effectiveExecutionCosts = computed<ExecutionCosts>(() =>
+    effectiveCosts(this.costPreset(), {
+      spreadPoints: this.spreadOverride(),
+      commissionPerLot: this.commissionOverride(),
+      slippagePoints: this.slippageOverride(),
+    }),
+  );
 
   /** Intersection of the selected anchors' cheap coverage bounds (seconds). */
   dateRange = computed(() =>
@@ -153,6 +172,10 @@ export class CrearSesionPageComponent {
       this.r2Tfs.set(asset.tfs);
       this.selectedTfs.set(new Set(asset.tfs));
       this.defaultDate();
+      // a new asset class may have a different preset — discard the previous override
+      this.spreadOverride.set(null);
+      this.commissionOverride.set(null);
+      this.slippageOverride.set(null);
       this.step.set(2);
     } catch (e) {
       this.r2Error.set((e as Error).message || 'No se pudieron leer las velas descargadas.');
@@ -182,6 +205,7 @@ export class CrearSesionPageComponent {
           selectedTfs: tfs,
           thenLoad: pending,
           thenNewSession: { name: this.sessionName().trim() || null },
+          executionCosts: this.effectiveExecutionCosts(),
           thenGoTo: start,
           thenSessionEnd: this.endEpoch() ?? undefined,
         }),
@@ -222,6 +246,24 @@ export class CrearSesionPageComponent {
 
   onName(event: Event): void {
     this.sessionName.set((event.target as HTMLInputElement).value);
+  }
+
+  /** Empty input = clear the override (fall back to the preset value). */
+  private parseOverrideInput(event: Event): number | null {
+    const raw = (event.target as HTMLInputElement).value.trim();
+    return raw === '' ? null : Number(raw);
+  }
+
+  onSpreadOverride(event: Event): void {
+    this.spreadOverride.set(this.parseOverrideInput(event));
+  }
+
+  onCommissionOverride(event: Event): void {
+    this.commissionOverride.set(this.parseOverrideInput(event));
+  }
+
+  onSlippageOverride(event: Event): void {
+    this.slippageOverride.set(this.parseOverrideInput(event));
   }
 
   next(): void {

@@ -8,7 +8,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:coverage": "ng test --coverage",
-    "lint": "ng lint",
+    "lint": "node eslint-rules/no-chart-handles.test.js && ng lint",
     "format": "prettier --write \"src/**/*.{ts,html,css}\"",
     "format:check": "prettier --check \"src/**/*.{ts,html,css}\""
   },

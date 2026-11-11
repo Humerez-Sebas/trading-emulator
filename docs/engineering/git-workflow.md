@@ -44,8 +44,9 @@ Applies PHILOSOPHY §3.4 (reversibility & ceremony) and §5.3 (smallest green st
 - PR body: what/why, evidence (test counts, gates), deviations from plan, and anything
   flagged for reviewer attention. End with the standard generated-with footer.
 - CI (`.github/workflows/ci.yml`) runs pipeline (ruff + pytest + pip-audit) and frontend
-  (lint + format + `ng test` + build + informational npm audit) on PRs to main and pushes
-  to main. Vercel production deploy runs ONLY on push to main after checks pass
+  (lint + format + `ng test` + build + informational npm audit) on PRs targeting `main`
+  or `develop`, and on pushes to `main`. Vercel production deploy runs ONLY on pushes to
+  `main` after checks pass
   (Vercel's own main auto-deploy is disabled to avoid double deploys; PR previews stay
   native Vercel).
 - Branch protection on `main` requires the CI checks. Changing protection rules has no
@@ -56,7 +57,8 @@ Applies PHILOSOPHY §3.4 (reversibility & ceremony) and §5.3 (smallest green st
 Ceremony is high because this deploys to production (Vercel) on merge.
 
 1. Confirm every RFC of the block is merged to develop and its final audit is PASS in
-   the ledger (`.superpowers/sdd/progress.md`).
+   that RFC's ledger (`.superpowers/rfc-XXX/dev-log.md`; for RFC-017 and earlier, the
+   older shared `.superpowers/sdd/progress.md`).
 2. From fresh `origin/develop`, run ALL gates (tsc app+spec, `ng test`, lint, format,
    prod build) — the release PR re-establishes evidence; it does not inherit it.
 3. Diff review develop..main for: forbidden-file drift, dependency changes

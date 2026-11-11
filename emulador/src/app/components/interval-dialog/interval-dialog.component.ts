@@ -100,6 +100,8 @@ export class IntervalDialogComponent {
   @HostListener('document:keydown', ['$event'])
   onGlobalKeydown(event: KeyboardEvent): void {
     if (this.open()) return;
+    // Alt/Ctrl/Cmd+digit belong to other bindings (e.g. playbook rule tagging).
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
     const target = event.target as HTMLElement | null;
     if (target && this.isTextEntryTarget(target)) return;
     if (!/^[0-9]$/.test(event.key)) return;

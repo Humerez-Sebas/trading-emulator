@@ -17,6 +17,11 @@ Modern, dark, and technical. The voice is professional and objective. Emotional 
 - Do not look like MetaTrader 4 (outdated, cluttered, overly complex).
 - Avoid unnecessary noise, sidebars, or menus that distract from the main chart and metrics.
 
+The canonical, consolidated registry of product-level anti-references is
+`docs/architecture/PRODUCT_PRINCIPLES.md` §5; this section is the brand-level
+summary. Pane-level trade-visualization anti-goals are registered separately in
+`docs/architecture/TEDS_GRAMMAR.md` §1.1 (AG-01..12).
+
 ## Design Principles
 1. **Focus on the Data:** The chart and metrics are the hero. Everything else should recede.
 2. **Technical Elegance:** Use a native dark mode that feels premium, technical, and precise (similar to TradingView, but cleaner).

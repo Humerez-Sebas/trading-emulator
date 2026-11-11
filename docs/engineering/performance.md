@@ -20,7 +20,7 @@ Applies PHILOSOPHY §1.2 (measure before opining) and §2.9 (performance is a bu
 | 8 panels, shared candles | 1 `Candle[]` per symbol, O(1) sharing by reference | R4: formalize the existing cache; never add a second one | 2026-07-04 (RFC-012 proofs) |
 | 1 replay tick, 8 panels | 8 recomputes (linear, per-panel mapper) | Acceptable; per-instance memoization keeps each recompute minimal | 2026-07-04 |
 | Hidden panels | 0 render work (update-gated) | Gating works; resync uses latest snapshot on show | 2026-07-04 |
-| Initial bundle | ~609 kB vs 500 kB budget (WARNING) | Known-accepted, Arrow/parquet-dominated, predates RFC-008. Watch for NEW chunk types, not the number | ongoing |
+| Initial bundle | 648 kB vs 500 kB budget (WARNING) | Known-accepted, Arrow/parquet-dominated, predates RFC-008. Watch for NEW chunk types, not the number | ongoing |
 
 ## Heuristics
 

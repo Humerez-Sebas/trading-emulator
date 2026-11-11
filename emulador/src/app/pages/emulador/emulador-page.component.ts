@@ -10,6 +10,7 @@ import { CsvStartDialogComponent } from '../../components/csv-start-dialog/csv-s
 import { IntervalDialogComponent } from '../../components/interval-dialog/interval-dialog.component';
 import { PlaybackControllerComponent } from '../../components/playback-controller/playback-controller.component';
 import { FloatingPnlComponent } from '../../components/floating-pnl/floating-pnl.component';
+import { PlaybookHotkeysDirective } from '../../state/playbook/playbook-hotkeys.directive';
 import { tradingFeature } from '../../state/trading/trading.reducer';
 import { settingsFeature } from '../../state/settings/settings.reducer';
 
@@ -27,9 +28,10 @@ import { settingsFeature } from '../../state/settings/settings.reducer';
     IntervalDialogComponent,
     PlaybackControllerComponent,
     FloatingPnlComponent,
+    PlaybookHotkeysDirective,
   ],
   template: `
-    <div class="layout">
+    <div class="layout" appPlaybookHotkeys>
       <app-controls></app-controls>
       <div class="workspace">
         <app-drawing-toolbar></app-drawing-toolbar>

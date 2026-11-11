@@ -54,6 +54,65 @@
     </div>
   </section>
 
+  <section class="excursion-summary">
+    <span class="label">Excursión física (R)</span>
+    <div class="metrics">
+      <div class="metric">
+        <span class="label">MAE R media</span>
+        <strong class="tabular-nums">{{ formatExcursionR(excursionAggregates().meanMaeR) }}</strong>
+      </div>
+      <div class="metric">
+        <span class="label">MAE R máx.</span>
+        <strong class="tabular-nums">{{ formatExcursionR(excursionAggregates().maxMaeR) }}</strong>
+      </div>
+      <div class="metric">
+        <span class="label">MFE R media</span>
+        <strong class="tabular-nums">{{ formatExcursionR(excursionAggregates().meanMfeR) }}</strong>
+      </div>
+      <div class="metric">
+        <span class="label">MFE R máx.</span>
+        <strong class="tabular-nums">{{ formatExcursionR(excursionAggregates().maxMfeR) }}</strong>
+      </div>
+      <div class="metric">
+        <span
+          class="label"
+          title="Trades con SL y TP en la misma vela sin serie menor: resueltos pesimista"
+        >
+          Ambiguos
+        </span>
+        <strong class="tabular-nums">{{ stats().ambiguousCount }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="costs">
+    <span class="label">Costes simulados</span>
+    @if (executionCosts(); as costs) {
+      <div class="costs-grid">
+        <div class="cost-item">
+          <span class="label">Spread</span>
+          <strong class="tabular-nums">{{ costs.spreadPoints | number: '1.0-2' }} pts</strong>
+        </div>
+        <div class="cost-item">
+          <span class="label">Comisión ($/lote)</span>
+          <strong class="tabular-nums">{{ costs.commissionPerLot | number: '1.0-2' }}</strong>
+        </div>
+        <div class="cost-item">
+          <span class="label" title="El slippage solo se aplica en ejecuciones stop">
+            Slippage
+          </span>
+          <strong class="tabular-nums">{{ costs.slippagePoints | number: '1.0-2' }} pts</strong>
+        </div>
+      </div>
+      <p class="costs-note">
+        Costes simulados, no un feed de bróker en vivo. El slippage solo se aplica en ejecuciones
+        stop.
+      </p>
+    } @else {
+      <p class="costs-note">Sin costes simulados (sesión legacy).</p>
+    }
+  </section>
+
   @if (sparkline()) {
     <section class="equity">
       <span class="label">Curva de equidad</span>
@@ -84,6 +143,8 @@
             <th>Resultado</th>
             <th>P/L ($)</th>
             <th>R</th>
+            <th>MAE R</th>
+            <th>MFE R</th>
             <th>Caja</th>
           </tr>
         </thead>
@@ -117,6 +178,8 @@
               <td [class.up]="t.rMultiple >= 0" [class.down]="t.rMultiple < 0">
                 {{ t.rMultiple | number: '1.2-2' }}
               </td>
+              <td class="tabular-nums">{{ formatExcursionR(maeR(t)) }}</td>
+              <td class="tabular-nums">{{ formatExcursionR(mfeR(t)) }}</td>
               <td class="box-actions">
                 @if (!t.boxDeleted) {
                   <button

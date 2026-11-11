@@ -25,7 +25,8 @@ engineering decisions are made here; every rule below is an application of it.
 | Performance questions | `docs/engineering/performance.md` |
 | Before proposing a fix/refactor | `docs/engineering/anti-patterns.md` |
 | Ambiguous engineering choice | `docs/engineering/decision-frameworks.md` |
-| UI/visual work | `PRODUCT.md` (brand, anti-references) + `DESIGN.md` (tokens) |
+| UI/visual work | `DESIGN_SYSTEM.md` (**the visual/interaction/a11y authority**) + `DESIGN.md` (the base token registry it extends) + `PRODUCT.md` (brand, anti-references) |
+| On-chart trade visualization / TEDS grammar | `docs/architecture/TEDS_GRAMMAR.md` + `docs/architecture/EXPERIENCE_DOMAINS.md` (domain boundaries) |
 
 ## Invariants — never break these (see PHILOSOPHY §3.1 for the authority hierarchy)
 
@@ -57,10 +58,21 @@ npx ng test --watch=false        # NEVER bare `npx vitest run` — it always fai
 npm run lint                      # must be 0 problems (develop is lint-clean)
 ```
 
+**Never mask exit codes.** Never run a verification or test command through `| tail`,
+`| head`, or any pipe that swallows the process's non-zero exit (`EXIT 1`) — a real
+failure then reads as a pass. Run gates raw and read their exit status.
+
 `npm run build` additionally required at branch finalization (watch for NEW chunk types,
-e.g. vitest sentinels; the ~609 kB vs 500 kB budget warning is known-accepted,
-Arrow/parquet-dominated). Pipeline changes: `cd pipeline && python -m pytest -q && ruff
-check . && ruff format --check .`
+e.g. vitest sentinels). The initial bundle exceeds the 500 kB budget — measured **651.60 kB**
+at `a2ca53b`. **The cause is NOT Arrow/parquet:** both are lazy chunks contributing 0 bytes
+to the initial graph (`workers/parquet.worker.ts` imports them dynamically). The largest
+initial contributor is `@supabase/supabase-js` (219.12 kB, 33.6%), pulled in eagerly by the
+root-provided `auth/supabase.service.ts`. The warning is tolerated, not explained away —
+don't let it absorb new growth; re-measure before accepting a bigger number.
+
+Pipeline changes (from `pipeline/`): `py -m pytest -q && ruff check . && ruff format
+--check .` — **use `py`, not `python`**: on this machine `python` is the Microsoft Store
+stub, which prints an install ad and exits 49 without ever running your tests.
 
 After ANY `npm install`: run `npm ci --dry-run` before committing the lockfile
 (npm 11.x silently prunes optional-dep entries; local stays green, CI fails EUSAGE —
@@ -84,8 +96,14 @@ recovery in `docs/engineering/testing.md`).
   agent artifacts (plans, ledgers, briefs, this file). UI copy is Spanish.
 - **Docs hierarchy:** RFCs (`docs/architecture/rfcs/`) for architecture; specs/plans
   (`docs/superpowers/`) for feature work; `docs/engineering/` for permanent engineering
-  knowledge. SDD run artifacts live in `.superpowers/sdd/` (only `progress.md` is tracked).
+  knowledge. **SDD run ledgers:** from RFC-018 onward each run keeps its own tracked ledger
+  at `.superpowers/rfc-XXX/dev-log.md`. `.superpowers/sdd/progress.md` is the older shared
+  ledger — still tracked, but it carries the RFC-017-era record and every run overwrote it.
 - **Design prototypes** (Next.js playgrounds like `topbar-hud/`) are scratch spaces at
   repo root, never part of the app or its build.
 - Decisions worth keeping get an identity (D-numbers) and a written rationale; deviations
   from plans are documented in the ledger, never silent.
+- **Angular 21 syntax authority:** before writing or changing Angular code (Signals,
+  `linkedSignal`, `resource()` / Resource API, standalone components, new control flow),
+  you MUST consult the `context7` MCP for the in-use version's official docs — never rely
+  on training-data recall for framework APIs.

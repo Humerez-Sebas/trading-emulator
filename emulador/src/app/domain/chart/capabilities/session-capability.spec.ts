@@ -38,7 +38,7 @@ describe('SessionCapability', () => {
 
   it('sets source to null when sessionEnd is null', () => {
     cap.init({} as IChartApi, new ChartEventBus());
-    cap.render({ session: { sessionEnd: null, shift: 0, times: [], barSpacing: 60 } });
+    cap.render({ session: { sessionEnd: null, times: [], barSpacing: 60 } });
     expect(setSourceSpy).toHaveBeenCalledTimes(1);
     expect(setSourceSpy).toHaveBeenCalledWith(null);
   });
@@ -46,12 +46,11 @@ describe('SessionCapability', () => {
   it('sets a populated source when sessionEnd is provided', () => {
     cap.init({} as IChartApi, new ChartEventBus());
     cap.render({
-      session: { sessionEnd: 1000, shift: 0, times: [100], barSpacing: 60, color: '#7b7b7b' },
+      session: { sessionEnd: 1000, times: [100], barSpacing: 60, color: '#7b7b7b' },
     });
     expect(setSourceSpy).toHaveBeenCalledTimes(1);
     expect(setSourceSpy).toHaveBeenCalledWith({
       sessionEnd: 1000,
-      shift: 0,
       times: [100],
       barSpacing: 60,
       color: '#7b7b7b',
@@ -60,7 +59,7 @@ describe('SessionCapability', () => {
 
   it('does not throw if render is called before init', () => {
     expect(() =>
-      cap.render({ session: { sessionEnd: 1000, shift: 0, times: [100], barSpacing: 60 } }),
+      cap.render({ session: { sessionEnd: 1000, times: [100], barSpacing: 60 } }),
     ).not.toThrow();
     expect(setSourceSpy).not.toHaveBeenCalled();
   });

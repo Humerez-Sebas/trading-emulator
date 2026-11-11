@@ -1,0 +1,315 @@
+# Wave 2 / Agent C - Engine Boundary Restoration - PROGRESS
+
+Worktree: `C:\Users\78701\Desktop\trading-emulator-engine-boundary`
+Branch: `agent/engine-boundary-restoration`
+Base SHA: `894d72be95f8ad4b8d63e629114e486e825b13d7`
+Checkpoint: `a736da843a4d35490fd93007d14e9da6ff4ad932`
+
+## Status
+
+**FINAL ACCEPTED at implementation head `646a441d0fb373dc3d3d555220ebb99006e6a542`.** An
+independent whole-range review reported zero Critical, High, or Medium findings. The controller
+then ran all five final gates raw and unpiped from `emulador/`; all exited `0`. Historical
+rejections, superseded acceptance, and implementation-only evidence remain recorded below.
+
+- [x] 22 production bridge call sites migrated to narrow contracts.
+- [x] `chartApi` and `seriesApi` deleted; no generic getter/handle replacement added.
+- [x] Capability construction routed through a closed built-in ID registry; hosts cannot
+  provide executable constructors.
+- [x] Trading placement previews and hit-test results are handle-free at the host boundary.
+- [x] Frozen scene migrated.
+- [x] Checkpoint boundary spec corrected with runtime exact-name checks plus a compile-time
+  `keyof ChartEngine` public-output contract.
+- [x] Local import detector enabled at zero backlog and zero suppressions, including direct
+  exported aliases of tracked named/namespace bindings.
+- [x] Five requested trade-guard indentation blocks corrected only.
+- [x] Mandatory lint mutation and additional renamed-getter mutation both failed as expected,
+  were restored exactly, and clean restoration was verified.
+- [x] `ENGINE_PUBLIC_CONTRACT.md` and `ENGINE_BOUNDARY_RESTORATION_REPORT.md` created.
+- [x] Historical five-gate evidence retained and clearly separated from current C-R5/C-R6
+  implementation checks.
+- [x] Independent whole-range review accepted clean implementation head `646a441`.
+- [x] Controller-owned final five-gate run passed at `646a441`.
+
+## Final Accepted Record
+
+- Accepted implementation head: `646a441d0fb373dc3d3d555220ebb99006e6a542`.
+- Independent whole-range verdict: `ACCEPTED`, with zero Critical/High/Medium findings.
+- Residual Low, bounded and non-blocking: lexical shadowing can cause a false positive in the
+  syntax-only detector. For example, after importing a forbidden alias `H`, an unrelated
+  exported generic such as `export type P<H> = H` can be reported. No production occurrence
+  was found. This is not a claim of general type-flow coverage.
+- The worktree was clean at the accepted implementation head before this evidence-only edit.
+- No dependency/lockfile, push, merge, deploy, or remote change occurred.
+
+Controller-owned raw, unpiped final gates from `emulador/` at `646a441`:
+
+```text
+npx tsc -p tsconfig.app.json --noEmit   exit 0, no diagnostics
+npx tsc -p tsconfig.spec.json --noEmit  exit 0, no diagnostics
+npx ng test --watch=false               exit 0, 186 files / 2457 tests passed
+npm run lint                             exit 0, local RuleTester ran; All files pass linting
+npm run build                            exit 0, initial 651.83 kB
+  only known warning: 500 kB budget exceeded by 151.83 kB
+  no unexpected or Vitest chunk type
+```
+
+Evidence correction: repeated raw full-suite outputs consistently reported 186 files / 2457
+tests, and fresh final verification caught the recorded count as a transcription error.
+The accepted `b06fb62` baseline of 185 files / 2450 tests plus one file and seven tests
+(`capability-registry.spec.ts` +5, `chart-engine.boundary.spec.ts` net +2, frozen scene unchanged)
+yields 186 files / 2457 tests; no test or application change caused this correction.
+
+Branch disposition remains **MERGE AS-IS** only when the owner chooses normal integration,
+with fresh combined gates after integration (and after any conflict resolution).
+
+## Targeted Evidence
+
+Boundary current failure (RED): targeted `chart-engine.boundary.spec.ts` exited `1`, with
+`1 failed / 17 passed`; the false reflection assertion reported private runtime fields
+`chart` and `mainSeries`.
+
+Boundary GREEN: targeted spec exited `0`, `19 passed (19)`; spec TypeScript exited `0`.
+
+Detector RED: `node eslint-rules/no-chart-handles.test.js` exited `1` because the rule module
+did not yet exist. Detector GREEN: the same command exited `0`; direct `src/app` lint exited
+`0` with the rule enabled.
+
+Trade-guard targeted verification: `13 passed (13)`, exit `0` after indentation-only repair.
+
+## Detector State
+
+- Scope: non-spec `src/app/**/*.ts`; chart-domain imports are allowed but exports remain
+  checked, while non-domain raw-handle imports are rejected.
+- Forbidden outside the chart domain: four named raw-handle imports and all
+  `lightweight-charts` namespace imports.
+- Allowed: payload/data imports, including `LogicalRange`, `MouseEventParams`, `Time` and
+  `UTCTimestamp`.
+- Exported aliases: immediate tracked named, qualified, indexed, member-indexed and whole
+  namespace handle roots are rejected; data-only equivalents pass.
+- Production backlog: zero.
+- Rule suppressions: zero.
+- Dependencies/lockfiles: unchanged.
+
+## Negative Probes
+
+1. Temporary `IChartApi` named import in `chart.component.ts`: targeted lint exit `1`,
+   `2 errors` total, including exactly `1 engine-boundary/no-chart-handles` failure. Restored;
+   same lint exit `0`; file diff and status clean.
+2. Temporary public `renamedChartHandle: IChartApi` getter in `ChartEngine`: spec TypeScript
+   exit `1`, `TS2554` at the `expectTypeOf` equality. Restored; spec TypeScript exit `0`;
+   file diff and status clean.
+
+## Commits After Checkpoint
+
+```text
+b4cb0c9 test(chart): enforce the public engine handle boundary
+a9ba615 chore(lint): enforce the chart handle boundary
+a34f3b6 style(chart): repair trade guard fixture indentation
+57c7813 fix(chart): close capability registration contract
+a33d639 fix(lint): reject exported chart handle aliases
+9e64211 fix(lint): reject nested chart handle aliases
+```
+
+## Historical Gates
+
+```text
+npx tsc -p tsconfig.app.json --noEmit   exit 0
+npx tsc -p tsconfig.spec.json --noEmit  exit 0
+npx ng test --watch=false               exit 1
+  Test Files 184 passed | 1 failed (185)
+  Tests      2444 passed | 1 failed (2445)
+  only candles-writer.spec.ts 25k-row case: timeout at 5000 ms
+  raw full retry: same one failure, exit 1
+npx ng test --watch=false --include=src/app/workers/candles-writer.spec.ts
+  exit 0, 1 file / 9 tests passed, test time 2.08 s
+npm run lint                             exit 0, All files pass linting
+npm run build                            exit 0, initial 651.83 kB
+  1 known warning: 500 kB budget exceeded by 151.83 kB
+```
+
+An earlier setup step ran `npm ci` successfully; `package.json` and `package-lock.json`
+remained unchanged. No dependency/lockfile mutation, push, merge or deploy occurred.
+
+## Closeout Findings And Evidence
+
+- C-R1: `registerCapability` now returns `void`; `getCapability` is keyed by
+  `CapabilityApiMap` and returns only handle-free facades. The generic-return mutation made
+  spec TypeScript fail at the `expectTypeOf<void>` contract; inverse restoration was green.
+- C-R2: detector coverage now includes dot/indexed TypeScript import types and named/star
+  direct re-exports. Chart-domain files run the rule in import-allowed/export-denied mode.
+- C-R3: `npm run lint` runs `node eslint-rules/no-chart-handles.test.js` before `ng lint`.
+- C-R4: install history wording corrected while preserving unchanged package/lock files.
+- Independent review `ses_00402de38ffet2fHXAeapj5aSZ` rejected the first closeout attempt:
+  two High and three Medium findings. The raw event payload and domain-re-export findings
+  were verified and fixed; docs/proof gaps were resolved. Low indexed import type was fixed.
+- Event RED: targeted boundary spec `2 failed / 19 passed`; both failures showed raw
+  `hoveredSeries`, `seriesData`, and `sourceEvent` crossing the bus.
+- Event/proof GREEN: targeted boundary spec `23/23`; affected event/engine/panel suite
+  `101/101`; lint green with local rule tests included.
+- Re-review then found a domain import-then-export bypass and shared-bus structural typing
+  path. The detector now tracks forbidden imported local names through source-less exports;
+  the engine now uses separate capability/host buses and exposes only `ChartEventSource`.
+  Updated affected suite: `116/116` green.
+- Second re-review found alias/namespace variants of the two-step domain barrel. RED local
+  rule tests failed on the aliased case; the tracker now maps local bindings to original
+  handle names and records namespace bindings. Local rule tests and the full lint gate are green.
+- Import-type negative probe: temporary
+  `import('lightweight-charts').IChartApi` in `chart.component.ts` made `npm run lint` fail
+  with exactly one `engine-boundary/no-chart-handles` error; inverse restoration was green.
+
+## Superseded Acceptance Record
+
+- This record applies only to head `b06fb62`; the later C-R5/C-R6 review superseded it.
+- Independent review session: `ses_00402de38ffet2fHXAeapj5aSZ`.
+- Accepted implementation head: `b06fb62`.
+- Verdict: `ACCEPTED`, zero Critical/High/Medium findings.
+- One Low ruled no-fix: the detector intentionally enforces the four C-R2 raw-handle types,
+  not every mutable interface exported by lightweight-charts.
+
+Historical raw gates from `emulador/` at `b06fb62`:
+
+```text
+npx tsc -p tsconfig.app.json --noEmit   exit 0, no diagnostics
+npx tsc -p tsconfig.spec.json --noEmit  exit 0, no diagnostics
+npx ng test --watch=false               exit 0
+  Test Files 185 passed (185)
+  Tests      2450 passed (2450)
+npm run lint                             exit 0
+  local RuleTester executed; All files pass linting
+npm run build                            exit 0, initial 651.83 kB
+  only known warning: 500 kB budget exceeded by 151.83 kB
+  no unexpected or Vitest chunk type
+```
+
+## C-R5/C-R6 Closeout
+
+### C-R5
+
+- Closed registration contract: `BuiltInCapabilityId` is exactly `drawings | countdown |
+  session | trading`; `chart-engine.ts` delegates composition to `capability-registry.ts` and
+  imports no concrete capability classes.
+- Hosts register IDs in preserved order: chart
+  `drawings,countdown,session,trading`; frozen scene `trading,drawings,session` with no
+  countdown. `getCapability` remains the mapped drawings/trading facade.
+- Runtime RED before implementation: boundary spec `1 failed / 24 passed (25)` because the
+  caller constructor executed instead of throwing.
+- Desired-contract RED: missing registry, rejected string IDs, and unused constructor-negative
+  directive caused the three-file target to fail compilation.
+- GREEN: boundary/registry/frozen target `3 files / 49 tests`; final boundary target `26/26`.
+- Declaration-widening mutation: spec tsc exited `1`, `TS2578` on the constructor-negative
+  directive; restored spec tsc exited `0`.
+- Runtime-fallback mutation: boundary target exited `1`, `1 failed / 25 passed`; output showed
+  `ProbeCapability.built` retaining the raw series. Restored target passed `26/26`.
+- Registry SHA-256 matched before/after mutations:
+  `8EDC083A8C51110321ADDFC90921985C4EA0C355E71265DA41F0F365031D1897`.
+
+### C-R6
+
+- RuleTester RED: `Should have 1 error but had 0` at the first exported-alias case.
+- RuleTester GREEN covers `H`, `LC.IChartApi`, `LC['ISeriesApi']`, `H['priceScale']`, and the
+  whole namespace, plus data-only named/qualified/indexed aliases.
+- Production named and namespace alias mutations each made ordinary `npm run lint` exit `1`
+  with exactly one `engine-boundary/no-chart-handles` error.
+- Both mutations were patch-restored; `capability.ts` SHA-256 matched before/after:
+  `6D11CAE1E7A0866B56C69C0380E7F3D297DED3BADA6CDD48F67482EC0292563D`.
+
+### Historical Pre-Acceptance Implementation Checks
+
+These bounded checks were recorded during the C-R5/C-R6 implementation closeout:
+
+```text
+affected chart/frozen suites                   exit 0, 28 files / 311 tests
+npx tsc -p tsconfig.app.json --noEmit          exit 0, no diagnostics
+npx tsc -p tsconfig.spec.json --noEmit         exit 0, no diagnostics
+npm run lint                                   exit 0, RuleTester + All files pass linting
+```
+
+At that pre-acceptance closeout, no full-suite or build gate had been run for C-R5/C-R6 and
+independent acceptance was still pending. The final accepted record above supersedes that status.
+
+## Final Track C Review Correction
+
+- Root cause: exported indexed aliases were inspected only when `objectType` was directly a
+  `TSTypeReference` whose `typeName` was an `Identifier`; direct nested namespace-qualified
+  and namespace-indexed handle chains therefore escaped.
+- RuleTester RED: exact
+  `LC.ISeriesApi<'Candlestick'>['createPriceLine']` invalid case exited `1` with
+  `Should have 1 error but had 0`; the exact `LC['IChartApi']['priceScale']` invalid case and
+  matching data-only valid counterparts were added in the same test-first patch.
+- RuleTester GREEN: exit `0` after bounded direct structural-root inspection across
+  `TSTypeReference`, `TSQualifiedName`, and nested `TSIndexedAccessType` nodes.
+- Ordinary lint: exit `0`, with RuleTester executed before `ng lint`; app and spec TypeScript:
+  exit `0`, no diagnostics.
+- Production chart-domain nested-alias mutation: ordinary lint exited `1` with exactly one
+  `engine-boundary/no-chart-handles` error. Inverse restoration returned `capability.ts` to
+  SHA-256 `6D11CAE1E7A0866B56C69C0380E7F3D297DED3BADA6CDD48F67482EC0292563D`, zero file diff, and
+  restored ordinary lint exit `0`.
+- Scope remains explicit: no recursive local alias/type flow, unions, conditionals, dynamic
+  imports, or type checker; data-only direct nested aliases remain valid. No production
+  TypeScript, dependency, or lockfile changed.
+- This correction does not claim independent acceptance or a final full-gate run. No full
+  Angular suite or build was run for the lint-only correction.
+
+## Final Track C Medium Correction
+
+- Implementation commit: `6246093 fix(lint): resolve chart bindings before exports`.
+- Root cause: tracked named and namespace bindings were populated only when the
+  `ImportDeclaration` visitor ran. Legal exports placed before their imports were therefore
+  inspected against an empty binding map and returned zero diagnostics.
+- RuleTester RED: `node eslint-rules/no-chart-handles.test.js` exited `1` at the first late
+  named alias with `Should have 1 error but had 0`.
+- RuleTester GREEN: exit `0` after relevant `lightweight-charts` bindings were precollected
+  from `Program.body` when `allowImports` is enabled. Normal import reporting remains in the
+  `ImportDeclaration` visitor, so non-domain imports still report exactly once.
+- Invalid late-import coverage includes a named alias, namespace-qualified nested alias,
+  namespace-indexed nested alias, source-less named export specifier, and namespace export
+  specifier. Late named and namespace data-only aliases/exports remain valid.
+- Ordinary lint, app TypeScript, and spec TypeScript each exited `0` after implementation.
+- Production chart-domain late-import mutation: temporarily exporting
+  `LC.ISeriesApi<'Candlestick'>['createPriceLine']` before its namespace import in
+  `capability.ts` made ordinary `npm run lint` exit `1` with exactly one
+  `engine-boundary/no-chart-handles` error. Inverse restoration returned the file to Git blob
+  hash `8aab57eb1a2e8b833e9e1f9007e6d1d460eff7bc`, zero file diff, and restored lint exit `0`.
+- Scope remains syntax-bounded: no recursive local type flow, dependency traversal, unions,
+  conditionals, dynamic imports, or type checker. No production TypeScript, dependency, or
+  lockfile remains changed.
+- This correction does not claim independent acceptance or a final full-gate run. No full
+  Angular suite or build was run.
+
+## 2026-08-29 post-closeout Low correction from `7171717`
+
+The final independent acceptance at implementation head `646a441` and documentation head
+`7171717` remains historical evidence. This bounded post-closeout correction addresses only its
+residual generic-shadowing Low; the new post-closeout head is the commit containing this section
+(`git rev-parse HEAD` is authoritative because a commit cannot embed its own SHA).
+
+- Root mechanism: trusted chart-domain imports are precollected into one local-binding map so legal
+  late imports are enforceable. Exported alias inspection resolved an immediate identifier root
+  against that map without accounting for a same-name generic parameter introduced by the alias,
+  so `import type { IChartApi as H } ...; export type P<H> = H` falsely resolved lexical `H` to
+  the imported handle.
+- Patch: `TSTypeAliasDeclaration` passes only its declared generic parameter names into the existing
+  immediate structural-root resolver. Identifier and qualified roots stop at those lexical shadows;
+  all other named, namespace, qualified, indexed, source-less export, and late-import resolution is
+  unchanged. No type checker, recursive local type flow, dependency, runtime package, or suppression
+  was introduced.
+- Regression: the exact imported `H` plus exported `P<H> = H` example is now a RuleTester valid case.
+  Every existing invalid named/namespace/qualified/indexed/late-import case remains in the same run.
+
+TDD and fresh gates, raw and unpiped from `emulador/`:
+
+- RED: `node eslint-rules/no-chart-handles.test.js` -> exit `1`; RuleTester valid case 9 received
+  exactly one `forbiddenNamedImport` diagnostic (`IChartApi`) at the exported alias.
+- GREEN with the same command -> exit `0`, no output.
+- `npx tsc -p tsconfig.app.json --noEmit` -> exit `0`, no diagnostics.
+- `npx tsc -p tsconfig.spec.json --noEmit` -> exit `0`, no diagnostics.
+- `npx ng test --watch=false` -> exit `0`, **186 files / 2457 tests passed**.
+- `npm run lint` -> exit `0`; RuleTester ran before Angular lint and Angular reported
+  `All files pass linting.`
+- `npm run build` -> exit `0`, initial bundle **651.83 kB**; only the known 500 kB budget
+  warning by **151.83 kB**, with no unexpected or Vitest production chunk.
+
+No production TypeScript, dependency, lockfile, remote, other-worktree, push, merge, rebase,
+cherry-pick, deployment, reset, branch, or worktree-management change was made. This is bounded
+post-closeout implementer evidence and does not rewrite the original independent acceptance.

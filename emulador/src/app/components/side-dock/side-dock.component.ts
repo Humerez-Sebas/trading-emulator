@@ -5,17 +5,18 @@ import { SidePanelTab } from '../../state/settings/settings.models';
 import { selectSidePanel } from '../../state/selectors';
 import { TradePanelComponent } from '../trade-panel/trade-panel.component';
 import { SettingsPanelComponent } from '../settings-panel/settings-panel.component';
+import { PlaybookPanelComponent } from '../playbook-panel/playbook-panel.component';
 import { TooltipDirective } from '../ui/tooltip.directive';
 
 /**
- * Right-side icon rail + docked panel with tabs (Operativa / Ajustes).
+ * Right-side icon rail + docked panel with tabs (Operativa / Ajustes / Playbook).
  * Clicking the active tab collapses the dock; the state persists with the
  * rest of the settings (localStorage). Sessions live in /sesiones (V2.6).
  */
 @Component({
   selector: 'app-side-dock',
   standalone: true,
-  imports: [TradePanelComponent, SettingsPanelComponent, TooltipDirective],
+  imports: [TradePanelComponent, SettingsPanelComponent, PlaybookPanelComponent, TooltipDirective],
   templateUrl: './side-dock.component.html',
   styleUrl: './side-dock.component.css',
 })
@@ -26,6 +27,7 @@ export class SideDockComponent {
 
   readonly tabs: { id: SidePanelTab; label: string }[] = [
     { id: 'trade', label: 'Operativa' },
+    { id: 'playbook', label: 'Playbook' },
     { id: 'settings', label: 'Ajustes' },
   ];
 

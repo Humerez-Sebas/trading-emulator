@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DatasetRecord } from './market-data-db';
 import { WorkspaceDbService } from './workspace-db.service';
+import { fixedOwnerIdentity } from './owner-identity.service';
 import {
   buildRequiredDatasets,
   buildSessionFile,
@@ -397,7 +398,7 @@ describe('SessionService.findMissingDatasets', () => {
       req.onerror = () => res();
       req.onblocked = () => res();
     });
-    db = new WorkspaceDbService();
+    db = new WorkspaceDbService(fixedOwnerIdentity('owner-test'));
   });
 
   it('reports the session refs absent from the datasets store', async () => {

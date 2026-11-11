@@ -1,0 +1,142 @@
+<aside class="panel">
+  <header class="head">
+    <h3>Playbook</h3>
+    <button appButton variant="subtle" (click)="exportPlaybook()">Exportar playbook</button>
+  </header>
+
+  <section class="create-form">
+    <label>
+      Título
+      <input
+        type="text"
+        placeholder="Nombre corto de la regla"
+        [value]="newTitle()"
+        (input)="onTitleInput($event)"
+      />
+    </label>
+    <label>
+      Regla
+      <textarea
+        rows="3"
+        placeholder="Describe la regla que vas a entrenar"
+        [value]="newStatement()"
+        (input)="onStatementInput($event)"
+      ></textarea>
+    </label>
+    <button class="submit" [disabled]="!newTitle().trim()" (click)="createRule()">
+      Crear regla
+    </button>
+  </section>
+
+  @if (rules().length === 0) {
+    <ui-empty-state
+      [compact]="true"
+      title="Sin reglas todavía"
+      hint="Crea la primera regla que vas a entrenar."
+    >
+      <svg
+        icon
+        viewBox="0 0 24 24"
+        width="30"
+        height="30"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+        aria-hidden="true"
+      >
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+      </svg>
+    </ui-empty-state>
+  } @else {
+    <section class="rules-list">
+      @for (rule of rules(); track rule.id) {
+        <div class="rule-card" [class.retired]="rule.status === 'retired'">
+          @if (editingId() === rule.id) {
+            <div class="edit-form">
+              <label>
+                Título
+                <input
+                  type="text"
+                  class="edit-title"
+                  [value]="editTitle()"
+                  (input)="onEditTitleInput($event)"
+                  (keydown.enter)="saveEdit(rule)"
+                  (keydown.escape)="cancelEdit()"
+                />
+              </label>
+              <label>
+                Regla
+                <textarea
+                  rows="3"
+                  class="edit-statement"
+                  [value]="editStatement()"
+                  (input)="onEditStatementInput($event)"
+                  (keydown.escape)="cancelEdit()"
+                ></textarea>
+              </label>
+              <div class="rule-actions">
+                <button appButton variant="ghost" class="edit-cancel" (click)="cancelEdit()">
+                  Cancelar
+                </button>
+                <button
+                  appButton
+                  class="edit-save"
+                  [disabled]="!editTitle().trim()"
+                  (click)="saveEdit(rule)"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+          } @else {
+            <div class="rule-header">
+              <span class="rule-title">{{ rule.title }}</span>
+              @if (rule.shortcutSlot !== null) {
+                <span class="slot-badge">R{{ rule.shortcutSlot }}</span>
+              }
+            </div>
+            @if (rule.statement) {
+              <p class="rule-statement">{{ rule.statement }}</p>
+            }
+            <div class="rule-actions">
+              @if (rule.status === 'active') {
+                <label class="slot-select">
+                  Atajo (Alt/⌥ + dígito)
+                  <select
+                    title="Alt + dígito (⌥ Option en Mac)"
+                    [attr.aria-keyshortcuts]="
+                      rule.shortcutSlot !== null ? 'Alt+' + rule.shortcutSlot : null
+                    "
+                    (change)="onSlotChange(rule, $event)"
+                  >
+                    @for (opt of slotOptions; track opt.label) {
+                      <option
+                        [value]="opt.value ?? ''"
+                        [selected]="opt.value === rule.shortcutSlot"
+                      >
+                        {{ opt.label }}
+                      </option>
+                    }
+                  </select>
+                </label>
+              }
+              <span class="rule-buttons">
+                <button appButton variant="subtle" class="edit-btn" (click)="startEdit(rule)">
+                  Editar
+                </button>
+                <button
+                  appButton
+                  [variant]="rule.status === 'active' ? 'danger' : 'subtle'"
+                  (click)="toggleStatus(rule)"
+                >
+                  {{ rule.status === 'active' ? 'Retirar' : 'Reactivar' }}
+                </button>
+              </span>
+            </div>
+          }
+        </div>
+      }
+    </section>
+  }
+</aside>
