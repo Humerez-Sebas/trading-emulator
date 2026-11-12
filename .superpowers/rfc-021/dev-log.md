@@ -81,10 +81,36 @@ and are re-established by the CI `Pipeline` job on the PR; the PR is not mergeab
   `chore(rfc-021)`. Consequence: the cutover commit alone does not pass `npm ci` (package.json and
   lockfile disagree for exactly one commit) — a bisect across it must skip to the next commit.
   The branch tip, which is what CI and the merge see, is consistent.
+- **Inert — the CI wiring is inside the cutover commit.** RFC §6 says the cutover is "seguido por
+  el cableado de CI"; `ci.yml`, `.npmrc` and the `CLAUDE.md` note landed in the cutover commit
+  itself, because without them that commit cannot install its own dependency (audit finding L2).
 
-## §5 — Remaining
+## §5 — CI on the PR (#70)
 
-1. CI on the PR: Frontend, Pipeline, CodeQL, Vercel preview.
-2. Vercel preview smoke: load `/calculadora`, compute a lot.
-3. Independent review (`branch-auditor`), verdict recorded here.
-4. Merge to `develop`. The `develop → main` release is the owner's call.
+`Frontend (lint · tests · build · audit)` pass · `Pipeline (lint · tests)` pass (ruff clean,
+pytest 111 passed) · `Vercel` pass (preview deployed, so the token works on Vercel) ·
+`Deploy (Vercel · prod)` skipped, as on every PR. No CodeQL check runs on PRs to `develop`.
+
+## §6 — Final audit (`branch-auditor`, fresh context, 2026-11-11)
+
+**Verdict: PASS** — zero Critical, High or Medium. The auditor re-ran all seven gates itself
+(same numbers as §2), confirmed the test arithmetic, confirmed the three legacy source files
+differ from kernel `v1.0.0` only in import specifiers and one header comment, and ran a seeded
+differential fuzz of the pre-extraction sources against the installed package: 200 000 calls
+across the eight functions, NaN and infinities included, 0 differences.
+
+| Finding | Severity | Resolution |
+| :--- | :--- | :--- |
+| L1 — the contract spec pinned no literal for `lotsForRiskDistance`, `riskUsdFor`, `priceDistance`; the calculator's own specs compare against the package, so a kernel bump could change them silently | Low | **Fixed**: one literal test added to `sizing-kernel.contract.spec.ts`, values taken from the pre-extraction spec. Tests 2672 → 2673. |
+| L2 — the CI wiring landed in the cutover commit, not after it as RFC §6 says, and §4 did not record it | Low | **Fixed**: recorded in §4. |
+
+Not verified by the auditor: the Vercel preview smoke (below), and that the published `1.0.0`
+tarball is a rebuild of tag `v1.0.0` (behaviour equality with the old sources was verified
+instead).
+
+## §7 — Remaining
+
+1. **Vercel preview smoke: load `/calculadora`, compute a lot.** The preview loads and boots with
+   no console error, but `/calculadora` is behind the app login and the agent may not type the
+   owner's password. Blocked on the owner signing in (RFC §6 item 5).
+2. Merge to `develop` once item 1 is done. The `develop → main` release is the owner's call.
