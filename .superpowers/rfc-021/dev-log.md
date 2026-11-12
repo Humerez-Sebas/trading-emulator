@@ -108,9 +108,15 @@ Not verified by the auditor: the Vercel preview smoke (below), and that the publ
 tarball is a rebuild of tag `v1.0.0` (behaviour equality with the old sources was verified
 instead).
 
-## §7 — Remaining
+## §7 — Vercel preview smoke (RFC §6 item 5) — done 2026-11-11
 
-1. **Vercel preview smoke: load `/calculadora`, compute a lot.** The preview loads and boots with
-   no console error, but `/calculadora` is behind the app login and the agent may not type the
-   owner's password. Blocked on the owner signing in (RFC §6 item 5).
-2. Merge to `develop` once item 1 is done. The `develop → main` release is the owner's call.
+Preview of this branch (`emulador-git-feature-rfc-021-sizing-kernel-extraction-…vercel.app`),
+the owner signed in himself. `/calculadora`, asset US30, account 50 000 USD, risk 1 %, mode
+Distancia, 50 pts → "Riesgo en USD $500.00" and **10.00 lotes**. No console error. That is the
+owner's reference example (1 % of 50k with a 50-point stop is 10 lots) computed by the deployed
+bundle with the package installed by Vercel.
+
+## §8 — Remaining
+
+1. Merge to `develop`. The `develop → main` release is the owner's call.
+2. Owner: rotate `NPM_GITHUB_TOKEN` (§4).
