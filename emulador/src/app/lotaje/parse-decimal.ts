@@ -3,7 +3,7 @@
  * `pages/calculadora/calculadora-page.component.ts` — this is the F1/F3 fix,
  * and it is a requirement of interaction (product design §7.4), not an
  * implementation detail. Framework-free: no Angular, no DOM. `emulador/src/app/lotaje`
- * may depend on `domain/sizing/*` but this file needs none of it — it is pure
+ * may depend on `@humerez-sebas/sizing-kernel` but this file needs none of it — it is pure
  * text parsing.
  *
  * ---- F1 (decimal entry) ----

@@ -106,3 +106,4 @@ Product-track work branches off `origin/main` and PRs back to `main` (see
 | RFC | Status | Purpose |
 |---|---|---|
 | [RFC-020](./rfcs/020-lotaje-position-sizer.md): Lotaje — Position Sizer | Delivered 2026-08-05 (PR #54, `b8d220f`; refined by PR #55, `ad69d7d`) | Risk-based position sizing with an asset catalogue and a framework-free view behind a thin Angular host, shipped as the `/calculadora` page plus a 320×340 floating companion window. Replaces Calculadora v1 (PR #53). |
+| [RFC-021](./rfcs/021-extraccion-sizing-kernel.md): Extracción del kernel de dimensionado | In progress (2026-11-11) — `feature/rfc-021-sizing-kernel-extraction` → `develop` | `domain/sizing/` leaves this repo for the private package `@humerez-sebas/sizing-kernel` (shared with PropMirror). Triggers T1 and T2 of the reusability study fired. Behaviour unchanged; a contract spec and a pipeline test keep the registry and `HARVEST_SYMBOLS` locked together. |

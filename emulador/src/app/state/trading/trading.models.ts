@@ -255,9 +255,11 @@ export function defaultTradingData(initialBalance = DEFAULT_BALANCE): TradingDat
 }
 
 /**
- * `contractSizeFor` / `lotsForRisk` now live in the framework-free sizing
- * kernel (RFC-020, D.20.1) so the emulator and the (future) Lotaje tool
- * cannot diverge. Re-exported here so every existing consumer keeps
- * importing from `state/trading/trading.models` unchanged.
+ * `contractSizeFor` / `lotsForRisk` live in the framework-free sizing kernel
+ * (RFC-020, D.20.1) so the emulator and the Lotaje tool cannot diverge. Since
+ * RFC-021 the kernel is the `@humerez-sebas/sizing-kernel` package (shared
+ * with PropMirror), no longer `domain/sizing/`. Re-exported here so every
+ * existing consumer keeps importing from `state/trading/trading.models`
+ * unchanged.
  */
-export { contractSizeFor, lotsForRisk } from '../../domain/sizing/position-sizing';
+export { contractSizeFor, lotsForRisk } from '@humerez-sebas/sizing-kernel';

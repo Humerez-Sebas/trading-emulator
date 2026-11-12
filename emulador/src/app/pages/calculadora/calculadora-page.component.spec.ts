@@ -7,7 +7,7 @@ import {
   lotsForRiskDistance,
   pipSizeFor,
   riskUsdFor,
-} from '../../domain/sizing/position-sizing';
+} from '@humerez-sebas/sizing-kernel';
 import { LOTAJE_STORAGE_KEY } from '../../lotaje/persistence';
 import { unmount } from '../../lotaje/lotaje-view';
 
@@ -47,7 +47,7 @@ import { unmount } from '../../lotaje/lotaje-view';
  * still-DOM-driven, still-regression-catching proof: drive the DOM to the exact
  * text that used to break the old bug, then assert the RENDERED lot figure
  * matches the real kernel function (`lotsForRisk`/`lotsForRiskDistance`, imported
- * from `domain/sizing/position-sizing` — never hand-derived) called with the same
+ * from `@humerez-sebas/sizing-kernel` — never hand-derived) called with the same
  * numbers. A snapped-to-0 or NaN-collapsed value under the old bug produces a
  * visibly different (or absent) figure, so the regression-catching power is the
  * same; only the read mechanism changed from "peek a signal" to "observe the DOM".

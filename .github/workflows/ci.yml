@@ -59,7 +59,12 @@ jobs:
           cache: npm
           cache-dependency-path: emulador/package-lock.json
       - name: Install dependencies
+        # @humerez-sebas/sizing-kernel is a private GitHub Packages package
+        # (RFC-021). emulador/.npmrc reads the token from this variable; the
+        # secret is a classic PAT with read:packages ONLY.
         run: npm ci
+        env:
+          NPM_GITHUB_TOKEN: ${{ secrets.NPM_GITHUB_TOKEN }}
       - name: Lint + format
         run: |
           npm run lint
@@ -88,6 +93,9 @@ jobs:
       VERCEL_ORG_ID: team_dVBTaqwZmidnC7KJf7h6BpLI
       VERCEL_PROJECT_ID: prj_KpNe7NDXP95iXljbwcZCh4Wcv0Wo
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      # `vercel build` runs `npm ci` on this runner, so it needs the same
+      # read-only token to install the private sizing kernel (RFC-021).
+      NPM_GITHUB_TOKEN: ${{ secrets.NPM_GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

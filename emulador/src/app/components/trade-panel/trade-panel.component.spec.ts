@@ -6,7 +6,7 @@ import { TradePanelComponent } from './trade-panel.component';
 import { ReplayActions } from '../../state/replay/replay.actions';
 import { TradingActions } from '../../state/trading/trading.actions';
 import { selectPlacementTime, selectTradePanelView } from '../../state/selectors';
-import { lotsForRisk } from '../../domain/sizing/position-sizing';
+import { lotsForRisk } from '@humerez-sebas/sizing-kernel';
 import { closed, order, position } from '../../testing/fixtures';
 import { Position } from '../../state/trading/trading.models';
 
@@ -33,7 +33,7 @@ import { Position } from '../../state/trading/trading.models';
  *     which are what actually move money.
  *
  * Sizing figures are never hand-derived: they are compared against the real
- * kernel function `lotsForRisk` from `domain/sizing/position-sizing`, called
+ * kernel function `lotsForRisk` from `@humerez-sebas/sizing-kernel`, called
  * with the same numbers, exactly as `calculadora-page.component.spec.ts` does.
  */
 

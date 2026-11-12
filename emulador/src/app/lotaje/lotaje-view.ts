@@ -2,7 +2,7 @@
  * RFC-020 Lotaje view. Framework-free: this module and its siblings under
  * `emulador/src/app/lotaje` import nothing from Angular, NgRx, the app's NgRx
  * state tree, its shared UI component library, or the chart engine (RFC §7.1
- * item 6, grep-checked in task reports). May import `domain/sizing/*` — the
+ * item 6, grep-checked in task reports). May import `@humerez-sebas/sizing-kernel` — the
  * Shared Kernel exists for exactly this.
  *
  * `mount(doc, win, initialState?)` / `unmount()` take their document and window
@@ -55,8 +55,7 @@
  *
  * Still no second mount, no second state, no host-injected configuration.
  */
-import { resolveAsset } from '../domain/sizing/asset-registry';
-import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
+import { GENERATED_ASSETS, resolveAsset } from '@humerez-sebas/sizing-kernel';
 import { assetDisplay } from './asset-catalog';
 import { openCompanionWindow } from './companion-window';
 import {

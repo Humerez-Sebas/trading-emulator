@@ -4,7 +4,7 @@ import {
   lotsForRisk,
   lotsForRiskDistance,
   riskUsdFor,
-} from '../domain/sizing/position-sizing';
+} from '@humerez-sebas/sizing-kernel';
 import {
   INITIAL_STATE,
   MSG_NON_POSITIVE,
