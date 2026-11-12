@@ -2,7 +2,7 @@
  * Pure state + derivation for the Lotaje view (RFC-020 Task D-1). No DOM, no
  * Angular — `deriveLots`/`switchMethod` are plain functions of a plain
  * object, testable without a document. `lotsForRisk`/`lotsForRiskDistance`
- * (via `domain/sizing/position-sizing`) are the ONLY source of a lot figure
+ * (via `@humerez-sebas/sizing-kernel`) are the ONLY source of a lot figure
  * anywhere in this module — no second sizing formula, no
  * `Math.max(0.01, …)` reimplemented here.
  *
@@ -15,10 +15,12 @@ import {
   lotsForRisk,
   lotsForRiskDistance,
   priceDistance,
+  resolveAsset,
   riskForLots,
   riskUsdFor,
-} from '../domain/sizing/position-sizing';
-import { resolveAsset, type AssetSource, type AssetSpec } from '../domain/sizing/asset-registry';
+  type AssetSource,
+  type AssetSpec,
+} from '@humerez-sebas/sizing-kernel';
 import { parseDecimal } from './parse-decimal';
 
 export type Method = 'distance' | 'prices';

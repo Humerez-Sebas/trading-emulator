@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GENERATED_ASSETS } from '../domain/sizing/asset-registry.generated';
+import { GENERATED_ASSETS } from '@humerez-sebas/sizing-kernel';
 import { COMPANION_HEIGHT, COMPANION_WIDTH } from './companion-window';
 import { getMountedState, getMountedWindow, LOTAJE_MOUNT_ID, mount, unmount } from './lotaje-view';
 import { LOTAJE_STORAGE_KEY } from './persistence';
